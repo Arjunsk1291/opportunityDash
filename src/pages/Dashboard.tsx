@@ -3,80 +3,66 @@ import { KPICards } from '@/components/Dashboard/KPICards';
 import { FunnelChart } from '@/components/Dashboard/FunnelChart';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AtRiskWidget } from '@/components/Dashboard/AtRiskWidget';
-import { LeaderboardWidget } from '@/components/Dashboard/LeaderboardWidget';
+import { ClientLeaderboard } from '@/components/Dashboard/ClientLeaderboard';
 import { DataHealthWidget } from '@/components/Dashboard/DataHealthWidget';
+import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { BarChart3, Info } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { 
   opportunities, 
   calculateSummaryStats, 
   calculateFunnelData, 
-  getLeaderboardData, 
+  getClientData, 
   calculateDataHealth,
   Opportunity 
 } from '@/data/opportunityData';
 
-const Index = () => {
+const Dashboard = () => {
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
+  const [filters, setFilters] = useState<FilterState>(defaultFilters);
 
-  const stats = useMemo(() => calculateSummaryStats(opportunities), []);
-  const funnelData = useMemo(() => calculateFunnelData(opportunities), []);
-  const leaderboardData = useMemo(() => getLeaderboardData(opportunities), []);
-  const dataHealth = useMemo(() => calculateDataHealth(opportunities), []);
+  const filteredData = useMemo(() => applyFilters(opportunities, filters), [filters]);
+  const stats = useMemo(() => calculateSummaryStats(filteredData), [filteredData]);
+  const funnelData = useMemo(() => calculateFunnelData(filteredData), [filteredData]);
+  const clientData = useMemo(() => getClientData(filteredData), [filteredData]);
+  const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
 
   const formatCurrency = (value: number) => `$${value.toLocaleString()}`;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <BarChart3 className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">Opportunity Management Dashboard</h1>
-                <p className="text-sm text-muted-foreground">Pipeline & Tender Tracking System</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>{opportunities.length} opportunities</span>
-              <span>•</span>
-              <span>Last updated: {new Date().toLocaleDateString()}</span>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="space-y-6">
+      {/* Advanced Filters */}
+      <AdvancedFilters
+        data={opportunities}
+        filters={filters}
+        onFiltersChange={setFilters}
+        onClearFilters={() => setFilters(defaultFilters)}
+      />
 
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-6 space-y-6">
-        {/* KPI Cards */}
-        <KPICards stats={stats} />
+      {/* KPI Cards */}
+      <KPICards stats={stats} />
 
-        {/* Main Dashboard Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Funnel */}
-          <FunnelChart data={funnelData} />
-          
-          {/* At Risk Widget */}
-          <AtRiskWidget data={opportunities} />
-          
-          {/* Leaderboard */}
-          <LeaderboardWidget data={leaderboardData} />
-        </div>
+      {/* Main Dashboard Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Funnel */}
+        <FunnelChart data={funnelData} />
+        
+        {/* At Risk Widget */}
+        <AtRiskWidget data={filteredData} />
+        
+        {/* Client Leaderboard */}
+        <ClientLeaderboard data={clientData} />
+      </div>
 
-        {/* Opportunities Table */}
-        <OpportunitiesTable data={opportunities} onSelectOpportunity={setSelectedOpp} />
+      {/* Opportunities Table */}
+      <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
 
-        {/* Data Health */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <DataHealthWidget {...dataHealth} />
-        </div>
-      </main>
+      {/* Data Health */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <DataHealthWidget {...dataHealth} />
+      </div>
 
       {/* Detail Sheet */}
       <Sheet open={!!selectedOpp} onOpenChange={() => setSelectedOpp(null)}>
@@ -160,4 +146,4 @@ const Index = () => {
   );
 };
 
-export default Index;
+export default Dashboard;
