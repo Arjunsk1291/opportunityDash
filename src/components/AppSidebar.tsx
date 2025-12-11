@@ -58,16 +58,8 @@ const statusNavItems = [
   { title: "On Hold", url: "/status/on-hold", icon: Pause, color: "text-muted-foreground" },
 ];
 
-const roleNavItems = [
-  { title: "My Pipeline", url: "/my-pipeline", icon: Users },
-  { title: "Team Overview", url: "/team", icon: Users },
-  { title: "At Risk", url: "/at-risk", icon: AlertTriangle },
-];
-
 const adminNavItems = [
   { title: "Admin Panel", url: "/admin", icon: Shield },
-  { title: "Settings", url: "/settings", icon: Settings },
-  { title: "SharePoint Sync", url: "/sharepoint", icon: CloudUpload },
 ];
 
 export function AppSidebar() {
@@ -77,9 +69,6 @@ export function AppSidebar() {
   
   const [statusOpen, setStatusOpen] = useState(
     location.pathname.startsWith("/status")
-  );
-  const [roleOpen, setRoleOpen] = useState(
-    ["/my-pipeline", "/team", "/at-risk"].includes(location.pathname)
   );
 
   const isActive = (path: string) => {
@@ -155,37 +144,6 @@ export function AppSidebar() {
           </Collapsible>
         </SidebarGroup>
 
-        {/* By Role/View */}
-        <SidebarGroup>
-          <Collapsible open={roleOpen} onOpenChange={setRoleOpen}>
-            <CollapsibleTrigger asChild>
-              <SidebarGroupLabel className="cursor-pointer hover:bg-sidebar-accent rounded-md px-2 py-1.5 -mx-2 flex items-center justify-between">
-                <span>My Views</span>
-                {roleOpen ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronRight className="h-4 w-4" />
-                )}
-              </SidebarGroupLabel>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {roleNavItems.map((item) => (
-                    <SidebarMenuItem key={item.title}>
-                      <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                        <NavLink to={item.url}>
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.title}</span>
-                        </NavLink>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </CollapsibleContent>
-          </Collapsible>
-        </SidebarGroup>
 
         {/* Admin Section */}
         <SidebarGroup>

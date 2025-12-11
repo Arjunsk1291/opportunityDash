@@ -1,262 +1,283 @@
+// src/pages/SharePoint.tsx - UPDATED VERSION
+
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import {
-  CloudUpload,
-  Link2,
-  RefreshCw,
-  CheckCircle,
+import { 
+  RefreshCw, 
+  CheckCircle2, 
+  XCircle, 
+  Clock, 
+  Database,
   AlertCircle,
-  FileSpreadsheet,
-  Clock,
+  Download,
   Settings,
-  Info,
+  FileSpreadsheet
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useSharePointData } from '@/hooks/useSharePointData';
+import { format } from 'date-fns';
 
 const SharePoint = () => {
-  const [sharepointUrl, setSharepointUrl] = useState('');
-  const [isConnected, setIsConnected] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [sharePointUrl, setSharePointUrlInput] = useState(
+    import.meta.env.VITE_SHAREPOINT_URL || 
+    'https://avenirengineeringae-my.sharepoint.com/:x:/g/personal/arjun_s_avenirengineering_com/EQAIb2CegyykRawrrCej8MBSASmxPd8IAwgZPX1ieGZZcr0?e=EKLIxa'
+  );
 
-  const handleTestConnection = async () => {
-    if (!sharepointUrl) {
-      toast.error('Please enter a SharePoint URL');
-      return;
-    }
-    
-    setIsTesting(true);
-    // Simulate connection test
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    setIsTesting(false);
-    
-    // For demo purposes, always succeed
-    setIsConnected(true);
-    toast.success('Successfully connected to SharePoint');
+  const {
+    data,
+    syncStatus,
+    syncData,
+    setSharePointUrl,
+    isLoading,
+    error,
+    lastSync,
+    recordCount,
+  } = useSharePointData({
+    autoSync: true,
+    syncInterval: 5 * 60 * 1000, // 5 minutes
+  });
+
+  const handleUpdateUrl = () => {
+    setSharePointUrl(sharePointUrl);
   };
 
-  const handleSync = async () => {
-    setIsSyncing(true);
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    setIsSyncing(false);
-    toast.success('Data synchronized successfully', {
-      description: '52 records updated from SharePoint'
-    });
+  const handleManualSync = () => {
+    syncData();
   };
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
-          <CloudUpload className="h-6 w-6 text-primary" />
+          <Database className="h-6 w-6 text-primary" />
           SharePoint Integration
         </h1>
-        <p className="text-muted-foreground">Connect to a live Excel file on SharePoint</p>
+        <p className="text-muted-foreground">
+          Connect and sync data from your SharePoint Excel file
+        </p>
       </div>
 
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertTitle>Read-Only Sync</AlertTitle>
-        <AlertDescription>
-          This integration reads data from your SharePoint Excel file. Changes made in the dashboard 
-          will not be written back to SharePoint. To update the source data, edit the Excel file directly.
-        </AlertDescription>
-      </Alert>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Connection Setup */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Link2 className="h-5 w-5" />
-              Connection Setup
-            </CardTitle>
-            <CardDescription>
-              Enter your SharePoint Excel file URL to enable live data sync
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="sharepoint-url">SharePoint Excel URL</Label>
-              <Input
-                id="sharepoint-url"
-                placeholder="https://yourcompany.sharepoint.com/sites/..."
-                value={sharepointUrl}
-                onChange={(e) => setSharepointUrl(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Paste the full URL to your Excel file on SharePoint
-              </p>
-            </div>
-
-            <div className="flex gap-2">
-              <Button 
-                onClick={handleTestConnection} 
-                disabled={isTesting || !sharepointUrl}
-                className="flex-1"
-              >
-                {isTesting ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    Testing...
-                  </>
-                ) : (
-                  <>
-                    <Link2 className="h-4 w-4 mr-2" />
-                    Test Connection
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {isConnected && (
-              <div className="flex items-center gap-2 p-3 bg-success/10 rounded-lg">
-                <CheckCircle className="h-5 w-5 text-success" />
-                <span className="text-sm font-medium text-success">Connected to SharePoint</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Sync Status */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <RefreshCw className="h-5 w-5" />
-              Sync Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-muted/50 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Last Sync</span>
-                </div>
-                <p className="font-semibold">
-                  {isConnected ? new Date().toLocaleString() : 'Never'}
-                </p>
-              </div>
-              <div className="p-4 bg-muted/50 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Records</span>
-                </div>
-                <p className="font-semibold">52 rows</p>
-              </div>
-            </div>
-
-            <Button 
-              onClick={handleSync} 
-              disabled={!isConnected || isSyncing}
-              className="w-full"
-            >
-              {isSyncing ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Syncing...
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Sync Now
-                </>
-              )}
-            </Button>
-
-            {!isConnected && (
-              <p className="text-sm text-muted-foreground text-center">
-                Connect to SharePoint first to enable sync
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Configuration */}
+      {/* Connection Status Card */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            Sync Configuration
+          <CardTitle className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Connection Status
+            </span>
+            <Badge variant={error ? 'destructive' : lastSync ? 'success' : 'secondary'}>
+              {error ? 'Error' : lastSync ? 'Connected' : 'Not Connected'}
+            </Badge>
           </CardTitle>
+          <CardDescription>
+            Configure your SharePoint Excel file URL and sync settings
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-2">
-              <Label>Auto-Sync Interval</Label>
-              <div className="flex gap-2">
-                <Input type="number" placeholder="60" className="w-20" defaultValue={60} />
-                <span className="text-sm text-muted-foreground self-center">minutes</span>
+        <CardContent className="space-y-4">
+          {/* SharePoint URL Input */}
+          <div className="space-y-2">
+            <Label htmlFor="sharepoint-url">SharePoint File URL</Label>
+            <div className="flex gap-2">
+              <Input
+                id="sharepoint-url"
+                value={sharePointUrl}
+                onChange={(e) => setSharePointUrlInput(e.target.value)}
+                placeholder="https://yourcompany.sharepoint.com/..."
+                className="flex-1"
+              />
+              <Button onClick={handleUpdateUrl} variant="outline">
+                Update
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Paste the sharing link from your SharePoint Excel file
+            </p>
+          </div>
+
+          <Separator />
+
+          {/* Sync Info */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <Clock className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Last Sync</p>
+                <p className="text-xs text-muted-foreground">
+                  {lastSync ? format(lastSync, 'PPp') : 'Never'}
+                </p>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Data Entry Sheet</Label>
-              <Input placeholder="Data Entry" defaultValue="Data Entry" />
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-success/10">
+                <FileSpreadsheet className="h-5 w-5 text-success" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Records</p>
+                <p className="text-xs text-muted-foreground">
+                  {recordCount} rows
+                </p>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Tender Details Sheet</Label>
-              <Input placeholder="Sheet1" defaultValue="Sheet1" />
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-info/10">
+                <RefreshCw className={`h-5 w-5 text-info ${isLoading ? 'animate-spin' : ''}`} />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Auto-Sync</p>
+                <p className="text-xs text-muted-foreground">
+                  Every 5 minutes
+                </p>
+              </div>
             </div>
           </div>
 
-          <Separator className="my-6" />
+          <Separator />
 
-          <div className="space-y-4">
-            <h4 className="font-medium">Column Mapping</h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div className="p-3 bg-muted/50 rounded">
-                <p className="text-muted-foreground">Opportunity ID</p>
-                <p className="font-medium">Opportunity Ref. No.</p>
-              </div>
-              <div className="p-3 bg-muted/50 rounded">
-                <p className="text-muted-foreground">Tender ID</p>
-                <p className="font-medium">Tender no</p>
-              </div>
-              <div className="p-3 bg-muted/50 rounded">
-                <p className="text-muted-foreground">Client</p>
-                <p className="font-medium">Client Name</p>
-              </div>
-              <div className="p-3 bg-muted/50 rounded">
-                <p className="text-muted-foreground">Value</p>
-                <p className="font-medium">Opportunity Value</p>
-              </div>
-            </div>
+          {/* Actions */}
+          <div className="flex gap-2">
+            <Button onClick={handleManualSync} disabled={isLoading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              {isLoading ? 'Syncing...' : 'Sync Now'}
+            </Button>
+            <Button variant="outline" disabled>
+              <Download className="h-4 w-4 mr-2" />
+              Export Data
+            </Button>
           </div>
 
-          <div className="mt-6">
-            <Button variant="outline">Save Configuration</Button>
-          </div>
+          {/* Error Alert */}
+          {error && (
+            <Alert variant="destructive">
+              <XCircle className="h-4 w-4" />
+              <AlertTitle>Sync Error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Success Alert */}
+          {!error && lastSync && (
+            <Alert>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertTitle>Connected</AlertTitle>
+              <AlertDescription>
+                Successfully synced {recordCount} records from SharePoint
+              </AlertDescription>
+            </Alert>
+          )}
         </CardContent>
       </Card>
 
-      {/* Implementation Note */}
-      <Alert variant="default">
-        <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Implementation Note</AlertTitle>
-        <AlertDescription className="space-y-2">
-          <p>
-            To enable live SharePoint integration, you'll need to:
-          </p>
-          <ol className="list-decimal list-inside text-sm space-y-1 mt-2">
-            <li>Register an Azure AD application with SharePoint permissions</li>
-            <li>Configure OAuth2 authentication flow</li>
-            <li>Use Microsoft Graph API to read Excel files</li>
-            <li>Set up a backend endpoint to handle the API calls securely</li>
-          </ol>
-          <p className="mt-2">
-            This requires enabling Lovable Cloud for backend functionality and storing your Azure credentials securely.
-          </p>
-        </AlertDescription>
-      </Alert>
+      {/* Data Preview Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            Data Preview
+          </CardTitle>
+          <CardDescription>
+            Preview of synced data from SharePoint Excel
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {data.length > 0 ? (
+            <ScrollArea className="h-[500px]">
+              <div className="space-y-4">
+                {data.map((row, index) => (
+                  <Card key={index} className="p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Tender No</p>
+                        <p className="font-semibold">{row.tenderNo}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Tender Name</p>
+                        <p className="font-semibold">{row.tenderName}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Client</p>
+                        <p>{row.client}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Assigned Person</p>
+                        <p>{row.assignedPerson}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Status</p>
+                        <Badge>{row.avenirStatus}</Badge>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Tender Value</p>
+                        <p className="font-semibold">
+                          {row.tenderValue 
+                            ? `${row.currency || 'AED'} ${row.tenderValue.toLocaleString()}`
+                            : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </ScrollArea>
+          ) : (
+            <div className="text-center py-12">
+              <AlertCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No data synced yet</p>
+              <Button onClick={handleManualSync} className="mt-4">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Sync Data
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Instructions Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Setup Instructions</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <h4 className="font-medium flex items-center gap-2">
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs">1</span>
+              Get SharePoint Link
+            </h4>
+            <p className="text-sm text-muted-foreground ml-8">
+              Open your Excel file in SharePoint, click Share, and copy the link
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="font-medium flex items-center gap-2">
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs">2</span>
+              Paste URL Above
+            </h4>
+            <p className="text-sm text-muted-foreground ml-8">
+              Paste the SharePoint URL in the field above and click Update
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="font-medium flex items-center gap-2">
+              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs">3</span>
+              Auto-Sync Enabled
+            </h4>
+            <p className="text-sm text-muted-foreground ml-8">
+              Data will automatically sync every 5 minutes. You can also manually sync anytime.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

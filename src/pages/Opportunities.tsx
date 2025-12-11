@@ -5,20 +5,22 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Info } from 'lucide-react';
-import { opportunities, Opportunity } from '@/data/opportunityData';
+import { Opportunity } from '@/data/opportunityData';
+import { useData } from '@/contexts/DataContext';
 
 interface OpportunitiesProps {
   statusFilter?: string;
 }
 
 const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
+  const { opportunities } = useData();
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [filters, setFilters] = useState<FilterState>(() => ({
     ...defaultFilters,
     statuses: statusFilter ? [statusFilter] : [],
   }));
 
-  const filteredData = useMemo(() => applyFilters(opportunities, filters), [filters]);
+  const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
 
   const formatCurrency = (value: number) => `$${value.toLocaleString()}`;
 

@@ -4,9 +4,11 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Building2, Search, TrendingUp, FileText, DollarSign } from 'lucide-react';
-import { opportunities, getClientData } from '@/data/opportunityData';
+import { getClientData } from '@/data/opportunityData';
+import { useData } from '@/contexts/DataContext';
 
 const Clients = () => {
+  const { opportunities } = useData();
   const [search, setSearch] = useState('');
   
   const clientStats = useMemo(() => {
@@ -40,7 +42,7 @@ const Clients = () => {
           : 0,
       }))
       .sort((a, b) => b.value - a.value);
-  }, []);
+  }, [opportunities]);
 
   const filteredClients = useMemo(() => {
     if (!search) return clientStats;

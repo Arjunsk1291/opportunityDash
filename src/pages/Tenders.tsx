@@ -12,10 +12,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Search, FileSpreadsheet, Calendar, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
-import { opportunities } from '@/data/opportunityData';
+import { useData } from '@/contexts/DataContext';
 import { cn } from '@/lib/utils';
 
 const Tenders = () => {
+  const { opportunities } = useData();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
 
@@ -35,7 +36,7 @@ const Tenders = () => {
         value: o.opportunityValue,
         lead: o.internalLead,
       }));
-  }, []);
+  }, [opportunities]);
 
   const filteredData = useMemo(() => {
     let data = tenderData;

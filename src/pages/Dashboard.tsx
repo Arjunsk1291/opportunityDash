@@ -11,19 +11,20 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Info } from 'lucide-react';
 import { 
-  opportunities, 
   calculateSummaryStats, 
   calculateFunnelData, 
   getClientData, 
   calculateDataHealth,
   Opportunity 
 } from '@/data/opportunityData';
+import { useData } from '@/contexts/DataContext';
 
 const Dashboard = () => {
+  const { opportunities } = useData();
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
 
-  const filteredData = useMemo(() => applyFilters(opportunities, filters), [filters]);
+  const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
   const stats = useMemo(() => calculateSummaryStats(filteredData), [filteredData]);
   const funnelData = useMemo(() => calculateFunnelData(filteredData), [filteredData]);
   const clientData = useMemo(() => getClientData(filteredData), [filteredData]);

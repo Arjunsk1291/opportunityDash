@@ -334,6 +334,7 @@ function generateOpportunities(): Opportunity[] {
   return opportunities;
 }
 
+export { generateOpportunities };
 export const opportunities = generateOpportunities();
 
 // Calculate summary statistics

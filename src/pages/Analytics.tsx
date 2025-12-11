@@ -21,19 +21,21 @@ import {
 } from 'recharts';
 import { TrendingUp, Users, Building2, Target, Calendar, DollarSign } from 'lucide-react';
 import { 
-  opportunities, 
   calculateSummaryStats, 
   getLeaderboardData, 
   getClientData,
   STAGE_ORDER 
 } from '@/data/opportunityData';
+import { useData } from '@/contexts/DataContext';
 
 const COLORS = ['hsl(199, 89%, 48%)', 'hsl(38, 92%, 50%)', 'hsl(262, 83%, 58%)', 'hsl(142, 76%, 36%)', 'hsl(0, 84%, 60%)', 'hsl(220, 9%, 46%)'];
 
 const Analytics = () => {
-  const stats = useMemo(() => calculateSummaryStats(opportunities), []);
-  const leaderData = useMemo(() => getLeaderboardData(opportunities), []);
-  const clientData = useMemo(() => getClientData(opportunities), []);
+  const { opportunities } = useData();
+  
+  const stats = useMemo(() => calculateSummaryStats(opportunities), [opportunities]);
+  const leaderData = useMemo(() => getLeaderboardData(opportunities), [opportunities]);
+  const clientData = useMemo(() => getClientData(opportunities), [opportunities]);
 
   // Stage distribution
   const stageData = useMemo(() => {
@@ -42,7 +44,7 @@ const Analytics = () => {
       counts[o.canonicalStage] = (counts[o.canonicalStage] || 0) + 1;
     });
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, []);
+  }, [opportunities]);
 
   // Group distribution
   const groupData = useMemo(() => {
@@ -59,7 +61,7 @@ const Analytics = () => {
       count: data.count,
       value: data.value / 1000000,
     }));
-  }, []);
+  }, [opportunities]);
 
   // Monthly trend
   const monthlyTrend = useMemo(() => {
@@ -81,7 +83,7 @@ const Analytics = () => {
         count: data.count,
         value: data.value / 1000000,
       }));
-  }, []);
+  }, [opportunities]);
 
   // Win/Loss by lead
   const leadPerformance = useMemo(() => {
