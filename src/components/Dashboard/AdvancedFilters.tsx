@@ -19,9 +19,49 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { format } from "date-fns";
+import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths, subQuarters, subYears } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Opportunity, STAGE_ORDER, GROUP_CLASSIFICATIONS } from "@/data/opportunityData";
+
+type DatePreset = "all" | "thisMonth" | "lastMonth" | "thisQuarter" | "lastQuarter" | "thisYear" | "lastYear" | "custom";
+
+const getDateRangeFromPreset = (preset: DatePreset): { from: Date | undefined; to: Date | undefined } => {
+  const now = new Date();
+  switch (preset) {
+    case "thisMonth":
+      return { from: startOfMonth(now), to: endOfMonth(now) };
+    case "lastMonth":
+      const lastMonth = subMonths(now, 1);
+      return { from: startOfMonth(lastMonth), to: endOfMonth(lastMonth) };
+    case "thisQuarter":
+      return { from: startOfQuarter(now), to: endOfQuarter(now) };
+    case "lastQuarter":
+      const lastQuarter = subQuarters(now, 1);
+      return { from: startOfQuarter(lastQuarter), to: endOfQuarter(lastQuarter) };
+    case "thisYear":
+      return { from: startOfYear(now), to: endOfYear(now) };
+    case "lastYear":
+      const lastYear = subYears(now, 1);
+      return { from: startOfYear(lastYear), to: endOfYear(lastYear) };
+    case "all":
+    default:
+      return { from: undefined, to: undefined };
+  }
+};
+
+const getPresetLabel = (preset: DatePreset): string => {
+  switch (preset) {
+    case "thisMonth": return "This Month";
+    case "lastMonth": return "Last Month";
+    case "thisQuarter": return "This Quarter";
+    case "lastQuarter": return "Last Quarter";
+    case "thisYear": return "This Year";
+    case "lastYear": return "Last Year";
+    case "custom": return "Custom Range";
+    case "all":
+    default: return "All Time";
+  }
+};
 
 export interface FilterState {
   search: string;
@@ -32,6 +72,7 @@ export interface FilterState {
   qualificationStatuses: string[];
   partnerInvolvement: string;
   dateRange: { from: Date | undefined; to: Date | undefined };
+  datePreset: DatePreset;
   valueRange: { min: number | undefined; max: number | undefined };
   showAtRisk: boolean;
   showMissDeadline: boolean;
@@ -44,6 +85,7 @@ interface AdvancedFiltersProps {
   onClearFilters: () => void;
 }
 
+// Default: All Time (no date filter applied on initial load)
 export const defaultFilters: FilterState = {
   search: "",
   statuses: [],
@@ -53,6 +95,7 @@ export const defaultFilters: FilterState = {
   qualificationStatuses: [],
   partnerInvolvement: "all",
   dateRange: { from: undefined, to: undefined },
+  datePreset: "all", // Initial bootup shows "All Time" - no date filtering
   valueRange: { min: undefined, max: undefined },
   showAtRisk: false,
   showMissDeadline: false,
@@ -235,32 +278,78 @@ export function AdvancedFilters({
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">
               <Calendar className="h-3 w-3" />
-              {filters.dateRange.from || filters.dateRange.to ? (
+              {filters.datePreset === "custom" && filters.dateRange.from ? (
                 <span>
-                  {filters.dateRange.from && format(filters.dateRange.from, "MMM d")}
-                  {filters.dateRange.from && filters.dateRange.to && " - "}
-                  {filters.dateRange.to && format(filters.dateRange.to, "MMM d")}
+                  {format(filters.dateRange.from, "MMM d")}
+                  {filters.dateRange.to && ` - ${format(filters.dateRange.to, "MMM d")}`}
                 </span>
               ) : (
-                "Date Range"
+                getPresetLabel(filters.datePreset)
               )}
+              <ChevronDown className="h-3 w-3" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <CalendarComponent
-              mode="range"
-              selected={{
-                from: filters.dateRange.from,
-                to: filters.dateRange.to,
-              }}
-              onSelect={(range) =>
-                updateFilter("dateRange", {
-                  from: range?.from,
-                  to: range?.to,
-                })
-              }
-              numberOfMonths={2}
-            />
+          <PopoverContent className="w-auto p-3" align="start">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                {(["all", "thisMonth", "lastMonth", "thisQuarter", "lastQuarter", "thisYear", "lastYear"] as DatePreset[]).map((preset) => (
+                  <Button
+                    key={preset}
+                    variant={filters.datePreset === preset ? "default" : "outline"}
+                    size="sm"
+                    className="text-xs justify-start"
+                    onClick={() => {
+                      const range = getDateRangeFromPreset(preset);
+                      onFiltersChange({
+                        ...filters,
+                        datePreset: preset,
+                        dateRange: range,
+                      });
+                    }}
+                  >
+                    {getPresetLabel(preset)}
+                  </Button>
+                ))}
+                <Button
+                  variant={filters.datePreset === "custom" ? "default" : "outline"}
+                  size="sm"
+                  className="text-xs justify-start"
+                  onClick={() => {
+                    onFiltersChange({
+                      ...filters,
+                      datePreset: "custom",
+                    });
+                  }}
+                >
+                  Custom Range
+                </Button>
+              </div>
+              
+              {filters.datePreset === "custom" && (
+                <>
+                  <Separator />
+                  <CalendarComponent
+                    mode="range"
+                    selected={{
+                      from: filters.dateRange.from,
+                      to: filters.dateRange.to,
+                    }}
+                    onSelect={(range) =>
+                      onFiltersChange({
+                        ...filters,
+                        datePreset: "custom",
+                        dateRange: {
+                          from: range?.from,
+                          to: range?.to,
+                        },
+                      })
+                    }
+                    numberOfMonths={2}
+                    className="pointer-events-auto"
+                  />
+                </>
+              )}
+            </div>
           </PopoverContent>
         </Popover>
 

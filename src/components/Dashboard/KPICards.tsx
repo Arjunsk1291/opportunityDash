@@ -25,11 +25,9 @@ export function KPICards({ stats }: KPICardsProps) {
   const kpis = [
     { label: 'Active Opportunities', value: stats.totalActive, icon: Target, color: 'text-primary', bgColor: 'bg-primary/10' },
     { label: 'Pipeline Value', value: formatCurrency(stats.totalPipelineValue), icon: DollarSign, color: 'text-info', bgColor: 'bg-info/10' },
-    { label: 'Weighted Pipeline', value: formatCurrency(stats.weightedPipeline), icon: TrendingUp, color: 'text-pending', bgColor: 'bg-pending/10' },
     { label: 'Won', value: `${stats.wonCount} (${formatCurrency(stats.wonValue)})`, icon: Trophy, color: 'text-success', bgColor: 'bg-success/10' },
-    { label: 'Lost', value: `${stats.lostCount} (${formatCurrency(stats.lostValue)})`, icon: XCircle, color: 'text-destructive', bgColor: 'bg-destructive/10' },
-    { label: 'At Risk', value: stats.atRiskCount, icon: AlertTriangle, color: 'text-warning', bgColor: 'bg-warning/10' },
-    { label: 'Avg Days to Submit', value: `${stats.avgDaysToSubmission}d`, icon: Clock, color: 'text-muted-foreground', bgColor: 'bg-muted' },
+    { label: 'Closed', value: `${stats.lostCount} (${formatCurrency(stats.lostValue)})`, icon: XCircle, color: 'text-muted-foreground', bgColor: 'bg-muted' },
+    { label: 'Upcoming Deadlines', value: stats.atRiskCount, icon: Clock, color: 'text-pending', bgColor: 'bg-pending/10' },
   ];
 
   return (
