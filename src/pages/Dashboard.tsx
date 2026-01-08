@@ -6,6 +6,7 @@ import { AtRiskWidget } from '@/components/Dashboard/AtRiskWidget';
 import { ClientLeaderboard } from '@/components/Dashboard/ClientLeaderboard';
 import { DataHealthWidget } from '@/components/Dashboard/DataHealthWidget';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
+import { ExportButton } from '@/components/Dashboard/ExportButton';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -18,9 +19,11 @@ import {
   Opportunity 
 } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
+import { useCurrency } from '@/contexts/CurrencyContext';
 
 const Dashboard = () => {
   const { opportunities } = useData();
+  const { formatCurrency } = useCurrency();
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
 
@@ -30,20 +33,60 @@ const Dashboard = () => {
   const clientData = useMemo(() => getClientData(filteredData), [filteredData]);
   const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
 
-  const formatCurrency = (value: number) => `$${value.toLocaleString()}`;
+  const handleKPIClick = (kpiType: 'active' | 'pipeline' | 'won' | 'closed' | 'upcoming') => {
+    switch (kpiType) {
+      case 'active':
+        // Show all active stages (Pre-bid, In Progress, Submitted)
+        setFilters({
+          ...defaultFilters,
+          statuses: ['Pre-bid', 'In Progress', 'Submitted'],
+        });
+        break;
+      case 'pipeline':
+        // Clear filters to show all pipeline
+        setFilters(defaultFilters);
+        break;
+      case 'won':
+        // Filter to Awarded only
+        setFilters({
+          ...defaultFilters,
+          statuses: ['Awarded'],
+        });
+        break;
+      case 'closed':
+        // Filter to Lost/Regretted
+        setFilters({
+          ...defaultFilters,
+          statuses: ['Lost/Regretted'],
+        });
+        break;
+      case 'upcoming':
+        // Show items with upcoming deadlines (at risk)
+        setFilters({
+          ...defaultFilters,
+          showAtRisk: true,
+        });
+        break;
+    }
+  };
 
   return (
     <div className="space-y-6">
-      {/* Advanced Filters */}
-      <AdvancedFilters
-        data={opportunities}
-        filters={filters}
-        onFiltersChange={setFilters}
-        onClearFilters={() => setFilters(defaultFilters)}
-      />
+      {/* Advanced Filters with Export */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-1">
+          <AdvancedFilters
+            data={opportunities}
+            filters={filters}
+            onFiltersChange={setFilters}
+            onClearFilters={() => setFilters(defaultFilters)}
+          />
+        </div>
+        <ExportButton data={filteredData} filename="opportunities" />
+      </div>
 
       {/* KPI Cards */}
-      <KPICards stats={stats} />
+      <KPICards stats={stats} onKPIClick={handleKPIClick} />
 
       {/* Main Dashboard Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -51,10 +94,15 @@ const Dashboard = () => {
         <FunnelChart data={funnelData} />
         
         {/* At Risk Widget */}
-        <AtRiskWidget data={filteredData} />
+        <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
         
         {/* Client Leaderboard */}
-        <ClientLeaderboard data={clientData} />
+        <ClientLeaderboard data={clientData} onClientClick={(client) => {
+          setFilters({
+            ...defaultFilters,
+            clients: [client],
+          });
+        }} />
       </div>
 
       {/* Opportunities Table */}

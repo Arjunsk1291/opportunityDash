@@ -5,9 +5,10 @@ import { Opportunity } from '@/data/opportunityData';
 
 interface AtRiskWidgetProps {
   data: Opportunity[];
+  onSelectOpportunity?: (opp: Opportunity) => void;
 }
 
-export function AtRiskWidget({ data }: AtRiskWidgetProps) {
+export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
   const atRiskItems = data
     .filter(o => o.isAtRisk || o.willMissDeadline)
     .sort((a, b) => {
@@ -31,9 +32,13 @@ export function AtRiskWidget({ data }: AtRiskWidgetProps) {
             <p className="text-sm text-muted-foreground text-center py-4">No at-risk opportunities</p>
           ) : (
             atRiskItems.map((item) => (
-              <div key={item.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+              <div 
+                key={item.id} 
+                className={`flex items-center justify-between p-2 rounded-lg bg-muted/50 transition-colors ${onSelectOpportunity ? 'cursor-pointer hover:bg-muted hover:ring-1 hover:ring-primary/20' : 'hover:bg-muted'}`}
+                onClick={() => onSelectOpportunity?.(item)}
+              >
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">{item.tenderName}</p>
+                  <p className="text-sm font-medium truncate text-primary hover:underline">{item.tenderName}</p>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-xs text-muted-foreground">{item.clientName}</span>
                     <span className="text-xs text-muted-foreground">•</span>

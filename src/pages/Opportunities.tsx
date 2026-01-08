@@ -1,12 +1,14 @@
 import { useState, useMemo } from 'react';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
+import { ExportButton } from '@/components/Dashboard/ExportButton';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Info } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
+import { useCurrency } from '@/contexts/CurrencyContext';
 
 interface OpportunitiesProps {
   statusFilter?: string;
@@ -14,6 +16,7 @@ interface OpportunitiesProps {
 
 const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const { opportunities } = useData();
+  const { formatCurrency } = useCurrency();
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [filters, setFilters] = useState<FilterState>(() => ({
     ...defaultFilters,
@@ -22,17 +25,18 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
 
-  const formatCurrency = (value: number) => `$${value.toLocaleString()}`;
-
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">
-          {statusFilter ? `${statusFilter} Opportunities` : 'All Opportunities'}
-        </h1>
-        <p className="text-muted-foreground">
-          {filteredData.length} opportunities found
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">
+            {statusFilter ? `${statusFilter} Opportunities` : 'All Opportunities'}
+          </h1>
+          <p className="text-muted-foreground">
+            {filteredData.length} opportunities found
+          </p>
+        </div>
+        <ExportButton data={filteredData} filename={statusFilter ? `${statusFilter.toLowerCase().replace(/\//g, '-')}-opportunities` : 'all-opportunities'} />
       </div>
 
       <AdvancedFilters

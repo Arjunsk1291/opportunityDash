@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import {
   Shield,
   Lock,
@@ -16,9 +17,12 @@ import {
   Settings,
   Users,
   FileStack,
+  DollarSign,
 } from 'lucide-react';
 import { calculateDataHealth } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useCurrency } from '@/contexts/CurrencyContext';
 import SharePointSyncPanel from '@/components/Admin/SharePointSyncPanel';
 import ErrorMonitor from '@/components/Admin/ErrorMonitor';
 import SystemHealth from '@/components/Admin/SystemHealth';
@@ -27,66 +31,27 @@ import DataManagement from '@/components/Admin/DataManagement';
 import AccessControl from '@/components/Admin/AccessControl';
 import AdminSettings from '@/components/Admin/AdminSettings';
 
-const ADMIN_PASSWORD = 'admin123';
-
 const Admin = () => {
   const { opportunities } = useData();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-
-  useEffect(() => {
-    const adminAuth = sessionStorage.getItem('adminAuth');
-    if (adminAuth === 'true') setIsAuthenticated(true);
-  }, []);
-
-  const handleLogin = () => {
-    if (password === ADMIN_PASSWORD) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('adminAuth', 'true');
-      setPasswordError('');
-    } else {
-      setPasswordError('Invalid password');
-    }
-  };
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    sessionStorage.removeItem('adminAuth');
-  };
+  const { isAdmin, user, logout } = useAuth();
+  const { currency, setCurrency } = useCurrency();
 
   const dataHealth = calculateDataHealth(opportunities);
 
-  if (!isAuthenticated) {
+  // Only admins should access this page
+  if (!isAdmin) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <Lock className="h-6 w-6 text-primary" />
+            <div className="mx-auto w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
+              <Lock className="h-6 w-6 text-destructive" />
             </div>
-            <CardTitle>Admin Access Required</CardTitle>
-            <p className="text-sm text-muted-foreground mt-2">Enter the admin password</p>
+            <CardTitle>Access Denied</CardTitle>
+            <p className="text-sm text-muted-foreground mt-2">
+              You need admin privileges to access this page.
+            </p>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                placeholder="Enter admin password"
-              />
-              {passwordError && <p className="text-sm text-destructive">{passwordError}</p>}
-            </div>
-            <Button className="w-full" onClick={handleLogin}>
-              <Shield className="h-4 w-4 mr-2" />
-              Access Admin Panel
-            </Button>
-            <p className="text-xs text-center text-muted-foreground">Hint: admin123</p>
-          </CardContent>
         </Card>
       </div>
     );
@@ -100,12 +65,24 @@ const Admin = () => {
             <Shield className="h-6 w-6 text-primary" />
             Master Control Panel
           </h1>
-          <p className="text-muted-foreground">Monitor, troubleshoot, and manage everything</p>
+          <p className="text-muted-foreground">Logged in as {user?.displayName} ({user?.role})</p>
         </div>
-        <Button variant="outline" onClick={handleLogout}>
-          <Lock className="h-4 w-4 mr-2" />
-          Logout
-        </Button>
+        <div className="flex items-center gap-4">
+          {/* Currency Toggle */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg">
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">USD</span>
+            <Switch
+              checked={currency === 'AED'}
+              onCheckedChange={(checked) => setCurrency(checked ? 'AED' : 'USD')}
+            />
+            <span className="text-sm font-medium">AED</span>
+          </div>
+          <Button variant="outline" onClick={logout}>
+            <Lock className="h-4 w-4 mr-2" />
+            Logout
+          </Button>
+        </div>
       </div>
 
       {/* Quick Stats */}

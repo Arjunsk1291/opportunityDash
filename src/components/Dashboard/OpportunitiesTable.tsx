@@ -2,11 +2,15 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertTriangle, Info, Search } from 'lucide-react';
+import { AlertTriangle, Info, Search, CheckCircle, Clock } from 'lucide-react';
 import { Opportunity, STAGE_ORDER } from '@/data/opportunityData';
+import { useCurrency } from '@/contexts/CurrencyContext';
+import { useApproval } from '@/contexts/ApprovalContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -17,6 +21,9 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [groupFilter, setGroupFilter] = useState<string>('all');
+  const { formatCurrency } = useCurrency();
+  const { getApprovalStatus, approveOpportunity } = useApproval();
+  const { isAdmin } = useAuth();
 
   const filteredData = data.filter(opp => {
     const matchesSearch = !search || 
@@ -28,8 +35,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     return matchesSearch && matchesStatus && matchesGroup;
   });
 
-  const formatCurrency = (value: number) => `$${value.toLocaleString()}`;
-
   const getStatusBadge = (stage: string) => {
     const variants: Record<string, string> = {
       'Pre-bid': 'bg-info/20 text-info',
@@ -40,6 +45,11 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       'On Hold/Paused': 'bg-muted text-muted-foreground',
     };
     return variants[stage] || 'bg-muted text-muted-foreground';
+  };
+
+  const handleApprove = (e: React.MouseEvent, oppId: string) => {
+    e.stopPropagation();
+    approveOpportunity(oppId);
   };
 
   return (
@@ -83,42 +93,77 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                 <TableHead>Tender Name</TableHead>
                 <TableHead>Client</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="font-bold">RFP Received</TableHead>
                 <TableHead>Lead</TableHead>
                 <TableHead className="text-right">Value</TableHead>
                 <TableHead className="text-right">Prob.</TableHead>
                 <TableHead className="text-right">Expected</TableHead>
+                <TableHead>Approval</TableHead>
                 <TableHead className="w-16"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.slice(0, 50).map((opp) => (
-                <TableRow key={opp.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectOpportunity(opp)}>
-                  <TableCell className="font-mono text-xs">{opp.opportunityRefNo}</TableCell>
-                  <TableCell className="max-w-[200px] truncate" title={opp.tenderName}>{opp.tenderName}</TableCell>
-                  <TableCell className="max-w-[120px] truncate">{opp.clientName}</TableCell>
-                  <TableCell><Badge className={getStatusBadge(opp.canonicalStage)}>{opp.canonicalStage}</Badge></TableCell>
-                  <TableCell>{opp.internalLead || <span className="text-muted-foreground text-xs">Unassigned</span>}</TableCell>
-                  <TableCell className="text-right font-mono">
-                    <div className="flex items-center justify-end gap-1">
-                      {formatCurrency(opp.opportunityValue)}
-                      {opp.opportunityValue_imputed && (
-                        <Tooltip>
-                          <TooltipTrigger><Info className="h-3 w-3 text-warning" /></TooltipTrigger>
-                          <TooltipContent className="max-w-xs"><p className="text-xs">{opp.opportunityValue_imputation_reason}</p></TooltipContent>
-                        </Tooltip>
+              {filteredData.slice(0, 50).map((opp) => {
+                const approvalStatus = getApprovalStatus(opp.id);
+                return (
+                  <TableRow key={opp.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectOpportunity(opp)}>
+                    <TableCell className="font-mono text-xs">{opp.opportunityRefNo}</TableCell>
+                    <TableCell className="max-w-[200px]">
+                      <span className="text-primary hover:underline font-medium truncate block" title={opp.tenderName}>
+                        {opp.tenderName}
+                      </span>
+                    </TableCell>
+                    <TableCell className="max-w-[120px] truncate">{opp.clientName}</TableCell>
+                    <TableCell><Badge className={getStatusBadge(opp.canonicalStage)}>{opp.canonicalStage}</Badge></TableCell>
+                    <TableCell className="font-bold text-sm">
+                      {opp.dateTenderReceived || <span className="text-muted-foreground font-normal">—</span>}
+                    </TableCell>
+                    <TableCell>{opp.internalLead || <span className="text-muted-foreground text-xs">Unassigned</span>}</TableCell>
+                    <TableCell className="text-right font-mono">
+                      <div className="flex items-center justify-end gap-1">
+                        {formatCurrency(opp.opportunityValue)}
+                        {opp.opportunityValue_imputed && (
+                          <Tooltip>
+                            <TooltipTrigger><Info className="h-3 w-3 text-warning" /></TooltipTrigger>
+                            <TooltipContent className="max-w-xs"><p className="text-xs">{opp.opportunityValue_imputation_reason}</p></TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">{opp.probability}%</TableCell>
+                    <TableCell className="text-right font-mono text-success">{formatCurrency(opp.expectedValue)}</TableCell>
+                    <TableCell>
+                      {approvalStatus === 'approved' ? (
+                        <Badge className="bg-success/20 text-success gap-1">
+                          <CheckCircle className="h-3 w-3" />
+                          Approved
+                        </Badge>
+                      ) : isAdmin ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1"
+                          onClick={(e) => handleApprove(e, opp.id)}
+                        >
+                          <Clock className="h-3 w-3" />
+                          Pending
+                        </Button>
+                      ) : (
+                        <Badge variant="secondary" className="gap-1">
+                          <Clock className="h-3 w-3" />
+                          Pending
+                        </Badge>
                       )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">{opp.probability}%</TableCell>
-                  <TableCell className="text-right font-mono text-success">{formatCurrency(opp.expectedValue)}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      {opp.isAtRisk && <AlertTriangle className="h-4 w-4 text-warning" />}
-                      {opp.willMissDeadline && <AlertTriangle className="h-4 w-4 text-destructive" />}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {opp.isAtRisk && <AlertTriangle className="h-4 w-4 text-warning" />}
+                        {opp.willMissDeadline && <AlertTriangle className="h-4 w-4 text-destructive" />}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>

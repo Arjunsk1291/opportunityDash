@@ -25,6 +25,15 @@ import { Opportunity, STAGE_ORDER, GROUP_CLASSIFICATIONS } from "@/data/opportun
 
 type DatePreset = "all" | "thisMonth" | "lastMonth" | "thisQuarter" | "lastQuarter" | "thisYear" | "lastYear" | "custom";
 
+type DateField = "dateTenderReceived" | "tenderPlannedSubmissionDate" | "tenderSubmittedDate" | "lastContactDate";
+
+const DATE_FIELD_LABELS: Record<DateField, string> = {
+  dateTenderReceived: "RFP Received",
+  tenderPlannedSubmissionDate: "Planned Submission",
+  tenderSubmittedDate: "Submitted Date",
+  lastContactDate: "Last Activity",
+};
+
 const getDateRangeFromPreset = (preset: DatePreset): { from: Date | undefined; to: Date | undefined } => {
   const now = new Date();
   switch (preset) {
@@ -68,11 +77,13 @@ export interface FilterState {
   statuses: string[];
   groups: string[];
   leads: string[];
+  clients: string[];
   clientTypes: string[];
   qualificationStatuses: string[];
   partnerInvolvement: string;
   dateRange: { from: Date | undefined; to: Date | undefined };
   datePreset: DatePreset;
+  dateField: DateField;
   valueRange: { min: number | undefined; max: number | undefined };
   showAtRisk: boolean;
   showMissDeadline: boolean;
@@ -91,11 +102,13 @@ export const defaultFilters: FilterState = {
   statuses: [],
   groups: [],
   leads: [],
+  clients: [],
   clientTypes: [],
   qualificationStatuses: [],
   partnerInvolvement: "all",
   dateRange: { from: undefined, to: undefined },
   datePreset: "all", // Initial bootup shows "All Time" - no date filtering
+  dateField: "dateTenderReceived", // Default to RFP Received date
   valueRange: { min: undefined, max: undefined },
   showAtRisk: false,
   showMissDeadline: false,
@@ -112,9 +125,10 @@ export function AdvancedFilters({
   // Extract unique values from data
   const uniqueValues = useMemo(() => {
     const leads = [...new Set(data.map((o) => o.internalLead).filter(Boolean))].sort();
+    const clients = [...new Set(data.map((o) => o.clientName).filter(Boolean))].sort();
     const clientTypes = [...new Set(data.map((o) => o.clientType).filter(Boolean))].sort();
     const qualifications = [...new Set(data.map((o) => o.qualificationStatus).filter(Boolean))].sort();
-    return { leads, clientTypes, qualifications };
+    return { leads, clients, clientTypes, qualifications };
   }, [data]);
 
   const activeFilterCount = useMemo(() => {
@@ -123,6 +137,7 @@ export function AdvancedFilters({
     if (filters.statuses.length > 0) count++;
     if (filters.groups.length > 0) count++;
     if (filters.leads.length > 0) count++;
+    if (filters.clients.length > 0) count++;
     if (filters.clientTypes.length > 0) count++;
     if (filters.qualificationStatuses.length > 0) count++;
     if (filters.partnerInvolvement !== "all") count++;
@@ -137,7 +152,7 @@ export function AdvancedFilters({
     onFiltersChange({ ...filters, [key]: value });
   };
 
-  const toggleArrayValue = (key: "statuses" | "groups" | "leads" | "clientTypes" | "qualificationStatuses", value: string) => {
+  const toggleArrayValue = (key: "statuses" | "groups" | "leads" | "clients" | "clientTypes" | "qualificationStatuses", value: string) => {
     const current = filters[key];
     const updated = current.includes(value)
       ? current.filter((v) => v !== value)
@@ -272,6 +287,54 @@ export function AdvancedFilters({
             </div>
           </PopoverContent>
         </Popover>
+
+        {/* Client Quick Filter */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-2">
+              Client
+              {filters.clients.length > 0 && (
+                <Badge variant="secondary" className="ml-1 px-1.5">
+                  {filters.clients.length}
+                </Badge>
+              )}
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-56 p-3 max-h-[300px] overflow-auto" align="start">
+            <div className="space-y-2">
+              {uniqueValues.clients.map((client) => (
+                <div key={client} className="flex items-center gap-2">
+                  <Checkbox
+                    id={`client-${client}`}
+                    checked={filters.clients.includes(client)}
+                    onCheckedChange={() => toggleArrayValue("clients", client)}
+                  />
+                  <Label htmlFor={`client-${client}`} className="text-sm cursor-pointer truncate">
+                    {client}
+                  </Label>
+                </div>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {/* Date Field Selector */}
+        <Select
+          value={filters.dateField}
+          onValueChange={(v) => updateFilter("dateField", v as DateField)}
+        >
+          <SelectTrigger className="h-8 w-[140px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.keys(DATE_FIELD_LABELS) as DateField[]).map((field) => (
+              <SelectItem key={field} value={field} className="text-xs">
+                {DATE_FIELD_LABELS[field]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         {/* Date Range */}
         <Popover>
@@ -535,10 +598,19 @@ export function AdvancedFilters({
           ))}
           {filters.leads.map((lead) => (
             <Badge key={lead} variant="secondary" className="gap-1 pl-2">
-              {lead}
+              Lead: {lead}
               <X
                 className="h-3 w-3 cursor-pointer"
                 onClick={() => toggleArrayValue("leads", lead)}
+              />
+            </Badge>
+          ))}
+          {filters.clients.map((client) => (
+            <Badge key={client} variant="secondary" className="gap-1 pl-2">
+              Client: {client}
+              <X
+                className="h-3 w-3 cursor-pointer"
+                onClick={() => toggleArrayValue("clients", client)}
               />
             </Badge>
           ))}
@@ -595,6 +667,11 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
       return false;
     }
 
+    // Clients
+    if (filters.clients.length > 0 && !filters.clients.includes(o.clientName)) {
+      return false;
+    }
+
     // Client Types
     if (filters.clientTypes.length > 0 && !filters.clientTypes.includes(o.clientType)) {
       return false;
@@ -612,12 +689,13 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
     if (filters.partnerInvolvement === "yes" && !o.partnerInvolvement) return false;
     if (filters.partnerInvolvement === "no" && o.partnerInvolvement) return false;
 
-    // Date Range
-    if (filters.dateRange.from && o.dateTenderReceived) {
-      if (new Date(o.dateTenderReceived) < filters.dateRange.from) return false;
-    }
-    if (filters.dateRange.to && o.dateTenderReceived) {
-      if (new Date(o.dateTenderReceived) > filters.dateRange.to) return false;
+    // Date Range - filter by selected date field
+    const dateFieldValue = o[filters.dateField];
+    if (filters.dateRange.from || filters.dateRange.to) {
+      if (!dateFieldValue) return false; // Exclude if no date and range is specified
+      const dateValue = new Date(dateFieldValue);
+      if (filters.dateRange.from && dateValue < filters.dateRange.from) return false;
+      if (filters.dateRange.to && dateValue > filters.dateRange.to) return false;
     }
 
     // Value Range

@@ -10,9 +10,10 @@ interface ClientData {
 
 interface ClientLeaderboardProps {
   data: ClientData[];
+  onClientClick?: (clientName: string) => void;
 }
 
-export function ClientLeaderboard({ data }: ClientLeaderboardProps) {
+export function ClientLeaderboard({ data, onClientClick }: ClientLeaderboardProps) {
   const formatCurrency = (value: number) => {
     if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
     if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
@@ -33,11 +34,15 @@ export function ClientLeaderboard({ data }: ClientLeaderboardProps) {
       <CardContent>
         <div className="space-y-3">
           {topClients.map((client, index) => (
-            <div key={client.name} className="space-y-1">
+            <div 
+              key={client.name} 
+              className={`space-y-1 p-2 -mx-2 rounded-lg transition-colors ${onClientClick ? 'cursor-pointer hover:bg-muted' : ''}`}
+              onClick={() => onClientClick?.(client.name)}
+            >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-muted-foreground w-4">{index + 1}</span>
-                  <span className="text-sm font-medium truncate max-w-[150px]">{client.name}</span>
+                  <span className={`text-sm font-medium truncate max-w-[150px] ${onClientClick ? 'text-primary hover:underline' : ''}`}>{client.name}</span>
                 </div>
                 <div className="flex items-center gap-3 text-xs">
                   <span className="text-muted-foreground">{client.count} opps</span>
