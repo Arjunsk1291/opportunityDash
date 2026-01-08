@@ -3,6 +3,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { RefreshButton } from "@/components/RefreshButton";
+import { CurrencySwitcher } from "@/components/CurrencySwitcher";
 import { useData } from "@/contexts/DataContext";
 import { Badge } from "@/components/ui/badge";
 
@@ -29,6 +30,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <span>Last synced: {lastSyncTime.toLocaleTimeString()}</span>
               </div>
             )}
+            
+            {/* Currency Switcher */}
+            <CurrencySwitcher />
             
             {/* Refresh Button */}
             <RefreshButton variant="outline" size="sm" />

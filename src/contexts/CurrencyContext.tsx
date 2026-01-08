@@ -1,46 +1,75 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode } from 'react';
 
-export type Currency = 'USD' | 'AED';
-
-const USD_TO_AED_RATE = 3.67;
+type Currency = 'USD' | 'AED';
 
 interface CurrencyContextType {
   currency: Currency;
   setCurrency: (currency: Currency) => void;
-  formatCurrency: (value: number) => string;
-  convertValue: (value: number) => number;
+  formatCurrency: (amount: number) => string;
+  convertCurrency: (amount: number, from: Currency, to: Currency) => number;
+  exchangeRate: number;
+  setExchangeRate: (rate: number) => void;
 }
 
 const CurrencyContext = createContext<CurrencyContextType | undefined>(undefined);
 
+// Default exchange rate: 1 USD = 3.67 AED (UAE Dirham pegged rate)
+const DEFAULT_EXCHANGE_RATE = 3.67;
+
 export function CurrencyProvider({ children }: { children: ReactNode }) {
-  const [currency, setCurrencyState] = useState<Currency>(() => {
-    const saved = localStorage.getItem('currency');
-    return (saved === 'AED' || saved === 'USD') ? saved : 'USD';
+  const [currency, setCurrency] = useState<Currency>('USD');
+  const [exchangeRate, setExchangeRate] = useState<number>(() => {
+    const saved = localStorage.getItem('exchangeRate');
+    return saved ? parseFloat(saved) : DEFAULT_EXCHANGE_RATE;
   });
 
-  const setCurrency = useCallback((newCurrency: Currency) => {
-    setCurrencyState(newCurrency);
-    localStorage.setItem('currency', newCurrency);
-  }, []);
+  const updateExchangeRate = (rate: number) => {
+    setExchangeRate(rate);
+    localStorage.setItem('exchangeRate', rate.toString());
+  };
 
-  const convertValue = useCallback((value: number): number => {
-    if (currency === 'AED') {
-      return value * USD_TO_AED_RATE;
+  const convertCurrency = (amount: number, from: Currency, to: Currency): number => {
+    if (from === to) return amount;
+    if (from === 'USD' && to === 'AED') {
+      return amount * exchangeRate;
     }
-    return value;
-  }, [currency]);
+    if (from === 'AED' && to === 'USD') {
+      return amount / exchangeRate;
+    }
+    return amount;
+  };
 
-  const formatCurrency = useCallback((value: number): string => {
-    const convertedValue = convertValue(value);
-    if (currency === 'AED') {
-      return `د.إ ${convertedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const formatCurrency = (amount: number): string => {
+    const convertedAmount = currency === 'USD' ? amount : convertCurrency(amount, 'USD', 'AED');
+    
+    if (currency === 'USD') {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(convertedAmount);
+    } else {
+      return new Intl.NumberFormat('ar-AE', {
+        style: 'currency',
+        currency: 'AED',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(convertedAmount);
     }
-    return `$${convertedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-  }, [currency, convertValue]);
+  };
 
   return (
-    <CurrencyContext.Provider value={{ currency, setCurrency, formatCurrency, convertValue }}>
+    <CurrencyContext.Provider
+      value={{
+        currency,
+        setCurrency,
+        formatCurrency,
+        convertCurrency,
+        exchangeRate,
+        setExchangeRate: updateExchangeRate,
+      }}
+    >
       {children}
     </CurrencyContext.Provider>
   );
