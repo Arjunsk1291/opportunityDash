@@ -5,20 +5,22 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
 import { googleSheetsService } from '@/services/googleSheetsService';
 import { useData } from '@/contexts/DataContext';
-import { Loader2, RefreshCw, ExternalLink, CheckCircle2, XCircle } from 'lucide-react';
+import { Loader2, RefreshCw, ExternalLink, CheckCircle2, XCircle, Bug } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function GoogleSheetsConfig() {
-  const { loadFromGoogleSheets, isLoading, lastSyncTime, isGoogleSheetsConnected } = useData();
+  const { loadFromGoogleSheets, isLoading, lastSyncTime, isGoogleSheetsConnected, opportunities } = useData();
   const [apiKey, setApiKey] = useState('');
   const [spreadsheetId, setSpreadsheetId] = useState('');
   const [sheetName, setSheetName] = useState('Sheet1');
   const [isSaving, setIsSaving] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugInfo, setDebugInfo] = useState('');
 
   useEffect(() => {
-    // Load saved config
     const savedConfig = localStorage.getItem('googleSheetsConfig');
     if (savedConfig) {
       try {
@@ -40,16 +42,13 @@ export function GoogleSheetsConfig() {
 
     setIsSaving(true);
     try {
-      // Save to localStorage
       const config = { apiKey, spreadsheetId, sheetName };
       localStorage.setItem('googleSheetsConfig', JSON.stringify(config));
       
-      // Initialize service
       googleSheetsService.initialize(apiKey, spreadsheetId, sheetName);
       
       toast.success('Configuration saved!');
       
-      // Auto-sync after saving
       setTimeout(() => {
         loadFromGoogleSheets();
         setIsSaving(false);
@@ -68,12 +67,26 @@ export function GoogleSheetsConfig() {
     }
 
     setIsSaving(true);
+    setDebugInfo('Testing connection...\n');
+    
     try {
       googleSheetsService.initialize(apiKey, spreadsheetId, sheetName);
-      await googleSheetsService.fetchData();
-      toast.success('Connection successful!');
+      const rawData = await googleSheetsService.fetchData();
+      
+      setDebugInfo(prev => prev + `✅ Fetched ${rawData.length} rows\n`);
+      setDebugInfo(prev => prev + `📋 Sample row keys: ${Object.keys(rawData[0] || {}).join(', ')}\n`);
+      setDebugInfo(prev => prev + `📊 Sample row data:\n${JSON.stringify(rawData[0], null, 2)}\n`);
+      
+      const converted = googleSheetsService.convertToOpportunities(rawData);
+      setDebugInfo(prev => prev + `✅ Converted to ${converted.length} opportunities\n`);
+      setDebugInfo(prev => prev + `📊 Sample opportunity:\n${JSON.stringify(converted[0], null, 2)}\n`);
+      
+      toast.success('Connection successful! Check debug info below.');
+      setShowDebug(true);
     } catch (error: any) {
+      setDebugInfo(prev => prev + `❌ Error: ${error.message}\n`);
       toast.error(`Connection failed: ${error.message}`);
+      setShowDebug(true);
     } finally {
       setIsSaving(false);
     }
@@ -101,11 +114,18 @@ export function GoogleSheetsConfig() {
               Connect your Google Sheets to sync opportunities in real-time
             </CardDescription>
           </div>
-          {lastSyncTime && (
-            <div className="text-sm text-muted-foreground">
-              Last synced: {lastSyncTime.toLocaleTimeString()}
-            </div>
-          )}
+          <div className="text-right">
+            {lastSyncTime && (
+              <div className="text-sm text-muted-foreground">
+                Last synced: {lastSyncTime.toLocaleTimeString()}
+              </div>
+            )}
+            {opportunities.length > 0 && (
+              <div className="text-sm font-medium text-green-600">
+                {opportunities.length} opportunities loaded
+              </div>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -158,14 +178,14 @@ export function GoogleSheetsConfig() {
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button 
             onClick={handleTestConnection} 
             disabled={isSaving || isLoading}
             variant="outline"
           >
-            {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-            Test Connection
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Bug className="w-4 h-4 mr-2" />}
+            Test & Debug
           </Button>
           
           <Button 
@@ -196,6 +216,17 @@ export function GoogleSheetsConfig() {
             Open Sheet
           </Button>
         </div>
+
+        {showDebug && debugInfo && (
+          <div className="mt-4">
+            <Label>Debug Information</Label>
+            <Textarea 
+              value={debugInfo} 
+              readOnly 
+              className="font-mono text-xs h-64 mt-2"
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
