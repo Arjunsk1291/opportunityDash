@@ -7,9 +7,11 @@ import { ClientLeaderboard } from '@/components/Dashboard/ClientLeaderboard';
 import { DataHealthWidget } from '@/components/Dashboard/DataHealthWidget';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
+import { RefreshButton } from '@/components/RefreshButton';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Info } from 'lucide-react';
 import { 
   calculateSummaryStats, 
@@ -20,12 +22,16 @@ import {
 } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 
 const Dashboard = () => {
-  const { opportunities } = useData();
+  const { opportunities, isGoogleSheetsConnected } = useData();
   const { formatCurrency } = useCurrency();
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
+
+  // Auto-refresh every 2 hours (120 minutes)
+  useAutoRefresh(120);
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
   const stats = useMemo(() => calculateSummaryStats(filteredData), [filteredData]);
@@ -36,32 +42,27 @@ const Dashboard = () => {
   const handleKPIClick = (kpiType: 'active' | 'pipeline' | 'won' | 'closed' | 'upcoming') => {
     switch (kpiType) {
       case 'active':
-        // Show all active stages (Pre-bid, In Progress, Submitted)
         setFilters({
           ...defaultFilters,
           statuses: ['Pre-bid', 'In Progress', 'Submitted'],
         });
         break;
       case 'pipeline':
-        // Clear filters to show all pipeline
         setFilters(defaultFilters);
         break;
       case 'won':
-        // Filter to Awarded only
         setFilters({
           ...defaultFilters,
           statuses: ['Awarded'],
         });
         break;
       case 'closed':
-        // Filter to Lost/Regretted
         setFilters({
           ...defaultFilters,
           statuses: ['Lost/Regretted'],
         });
         break;
       case 'upcoming':
-        // Show items with upcoming deadlines (at risk)
         setFilters({
           ...defaultFilters,
           showAtRisk: true,
@@ -72,7 +73,17 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* Advanced Filters with Export */}
+      {/* Google Sheets Connection Alert */}
+      {!isGoogleSheetsConnected && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            Connect to Google Sheets in <a href="/admin" className="underline font-medium">Admin Settings</a> to sync live data automatically.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Advanced Filters with Export and Refresh */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1">
           <AdvancedFilters
@@ -82,7 +93,10 @@ const Dashboard = () => {
             onClearFilters={() => setFilters(defaultFilters)}
           />
         </div>
-        <ExportButton data={filteredData} filename="opportunities" />
+        <div className="flex gap-2">
+          <RefreshButton variant="outline" showLabel={false} size="icon" />
+          <ExportButton data={filteredData} filename="opportunities" />
+        </div>
       </div>
 
       {/* KPI Cards */}
