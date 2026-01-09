@@ -7,92 +7,103 @@ interface GoogleSheetsConfig {
   apiKey: string;
   spreadsheetId: string;
   sheetName: string;
-  startRow?: number; // NEW: Allow specifying start row
+  startRow?: number;
 }
 
+// Column mapping - YOUR ACTUAL SHEET COLUMNS
 const COLUMN_MAPPING: Record<string, string> = {
-  'Opportunity Ref No': 'opportunityRefNo',
-  'OpportunityRefNo': 'opportunityRefNo',
-  'Ref No': 'opportunityRefNo',
-  'RefNo': 'opportunityRefNo',
-  'Reference Number': 'opportunityRefNo',
-  'Opportunity Reference Number': 'opportunityRefNo',
-  
-  'Tender No': 'tenderNo',
+  // Tender/Ref Numbers
+  'tenderno': 'tenderNo',
   'TenderNo': 'tenderNo',
-  'Tender Number': 'tenderNo',
-  'Tender Name': 'tenderName',
+  'Tender No': 'tenderNo',
+  'Opportunity Ref No': 'opportunityRefNo',
+  
+  // Tender Name
+  'tendername': 'tenderName',
   'TenderName': 'tenderName',
-  'Name': 'tenderName',
+  'Tender Name': 'tenderName',
   'Project Name': 'tenderName',
   
+  // Client
+  'clientName': 'clientName',
   'Client Name': 'clientName',
-  'ClientName': 'clientName',
   'Client': 'clientName',
-  'Customer': 'clientName',
-  'Client Type': 'clientType',
-  'ClientType': 'clientType',
   
-  'Opportunity Status': 'opportunityStatus',
-  'OpportunityStatus': 'opportunityStatus',
-  'Status': 'opportunityStatus',
-  'Current Status': 'opportunityStatus',
+  // End User
+  'enduser': 'endUser',
+  'End User': 'endUser',
   
+  // Location
+  'tenderlocationexecution': 'location',
+  'Tender Location Execution': 'location',
+  'Location': 'location',
+  
+  // Group/Classification
+  'gdsges': 'groupClassification',
+  'GDS/GES': 'groupClassification',
   'Group Classification': 'groupClassification',
-  'GroupClassification': 'groupClassification',
   'Group': 'groupClassification',
-  'Classification': 'groupClassification',
   
+  // Assigned Person/Lead
+  'assignedperson': 'internalLead',
+  'Assigned Person': 'internalLead',
   'Internal Lead': 'internalLead',
-  'InternalLead': 'internalLead',
   'Lead': 'internalLead',
-  'Owner': 'internalLead',
-  'Assigned To': 'internalLead',
   
+  // Stage/Type
+  'stageofprojectconceptfeedde': 'projectStage',
+  'Stage of Project (Concept/FEED/DE)': 'projectStage',
+  'Stage': 'projectStage',
+  
+  'tendertype': 'tenderType',
+  'Tender Type': 'tenderType',
+  'Type': 'tenderType',
+  
+  // Dates
+  'datetenderrecd': 'dateTenderReceived',
+  'datetenderreceived': 'dateTenderReceived',
+  'Date Tender Received': 'dateTenderReceived',
+  'Date Received': 'dateTenderReceived',
+  
+  'tenderplannedsubmissiondate': 'tenderPlannedSubmissionDate',
+  'Tender Planned Submission Date': 'tenderPlannedSubmissionDate',
+  'Planned Submission': 'tenderPlannedSubmissionDate',
+  
+  'tendersubmitteddate': 'tenderSubmittedDate',
+  'Tender Submitted Date': 'tenderSubmittedDate',
+  'Submitted Date': 'tenderSubmittedDate',
+  
+  // Bid Decision
+  'bidnobiddecision': 'bidDecision',
+  'Bid/No-Bid Decision': 'bidDecision',
+  
+  // Status
+  'avenirstatus': 'opportunityStatus',
+  'Avenir Status': 'opportunityStatus',
+  'Status': 'opportunityStatus',
+  
+  'tenderstatus': 'tenderStatus',
+  'Tender Status': 'tenderStatus',
+  
+  'tenderresult': 'tenderResult',
+  'Tender Result': 'tenderResult',
+  'Result': 'tenderResult',
+  
+  // Remarks
+  'remarksreason': 'remarks',
+  'Remarks/Reason': 'remarks',
+  'Remarks': 'remarks',
+  
+  // Value (if exists in your sheet)
+  'opportunityValue': 'opportunityValue',
   'Opportunity Value': 'opportunityValue',
-  'OpportunityValue': 'opportunityValue',
   'Value': 'opportunityValue',
-  'Amount': 'opportunityValue',
   'Contract Value': 'opportunityValue',
   
+  // Probability (if exists)
+  'probability': 'probability',
   'Probability': 'probability',
   'Win Probability': 'probability',
-  'Probability %': 'probability',
-  'Win %': 'probability',
-  
-  'Date Tender Received': 'dateTenderReceived',
-  'DateTenderReceived': 'dateTenderReceived',
-  'Received Date': 'dateTenderReceived',
-  'Date Received': 'dateTenderReceived',
-  'Tender Received': 'dateTenderReceived',
-  
-  'Planned Submission Date': 'tenderPlannedSubmissionDate',
-  'PlannedSubmissionDate': 'tenderPlannedSubmissionDate',
-  'Submission Date': 'tenderPlannedSubmissionDate',
-  'Due Date': 'tenderPlannedSubmissionDate',
-  'Deadline': 'tenderPlannedSubmissionDate',
-  
-  'Tender Submitted Date': 'tenderSubmittedDate',
-  'TenderSubmittedDate': 'tenderSubmittedDate',
-  'Submitted Date': 'tenderSubmittedDate',
-  'Date Submitted': 'tenderSubmittedDate',
-  
-  'Partner Name': 'partnerName',
-  'PartnerName': 'partnerName',
-  'Partner': 'partnerName',
-  
-  'Qualification Status': 'qualificationStatus',
-  'QualificationStatus': 'qualificationStatus',
-  'Qualification': 'qualificationStatus',
-  
-  'Opportunity Classification': 'opportunityClassification',
-  'OpportunityClassification': 'opportunityClassification',
-  'Type': 'opportunityClassification',
-  
-  'Remarks': 'remarks',
-  'Notes': 'remarks',
-  'Comments': 'remarks',
-  'Description': 'remarks',
 };
 
 class GoogleSheetsService {
@@ -116,9 +127,7 @@ class GoogleSheetsService {
     }
 
     const { apiKey, spreadsheetId, sheetName } = this.config;
-    
-    // Fetch with explicit range to get all data
-    const range = `${sheetName}!A:ZZ`; // Get columns A to ZZ
+    const range = `${sheetName}!A:ZZ`;
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?key=${apiKey}`;
 
     try {
@@ -134,15 +143,12 @@ class GoogleSheetsService {
       const rows = data.values as string[][];
 
       if (!rows || rows.length === 0) {
-        console.warn('❌ No data found in sheet');
         throw new Error('Sheet is empty or has no data');
       }
 
       console.log('📊 Total rows in sheet:', rows.length);
-      console.log('📋 First row (headers):', rows[0]);
-      console.log('📋 Second row (first data):', rows[1]);
 
-      // Find the header row (first non-empty row)
+      // Find header row
       let headerRowIndex = 0;
       let headers: string[] = [];
       
@@ -156,14 +162,12 @@ class GoogleSheetsService {
         }
       }
 
-      if (headers.length === 0 || headers.every(h => !h)) {
-        throw new Error('No valid headers found in the first 10 rows. Please ensure your sheet has column headers.');
+      if (headers.length === 0) {
+        throw new Error('No valid headers found');
       }
 
-      // Get data rows (everything after header row)
       const dataRows = rows.slice(headerRowIndex + 1);
       
-      // Convert rows to objects
       const mappedData = dataRows
         .filter(row => row && row.length > 0 && row.some(cell => cell && cell.trim() !== ''))
         .map((row, index) => {
@@ -174,8 +178,8 @@ class GoogleSheetsService {
           headers.forEach((header, colIndex) => {
             if (!header) return;
             
-            const mappedKey = COLUMN_MAPPING[header] || 
-                             header.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+            const cleanHeader = header.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+            const mappedKey = COLUMN_MAPPING[cleanHeader] || cleanHeader;
             const value = row[colIndex];
             obj[mappedKey] = value ? value.trim() : '';
           });
@@ -188,13 +192,19 @@ class GoogleSheetsService {
 
       return mappedData;
     } catch (error) {
-      console.error('❌ Error fetching Google Sheets data:', error);
+      console.error('❌ Error fetching:', error);
       throw error;
     }
   }
 
   convertToOpportunities(sheetData: SheetRow[]): any[] {
-    console.log('🔄 Converting sheet data to opportunities...');
+    console.log('🔄 Converting to opportunities...');
+    
+    // Dummy values for missing data
+    const DUMMY_VALUES = [
+      50000, 75000, 100000, 150000, 200000, 250000, 300000, 400000, 500000, 750000,
+      1000000, 1500000, 2000000, 2500000, 3000000
+    ];
     
     return sheetData.map((row, index) => {
       const parseNumber = (value: any): number => {
@@ -204,24 +214,26 @@ class GoogleSheetsService {
         return isNaN(num) ? 0 : num;
       };
 
-      const opportunityValue = parseNumber(
-        row.opportunityValue || row.opportunityvalue || row.value || row.amount || row.contractvalue
-      );
-      const probability = parseNumber(
-        row.probability || row.winprobability || row['probability%'] || row['win%']
-      );
+      // Get or assign dummy opportunity value
+      let opportunityValue = parseNumber(row.opportunityValue || row.value);
+      const valueImputed = opportunityValue === 0;
+      if (valueImputed) {
+        // Assign dummy value based on group and index
+        const baseValue = DUMMY_VALUES[index % DUMMY_VALUES.length];
+        const multiplier = row.groupClassification === 'GES' ? 1.2 : 1.0;
+        opportunityValue = Math.round(baseValue * multiplier);
+      }
 
+      // Status mapping - YOUR ACTUAL STATUSES
       const statusMapping: Record<string, string> = {
         'PRE-BID': 'Pre-bid',
         'PREBID': 'Pre-bid',
-        'PRE BID': 'Pre-bid',
-        'RFT YET TO RECEIVE': 'Pre-bid',
-        'OPEN': 'Pre-bid',
-        'BD': 'Pre-bid',
-        'EOI': 'Pre-bid',
+        'BID': 'Pre-bid',
+        'NO-BID': 'Lost/Regretted',
+        'HOLD / CLOSED': 'On Hold/Paused',
+        'HOLD': 'On Hold/Paused',
+        'CLOSED': 'Closed',
         'IN PROGRESS': 'In Progress',
-        'IN-PROGRESS': 'In Progress',
-        'INPROGRESS': 'In Progress',
         'WORKING': 'In Progress',
         'ONGOING': 'In Progress',
         'SUBMITTED': 'Submitted',
@@ -230,57 +242,53 @@ class GoogleSheetsService {
         'WON': 'Awarded',
         'LOST': 'Lost/Regretted',
         'REGRETTED': 'Lost/Regretted',
-        'HOLD': 'On Hold/Paused',
-        'ON HOLD': 'On Hold/Paused',
-        'CLOSED': 'Closed',
       };
 
-      const rawStatus = (
-        row.opportunityStatus || 
-        row.opportunitystatus || 
-        row.status || 
-        row.currentstatus || 
-        ''
-      ).toString().toUpperCase().trim();
-      
+      const rawStatus = (row.opportunityStatus || row.avenirstatus || row.tenderStatus || '').toString().toUpperCase().trim();
       const canonicalStage = statusMapping[rawStatus] || 'Pre-bid';
       
-      const finalProbability = probability || (
-        canonicalStage === 'Awarded' ? 100 : 
-        canonicalStage === 'Submitted' ? 60 : 
-        canonicalStage === 'In Progress' ? 40 : 10
-      );
+      // Probability based on stage
+      const probability = canonicalStage === 'Awarded' ? 100 : 
+                         canonicalStage === 'Submitted' ? 60 : 
+                         canonicalStage === 'In Progress' ? 40 :
+                         canonicalStage === 'Lost/Regretted' ? 0 :
+                         canonicalStage === 'On Hold/Paused' ? 20 : 10;
       
-      const expectedValue = opportunityValue * (finalProbability / 100);
+      const expectedValue = opportunityValue * (probability / 100);
 
+      // Parse dates - handle "3-Jun" format
       const parseDate = (dateStr: any): string | null => {
         if (!dateStr) return null;
         const str = dateStr.toString().trim();
-        if (!str || str === '' || str === 'undefined' || str === 'null') return null;
+        if (!str || str === '' || str === 'undefined') return null;
+        
+        // Handle "3-Jun", "15-Jul" format
+        const monthMap: Record<string, string> = {
+          'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+          'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+          'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+        };
+        
+        const match = str.match(/^(\d{1,2})-(\w{3})$/);
+        if (match) {
+          const day = match[1].padStart(2, '0');
+          const month = monthMap[match[2]] || '01';
+          return `2024-${month}-${day}`;
+        }
         
         try {
           const date = new Date(str);
           if (!isNaN(date.getTime())) {
             return date.toISOString().split('T')[0];
           }
-        } catch (e) {
-          // Invalid date
-        }
+        } catch (e) {}
         
         return null;
       };
 
-      const dateRecd = parseDate(
-        row.dateTenderReceived || row.datetenderreceived || row.receiveddate || row.datereceived || row.tenderreceived
-      );
-      const plannedDate = parseDate(
-        row.tenderPlannedSubmissionDate || row.tenderplannedsubmissiondate || 
-        row.plannedsubmissiondate || row.submissiondate || row.duedate || row.deadline
-      );
-      const submittedDate = parseDate(
-        row.tenderSubmittedDate || row.tendersubmitteddate || 
-        row.submitteddate || row.datesubmitted
-      );
+      const dateRecd = parseDate(row.dateTenderReceived || row.datetenderrecd);
+      const plannedDate = parseDate(row.tenderPlannedSubmissionDate || row.tenderplannedsubmissiondate);
+      const submittedDate = parseDate(row.tenderSubmittedDate || row.tendersubmitteddate);
 
       const today = new Date().toISOString().split('T')[0];
       
@@ -298,36 +306,29 @@ class GoogleSheetsService {
       const agedDays = daysBetween(lastContactDate, today);
 
       const willMissDeadline = plannedDate && !submittedDate && daysToPlannedSubmission <= 7;
-      const isAtRisk = (agedDays >= 30) || (finalProbability < 50 && canonicalStage === 'In Progress');
-
-      // Get values with fallbacks
-      const refNo = row.opportunityRefNo || row.opportunityrefno || row.refno || row.referencenumber || `REF-${index + 1}`;
-      const tenderNo = row.tenderNo || row.tenderno || row.tendernumber || refNo;
-      const tenderName = row.tenderName || row.tendername || row.name || row.projectname || 'Unnamed Opportunity';
-      const clientName = row.clientName || row.clientname || row.client || row.customer || 'Unknown Client';
-      const internalLead = row.internalLead || row.internallead || row.lead || row.owner || row.assignedto || '';
+      const isAtRisk = (agedDays >= 30) || (probability < 50 && canonicalStage === 'In Progress');
 
       return {
         id: row.id || `OPP-${String(index + 1).padStart(4, '0')}`,
-        opportunityRefNo: refNo,
-        tenderNo: tenderNo,
-        tenderName: tenderName,
-        clientName: clientName,
-        clientType: row.clientType || row.clienttype || 'Potential Client',
-        clientLead: row.clientLead || row.clientlead || '',
-        opportunityClassification: row.opportunityClassification || row.opportunityclassification || row.type || 'Tender',
+        opportunityRefNo: row.tenderNo || row.tenderno || `REF-${index + 1}`,
+        tenderNo: row.tenderNo || row.tenderno || `TND-${index + 1}`,
+        tenderName: row.tenderName || row.tendername || 'Unnamed Tender',
+        clientName: row.clientName || 'Unknown Client',
+        clientType: 'Potential Client',
+        clientLead: row.endUser || row.enduser || '',
+        opportunityClassification: row.tenderType || row.tendertype || 'Tender',
         opportunityStatus: rawStatus,
         canonicalStage,
-        qualificationStatus: row.qualificationStatus || row.qualificationstatus || row.qualification || 'Under Review',
-        groupClassification: row.groupClassification || row.groupclassification || row.group || row.classification || 'GES',
-        domainSubGroup: 'Detailed Engineering',
-        internalLead: internalLead,
+        qualificationStatus: row.bidDecision || row.bidnobiddecision || 'Under Review',
+        groupClassification: row.groupClassification || row.gdsges || 'GES',
+        domainSubGroup: row.projectStage || row.stageofprojectconceptfeedde || 'Detailed Engineering',
+        internalLead: row.internalLead || row.assignedperson || '',
         opportunityValue,
-        opportunityValue_imputed: !opportunityValue,
-        opportunityValue_imputation_reason: !opportunityValue ? 'Not provided in sheet' : '',
-        probability: finalProbability,
-        probability_imputed: !probability,
-        probability_imputation_reason: !probability ? `Inferred from stage: ${canonicalStage}` : '',
+        opportunityValue_imputed: valueImputed,
+        opportunityValue_imputation_reason: valueImputed ? `Dummy value assigned: $${opportunityValue.toLocaleString()}` : '',
+        probability,
+        probability_imputed: true,
+        probability_imputation_reason: `Inferred from stage: ${canonicalStage}`,
         expectedValue,
         dateTenderReceived: dateRecd,
         tenderPlannedSubmissionDate: plannedDate,
@@ -342,11 +343,11 @@ class GoogleSheetsService {
         agedDays,
         willMissDeadline: willMissDeadline || false,
         isAtRisk,
-        partnerInvolvement: !!(row.partnerName || row.partnername || row.partner),
-        partnerName: row.partnerName || row.partnername || row.partner || '',
-        country: 'UAE',
-        remarks: row.remarks || row.notes || row.comments || row.description || '',
-        awardStatus: canonicalStage === 'Awarded' ? 'AWARDED' : canonicalStage === 'Lost/Regretted' ? 'LOST' : '',
+        partnerInvolvement: false,
+        partnerName: '',
+        country: row.location || row.tenderlocationexecution || 'UAE',
+        remarks: row.remarks || row.remarksreason || '',
+        awardStatus: row.tenderResult || row.tenderresult || (canonicalStage === 'Awarded' ? 'AWARDED' : canonicalStage === 'Lost/Regretted' ? 'LOST' : ''),
       };
     });
   }
