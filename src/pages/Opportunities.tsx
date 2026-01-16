@@ -1,9 +1,14 @@
-import { useState } from 'react';
-import { useData } from '@/contexts/DataContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useMemo } from 'react';
+import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
+import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
+import { ExportButton } from '@/components/Dashboard/ExportButton';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
-import { RefreshButton } from '@/components/RefreshButton';
-import { useAutoRefresh } from '@/hooks/useAutoRefresh';
+import { Separator } from '@/components/ui/separator';
+import { Info } from 'lucide-react';
+import { Opportunity } from '@/data/opportunityData';
+import { useData } from '@/contexts/DataContext';
+import { useCurrency } from '@/contexts/CurrencyContext';
 
 interface OpportunitiesProps {
   statusFilter?: string;
@@ -11,61 +16,102 @@ interface OpportunitiesProps {
 
 const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const { opportunities } = useData();
-  
-  // Auto-refresh every 2 hours
-  useAutoRefresh(120);
+  const { formatCurrency } = useCurrency();
+  const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
+  const [filters, setFilters] = useState<FilterState>(() => ({
+    ...defaultFilters,
+    statuses: statusFilter ? [statusFilter] : [],
+  }));
 
-  const filteredOpportunities = statusFilter
-    ? opportunities.filter(opp => opp.canonicalStage === statusFilter)
-    : opportunities;
+  const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Opportunities</h1>
-          {statusFilter && (
-            <p className="text-muted-foreground">Filtered by: {statusFilter}</p>
-          )}
+          <h1 className="text-2xl font-bold">
+            {statusFilter ? `${statusFilter} Tenders` : 'All Tenders'}
+          </h1>
+          <p className="text-muted-foreground">
+            {filteredData.length} tenders found
+          </p>
         </div>
-        <RefreshButton />
+        <ExportButton data={filteredData} filename={statusFilter ? `${statusFilter.toLowerCase().replace(/\//g, '-')}-tenders` : 'all-tenders'} />
       </div>
 
-      <div className="grid gap-4">
-        {filteredOpportunities.map((opp) => (
-          <Card key={opp.id}>
-            <CardHeader>
-              <div className="flex items-start justify-between">
+      <AdvancedFilters
+        data={opportunities}
+        filters={filters}
+        onFiltersChange={setFilters}
+        onClearFilters={() => setFilters({ ...defaultFilters, statuses: statusFilter ? [statusFilter] : [] })}
+      />
+
+      <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
+
+      <Sheet open={!!selectedOpp} onOpenChange={() => setSelectedOpp(null)}>
+        <SheetContent className="w-[450px] sm:max-w-[450px] overflow-auto">
+          {selectedOpp && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="text-left">{selectedOpp.opportunityRefNo}</SheetTitle>
+              </SheetHeader>
+              <div className="mt-6 space-y-4">
                 <div>
-                  <CardTitle className="text-lg">{opp.tenderName}</CardTitle>
-                  <p className="text-sm text-muted-foreground">{opp.clientName}</p>
+                  <h3 className="font-semibold text-lg">{selectedOpp.tenderName}</h3>
+                  <p className="text-sm text-muted-foreground">{selectedOpp.clientName}</p>
                 </div>
-                <Badge>{opp.canonicalStage}</Badge>
+                
+                <div className="flex gap-2 flex-wrap">
+                  <Badge>{selectedOpp.canonicalStage}</Badge>
+                  <Badge variant="outline">{selectedOpp.groupClassification}</Badge>
+                  {selectedOpp.isAtRisk && <Badge variant="destructive">Submission Near</Badge>}
+                </div>
+
+                <Separator />
+
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Value</p>
+                    <p className="font-semibold flex items-center gap-1">
+                      {formatCurrency(selectedOpp.opportunityValue)}
+                      {selectedOpp.opportunityValue_imputed && <Info className="h-3 w-3 text-warning" />}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Probability</p>
+                    <p className="font-semibold">{selectedOpp.probability}%</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Expected Value</p>
+                    <p className="font-semibold text-success">{formatCurrency(selectedOpp.expectedValue)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Internal Lead</p>
+                    <p className="font-semibold">{selectedOpp.internalLead || 'Unassigned'}</p>
+                  </div>
+                </div>
+
+                {(selectedOpp.opportunityValue_imputed || selectedOpp.probability_imputed) && (
+                  <>
+                    <Separator />
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium flex items-center gap-1">
+                        <Info className="h-4 w-4 text-warning" />
+                        Imputation Notes
+                      </p>
+                      {selectedOpp.opportunityValue_imputed && (
+                        <p className="text-xs text-muted-foreground bg-warning/10 p-2 rounded">
+                          <strong>Value:</strong> {selectedOpp.opportunityValue_imputation_reason}
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Ref No</p>
-                  <p className="font-medium">{opp.opportunityRefNo}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Value</p>
-                  <p className="font-medium">${opp.opportunityValue.toLocaleString()}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Lead</p>
-                  <p className="font-medium">{opp.internalLead || 'Unassigned'}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Probability</p>
-                  <p className="font-medium">{opp.probability}%</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 };

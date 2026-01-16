@@ -1,4 +1,4 @@
-// Google Sheets Integration Service with AUTOMATIC Header Detection
+// Google Sheets Integration Service
 export interface SheetRow {
   [key: string]: any;
 }
@@ -31,7 +31,7 @@ const COLUMN_MAPPING: Record<string, string> = {
   'biddecision': 'bidDecision',
   'tenderplannedsubmissiondate': 'tenderPlannedSubmissionDate',
   'tendersubmitteddate': 'tenderSubmittedDate',
-  'avenirstatus': 'avenirStatus',
+  'avenirstatus': 'avenirStatus',  // Keep original status
   'opportunitystatus': 'avenirStatus',
   'remarksreason': 'remarks',
   'remarks': 'remarks',
@@ -40,50 +40,6 @@ const COLUMN_MAPPING: Record<string, string> = {
   'opportunityvalue': 'opportunityValue',
   'value': 'opportunityValue',
 };
-
-// Helper function to detect if a row looks like headers
-function isHeaderRow(row: string[]): boolean {
-  if (!row || row.length === 0) return false;
-  
-  // Check if at least 50% of cells have content
-  const nonEmptyCells = row.filter(cell => cell && cell.trim().length > 0);
-  if (nonEmptyCells.length < row.length * 0.5) return false;
-  
-  // Common header keywords
-  const headerKeywords = [
-    'tender', 'client', 'date', 'lead', 'status', 'value', 'submission',
-    'name', 'type', 'location', 'stage', 'group', 'classification',
-    'decision', 'qualification', 'remarks', 'result'
-  ];
-  
-  // Check if any cell matches header keywords
-  const hasHeaderKeywords = nonEmptyCells.some(cell => 
-    headerKeywords.some(keyword => cell.toLowerCase().includes(keyword))
-  );
-  
-  return hasHeaderKeywords && nonEmptyCells.length > 0;
-}
-
-// Helper function to find header row index
-function findHeaderRowIndex(rows: string[][]): number {
-  // Search first 15 rows for headers
-  for (let i = 0; i < Math.min(15, rows.length); i++) {
-    if (isHeaderRow(rows[i])) {
-      console.log(`✅ Found header row at index ${i}:`, rows[i].slice(0, 5).join(' | '));
-      return i;
-    }
-  }
-  
-  // Fallback: use first non-empty row
-  for (let i = 0; i < Math.min(10, rows.length); i++) {
-    if (rows[i] && rows[i].length > 0 && rows[i].some(cell => cell && cell.trim())) {
-      console.log(`⚠️ Fallback: Using row ${i} as headers`);
-      return i;
-    }
-  }
-  
-  return 0; // Default to first row
-}
 
 class GoogleSheetsService {
   private config: GoogleSheetsConfig | null = null;
@@ -124,24 +80,22 @@ class GoogleSheetsService {
         throw new Error('Sheet is empty or has no data');
       }
 
-      console.log(`📊 Total rows fetched: ${rows.length}`);
-      console.log(`📊 Sample first 5 rows:`);
-      rows.slice(0, 5).forEach((row, idx) => {
-        console.log(`Row ${idx}: ${row.slice(0, 5).join(' | ')}`);
-      });
-
-      // AUTO-DETECT header row
-      const headerRowIndex = findHeaderRowIndex(rows);
-      const headers = rows[headerRowIndex].map(h => (h || '').trim());
-
-      if (headers.length === 0) {
-        throw new Error('No valid headers found in the sheet');
+      let headerRowIndex = 0;
+      let headers: string[] = [];
+      
+      for (let i = 0; i < Math.min(10, rows.length); i++) {
+        const row = rows[i];
+        if (row && row.length > 0 && row.some(cell => cell && cell.trim() !== '')) {
+          headers = row.map(h => (h || '').trim());
+          headerRowIndex = i;
+          break;
+        }
       }
 
-      console.log(`✅ Using ${headers.length} columns from row ${headerRowIndex}`);
-      console.log(`📋 Headers detected: ${headers.slice(0, 8).join(' | ')}...`);
+      if (headers.length === 0) {
+        throw new Error('No valid headers found');
+      }
 
-      // Get data rows AFTER header row
       const dataRows = rows.slice(headerRowIndex + 1);
       
       const mappedData = dataRows
@@ -154,10 +108,7 @@ class GoogleSheetsService {
           headers.forEach((header, colIndex) => {
             if (!header) return;
             
-            // Try direct mapping first
-            let mappedKey = COLUMN_MAPPING[header.toLowerCase()];
-            
-            // If no direct match, clean and try again
+            let mappedKey = COLUMN_MAPPING[header];
             if (!mappedKey) {
               const cleanHeader = header.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
               mappedKey = COLUMN_MAPPING[cleanHeader] || cleanHeader;
@@ -170,7 +121,6 @@ class GoogleSheetsService {
           return obj;
         });
 
-      console.log(`✅ Mapped ${mappedData.length} data rows`);
       return mappedData;
     } catch (error) {
       console.error('❌ Error fetching:', error);
@@ -200,11 +150,12 @@ class GoogleSheetsService {
         opportunityValue = Math.round(baseValue * multiplier);
       }
 
+      // Status mapping - SEPARATE Lost and Regretted
       const statusMapping: Record<string, string> = {
         'PRE-BID': 'Pre-bid',
         'PREBID': 'Pre-bid',
         'BID': 'Pre-bid',
-        'NO-BID': 'Regretted',
+        'NO-BID': 'Regretted',  // NO-BID = Regretted
         'HOLD / CLOSED': 'On Hold/Paused',
         'HOLD': 'On Hold/Paused',
         'CLOSED': 'Closed',
@@ -215,13 +166,15 @@ class GoogleSheetsService {
         'TENDER SUBMITTED': 'Submitted',
         'AWARDED': 'Awarded',
         'WON': 'Awarded',
-        'LOST': 'Lost',
-        'REGRETTED': 'Regretted',
+        'LOST': 'Lost',  // LOST = Lost
+        'REGRETTED': 'Regretted',  // REGRETTED = Regretted
       };
 
       const rawStatus = (row.avenirStatus || row.opportunityStatus || row.tenderStatus || '').toString().toUpperCase().trim();
       const canonicalStage = statusMapping[rawStatus] || 'Pre-bid';
-      const expectedValue = opportunityValue;
+      
+      // NO PROBABILITY - removed completely
+      const expectedValue = opportunityValue; // Just use the value directly
 
       const parseDate = (dateStr: any): string | null => {
         if (!dateStr) return null;
@@ -277,23 +230,23 @@ class GoogleSheetsService {
         opportunityRefNo: row.tenderNo || `REF-${index + 1}`,
         tenderNo: row.tenderNo || `TND-${index + 1}`,
         tenderName: row.tenderName || 'Unnamed Tender',
-        tenderType: row.tenderType || 'Tender',
+        tenderType: row.tenderType || 'Tender',  // Tender/EOI
         clientName: row.client || 'Unknown Client',
         clientType: 'Potential Client',
         clientLead: row.endUser || '',
         opportunityClassification: row.tenderType || 'Tender',
         opportunityStatus: rawStatus,
-        avenirStatus: rawStatus,
+        avenirStatus: rawStatus,  // Keep original Avenir status
         canonicalStage,
         qualificationStatus: row.bidDecision || 'Under Review',
-        bidDecision: row.bidDecision || 'BID',
+        bidDecision: row.bidDecision || 'BID',  // BID/NO-BID column
         groupClassification: row.groupClassification || 'GES',
         domainSubGroup: row.projectStage || 'Detailed Engineering',
         internalLead: row.internalLead || '',
         opportunityValue,
         opportunityValue_imputed: valueImputed,
         opportunityValue_imputation_reason: valueImputed ? `Dummy value assigned: $${opportunityValue.toLocaleString()}` : '',
-        probability: 0,
+        probability: 0,  // Removed - set to 0
         probability_imputed: false,
         probability_imputation_reason: '',
         expectedValue,

@@ -1,17 +1,19 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { Opportunity, generateOpportunities } from '@/data/opportunityData';
 import { googleSheetsService } from '@/services/googleSheetsService';
-import { toast } from 'sonner';
 
 interface DataContextType {
   opportunities: Opportunity[];
   clearAllData: () => void;
   resetToMockData: () => void;
+  refreshFromSheets: (data: Record<string, any>[]) => void;
   isDataCleared: boolean;
+  // Google Sheets specific
   loadFromGoogleSheets: () => Promise<void>;
   isLoading: boolean;
   lastSyncTime: Date | null;
   isGoogleSheetsConnected: boolean;
+  syncError: string | null;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -22,46 +24,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [isGoogleSheetsConnected, setIsGoogleSheetsConnected] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Check if Google Sheets is configured on mount
   useEffect(() => {
-    const config = localStorage.getItem('googleSheetsConfig');
-    if (config) {
-      try {
-        const { apiKey, spreadsheetId, sheetName } = JSON.parse(config);
-        googleSheetsService.initialize(apiKey, spreadsheetId, sheetName);
-        setIsGoogleSheetsConnected(true);
-        
-        // Auto-load on startup if configured
-        loadFromGoogleSheets();
-      } catch (error) {
-        console.error('Failed to initialize Google Sheets:', error);
-      }
-    }
-  }, []);
-
-  const loadFromGoogleSheets = useCallback(async () => {
-    if (!googleSheetsService.isConfigured()) {
-      toast.error('Google Sheets not configured');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const sheetData = await googleSheetsService.fetchData();
-      const convertedOpportunities = googleSheetsService.convertToOpportunities(sheetData);
-      
-      setOpportunities(convertedOpportunities);
-      setIsDataCleared(false);
-      setLastSyncTime(new Date());
-      
-      toast.success(`Loaded ${convertedOpportunities.length} opportunities from Google Sheets`);
-    } catch (error: any) {
-      console.error('Failed to load from Google Sheets:', error);
-      toast.error(`Failed to sync: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
+    const checkGoogleSheetsConfig = () => {
+      const config = localStorage.getItem('googleSheetsConfig');
+      setIsGoogleSheetsConnected(!!config);
+    };
+    checkGoogleSheetsConfig();
   }, []);
 
   const clearAllData = useCallback(() => {
@@ -71,27 +42,70 @@ export function DataProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('syncLogs');
     localStorage.removeItem('sharePointConfig');
     localStorage.removeItem('leadMappings');
-    toast.info('All data cleared');
   }, []);
 
   const resetToMockData = useCallback(() => {
     setOpportunities(generateOpportunities());
     setIsDataCleared(false);
-    setLastSyncTime(null);
-    toast.info('Reset to mock data');
+  }, []);
+
+  const refreshFromSheets = useCallback((data: Record<string, any>[]) => {
+    // Convert sheet data to opportunities using the googleSheetsService
+    const converted = googleSheetsService.convertToOpportunities(data);
+    setOpportunities(converted as Opportunity[]);
+    setIsDataCleared(false);
+    setLastSyncTime(new Date());
+  }, []);
+
+  const loadFromGoogleSheets = useCallback(async () => {
+    if (!googleSheetsService.isConfigured()) {
+      setSyncError('Google Sheets not configured');
+      console.error('❌ Google Sheets service not configured');
+      return;
+    }
+
+    setIsLoading(true);
+    setSyncError(null);
+    
+    try {
+      console.log('🔄 Loading data from Google Sheets...');
+      const rawData = await googleSheetsService.fetchData();
+      console.log(`✅ Fetched ${rawData.length} rows from sheet`);
+      
+      const converted = googleSheetsService.convertToOpportunities(rawData);
+      console.log(`✅ Converted to ${converted.length} opportunities`);
+      
+      setOpportunities(converted as Opportunity[]);
+      setIsDataCleared(false);
+      setLastSyncTime(new Date());
+      setIsGoogleSheetsConnected(true);
+      setSyncError(null);
+      
+      console.log('✅ Google Sheets sync successful!');
+    } catch (error: any) {
+      const errorMessage = error.message || 'Failed to load from Google Sheets';
+      console.error('❌ Error:', errorMessage);
+      setSyncError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   return (
-    <DataContext.Provider value={{ 
-      opportunities, 
-      clearAllData, 
-      resetToMockData, 
-      isDataCleared,
-      loadFromGoogleSheets,
-      isLoading,
-      lastSyncTime,
-      isGoogleSheetsConnected: googleSheetsService.isConfigured()
-    }}>
+    <DataContext.Provider 
+      value={{ 
+        opportunities, 
+        clearAllData, 
+        resetToMockData, 
+        refreshFromSheets, 
+        isDataCleared,
+        loadFromGoogleSheets,
+        isLoading,
+        lastSyncTime,
+        isGoogleSheetsConnected,
+        syncError,
+      }}
+    >
       {children}
     </DataContext.Provider>
   );

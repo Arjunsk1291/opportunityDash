@@ -339,24 +339,13 @@ export const opportunities = generateOpportunities();
 
 // Calculate summary statistics
 export function calculateSummaryStats(data: Opportunity[]) {
-  // ✅ UPDATED RULE 1: Active = ONGOING, AWARDED, SUBMITTED in avenirStatus
-  const activeOpps = data.filter(o => {
-    const status = o.avenirStatus?.toUpperCase() || o.opportunityStatus?.toUpperCase() || '';
-    return ['ONGOING', 'AWARDED', 'SUBMITTED'].includes(status);
-  });
-
+  const activeOpps = data.filter(o => !['Lost/Regretted', 'Closed', 'Lost', 'Regretted'].includes(o.canonicalStage));
   const wonOpps = data.filter(o => o.canonicalStage === 'Awarded');
   const lostOpps = data.filter(o => o.awardStatus === 'LOST' || o.canonicalStage === 'Lost');
   const regrettedOpps = data.filter(o => o.opportunityStatus?.toUpperCase() === 'REGRETTED' || o.canonicalStage === 'Regretted');
   const atRiskOpps = data.filter(o => o.isAtRisk);
   
-  // ✅ UPDATED RULE 2: Pipeline Value = ONLY ONGOING and AWARDED from awardStatus
-  const pipelineOpps = data.filter(o => {
-    const result = o.awardStatus?.toUpperCase() || '';
-    return ['ONGOING', 'AWARDED'].includes(result);
-  });
-  
-  const totalPipelineValue = pipelineOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+  const totalPipelineValue = activeOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
   const weightedPipeline = activeOpps.reduce((sum, o) => sum + o.expectedValue, 0);
   const wonValue = wonOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
   const lostValue = lostOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
@@ -380,7 +369,7 @@ export function calculateSummaryStats(data: Opportunity[]) {
     atRiskCount: atRiskOpps.length,
     avgDaysToSubmission: Math.round(avgDaysToSubmission),
   };
-};
+}
 
 // Calculate funnel data
 export function calculateFunnelData(data: Opportunity[]) {

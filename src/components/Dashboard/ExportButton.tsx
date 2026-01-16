@@ -1,74 +1,63 @@
-import { Button } from '@/components/ui/button';
 import { Download } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Opportunity } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { useApproval } from '@/contexts/ApprovalContext';
 import * as XLSX from 'xlsx';
 
 interface ExportButtonProps {
-  data: any[];
+  data: Opportunity[];
   filename?: string;
 }
 
-export function ExportButton({ data, filename = 'export' }: ExportButtonProps) {
-  const { currency, convertCurrency, formatCurrency } = useCurrency();
+export function ExportButton({ data, filename = 'opportunities' }: ExportButtonProps) {
+  const { currency, convertValue } = useCurrency();
+  const { getApprovalStatus } = useApproval();
 
   const handleExport = () => {
-    if (!data || data.length === 0) {
-      alert('No data to export');
-      return;
-    }
-
     const currencySymbol = currency === 'AED' ? 'AED' : 'USD';
-
-    // Convert data to export format
-    const exportData = data.map(opp => {
-      // Convert values to selected currency
-      const value = currency === 'USD' 
-        ? opp.opportunityValue 
-        : convertCurrency(opp.opportunityValue, 'USD', 'AED');
-      
-      const expectedValue = currency === 'USD'
-        ? opp.expectedValue
-        : convertCurrency(opp.expectedValue, 'USD', 'AED');
-
-      return {
-        'Ref No': opp.opportunityRefNo,
-        'Tender Name': opp.tenderName,
-        'Client': opp.clientName,
-        'Status': opp.canonicalStage,
-        'Group': opp.groupClassification,
-        'Internal Lead': opp.internalLead,
-        [`Value (${currencySymbol})`]: Math.round(value),
-        'Probability (%)': opp.probability,
-        [`Expected Value (${currencySymbol})`]: Math.round(expectedValue),
-        'Date Received': opp.dateTenderReceived || '',
-        'Planned Submission': opp.tenderPlannedSubmissionDate || '',
-        'Submitted Date': opp.tenderSubmittedDate || '',
-        'Days Aging': opp.agedDays,
-        'At Risk': opp.isAtRisk ? 'Yes' : 'No',
-        'Partner': opp.partnerName || '',
-        'Qualification': opp.qualificationStatus,
-      };
-    });
-
-    // Create worksheet
-    const ws = XLSX.utils.json_to_sheet(exportData);
     
-    // Create workbook
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Opportunities');
+    const exportData = data.map((opp) => ({
+      'Ref No': opp.opportunityRefNo,
+      'Tender Name': opp.tenderName,
+      'Client': opp.clientName,
+      'Client Type': opp.clientType,
+      'Status': opp.canonicalStage,
+      'Group': opp.groupClassification,
+      'Lead': opp.internalLead || 'Unassigned',
+      [`Value (${currencySymbol})`]: Math.round(convertValue(opp.opportunityValue)),
+      'Probability (%)': opp.probability,
+      [`Expected Value (${currencySymbol})`]: Math.round(convertValue(opp.expectedValue)),
+      'RFP Received': opp.dateTenderReceived || '',
+      'Planned Submission': opp.tenderPlannedSubmissionDate || '',
+      'Submitted Date': opp.tenderSubmittedDate || '',
+      'Last Contact': opp.lastContactDate || '',
+      'At Risk': opp.isAtRisk ? 'Yes' : 'No',
+      'Approval Status': getApprovalStatus(opp.id) === 'approved' ? 'Approved' : 'Pending',
+      'Partner': opp.partnerName || '',
+      'Remarks': opp.remarks || '',
+    }));
 
-    // Generate filename with timestamp
-    const timestamp = new Date().toISOString().split('T')[0];
-    const fullFilename = `${filename}_${timestamp}.xlsx`;
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Opportunities');
 
-    // Download
-    XLSX.writeFile(wb, fullFilename);
+    // Auto-size columns
+    const maxWidths = Object.keys(exportData[0] || {}).map((key) => ({
+      wch: Math.max(
+        key.length,
+        ...exportData.map((row) => String(row[key as keyof typeof row] || '').length)
+      ),
+    }));
+    worksheet['!cols'] = maxWidths;
+
+    XLSX.writeFile(workbook, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (
-    <Button onClick={handleExport} variant="outline" size="sm">
-      <Download className="h-4 w-4 mr-2" />
-      Export
+    <Button variant="outline" size="sm" onClick={handleExport} className="gap-2">
+      <Download className="h-4 w-4" />
+      Export Excel
     </Button>
   );
 }

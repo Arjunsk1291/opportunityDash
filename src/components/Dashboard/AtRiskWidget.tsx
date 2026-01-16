@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, Clock } from 'lucide-react';
+import { Clock, AlertTriangle } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 
 interface AtRiskWidgetProps {
@@ -9,7 +9,7 @@ interface AtRiskWidgetProps {
 }
 
 export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
-  const atRiskItems = data
+  const submissionNearItems = data
     .filter(o => o.isAtRisk || o.willMissDeadline)
     .sort((a, b) => {
       if (a.willMissDeadline && !b.willMissDeadline) return -1;
@@ -22,16 +22,16 @@ export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-lg flex items-center gap-2">
-          <AlertTriangle className="h-5 w-5 text-warning" />
-          At Risk & Upcoming Deadlines
+          <Clock className="h-5 w-5 text-pending" />
+          Submission Near
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 max-h-[280px] overflow-auto scrollbar-thin">
-          {atRiskItems.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">No at-risk opportunities</p>
+          {submissionNearItems.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No tenders with upcoming submissions</p>
           ) : (
-            atRiskItems.map((item) => (
+            submissionNearItems.map((item) => (
               <div 
                 key={item.id} 
                 className={`flex items-center justify-between p-2 rounded-lg bg-muted/50 transition-colors ${onSelectOpportunity ? 'cursor-pointer hover:bg-muted hover:ring-1 hover:ring-primary/20' : 'hover:bg-muted'}`}
@@ -46,15 +46,15 @@ export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 ml-2">
-                  {item.willMissDeadline && (
+                  {item.willMissDeadline ? (
                     <Badge variant="destructive" className="text-xs">
-                      <Clock className="h-3 w-3 mr-1" />
-                      {item.daysToPlannedSubmission}d
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      {item.daysToPlannedSubmission}d left
                     </Badge>
-                  )}
-                  {item.isAtRisk && !item.willMissDeadline && (
-                    <Badge variant="outline" className="text-xs text-warning border-warning">
-                      {item.agedDays}d aged
+                  ) : (
+                    <Badge variant="outline" className="text-xs text-pending border-pending">
+                      <Clock className="h-3 w-3 mr-1" />
+                      {item.daysToPlannedSubmission}d left
                     </Badge>
                   )}
                 </div>

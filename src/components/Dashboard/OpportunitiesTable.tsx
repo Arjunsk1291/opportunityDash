@@ -1,34 +1,16 @@
 import { useState } from 'react';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Search, ChevronLeft, ChevronRight, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { AlertTriangle, Info, Search, CheckCircle, Clock, RotateCcw } from 'lucide-react';
+import { Opportunity, STAGE_ORDER } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useApproval } from '@/contexts/ApprovalContext';
-
-interface Opportunity {
-  id: string;
-  opportunityRefNo: string;
-  tenderName: string;
-  clientName: string;
-  canonicalStage: string;
-  internalLead: string;
-  opportunityValue: number;
-  opportunityValue_imputed: boolean;
-  probability: number;
-  expectedValue: number;
-  agedDays: number;
-  isAtRisk: boolean;
-}
+import { useAuth } from '@/contexts/AuthContext';
+import { Button } from '@/components/ui/button';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -36,209 +18,228 @@ interface OpportunitiesTableProps {
 }
 
 export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesTableProps) {
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [groupFilter, setGroupFilter] = useState<string>('all');
   const { formatCurrency } = useCurrency();
-  const { getApprovalStatus, updateApprovalStatus } = useApproval();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const { getApprovalStatus, approveOpportunity, revertApproval } = useApproval();
+  const { isAdmin, isMaster, user } = useAuth();
 
-  const filteredData = data.filter(opp =>
-    opp.tenderName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    opp.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    opp.opportunityRefNo.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredData = data.filter(opp => {
+    const matchesSearch = !search || 
+      opp.tenderName.toLowerCase().includes(search.toLowerCase()) ||
+      opp.clientName.toLowerCase().includes(search.toLowerCase()) ||
+      opp.opportunityRefNo.toLowerCase().includes(search.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || opp.canonicalStage === statusFilter;
+    const matchesGroup = groupFilter === 'all' || opp.groupClassification === groupFilter;
+    return matchesSearch && matchesStatus && matchesGroup;
+  });
 
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedData = filteredData.slice(startIndex, startIndex + itemsPerPage);
-
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      'Pre-bid': 'bg-blue-100 text-blue-800',
-      'In Progress': 'bg-yellow-100 text-yellow-800',
-      'Submitted': 'bg-purple-100 text-purple-800',
-      'Awarded': 'bg-green-100 text-green-800',
-      'Lost/Regretted': 'bg-red-100 text-red-800',
-      'On Hold/Paused': 'bg-gray-100 text-gray-800',
+  const getStatusBadge = (stage: string) => {
+    const variants: Record<string, string> = {
+      'Pre-bid': 'bg-info/20 text-info',
+      'In Progress': 'bg-warning/20 text-warning',
+      'Submitted': 'bg-pending/20 text-pending',
+      'Awarded': 'bg-success/20 text-success',
+      'Lost': 'bg-destructive/20 text-destructive',
+      'Regretted': 'bg-muted text-muted-foreground',
+      'Lost/Regretted': 'bg-destructive/20 text-destructive',
+      'On Hold/Paused': 'bg-muted text-muted-foreground',
     };
-    return colors[status] || 'bg-gray-100 text-gray-800';
+    return variants[stage] || 'bg-muted text-muted-foreground';
   };
 
-  const getApprovalIcon = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
-      case 'rejected':
-        return <XCircle className="h-4 w-4 text-red-600" />;
-      case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-600" />;
-      default:
-        return <Clock className="h-4 w-4 text-gray-400" />;
+  const handleApprovalChange = (oppId: string, value: string) => {
+    if (!user) return;
+    if (value === 'approved') {
+      approveOpportunity(oppId, user.displayName, user.role);
     }
   };
 
-  const getApprovalBadgeColor = (status: string) => {
-    switch (status) {
-      case 'approved':
-        return 'bg-green-100 text-green-800';
-      case 'rejected':
-        return 'bg-red-100 text-red-800';
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
+  const handleRevertApproval = (oppId: string) => {
+    if (!user || !isMaster) return;
+    revertApproval(oppId, user.displayName, user.role);
+  };
+
+  const getTenderType = (opp: Opportunity): string => {
+    // Check opportunityClassification for EOI or Tender type
+    const classification = opp.opportunityClassification?.toLowerCase() || '';
+    if (classification.includes('eoi')) return 'EOI';
+    if (classification.includes('tender')) return 'Tender';
+    return opp.opportunityClassification || '—';
+  };
+
+  const getBidNoBid = (opp: Opportunity): 'Bid' | 'No Bid' | 'Pending' => {
+    // Determine based on qualification status or explicit field
+    if (opp.qualificationStatus?.toLowerCase().includes('qualified')) return 'Bid';
+    if (opp.qualificationStatus?.toLowerCase().includes('not qualified')) return 'No Bid';
+    if (opp.canonicalStage === 'Lost/Regretted' || opp.canonicalStage === 'On Hold/Paused') return 'No Bid';
+    if (opp.canonicalStage === 'Awarded' || opp.canonicalStage === 'Submitted') return 'Bid';
+    return 'Pending';
   };
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="flex-1">
+      <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle>All Opportunities ({filteredData.length})</CardTitle>
+          <CardTitle className="text-lg">Tenders</CardTitle>
           <div className="flex items-center gap-2">
             <div className="relative">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search opportunities..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="pl-8 w-64"
-              />
+              <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 w-48 h-9" />
             </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-32 h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                {STAGE_ORDER.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                <SelectItem value="Lost/Regretted">Lost</SelectItem>
+                <SelectItem value="On Hold/Paused">On Hold</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={groupFilter} onValueChange={setGroupFilter}>
+              <SelectTrigger className="w-24 h-9"><SelectValue placeholder="Group" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="GES">GES</SelectItem>
+                <SelectItem value="GDS">GDS</SelectItem>
+                <SelectItem value="GTN">GTN</SelectItem>
+                <SelectItem value="GTS">GTS</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="rounded-md border overflow-x-auto">
+      <CardContent className="p-0">
+        <div className="max-h-[400px] overflow-auto scrollbar-thin">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-card z-10">
               <TableRow>
-                <TableHead>Ref No</TableHead>
+                <TableHead className="w-24">Ref No.</TableHead>
                 <TableHead>Tender Name</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Client</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Approval</TableHead>
+                <TableHead className="font-bold">RFP Received</TableHead>
                 <TableHead>Lead</TableHead>
                 <TableHead className="text-right">Value</TableHead>
-                <TableHead className="text-right">Probability</TableHead>
-                <TableHead className="text-right">Expected Value</TableHead>
-                <TableHead className="text-right">Days Aging</TableHead>
+                <TableHead className="text-right">Prob.</TableHead>
+                <TableHead>Bid/No Bid</TableHead>
+                <TableHead>Approval</TableHead>
+                <TableHead className="w-16"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedData.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={10} className="text-center text-muted-foreground">
-                    No opportunities found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                paginatedData.map((opp) => {
-                  const approvalStatus = getApprovalStatus(opp.id);
-                  
-                  return (
-                    <TableRow
-                      key={opp.id}
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => onSelectOpportunity(opp)}
-                    >
-                      <TableCell className="font-medium">{opp.opportunityRefNo}</TableCell>
-                      <TableCell className="max-w-xs truncate">{opp.tenderName}</TableCell>
-                      <TableCell>{opp.clientName}</TableCell>
-                      <TableCell>
-                        <Badge className={getStatusColor(opp.canonicalStage)} variant="secondary">
-                          {opp.canonicalStage}
-                        </Badge>
-                      </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
+              {filteredData.slice(0, 50).map((opp) => {
+                const approvalStatus = getApprovalStatus(opp.id);
+                const bidNoBid = getBidNoBid(opp);
+                return (
+                  <TableRow key={opp.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectOpportunity(opp)}>
+                    <TableCell className="font-mono text-xs">{opp.opportunityRefNo}</TableCell>
+                    <TableCell className="max-w-[200px]">
+                      <span className="text-primary hover:underline font-medium truncate block" title={opp.tenderName}>
+                        {opp.tenderName}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={getTenderType(opp) === 'EOI' ? 'outline' : 'secondary'} className="text-xs">
+                        {getTenderType(opp)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-[120px] truncate">{opp.clientName}</TableCell>
+                    <TableCell><Badge className={getStatusBadge(opp.canonicalStage)}>{opp.canonicalStage}</Badge></TableCell>
+                    <TableCell className="font-bold text-sm">
+                      {opp.dateTenderReceived || <span className="text-muted-foreground font-normal">—</span>}
+                    </TableCell>
+                    <TableCell>{opp.internalLead || <span className="text-muted-foreground text-xs">Unassigned</span>}</TableCell>
+                    <TableCell className="text-right font-mono">
+                      <div className="flex items-center justify-end gap-1">
+                        {formatCurrency(opp.opportunityValue)}
+                        {opp.opportunityValue_imputed && (
+                          <Tooltip>
+                            <TooltipTrigger><Info className="h-3 w-3 text-warning" /></TooltipTrigger>
+                            <TooltipContent className="max-w-xs"><p className="text-xs">{opp.opportunityValue_imputation_reason}</p></TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">{opp.probability}%</TableCell>
+                    <TableCell>
+                      <Badge 
+                        variant={bidNoBid === 'Bid' ? 'default' : bidNoBid === 'No Bid' ? 'destructive' : 'secondary'}
+                        className="text-xs"
+                      >
+                        {bidNoBid}
+                      </Badge>
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {approvalStatus === 'approved' ? (
+                        <div className="flex items-center gap-1">
+                          <Badge className="bg-success/20 text-success gap-1">
+                            <CheckCircle className="h-3 w-3" />
+                            Approved
+                          </Badge>
+                          {isMaster && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-6 w-6"
+                                  onClick={() => handleRevertApproval(opp.id)}
+                                >
+                                  <RotateCcw className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Revert to Pending (Master only)</TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                      ) : isAdmin ? (
                         <Select
                           value={approvalStatus}
-                          onValueChange={(value) => updateApprovalStatus(opp.id, value as any)}
+                          onValueChange={(value) => handleApprovalChange(opp.id, value)}
                         >
-                          <SelectTrigger className="w-32">
-                            <div className="flex items-center gap-2">
-                              {getApprovalIcon(approvalStatus)}
-                              <SelectValue />
-                            </div>
+                          <SelectTrigger className="h-7 w-[100px] text-xs">
+                            <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="pending">
-                              <div className="flex items-center gap-2">
-                                <Clock className="h-4 w-4 text-yellow-600" />
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
                                 Pending
-                              </div>
+                              </span>
                             </SelectItem>
                             <SelectItem value="approved">
-                              <div className="flex items-center gap-2">
-                                <CheckCircle className="h-4 w-4 text-green-600" />
+                              <span className="flex items-center gap-1">
+                                <CheckCircle className="h-3 w-3" />
                                 Approved
-                              </div>
-                            </SelectItem>
-                            <SelectItem value="rejected">
-                              <div className="flex items-center gap-2">
-                                <XCircle className="h-4 w-4 text-red-600" />
-                                Rejected
-                              </div>
+                              </span>
                             </SelectItem>
                           </SelectContent>
                         </Select>
-                      </TableCell>
-                      <TableCell>{opp.internalLead || '-'}</TableCell>
-                      <TableCell className={`text-right ${opp.opportunityValue_imputed ? 'text-blue-600 font-semibold' : ''}`}>
-                        {formatCurrency(opp.opportunityValue)}
-                        {opp.opportunityValue_imputed && (
-                          <span className="ml-1 text-xs">(dummy)</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">{opp.probability}%</TableCell>
-                      <TableCell className={`text-right ${opp.opportunityValue_imputed ? 'text-blue-600' : ''}`}>
-                        {formatCurrency(opp.expectedValue)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {opp.isAtRisk && <Badge variant="destructive" className="mr-2">At Risk</Badge>}
-                        {opp.agedDays} days
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
+                      ) : (
+                        <Badge variant="secondary" className="gap-1">
+                          <Clock className="h-3 w-3" />
+                          Pending
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {opp.isAtRisk && <AlertTriangle className="h-4 w-4 text-warning" />}
+                        {opp.willMissDeadline && <AlertTriangle className="h-4 w-4 text-destructive" />}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
-
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-4">
-            <p className="text-sm text-muted-foreground">
-              Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredData.length)} of {filteredData.length} opportunities
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
-              <span className="text-sm">
-                Page {currentPage} of {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
+        <div className="p-3 text-xs text-muted-foreground border-t">
+          Showing {Math.min(filteredData.length, 50)} of {filteredData.length} tenders
+        </div>
       </CardContent>
     </Card>
   );

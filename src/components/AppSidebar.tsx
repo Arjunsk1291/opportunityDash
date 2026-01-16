@@ -43,7 +43,7 @@ import { Badge } from "@/components/ui/badge";
 
 const mainNavItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "All Opportunities", url: "/opportunities", icon: FileText },
+  { title: "All Tenders", url: "/opportunities", icon: FileText },
   { title: "Tenders", url: "/tenders", icon: FileSpreadsheet },
   { title: "Clients", url: "/clients", icon: Building2 },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
@@ -85,8 +85,8 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="text-sm font-semibold">Pipeline Manager</span>
-              <span className="text-xs text-muted-foreground">Opportunity Tracking</span>
+              <span className="text-sm font-semibold">Tender Manager</span>
+              <span className="text-xs text-muted-foreground">Tender Tracking</span>
             </div>
           )}
         </div>
