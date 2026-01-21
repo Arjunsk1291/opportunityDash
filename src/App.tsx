@@ -17,6 +17,7 @@ import Clients from "./pages/Clients";
 import Analytics from "./pages/Analytics";
 import Admin from "./pages/Admin";
 import Login from "./pages/Login";
+import AuthCallback from "./pages/AuthCallback";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,7 +26,6 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <CurrencyProvider>
-        {/* ✅ FIXED: DataProvider MUST come before ApprovalProvider */}
         <DataProvider>
           <ApprovalProvider>
             <TooltipProvider>
@@ -34,6 +34,7 @@ const App = () => (
               <BrowserRouter>
                 <Routes>
                   <Route path="/login" element={<Login />} />
+                  <Route path="/auth/callback" element={<AuthCallback />} />
                   <Route
                     path="/*"
                     element={
@@ -47,7 +48,6 @@ const App = () => (
                             <Route path="/analytics" element={<Analytics />} />
                             <Route path="/master" element={<Admin />} />
                             
-                            {/* Status-based routes */}
                             <Route path="/status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />
                             <Route path="/status/in-progress" element={<Opportunities statusFilter="In Progress" />} />
                             <Route path="/status/submitted" element={<Opportunities statusFilter="Submitted" />} />
@@ -55,7 +55,6 @@ const App = () => (
                             <Route path="/status/lost" element={<Opportunities statusFilter="Lost/Regretted" />} />
                             <Route path="/status/on-hold" element={<Opportunities statusFilter="On Hold/Paused" />} />
                             
-                            {/* Role-based routes */}
                             <Route path="/my-pipeline" element={<Opportunities />} />
                             <Route path="/team" element={<Analytics />} />
                             <Route path="/at-risk" element={<Opportunities />} />

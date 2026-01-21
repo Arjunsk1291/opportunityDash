@@ -4,9 +4,12 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import jwt from 'jsonwebtoken';
 import approvalDb from './approvalDb.js';
 import GoogleSheetsConfig from './models/GoogleSheetsConfig.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
+import AuthorizedUser from './models/AuthorizedUser.js';
+import LoginLog from './models/LoginLog.js';
 import { fetchGoogleSheetData, mapSheetRowToOpportunity } from './services/googleSheetsService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,6 +19,8 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
+const AZURE_CLIENT_ID = process.env.AZURE_CLIENT_ID;
+const AZURE_TENANT_ID = process.env.AZURE_TENANT_ID;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -32,6 +37,302 @@ const mapIdField = (doc) => {
     id: doc._id?.toString() || doc._id || null,
   };
 };
+
+// ===== AUTH MIDDLEWARE =====
+const verifyToken = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing authorization token' });
+    }
+
+    const token = authHeader.substring(7);
+    
+    // Verify token signature (basic verification)
+    const decoded = jwt.decode(token, { complete: true });
+    if (!decoded) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    const email = decoded.payload.preferred_username || decoded.payload.email;
+    if (!email) {
+      return res.status(401).json({ error: 'Token missing email claim' });
+    }
+
+    // Check if user is authorized
+    const user = await AuthorizedUser.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(403).json({ error: 'User not authorized' });
+    }
+
+    if (user.status === 'rejected') {
+      return res.status(403).json({ error: 'User access has been rejected' });
+    }
+
+    if (user.status === 'pending') {
+      return res.status(403).json({ error: 'User access pending approval' });
+    }
+
+    req.user = {
+      email: email.toLowerCase(),
+      role: user.role,
+      userId: user._id,
+    };
+
+    next();
+  } catch (error) {
+    console.error('Token verification error:', error.message);
+    res.status(401).json({ error: 'Token verification failed' });
+  }
+};
+
+// ===== OAUTH ENDPOINTS =====
+
+// Verify Azure token and check authorization
+app.post('/api/auth/verify-token', async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: 'Token is required' });
+    }
+
+    const decoded = jwt.decode(token, { complete: true });
+    if (!decoded) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    const email = decoded.payload.preferred_username || decoded.payload.email;
+    if (!email) {
+      return res.status(401).json({ error: 'Token missing email' });
+    }
+
+    const user = await AuthorizedUser.findOne({ email: email.toLowerCase() });
+    
+    if (!user) {
+      return res.status(403).json({ error: 'User not authorized', status: 'not_found' });
+    }
+
+    if (user.status === 'rejected') {
+      return res.status(403).json({ error: 'User access rejected', status: 'rejected' });
+    }
+
+    if (user.status === 'pending') {
+      return res.status(403).json({ error: 'User access pending', status: 'pending' });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        email: user.email,
+        role: user.role,
+        status: user.status,
+      },
+    });
+  } catch (error) {
+    console.error('Token verification error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Record login
+app.post('/api/auth/login', verifyToken, async (req, res) => {
+  try {
+    const loginLog = new LoginLog({
+      email: req.user.email,
+      role: req.user.role,
+      ipAddress: req.ip,
+    });
+
+    await loginLog.save();
+
+    const user = await AuthorizedUser.findOne({ email: req.user.email });
+    if (user) {
+      user.lastLogin = new Date();
+      await user.save();
+    }
+
+    res.json({ success: true, message: 'Login recorded' });
+  } catch (error) {
+    console.error('Login record error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get current user
+app.get('/api/auth/user', verifyToken, async (req, res) => {
+  try {
+    const user = await AuthorizedUser.findOne({ email: req.user.email });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      lastLogin: user.lastLogin,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all authorized users (Master only)
+app.get('/api/users/authorized', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can view this' });
+    }
+
+    const users = await AuthorizedUser.find().sort({ createdAt: -1 });
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Approve pending user (Master only)
+app.post('/api/users/approve', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can approve' });
+    }
+
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const user = await AuthorizedUser.findOneAndUpdate(
+      { email: email.toLowerCase() },
+      {
+        status: 'approved',
+        approvedBy: req.user.email,
+        approvedAt: new Date(),
+      },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    console.log('✅ User approved:', email, 'by', req.user.email);
+    res.json({ success: true, user });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reject user (Master only)
+app.post('/api/users/reject', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can reject' });
+    }
+
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const user = await AuthorizedUser.findOneAndUpdate(
+      { email: email.toLowerCase() },
+      {
+        status: 'rejected',
+        approvedBy: req.user.email,
+        approvedAt: new Date(),
+      },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    console.log('❌ User rejected:', email, 'by', req.user.email);
+    res.json({ success: true, user });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remove approved user (Master only)
+app.delete('/api/users/remove', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can remove users' });
+    }
+
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const result = await AuthorizedUser.deleteOne({ email: email.toLowerCase() });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    console.log('🗑️ User removed:', email, 'by', req.user.email);
+    res.json({ success: true, message: 'User removed' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Seed authorized users from environment (run once)
+app.post('/api/users/seed', async (req, res) => {
+  try {
+    const masterEmails = (process.env.MASTER_USERS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    const adminEmails = (process.env.ADMIN_USERS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    const basicEmails = (process.env.BASIC_USERS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+
+    const usersToAdd = [
+      ...masterEmails.map(email => ({ email, role: 'Master', status: 'approved' })),
+      ...adminEmails.map(email => ({ email, role: 'Admin', status: 'approved' })),
+      ...basicEmails.map(email => ({ email, role: 'Basic', status: 'approved' })),
+    ];
+
+    if (usersToAdd.length === 0) {
+      return res.status(400).json({ error: 'No users configured in environment variables' });
+    }
+
+    // Upsert users
+    const results = await Promise.all(
+      usersToAdd.map(userData =>
+        AuthorizedUser.findOneAndUpdate(
+          { email: userData.email },
+          userData,
+          { upsert: true, new: true }
+        )
+      )
+    );
+
+    console.log('✅ Seeded', results.length, 'authorized users');
+    res.json({ success: true, count: results.length, users: results });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Manual cleanup of old login logs (Master only)
+app.post('/api/logs/cleanup', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can cleanup logs' });
+    }
+
+    const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+    const result = await LoginLog.deleteMany({ loginTime: { $lt: fifteenDaysAgo } });
+
+    console.log('🗑️ Cleaned up', result.deletedCount, 'old login logs');
+    res.json({ success: true, deletedCount: result.deletedCount });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ===== APPROVALS =====
 app.get('/api/approvals', async (req, res) => {
@@ -127,12 +428,12 @@ app.post('/api/google-sheets/config', async (req, res) => {
     config.isAutoRefreshEnabled = true;
     
     const saved = await config.save();
-    console.log(`✅ Config saved by ${config.configSavedBy} at ${config.lastSavedTime}`);
+    console.log('✅ Config saved by ' + config.configSavedBy + ' at ' + config.lastSavedTime);
     
     res.json({ 
       success: true, 
       config: saved,
-      message: `Configuration saved successfully at ${config.lastSavedTime.toLocaleTimeString()}`
+      message: 'Configuration saved successfully at ' + config.lastSavedTime.toLocaleTimeString()
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -169,16 +470,16 @@ app.post('/api/google-sheets/sync', async (req, res) => {
     
     console.log('📋 CONFIG FOUND, fetching data...');
     const { headerRowIndex, rows, headers } = await fetchGoogleSheetData(config.apiKey, config.spreadsheetId, config.sheetName);
-    console.log(`📍 Got ${rows.length} rows, headers at row ${headerRowIndex}`);
+    console.log('📍 Got ' + rows.length + ' rows, headers at row ' + headerRowIndex);
     
     const dataRows = rows.slice(headerRowIndex + 1);
-    console.log(`📊 Processing ${dataRows.length} data rows`);
+    console.log('📊 Processing ' + dataRows.length + ' data rows');
     
     const columnMapping = {};
     Object.entries(config.columnMapping).forEach(([fieldName, colNum]) => {
       if (colNum) {
         columnMapping[fieldName] = parseInt(colNum);
-        console.log(`  ✅ ${fieldName} -> column ${colNum}`);
+        console.log('  ✅ ' + fieldName + ' -> column ' + colNum);
       }
     });
     
@@ -198,18 +499,18 @@ app.post('/api/google-sheets/sync', async (req, res) => {
           });
         }
       } catch (e) {
-        console.error(`❌ Error mapping row ${index}:`, e.message);
+        console.error('❌ Error mapping row ' + index + ':', e.message);
       }
     });
     
-    console.log(`💾 Inserting ${syncedData.length} opportunities...`);
+    console.log('💾 Inserting ' + syncedData.length + ' opportunities...');
     await SyncedOpportunity.insertMany(syncedData);
     console.log('✅ INSERT COMPLETE');
     
     const updatedConfig = await GoogleSheetsConfig.findOne();
     if (updatedConfig) {
       updatedConfig.lastSyncTime = new Date();
-      updatedConfig.lastSyncStatus = `Synced ${syncedData.length} opportunities`;
+      updatedConfig.lastSyncStatus = 'Synced ' + syncedData.length + ' opportunities';
       updatedConfig.isActive = true;
       await updatedConfig.save();
       console.log('✅ CONFIG UPDATED');
@@ -219,7 +520,7 @@ app.post('/api/google-sheets/sync', async (req, res) => {
     res.json({ 
       success: true, 
       syncedCount: syncedData.length,
-      message: `Synced ${syncedData.length} opportunities`,
+      message: 'Synced ' + syncedData.length + ' opportunities',
       lastSyncTime: new Date(),
     });
   } catch (error) {
@@ -293,15 +594,15 @@ app.post('/api/google-sheets/auto-sync', async (req, res) => {
     await SyncedOpportunity.insertMany(syncedData);
     
     config.lastSyncTime = new Date();
-    config.lastSyncStatus = `Auto-synced ${syncedData.length} opportunities`;
+    config.lastSyncStatus = 'Auto-synced ' + syncedData.length + ' opportunities';
     await config.save();
     
-    console.log(`✅ AUTO-SYNC COMPLETE: ${syncedData.length} opportunities`);
+    console.log('✅ AUTO-SYNC COMPLETE: ' + syncedData.length + ' opportunities');
     
     res.json({ 
       success: true, 
       syncedCount: syncedData.length,
-      message: `Auto-synced ${syncedData.length} opportunities`,
+      message: 'Auto-synced ' + syncedData.length + ' opportunities',
       lastSyncTime: new Date(),
     });
   } catch (error) {
@@ -320,5 +621,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Approval server running on http://localhost:${PORT}`);
+  console.log('✅ Approval server running on http://localhost:' + PORT);
 });

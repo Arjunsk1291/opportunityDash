@@ -1,109 +1,96 @@
-import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { msalInstance, loginRequest } from '@/config/msalConfig';
 import { useAuth } from '@/contexts/AuthContext';
-import { Lock, User, AlertCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AlertCircle, Loader2 } from 'lucide-react';
 
-const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+export default function Login() {
   const navigate = useNavigate();
-  const location = useLocation();
+  const { isAuthenticated, isLoading } = useAuth();
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
+  useEffect(() => {
+    if (isAuthenticated && !isLoading) {
+      navigate('/');
+    }
+  }, [isAuthenticated, isLoading, navigate]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setIsLoading(true);
+  const handleMicrosoftLogin = async () => {
+    try {
+      setIsSigningIn(true);
+      setError(null);
 
-    // Simulate network delay
-    await new Promise((resolve) => setTimeout(resolve, 500));
+      const loginResponse = await msalInstance.loginPopup(loginRequest);
 
-    const result = login(email, password);
-    setIsLoading(false);
-
-    if (result.success) {
-      navigate(from, { replace: true });
-    } else {
-      setError(result.error || 'Login failed');
+      if (loginResponse) {
+        // Redirect to auth callback which will handle token validation
+        navigate('/auth/callback');
+      }
+    } catch (err: any) {
+      console.error('Login error:', err);
+      const errorMsg = err.errorCode === 'user_cancelled_login'
+        ? 'Login was cancelled'
+        : err.error?.message || 'Failed to sign in with Microsoft. Please try again.';
+      setError(errorMsg);
+      setIsSigningIn(false);
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div className="flex items-center justify-center min-h-screen bg-background">
       <Card className="w-full max-w-md">
-        <CardHeader className="text-center space-y-2">
-          <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-2">
-            <Lock className="h-6 w-6 text-primary" />
-          </div>
-          <CardTitle className="text-2xl">Welcome Back</CardTitle>
-          <CardDescription>Sign in to access the Opportunity Dashboard</CardDescription>
+        <CardHeader className="space-y-2">
+          <CardTitle className="text-2xl">Opportunity Dashboard</CardTitle>
+          <CardDescription>Sign in with your Microsoft 365 account</CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
+        <CardContent className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <Button
+            onClick={handleMicrosoftLogin}
+            disabled={isSigningIn}
+            size="lg"
+            className="w-full"
+            variant="default"
+          >
+            {isSigningIn ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Signing in...
+              </>
+            ) : (
+              <>
+                <svg className="mr-2 h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M11.4 24H0V12.6h11.4V24ZM24 24H12.6V12.6H24V24ZM11.4 11.4H0V0h11.4v11.4Zm12.6 0H12.6V0H24v11.4Z" />
+                </svg>
+                Sign in with Microsoft
+              </>
             )}
+          </Button>
 
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10"
-                  required
-                />
-              </div>
-            </div>
-
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Signing in...' : 'Sign In'}
-            </Button>
-          </form>
-
-          <div className="mt-6 p-4 bg-muted rounded-lg">
-            <p className="text-xs font-medium text-muted-foreground mb-2">Demo Credentials:</p>
-            <div className="space-y-1 text-xs">
-              <p><strong>Admin:</strong> admin@example.com / admin123</p>
-              <p><strong>Basic User:</strong> user@example.com / user123</p>
-            </div>
+          <div className="text-center text-sm text-muted-foreground">
+            <p>Only authorized users can access this application.</p>
+            <p className="mt-2">Contact your administrator if you need access.</p>
           </div>
         </CardContent>
       </Card>
     </div>
   );
-};
-
-export default Login;
+}

@@ -1,12 +1,11 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 
-export type UserRole = 'master' | 'admin' | 'basic';
+export type UserRole = 'Master' | 'Admin' | 'Basic';
 
 export interface User {
-  id: string;
   email: string;
-  displayName: string;
   role: UserRole;
+  lastLogin?: Date;
 }
 
 interface AuthContextType {
@@ -14,127 +13,109 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isMaster: boolean;
   isAdmin: boolean;
-  login: (email: string, password: string) => { success: boolean; error?: string };
+  isLoading: boolean;
   logout: () => void;
-  getAllUsers: () => User[];
-  updateUserRole: (userId: string, newRole: UserRole) => void;
+  token: string | null;
+  setAuthToken: (token: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const INITIAL_USERS: { email: string; password: string; user: User }[] = [
-  {
-    email: 'master@example.com',
-    password: 'master123',
-    user: {
-      id: '0',
-      email: 'master@example.com',
-      displayName: 'Master User',
-      role: 'master',
-    },
-  },
-  {
-    email: 'admin@example.com',
-    password: 'admin123',
-    user: {
-      id: '1',
-      email: 'admin@example.com',
-      displayName: 'Admin User',
-      role: 'admin',
-    },
-  },
-  {
-    email: 'user@example.com',
-    password: 'user123',
-    user: {
-      id: '2',
-      email: 'user@example.com',
-      displayName: 'Basic User',
-      role: 'basic',
-    },
-  },
-];
-
-function loadUsers(): typeof INITIAL_USERS {
-  const saved = localStorage.getItem('demo_users');
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch {
-      return INITIAL_USERS;
-    }
-  }
-  return INITIAL_USERS;
-}
-
-function persistUsers(users: typeof INITIAL_USERS) {
-  localStorage.setItem('demo_users', JSON.stringify(users));
-}
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState<typeof INITIAL_USERS>(loadUsers);
-  const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('auth_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Check if user is already logged in on mount
   useEffect(() => {
-    persistUsers(users);
-  }, [users]);
+    const checkAuth = async () => {
+      try {
+        const savedToken = sessionStorage.getItem('oauth_token');
+        if (savedToken) {
+          // Verify token with backend
+          const response = await fetch(API_URL + '/auth/verify-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: savedToken }),
+          });
 
-  const login = useCallback((email: string, password: string): { success: boolean; error?: string } => {
-    const foundUser = users.find(
-      (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-    );
+          if (response.ok) {
+            const data = await response.json();
+            setUser(data.user);
+            setToken(savedToken);
+          } else {
+            // Token invalid, clear it
+            sessionStorage.removeItem('oauth_token');
+          }
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-    if (foundUser) {
-      setUser(foundUser.user);
-      localStorage.setItem('auth_user', JSON.stringify(foundUser.user));
-      return { success: true };
-    }
-
-    return { success: false, error: 'Invalid email or password' };
-  }, [users]);
+    checkAuth();
+  }, []);
 
   const logout = useCallback(() => {
     setUser(null);
-    localStorage.removeItem('auth_user');
-    sessionStorage.removeItem('adminAuthenticated');
+    setToken(null);
+    sessionStorage.removeItem('oauth_token');
+    localStorage.removeItem('msal_account_filter');
   }, []);
 
-  const getAllUsers = useCallback((): User[] => {
-    return users.map((u) => u.user);
-  }, [users]);
+  const setAuthToken = useCallback(async (newToken: string) => {
+    try {
+      // Verify token with backend
+      const response = await fetch(API_URL + '/auth/verify-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: newToken }),
+      });
 
-  const updateUserRole = useCallback((userId: string, newRole: UserRole) => {
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.user.id === userId ? { ...u, user: { ...u.user, role: newRole } } : u
-      )
-    );
-    setUser((current) => {
-      if (current && current.id === userId) {
-        const updated = { ...current, role: newRole };
-        localStorage.setItem('auth_user', JSON.stringify(updated));
-        return updated;
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error);
       }
-      return current;
-    });
+
+      const data = await response.json();
+      setUser(data.user);
+      setToken(newToken);
+      sessionStorage.setItem('oauth_token', newToken);
+
+      // Record login
+      await fetch(API_URL + '/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + newToken,
+        },
+      });
+    } catch (error) {
+      console.error('Token validation error:', error);
+      throw error;
+    }
   }, []);
 
-  const isAuthenticated = user !== null;
-  const isMaster = user?.role === 'master';
-  const isAdmin = user?.role === 'admin' || user?.role === 'master';
+  const isAuthenticated = user !== null && token !== null;
+  const isMaster = user?.role === 'Master';
+  const isAdmin = user?.role === 'Admin' || user?.role === 'Master';
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, isMaster, isAdmin, login, logout, getAllUsers, updateUserRole }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated,
+        isMaster,
+        isAdmin,
+        isLoading,
+        logout,
+        token,
+        setAuthToken,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
