@@ -1,4 +1,6 @@
 import React from "react";
+import { MsalProvider } from "@azure/msal-react";
+import { msalInstance } from "@/config/msalConfig";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -23,56 +25,58 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <CurrencyProvider>
-        <DataProvider>
-          <ApprovalProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Sonner />
-              <BrowserRouter>
-                <Routes>
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/auth/callback" element={<AuthCallback />} />
-                  <Route
-                    path="/*"
-                    element={
-                      <ProtectedRoute>
-                        <Layout>
-                          <Routes>
-                            <Route path="/" element={<Dashboard />} />
-                            <Route path="/opportunities" element={<Opportunities />} />
-                            <Route path="/tenders" element={<Tenders />} />
-                            <Route path="/clients" element={<Clients />} />
-                            <Route path="/analytics" element={<Analytics />} />
-                            <Route path="/master" element={<Admin />} />
-                            
-                            <Route path="/status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />
-                            <Route path="/status/in-progress" element={<Opportunities statusFilter="In Progress" />} />
-                            <Route path="/status/submitted" element={<Opportunities statusFilter="Submitted" />} />
-                            <Route path="/status/awarded" element={<Opportunities statusFilter="Awarded" />} />
-                            <Route path="/status/lost" element={<Opportunities statusFilter="Lost/Regretted" />} />
-                            <Route path="/status/on-hold" element={<Opportunities statusFilter="On Hold/Paused" />} />
-                            
-                            <Route path="/my-pipeline" element={<Opportunities />} />
-                            <Route path="/team" element={<Analytics />} />
-                            <Route path="/at-risk" element={<Opportunities />} />
-                            
-                            <Route path="*" element={<NotFound />} />
-                          </Routes>
-                        </Layout>
-                      </ProtectedRoute>
-                    }
-                  />
-                </Routes>
-              </BrowserRouter>
-            </TooltipProvider>
-          </ApprovalProvider>
-        </DataProvider>
-      </CurrencyProvider>
-    </AuthProvider>
-  </QueryClientProvider>
+  <MsalProvider instance={msalInstance}>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <CurrencyProvider>
+          <DataProvider>
+            <ApprovalProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Sonner />
+                <BrowserRouter>
+                  <Routes>
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/auth/callback" element={<AuthCallback />} />
+                    <Route
+                      path="/*"
+                      element={
+                        <ProtectedRoute>
+                          <Layout>
+                            <Routes>
+                              <Route path="/" element={<Dashboard />} />
+                              <Route path="/opportunities" element={<Opportunities />} />
+                              <Route path="/tenders" element={<Tenders />} />
+                              <Route path="/clients" element={<Clients />} />
+                              <Route path="/analytics" element={<Analytics />} />
+                              <Route path="/master" element={<Admin />} />
+                              
+                              <Route path="/status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />
+                              <Route path="/status/in-progress" element={<Opportunities statusFilter="In Progress" />} />
+                              <Route path="/status/submitted" element={<Opportunities statusFilter="Submitted" />} />
+                              <Route path="/status/awarded" element={<Opportunities statusFilter="Awarded" />} />
+                              <Route path="/status/lost" element={<Opportunities statusFilter="Lost/Regretted" />} />
+                              <Route path="/status/on-hold" element={<Opportunities statusFilter="On Hold/Paused" />} />
+                              
+                              <Route path="/my-pipeline" element={<Opportunities />} />
+                              <Route path="/team" element={<Analytics />} />
+                              <Route path="/at-risk" element={<Opportunities />} />
+                              
+                              <Route path="*" element={<NotFound />} />
+                            </Routes>
+                          </Layout>
+                        </ProtectedRoute>
+                      }
+                    />
+                  </Routes>
+                </BrowserRouter>
+              </TooltipProvider>
+            </ApprovalProvider>
+          </DataProvider>
+        </CurrencyProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  </MsalProvider>
 );
 
 export default App;
