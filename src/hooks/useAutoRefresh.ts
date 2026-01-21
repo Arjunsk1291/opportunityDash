@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useData } from '@/contexts/DataContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
-const AUTO_REFRESH_INTERVAL = 10 * 60 * 1000; // 10 minutes in milliseconds
+const AUTO_REFRESH_INTERVAL = 10 * 60 * 1000;
 
 export function useAutoRefresh() {
   const { refreshData } = useData();
@@ -11,7 +11,6 @@ export function useAutoRefresh() {
   const [lastAutoRefreshTime, setLastAutoRefreshTime] = useState<Date | null>(null);
   const [autoRefreshStatus, setAutoRefreshStatus] = useState<'idle' | 'syncing' | 'complete' | 'error'>('idle');
 
-  // Auto-sync function
   const triggerAutoSync = useCallback(async () => {
     try {
       console.log('🔄 AUTO-SYNC: Triggered at', new Date().toLocaleTimeString());
@@ -41,7 +40,6 @@ export function useAutoRefresh() {
     }
   }, [refreshData]);
 
-  // Start auto-refresh interval
   const startAutoRefresh = useCallback(() => {
     if (intervalRef.current) {
       console.log('⏭️ AUTO-SYNC: Already active');
@@ -58,7 +56,6 @@ export function useAutoRefresh() {
     }, AUTO_REFRESH_INTERVAL);
   }, [triggerAutoSync]);
 
-  // Stop auto-refresh interval
   const stopAutoRefresh = useCallback(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -68,7 +65,6 @@ export function useAutoRefresh() {
     }
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (intervalRef.current) {
