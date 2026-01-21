@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 export type ApprovalStatus = 'pending' | 'approved';
 
 export interface ApprovalLogEntry {
@@ -16,88 +18,74 @@ interface ApprovalContextType {
   approvalLogs: ApprovalLogEntry[];
   getApprovalStatus: (opportunityId: string) => ApprovalStatus;
   approveOpportunity: (opportunityId: string, performedBy: string, performedByRole: string) => void;
-  revertApproval: (opportunityId: string, performedBy: string, performedByRole: string) => void; // Master only
+  revertApproval: (opportunityId: string, performedBy: string, performedByRole: string) => void;
+  refreshApprovals: () => void;
 }
 
 const ApprovalContext = createContext<ApprovalContextType | undefined>(undefined);
 
 export function ApprovalProvider({ children }: { children: ReactNode }) {
-  const [approvals, setApprovals] = useState<Record<string, ApprovalStatus>>(() => {
-    const saved = localStorage.getItem('tender_approvals');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return {};
-      }
-    }
-    return {};
-  });
+  const [approvals, setApprovals] = useState<Record<string, ApprovalStatus>>({});
+  const [approvalLogs, setApprovalLogs] = useState<ApprovalLogEntry[]>([]);
 
-  const [approvalLogs, setApprovalLogs] = useState<ApprovalLogEntry[]>(() => {
-    const saved = localStorage.getItem('approval_logs');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  });
-
+  // Load approvals on mount
   useEffect(() => {
-    localStorage.setItem('tender_approvals', JSON.stringify(approvals));
-  }, [approvals]);
+    refreshApprovals();
+  }, []);
 
-  useEffect(() => {
-    localStorage.setItem('approval_logs', JSON.stringify(approvalLogs));
-  }, [approvalLogs]);
+  const refreshApprovals = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/approvals`);
+      const data = await response.json();
+      setApprovals(data);
+      
+      const logsResponse = await fetch(`${API_URL}/api/approval-logs`);
+      const logs = await logsResponse.json();
+      setApprovalLogs(logs);
+      console.log('✅ Approvals refreshed from backend');
+    } catch (error) {
+      console.error('❌ Failed to refresh approvals:', error);
+    }
+  }, []);
 
   const getApprovalStatus = useCallback((opportunityId: string): ApprovalStatus => {
     return approvals[opportunityId] || 'pending';
   }, [approvals]);
 
-  const approveOpportunity = useCallback((opportunityId: string, performedBy: string, performedByRole: string) => {
-    setApprovals((prev) => {
-      if (prev[opportunityId] === 'approved') return prev;
-      return { ...prev, [opportunityId]: 'approved' };
-    });
-    setApprovalLogs((prev) => [
-      {
-        id: crypto.randomUUID(),
-        opportunityId,
-        action: 'approved',
-        performedBy,
-        performedByRole,
-        timestamp: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
+  const approveOpportunity = useCallback(async (opportunityId: string, performedBy: string, performedByRole: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/approvals/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opportunityId, performedBy, performedByRole }),
+      });
+      const result = await response.json();
+      setApprovals(result.approvals);
+      setApprovalLogs(result.approvalLogs);
+      console.log('✅ Approval saved');
+    } catch (error) {
+      console.error('❌ Failed to approve:', error);
+    }
   }, []);
 
-  const revertApproval = useCallback((opportunityId: string, performedBy: string, performedByRole: string) => {
-    setApprovals((prev) => {
-      if (prev[opportunityId] !== 'approved') return prev;
-      const copy = { ...prev };
-      delete copy[opportunityId];
-      return copy;
-    });
-    setApprovalLogs((prev) => [
-      {
-        id: crypto.randomUUID(),
-        opportunityId,
-        action: 'reverted',
-        performedBy,
-        performedByRole,
-        timestamp: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
+  const revertApproval = useCallback(async (opportunityId: string, performedBy: string, performedByRole: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/approvals/revert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opportunityId, performedBy, performedByRole }),
+      });
+      const result = await response.json();
+      setApprovals(result.approvals);
+      setApprovalLogs(result.approvalLogs);
+      console.log('✅ Approval reverted');
+    } catch (error) {
+      console.error('❌ Failed to revert:', error);
+    }
   }, []);
 
   return (
-    <ApprovalContext.Provider value={{ approvals, approvalLogs, getApprovalStatus, approveOpportunity, revertApproval }}>
+    <ApprovalContext.Provider value={{ approvals, approvalLogs, getApprovalStatus, approveOpportunity, revertApproval, refreshApprovals }}>
       {children}
     </ApprovalContext.Provider>
   );
