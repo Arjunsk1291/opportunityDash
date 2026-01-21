@@ -2,20 +2,29 @@ import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import approvalDb from './approvalDb.js';
 import GoogleSheetsConfig from './models/GoogleSheetsConfig.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import { fetchGoogleSheetData, mapSheetRowToOpportunity } from './services/googleSheetsService.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb' }));
+
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('✅ MongoDB connected'))
   .catch(err => console.error('❌ MongoDB connection error:', err));
+
 const mapIdField = (doc) => {
   if (!doc) return doc;
   return {
@@ -23,6 +32,7 @@ const mapIdField = (doc) => {
     id: doc._id?.toString() || doc._id || null,
   };
 };
+
 // ===== APPROVALS =====
 app.get('/api/approvals', async (req, res) => {
   try {
@@ -32,7 +42,7 @@ app.get('/api/approvals', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-// ✅ FIXED: Use opportunityRefNo instead of opportunityId
+
 app.post('/api/approvals/approve', async (req, res) => {
   try {
     const { opportunityRefNo, performedBy, performedByRole } = req.body;
@@ -45,7 +55,7 @@ app.post('/api/approvals/approve', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-// ✅ FIXED: Use opportunityRefNo instead of opportunityId
+
 app.post('/api/approvals/revert', async (req, res) => {
   try {
     const { opportunityRefNo, performedBy, performedByRole } = req.body;
@@ -58,6 +68,7 @@ app.post('/api/approvals/revert', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 app.get('/api/approval-logs', async (req, res) => {
   try {
     const logs = await approvalDb.getApprovalLogs();
@@ -66,6 +77,7 @@ app.get('/api/approval-logs', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 // ===== GOOGLE SHEETS CONFIG =====
 app.get('/api/google-sheets/config', async (req, res) => {
   try {
@@ -90,6 +102,7 @@ app.get('/api/google-sheets/config', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 app.post('/api/google-sheets/config', async (req, res) => {
   try {
     const { apiKey, spreadsheetId, sheetName, columnMapping, configSavedBy } = req.body;
@@ -125,6 +138,7 @@ app.post('/api/google-sheets/config', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 app.post('/api/google-sheets/test', async (req, res) => {
   try {
     const { apiKey, spreadsheetId, sheetName } = req.body;
@@ -143,6 +157,7 @@ app.post('/api/google-sheets/test', async (req, res) => {
     res.status(400).json({ error: error.message });
   }
 });
+
 app.post('/api/google-sheets/sync', async (req, res) => {
   try {
     console.log('🔄 SYNC STARTED');
@@ -212,6 +227,7 @@ app.post('/api/google-sheets/sync', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 app.get('/api/google-sheets/opportunities', async (req, res) => {
   try {
     const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
@@ -221,6 +237,7 @@ app.get('/api/google-sheets/opportunities', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 app.delete('/api/google-sheets/clear', async (req, res) => {
   try {
     const result = await SyncedOpportunity.deleteMany({});
@@ -235,6 +252,7 @@ app.delete('/api/google-sheets/clear', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 app.post('/api/google-sheets/auto-sync', async (req, res) => {
   try {
     console.log('🔄 AUTO-SYNC TRIGGERED');
@@ -291,6 +309,16 @@ app.post('/api/google-sheets/auto-sync', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Serve frontend static files
+const distPath = path.resolve(__dirname, '../dist');
+app.use(express.static(distPath));
+
+// SPA fallback - serve index.html for all non-API routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
+});
+
 app.listen(PORT, () => {
   console.log(`✅ Approval server running on http://localhost:${PORT}`);
 });
