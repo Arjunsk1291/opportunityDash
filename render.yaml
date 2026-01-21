@@ -3,7 +3,7 @@ services:
     name: opportunitydash
     env: node
     plan: free
-    buildCommand: npm run build && cd backend && npm install
+    buildCommand: npm install && npm run build && cd backend && npm install
     startCommand: node backend/server.js
     envVars:
       - key: MONGODB_URI
@@ -12,3 +12,5 @@ services:
         value: "3001"
       - key: NODE_ENV
         value: production
+      - key: VITE_API_URL
+        value: https://opportunitydash.onrender.com/api
