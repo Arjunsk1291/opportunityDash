@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ColumnMappingUI } from './ColumnMappingUI';
 import { useAuth } from '@/contexts/AuthContext';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export default function GoogleSheetsIntegration() {
   const { user } = useAuth();
@@ -33,13 +33,12 @@ export default function GoogleSheetsIntegration() {
 
   const loadConfig = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/google-sheets/config`);
+      const res = await fetch(API_URL + '/google-sheets/config');
       const data = await res.json();
       if (data.apiKey) {
         setConfig(data);
         setSyncStatus(data.lastSyncStatus || '');
         
-        // ✅ Display persistence info
         if (data.lastSavedTime) {
           const savedDate = new Date(data.lastSavedTime);
           setLastSavedTime(savedDate.toLocaleString());
@@ -57,7 +56,7 @@ export default function GoogleSheetsIntegration() {
     setMessage('');
     
     try {
-      const res = await fetch(`${API_URL}/api/google-sheets/config`, {
+      const res = await fetch(API_URL + '/google-sheets/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -66,16 +65,15 @@ export default function GoogleSheetsIntegration() {
         }),
       });
       const data = await res.json();
-      setMessage(`✅ ${data.message}`);
+      setMessage('✅ ' + data.message);
       
-      // ✅ Update persistence display
       if (data.config) {
         const savedDate = new Date(data.config.lastSavedTime);
         setLastSavedTime(savedDate.toLocaleString());
         setConfigSavedBy(data.config.configSavedBy);
       }
     } catch (err) {
-      setError(`❌ Failed to save: ${err.message}`);
+      setError('❌ Failed to save: ' + (err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -88,7 +86,7 @@ export default function GoogleSheetsIntegration() {
     setSheetHeaders([]);
     
     try {
-      const res = await fetch(`${API_URL}/api/google-sheets/test`, {
+      const res = await fetch(API_URL + '/google-sheets/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -108,13 +106,13 @@ export default function GoogleSheetsIntegration() {
       setSheetHeaders(data.headers || []);
       setMessage('✅ Connection successful!');
     } catch (err) {
-      setError(`❌ Connection failed: ${err.message}`);
+      setError('❌ Connection failed: ' + (err as Error).message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleMappingChange = (mapping) => {
+  const handleMappingChange = (mapping: any) => {
     console.log('📍 Mapping changed:', mapping);
     setConfig({ ...config, columnMapping: mapping });
   };
@@ -127,7 +125,7 @@ export default function GoogleSheetsIntegration() {
     console.log('💾 Saving mapping:', config.columnMapping);
     
     try {
-      const res = await fetch(`${API_URL}/api/google-sheets/config`, {
+      const res = await fetch(API_URL + '/google-sheets/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -144,14 +142,13 @@ export default function GoogleSheetsIntegration() {
       console.log('✅ Mapping saved:', data);
       setMessage('✅ Column mapping saved successfully! Ready to sync.');
       
-      // ✅ Update persistence display
       if (data.config) {
         const savedDate = new Date(data.config.lastSavedTime);
         setLastSavedTime(savedDate.toLocaleString());
         setConfigSavedBy(data.config.configSavedBy);
       }
     } catch (err) {
-      setError(`❌ Failed to save mapping: ${err.message}`);
+      setError('❌ Failed to save mapping: ' + (err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -165,7 +162,7 @@ export default function GoogleSheetsIntegration() {
     console.log('🔄 Starting sync with mapping:', config.columnMapping);
     
     try {
-      const res = await fetch(`${API_URL}/api/google-sheets/sync`, {
+      const res = await fetch(API_URL + '/google-sheets/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -177,10 +174,10 @@ export default function GoogleSheetsIntegration() {
       
       const data = await res.json();
       setSyncStatus(data.message);
-      setMessage(`✅ Synced ${data.syncedCount} opportunities`);
+      setMessage('✅ Synced ' + data.syncedCount + ' opportunities');
       setTimeout(() => window.location.reload(), 1500);
     } catch (err) {
-      setError(`❌ Sync failed: ${err.message}`);
+      setError('❌ Sync failed: ' + (err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -193,15 +190,15 @@ export default function GoogleSheetsIntegration() {
     setError('');
     
     try {
-      const res = await fetch(`${API_URL}/api/google-sheets/clear`, {
+      const res = await fetch(API_URL + '/google-sheets/clear', {
         method: 'DELETE',
       });
       const data = await res.json();
       setSyncStatus('');
-      setMessage(`✅ Cleared ${data.deletedCount} synced records`);
+      setMessage('✅ Cleared ' + data.deletedCount + ' synced records');
       setTimeout(() => window.location.reload(), 1500);
     } catch (err) {
-      setError(`❌ Clear failed: ${err.message}`);
+      setError('❌ Clear failed: ' + (err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -209,7 +206,6 @@ export default function GoogleSheetsIntegration() {
 
   return (
     <div className="space-y-6">
-      {/* ✅ Config Persistence Display */}
       {lastSavedTime && (
         <Card className="border-blue-200 bg-blue-50/50">
           <CardContent className="pt-6">
@@ -283,7 +279,7 @@ export default function GoogleSheetsIntegration() {
               {testResult && (
                 <Alert>
                   <AlertDescription>
-                    ✅ Found {testResult.columnCount} columns and {testResult.rowCount} data rows
+                    ✅ Found {(testResult as any).columnCount} columns and {(testResult as any).rowCount} data rows
                   </AlertDescription>
                 </Alert>
               )}

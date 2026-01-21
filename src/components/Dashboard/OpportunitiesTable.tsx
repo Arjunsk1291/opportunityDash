@@ -14,7 +14,7 @@ import { useData } from '@/contexts/DataContext';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -33,14 +33,12 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
   const [isForceSyncing, setIsForceSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // ✅ Refresh approval status only
   const handleRefresh = () => {
     setIsRefreshing(true);
     refreshApprovals();
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
-  // ✅ FORCE SYNC: Pull from Google Sheets + refresh approvals + refresh data
   const handleForceSync = async () => {
     setIsForceSyncing(true);
     setSyncMessage(null);
@@ -48,8 +46,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     try {
       console.log('🔄 FORCE SYNC: Starting manual sync from Google Sheets');
       
-      // Call manual sync endpoint
-      const response = await fetch(`${API_URL}/api/google-sheets/sync`, {
+      const response = await fetch(API_URL + '/google-sheets/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -60,29 +57,24 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       }
 
       const data = await response.json();
-      console.log(`✅ FORCE SYNC: Success - ${data.syncedCount} opportunities`);
+      console.log('✅ FORCE SYNC: Success - ' + data.syncedCount + ' opportunities');
       
-      // Refresh approvals
       refreshApprovals();
-      
-      // Refresh frontend data from MongoDB
       await refreshData();
       
       setSyncMessage({
         type: 'success',
-        text: `✅ Force synced ${data.syncedCount} opportunities from Google Sheets`,
+        text: '✅ Force synced ' + data.syncedCount + ' opportunities from Google Sheets',
       });
 
-      // Clear message after 5 seconds
       setTimeout(() => setSyncMessage(null), 5000);
     } catch (error) {
       console.error('❌ FORCE SYNC: Error -', error);
       setSyncMessage({
         type: 'error',
-        text: `❌ Force sync failed: ${error.message}`,
+        text: '❌ Force sync failed: ' + (error as Error).message,
       });
       
-      // Clear message after 5 seconds
       setTimeout(() => setSyncMessage(null), 5000);
     } finally {
       setIsForceSyncing(false);
@@ -104,28 +96,17 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     return 'Pending';
   };
 
-  // ✅ UPDATED: Search across ALL columns
   const filteredData = data.filter(opp => {
     const matchesSearch = !search || 
-      // Ref No
       opp.opportunityRefNo.toLowerCase().includes(search.toLowerCase()) ||
-      // Tender Name
       opp.tenderName.toLowerCase().includes(search.toLowerCase()) ||
-      // Type (EOI/Tender)
       getTenderType(opp).toLowerCase().includes(search.toLowerCase()) ||
-      // Client
       opp.clientName.toLowerCase().includes(search.toLowerCase()) ||
-      // Status
       opp.canonicalStage.toLowerCase().includes(search.toLowerCase()) ||
-      // RFP Received (date)
       (opp.dateTenderReceived?.toLowerCase().includes(search.toLowerCase()) || false) ||
-      // Lead
       (opp.internalLead?.toLowerCase().includes(search.toLowerCase()) || false) ||
-      // Value (as string for search)
       opp.opportunityValue.toString().includes(search) ||
-      // Bid/No Bid
       getBidNoBid(opp).toLowerCase().includes(search.toLowerCase()) ||
-      // Group classification (bonus)
       (opp.groupClassification?.toLowerCase().includes(search.toLowerCase()) || false);
     
     const matchesStatus = statusFilter === 'all' || opp.canonicalStage === statusFilter;
@@ -164,7 +145,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     <Card className="flex-1">
       <CardHeader className="pb-3">
         <div className="space-y-3">
-          {/* ✅ Sync status message */}
           {syncMessage && (
             <Alert variant={syncMessage.type === 'error' ? 'destructive' : 'default'}>
               <AlertDescription>{syncMessage.text}</AlertDescription>
@@ -205,7 +185,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                 </SelectContent>
               </Select>
               
-              {/* ✅ Refresh approval status button */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button 
@@ -222,7 +201,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                 <TooltipContent>Refresh approval status</TooltipContent>
               </Tooltip>
 
-              {/* ✅ FORCE SYNC button - pull from Google Sheets */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button 

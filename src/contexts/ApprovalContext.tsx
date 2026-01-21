@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { useData } from './DataContext';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export type ApprovalStatus = 'pending' | 'approved';
 
@@ -30,17 +30,15 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   const [approvalLogs, setApprovalLogs] = useState<ApprovalLogEntry[]>([]);
   const { opportunities } = useData();
 
-  // Load approvals on mount
   useEffect(() => {
     refreshApprovals();
   }, []);
 
   const refreshApprovals = useCallback(async () => {
     try {
-      const response = await fetch(`${API_URL}/api/approvals`);
+      const response = await fetch(API_URL + '/approvals');
       const data = await response.json();
       
-      // ✅ FIXED: Data is now keyed by opportunityRefNo, not opportunityId
       const cleanedApprovals: Record<string, ApprovalStatus> = {};
       Object.entries(data).forEach(([key, value]) => {
         if (key && key !== 'null' && key !== 'undefined') {
@@ -49,7 +47,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
       });
       setApprovals(cleanedApprovals);
       
-      const logsResponse = await fetch(`${API_URL}/api/approval-logs`);
+      const logsResponse = await fetch(API_URL + '/approval-logs');
       const logs = await logsResponse.json();
       setApprovalLogs(logs);
       console.log('✅ Approvals refreshed from backend:', Object.keys(cleanedApprovals).length, 'approvals');
@@ -63,7 +61,6 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
       console.warn('⚠️  Invalid opportunityRefNo:', opportunityRefNo);
       return 'pending';
     }
-    // ✅ FIXED: Lookup by opportunityRefNo instead of id
     return approvals[opportunityRefNo] || 'pending';
   }, [approvals]);
 
@@ -75,10 +72,9 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
 
     try {
       console.log('📤 Approving:', { opportunityRefNo, performedBy, performedByRole });
-      const response = await fetch(`${API_URL}/api/approvals/approve`, {
+      const response = await fetch(API_URL + '/approvals/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // ✅ FIXED: Send opportunityRefNo instead of opportunityId
         body: JSON.stringify({ opportunityRefNo, performedBy, performedByRole }),
       });
       
@@ -112,10 +108,9 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
 
     try {
       console.log('📤 Reverting:', { opportunityRefNo, performedBy, performedByRole });
-      const response = await fetch(`${API_URL}/api/approvals/revert`, {
+      const response = await fetch(API_URL + '/approvals/revert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // ✅ FIXED: Send opportunityRefNo instead of opportunityId
         body: JSON.stringify({ opportunityRefNo, performedBy, performedByRole }),
       });
       

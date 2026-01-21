@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { Opportunity } from '@/data/opportunityData';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 interface DataContextType {
   opportunities: Opportunity[];
@@ -30,19 +30,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     try {
       console.log('🔄 Loading opportunities from MongoDB...');
       
-      const response = await fetch(`${API_URL}/api/google-sheets/opportunities`, {
+      const response = await fetch(API_URL + '/google-sheets/opportunities', {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
       }
       
       const data = await response.json();
-      console.log(`✅ Loaded ${data.length} opportunities from MongoDB`);
+      console.log('✅ Loaded ' + data.length + ' opportunities from MongoDB');
       
-      // Ensure every opportunity has an id field
       const dataWithIds = data.map((opp: any) => ({
         ...opp,
         id: opp.id || opp._id || opp.opportunityRefNo,
@@ -57,7 +56,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setError(null);
       }
     } catch (err: any) {
-      const errorMsg = `Failed to load data: ${err.message}`;
+      const errorMsg = 'Failed to load data: ' + err.message;
       console.error('❌', errorMsg);
       setError(errorMsg);
       setOpportunities([]);
