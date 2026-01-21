@@ -59,7 +59,7 @@ const statusNavItems = [
 ];
 
 const adminNavItems = [
-  { title: "Admin Panel", url: "/admin", icon: Shield },
+  { title: "Master Panel", url: "/master", icon: Shield },
 ];
 
 export function AppSidebar() {

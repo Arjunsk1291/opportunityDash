@@ -10,11 +10,7 @@ import { Opportunity, STAGE_ORDER } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useApproval } from '@/contexts/ApprovalContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useData } from '@/contexts/DataContext';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -27,110 +23,22 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
   const [groupFilter, setGroupFilter] = useState<string>('all');
   const { formatCurrency } = useCurrency();
   const { getApprovalStatus, approveOpportunity, revertApproval, refreshApprovals } = useApproval();
-  const { refreshData } = useData();
   const { isAdmin, isMaster, user } = useAuth();
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isForceSyncing, setIsForceSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // ✅ Refresh approval status only
   const handleRefresh = () => {
     setIsRefreshing(true);
     refreshApprovals();
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
-  // ✅ FORCE SYNC: Pull from Google Sheets + refresh approvals + refresh data
-  const handleForceSync = async () => {
-    setIsForceSyncing(true);
-    setSyncMessage(null);
-    
-    try {
-      console.log('🔄 FORCE SYNC: Starting manual sync from Google Sheets');
-      
-      // Call manual sync endpoint
-      const response = await fetch(`${API_URL}/api/google-sheets/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Sync failed');
-      }
-
-      const data = await response.json();
-      console.log(`✅ FORCE SYNC: Success - ${data.syncedCount} opportunities`);
-      
-      // Refresh approvals
-      refreshApprovals();
-      
-      // Refresh frontend data from MongoDB
-      await refreshData();
-      
-      setSyncMessage({
-        type: 'success',
-        text: `✅ Force synced ${data.syncedCount} opportunities from Google Sheets`,
-      });
-
-      // Clear message after 5 seconds
-      setTimeout(() => setSyncMessage(null), 5000);
-    } catch (error) {
-      console.error('❌ FORCE SYNC: Error -', error);
-      setSyncMessage({
-        type: 'error',
-        text: `❌ Force sync failed: ${error.message}`,
-      });
-      
-      // Clear message after 5 seconds
-      setTimeout(() => setSyncMessage(null), 5000);
-    } finally {
-      setIsForceSyncing(false);
-    }
-  };
-
-  const getTenderType = (opp: Opportunity): string => {
-    const classification = opp.opportunityClassification?.toLowerCase() || '';
-    if (classification.includes('eoi')) return 'EOI';
-    if (classification.includes('tender')) return 'Tender';
-    return opp.opportunityClassification || '—';
-  };
-
-  const getBidNoBid = (opp: Opportunity): 'Bid' | 'No Bid' | 'Pending' => {
-    if (opp.qualificationStatus?.toLowerCase().includes('qualified')) return 'Bid';
-    if (opp.qualificationStatus?.toLowerCase().includes('not qualified')) return 'No Bid';
-    if (opp.canonicalStage === 'Lost/Regretted' || opp.canonicalStage === 'On Hold/Paused') return 'No Bid';
-    if (opp.canonicalStage === 'Awarded' || opp.canonicalStage === 'Submitted') return 'Bid';
-    return 'Pending';
-  };
-
-  // ✅ UPDATED: Search across ALL columns
   const filteredData = data.filter(opp => {
     const matchesSearch = !search || 
-      // Ref No
-      opp.opportunityRefNo.toLowerCase().includes(search.toLowerCase()) ||
-      // Tender Name
       opp.tenderName.toLowerCase().includes(search.toLowerCase()) ||
-      // Type (EOI/Tender)
-      getTenderType(opp).toLowerCase().includes(search.toLowerCase()) ||
-      // Client
       opp.clientName.toLowerCase().includes(search.toLowerCase()) ||
-      // Status
-      opp.canonicalStage.toLowerCase().includes(search.toLowerCase()) ||
-      // RFP Received (date)
-      (opp.dateTenderReceived?.toLowerCase().includes(search.toLowerCase()) || false) ||
-      // Lead
-      (opp.internalLead?.toLowerCase().includes(search.toLowerCase()) || false) ||
-      // Value (as string for search)
-      opp.opportunityValue.toString().includes(search) ||
-      // Bid/No Bid
-      getBidNoBid(opp).toLowerCase().includes(search.toLowerCase()) ||
-      // Group classification (bonus)
-      (opp.groupClassification?.toLowerCase().includes(search.toLowerCase()) || false);
-    
+      opp.opportunityRefNo.toLowerCase().includes(search.toLowerCase());
     const matchesStatus = statusFilter === 'all' || opp.canonicalStage === statusFilter;
     const matchesGroup = groupFilter === 'all' || opp.groupClassification === groupFilter;
-    
     return matchesSearch && matchesStatus && matchesGroup;
   });
 
@@ -160,95 +68,71 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     revertApproval(oppId, user.displayName, user.role);
   };
 
+  const getTenderType = (opp: Opportunity): string => {
+    const classification = opp.opportunityClassification?.toLowerCase() || '';
+    if (classification.includes('eoi')) return 'EOI';
+    if (classification.includes('tender')) return 'Tender';
+    return opp.opportunityClassification || '—';
+  };
+
+  const getBidNoBid = (opp: Opportunity): 'Bid' | 'No Bid' | 'Pending' => {
+    if (opp.qualificationStatus?.toLowerCase().includes('qualified')) return 'Bid';
+    if (opp.qualificationStatus?.toLowerCase().includes('not qualified')) return 'No Bid';
+    if (opp.canonicalStage === 'Lost/Regretted' || opp.canonicalStage === 'On Hold/Paused') return 'No Bid';
+    if (opp.canonicalStage === 'Awarded' || opp.canonicalStage === 'Submitted') return 'Bid';
+    return 'Pending';
+  };
+
   return (
     <Card className="flex-1">
       <CardHeader className="pb-3">
-        <div className="space-y-3">
-          {/* ✅ Sync status message */}
-          {syncMessage && (
-            <Alert variant={syncMessage.type === 'error' ? 'destructive' : 'default'}>
-              <AlertDescription>{syncMessage.text}</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">Tenders</CardTitle>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Search all columns..." 
-                  value={search} 
-                  onChange={(e) => setSearch(e.target.value)} 
-                  className="pl-8 w-56 h-9" 
-                  title="Search: Ref No, Tender Name, Type, Client, Status, Date, Lead, Value, Bid/No Bid, Group"
-                />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-32 h-9"><SelectValue placeholder="Status" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  {STAGE_ORDER.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  <SelectItem value="Lost">Lost</SelectItem>
-                  <SelectItem value="Regretted">Regretted</SelectItem>
-                  <SelectItem value="On Hold/Paused">On Hold</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={groupFilter} onValueChange={setGroupFilter}>
-                <SelectTrigger className="w-24 h-9"><SelectValue placeholder="Group" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="GES">GES</SelectItem>
-                  <SelectItem value="GDS">GDS</SelectItem>
-                  <SelectItem value="GTN">GTN</SelectItem>
-                  <SelectItem value="GTS">GTS</SelectItem>
-                </SelectContent>
-              </Select>
-              
-              {/* ✅ Refresh approval status button */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={handleRefresh}
-                    disabled={isRefreshing || isForceSyncing}
-                    className="h-9 px-3"
-                    title="Refresh approval status across users"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Refresh approval status</TooltipContent>
-              </Tooltip>
-
-              {/* ✅ FORCE SYNC button - pull from Google Sheets */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="default" 
-                    size="sm" 
-                    onClick={handleForceSync}
-                    disabled={isForceSyncing || isRefreshing}
-                    className="h-9 px-3 gap-2"
-                    title="Force sync from Google Sheets (pulls latest data)"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${isForceSyncing ? 'animate-spin' : ''}`} />
-                    Force Sync
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Force sync from Google Sheets + refresh approvals</TooltipContent>
-              </Tooltip>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-lg">Tenders</CardTitle>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 w-48 h-9" />
             </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-32 h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                {STAGE_ORDER.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                <SelectItem value="Lost/Regretted">Lost</SelectItem>
+                <SelectItem value="On Hold/Paused">On Hold</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={groupFilter} onValueChange={setGroupFilter}>
+              <SelectTrigger className="w-24 h-9"><SelectValue placeholder="Group" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="GES">GES</SelectItem>
+                <SelectItem value="GDS">GDS</SelectItem>
+                <SelectItem value="GTN">GTN</SelectItem>
+                <SelectItem value="GTS">GTS</SelectItem>
+              </SelectContent>
+            </Select>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleRefresh}
+                  className="h-9 px-3"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Refresh approval status</TooltipContent>
+            </Tooltip>
           </div>
         </div>
       </CardHeader>
-
       <CardContent className="p-0">
         <div className="max-h-[400px] overflow-auto scrollbar-thin">
           <Table>
             <TableHeader className="sticky top-0 bg-card z-10">
-              <TableRow>
+              <TableRow key={opp.id}>
                 <TableHead className="w-24">Ref No.</TableHead>
                 <TableHead>Tender Name</TableHead>
                 <TableHead>Type</TableHead>
@@ -263,8 +147,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.slice(0, 50).map((opp) => {
-                const approvalStatus = getApprovalStatus(opp.opportunityRefNo);
+              {filteredData.slice(0, 50).map((opp, idx) => {
+                const approvalStatus = getApprovalStatus(opp.id);
                 const bidNoBid = getBidNoBid(opp);
                 return (
                   <TableRow key={opp.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectOpportunity(opp)}>
@@ -287,7 +171,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                     <TableCell>{opp.internalLead || <span className="text-muted-foreground text-xs">Unassigned</span>}</TableCell>
                     <TableCell className="text-right font-mono">
                       <div className="flex items-center justify-end gap-1">
-                        AED {opp.opportunityValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        {formatCurrency(opp.opportunityValue)}
                         {opp.opportunityValue_imputed && (
                           <Tooltip>
                             <TooltipTrigger><Info className="h-3 w-3 text-warning" /></TooltipTrigger>
@@ -318,7 +202,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                                   variant="ghost" 
                                   size="icon" 
                                   className="h-6 w-6"
-                                  onClick={() => handleRevertApproval(opp.opportunityRefNo)}
+                                  onClick={() => handleRevertApproval(opp.id)}
                                 >
                                   <RotateCcw className="h-3 w-3 text-muted-foreground hover:text-destructive" />
                                 </Button>
@@ -330,7 +214,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                       ) : isMaster ? (
                         <Select
                           value={approvalStatus}
-                          onValueChange={(value) => handleApprovalChange(opp.opportunityRefNo, value)}
+                          onValueChange={(value) => handleApprovalChange(opp.id, value)}
                         >
                           <SelectTrigger className="h-7 w-[100px] text-xs">
                             <SelectValue />
@@ -353,7 +237,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                       ) : isAdmin ? (
                         <Select
                           value={approvalStatus}
-                          onValueChange={(value) => handleApprovalChange(opp.opportunityRefNo, value)}
+                          onValueChange={(value) => handleApprovalChange(opp.id, value)}
                         >
                           <SelectTrigger className="h-7 w-[100px] text-xs">
                             <SelectValue />

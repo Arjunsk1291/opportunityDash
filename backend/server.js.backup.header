@@ -1,0 +1,230 @@
+import express from 'express';
+import cors from 'cors';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+import approvalDb from './approvalDb.js';
+import GoogleSheetsConfig from './models/GoogleSheetsConfig.js';
+import SyncedOpportunity from './models/SyncedOpportunity.js';
+import { fetchGoogleSheetData, mapSheetRowToOpportunity } from './services/googleSheetsService.js';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
+
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb' }));
+
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch(err => console.error('❌ MongoDB connection error:', err));
+
+// ===== HELPER: Map MongoDB _id to id
+const mapIdField = (doc) => {
+  if (!doc) return doc;
+  return {
+    ...doc,
+    id: doc._id?.toString() || doc._id || null,
+  };
+};
+
+// ===== APPROVAL ENDPOINTS =====
+app.get('/api/approvals', async (req, res) => {
+  try {
+    const approvals = await approvalDb.getApprovals();
+    res.json(approvals);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/approvals/approve', async (req, res) => {
+  try {
+    const { opportunityId, performedBy, performedByRole } = req.body;
+    console.log('📤 Approving opportunity:', opportunityId);
+    
+    if (!opportunityId) {
+      return res.status(400).json({ error: 'opportunityId is required' });
+    }
+    
+    const result = await approvalDb.approveOpportunity(opportunityId, performedBy, performedByRole);
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Approval error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/approvals/revert', async (req, res) => {
+  try {
+    const { opportunityId, performedBy, performedByRole } = req.body;
+    const result = await approvalDb.revertApproval(opportunityId, performedBy, performedByRole);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/approval-logs', async (req, res) => {
+  try {
+    const logs = await approvalDb.getApprovalLogs();
+    res.json(logs);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ===== GOOGLE SHEETS ENDPOINTS =====
+
+app.get('/api/google-sheets/config', async (req, res) => {
+  try {
+    const config = await GoogleSheetsConfig.findOne();
+    console.log('📋 Loaded config:', config);
+    res.json(config || {});
+  } catch (error) {
+    console.error('❌ Error loading config:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/google-sheets/config', async (req, res) => {
+  try {
+    const { apiKey, spreadsheetId, sheetName, columnMapping } = req.body;
+    console.log('💾 Saving config:', { spreadsheetId, sheetName, columnMapping });
+    
+    let config = await GoogleSheetsConfig.findOne();
+    if (!config) {
+      config = new GoogleSheetsConfig();
+    }
+    
+    config.apiKey = apiKey;
+    config.spreadsheetId = spreadsheetId;
+    config.sheetName = sheetName;
+    config.columnMapping = columnMapping;
+    config.isActive = false;
+    
+    const saved = await config.save();
+    console.log('✅ Config saved:', saved);
+    res.json({ success: true, config: saved });
+  } catch (error) {
+    console.error('❌ Error saving config:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/google-sheets/test', async (req, res) => {
+  try {
+    const { apiKey, spreadsheetId, sheetName } = req.body;
+    console.log('🧪 Testing connection...');
+    
+    const { headerRowIndex, rows, headers } = await fetchGoogleSheetData(apiKey, spreadsheetId, sheetName);
+    
+    res.json({ 
+      success: true,
+      headerRowIndex,
+      columnCount: headers.length,
+      rowCount: rows.length - 1,
+      headers: headers,
+      preview: rows.slice(1, 4) 
+    });
+  } catch (error) {
+    console.error('❌ Test error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/google-sheets/sync', async (req, res) => {
+  try {
+    console.log('🔄 Starting sync...');
+    const config = await GoogleSheetsConfig.findOne();
+    if (!config) {
+      return res.status(400).json({ error: 'No Google Sheets configuration found' });
+    }
+    
+    const { rows, headers } = await fetchGoogleSheetData(config.apiKey, config.spreadsheetId, config.sheetName);
+    const dataRows = rows.slice(1);
+    
+    // ✅ IMPROVED: Build mapping from column names to indices
+    const columnMapping = {};
+    Object.entries(config.columnMapping).forEach(([fieldName, columnName]) => {
+      if (columnName) {
+        const headerIndex = headers.indexOf(columnName);
+        if (headerIndex !== -1) {
+          columnMapping[fieldName] = headerIndex;
+          console.log(`✅ Mapped ${fieldName} -> column ${headerIndex} (${columnName})`);
+        } else {
+          console.log(`⚠️  Column not found: ${columnName}`);
+        }
+      }
+    });
+    
+    console.log('📍 Final mapping:', columnMapping);
+    
+    await SyncedOpportunity.deleteMany({});
+    console.log('🗑️  Cleared old data');
+    
+    const syncedData = [];
+    dataRows.forEach((row, index) => {
+      const mapped = mapSheetRowToOpportunity(row, columnMapping);
+      if (mapped.opportunityRefNo) {
+        syncedData.push({
+          googleSheetRowId: index + 2,
+          ...mapped,
+          rawGoogleData: row,
+        });
+      }
+    });
+    
+    await SyncedOpportunity.insertMany(syncedData);
+    console.log('✅ Synced:', syncedData.length, 'opportunities');
+    
+    config.lastSyncTime = new Date();
+    config.lastSyncStatus = `Synced ${syncedData.length} opportunities`;
+    config.isActive = true;
+    await config.save();
+    
+    res.json({ 
+      success: true, 
+      syncedCount: syncedData.length,
+      message: config.lastSyncStatus
+    });
+  } catch (error) {
+    console.error('❌ Sync error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/google-sheets/opportunities', async (req, res) => {
+  try {
+    const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
+    const mapped = opportunities.map(opp => mapIdField(opp));
+    res.json(mapped);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/google-sheets/clear', async (req, res) => {
+  try {
+    console.log('🗑️  Clearing all synced data...');
+    const result = await SyncedOpportunity.deleteMany({});
+    console.log('✅ Deleted:', result.deletedCount);
+    
+    const config = await GoogleSheetsConfig.findOne();
+    if (config) {
+      config.isActive = false;
+      config.lastSyncStatus = 'Data cleared';
+      await config.save();
+    }
+    res.json({ success: true, deletedCount: result.deletedCount });
+  } catch (error) {
+    console.error('❌ Clear error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`✅ Approval server running on http://localhost:${PORT}`);
+});

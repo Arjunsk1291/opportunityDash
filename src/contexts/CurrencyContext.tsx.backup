@@ -16,10 +16,9 @@ interface CurrencyContextType {
 const CurrencyContext = createContext<CurrencyContextType | undefined>(undefined);
 
 export function CurrencyProvider({ children }: { children: ReactNode }) {
-  // ✅ FIXED: Default currency is now AED (was USD)
   const [currency, setCurrencyState] = useState<Currency>(() => {
     const saved = localStorage.getItem('currency');
-    return (saved === 'AED' || saved === 'USD') ? saved : 'AED';
+    return (saved === 'AED' || saved === 'USD') ? saved : 'USD';
   });
 
   const setCurrency = useCallback((newCurrency: Currency) => {

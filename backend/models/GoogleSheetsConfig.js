@@ -1,0 +1,43 @@
+import mongoose from 'mongoose';
+const googleSheetsConfigSchema = new mongoose.Schema(
+  {
+    apiKey: { type: String, required: true },
+    spreadsheetId: { type: String, required: true },
+    sheetName: { type: String, required: true },
+    columnMapping: {
+      opportunityRefNo: String,
+      tenderName: String,
+      clientName: String,
+      opportunityValue: String,
+      canonicalStage: String,
+      internalLead: String,
+      dateTenderReceived: String,
+      groupClassification: String,
+      opportunityClassification: String,
+      qualificationStatus: String,
+      tenderPlannedSubmissionDate: String,
+      probability: String,
+      internalLead: String,
+      opportunityClassification: String,
+      groupClassification: String,
+      domainSubGroup: String,
+      clientType: String,
+      partnerName: String,
+      partnerInvolvement: String,
+      country: String,
+      remarks: String,
+      lastContactDate: String,
+      tenderSubmittedDate: String,
+      awardStatus: String,
+    },
+    isActive: { type: Boolean, default: false },
+    lastSyncTime: Date,
+    lastSyncStatus: String,
+    lastSavedTime: { type: Date, default: Date.now },
+    configSavedBy: String,
+    autoRefreshInterval: { type: Number, default: 10, description: 'Minutes between auto-refreshes' },
+    isAutoRefreshEnabled: { type: Boolean, default: true },
+  },
+  { timestamps: true }
+);
+export default mongoose.model('GoogleSheetsConfig', googleSheetsConfigSchema);

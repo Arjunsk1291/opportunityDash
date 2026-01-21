@@ -6,25 +6,32 @@ export default {
     const approvals = await Approval.find();
     const result = {};
     approvals.forEach(a => {
-      result[a.opportunityId] = a.status;
+      result[a.opportunityRefNo] = a.status;
     });
     return result;
   },
 
-  async getApprovalStatus(opportunityId) {
-    const approval = await Approval.findOne({ opportunityId });
+  async getApprovalStatus(opportunityRefNo) {
+    const approval = await Approval.findOne({ opportunityRefNo });
     return approval?.status || 'pending';
   },
 
-  async approveOpportunity(opportunityId, performedBy, performedByRole) {
+  async approveOpportunity(opportunityRefNo, performedBy, performedByRole) {
     await Approval.findOneAndUpdate(
-      { opportunityId },
-      { opportunityId, status: 'approved' },
+      { opportunityRefNo },
+      { 
+        opportunityRefNo, 
+        status: 'approved',
+        approvedBy: performedBy,
+        approvedByRole: performedByRole,
+        approvalDate: new Date()
+      },
       { upsert: true }
     );
 
+    // ✅ FIXED: Create log with opportunityRefNo
     await ApprovalLog.create({
-      opportunityId,
+      opportunityRefNo,
       action: 'approved',
       performedBy,
       performedByRole,
@@ -35,14 +42,20 @@ export default {
     return { success: true, approvals, approvalLogs: logs };
   },
 
-  async revertApproval(opportunityId, performedBy, performedByRole) {
+  async revertApproval(opportunityRefNo, performedBy, performedByRole) {
     await Approval.findOneAndUpdate(
-      { opportunityId },
-      { opportunityId, status: 'pending' }
+      { opportunityRefNo },
+      { 
+        opportunityRefNo, 
+        status: 'pending',
+        approvedBy: null,
+        approvalDate: null
+      }
     );
 
+    // ✅ FIXED: Create log with opportunityRefNo
     await ApprovalLog.create({
-      opportunityId,
+      opportunityRefNo,
       action: 'reverted',
       performedBy,
       performedByRole,

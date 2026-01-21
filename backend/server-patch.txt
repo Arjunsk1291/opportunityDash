@@ -1,0 +1,54 @@
+Replace this section in backend/server.js:
+
+app.post('/api/google-sheets/test', async (req, res) => {
+  try {
+    const { apiKey, spreadsheetId, sheetName } = req.body;
+    console.log('🧪 Testing connection...');
+    
+    const { headerRowIndex, headers, dataRows } = await fetchGoogleSheetData(apiKey, spreadsheetId, sheetName);
+    
+    console.log(`✅ Found ${headers.length} columns in header row ${headerRowIndex}`);
+    console.log(`✅ Found ${dataRows.length} data rows`);
+    
+    res.json({ 
+      success: true,
+      headerRowIndex,
+      columnCount: headers.length,
+      rowCount: dataRows.length,
+      headers: headers,
+      preview: dataRows.slice(0, 3) 
+    });
+  } catch (error) {
+    console.error('❌ Test error:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+WITH:
+
+app.post('/api/google-sheets/test', async (req, res) => {
+  try {
+    const { apiKey, spreadsheetId, sheetName } = req.body;
+    console.log('🧪 Testing connection...');
+    
+    const { headerRowIndex, headers, rows } = await fetchGoogleSheetData(apiKey, spreadsheetId, sheetName);
+    
+    // Don't use dataRows - it's not returned
+    const dataRowCount = rows.length - 1;
+    
+    console.log(`✅ Found ${headers.length} columns in header row ${headerRowIndex}`);
+    console.log(`✅ Found ${dataRowCount} data rows`);
+    
+    res.json({ 
+      success: true,
+      headerRowIndex,
+      columnCount: headers.length,
+      rowCount: dataRowCount,
+      headers: headers,
+      preview: rows.slice(1, 4) 
+    });
+  } catch (error) {
+    console.error('❌ Test error:', error.message);
+    res.status(400).json({ error: error.message });
+  }
+});

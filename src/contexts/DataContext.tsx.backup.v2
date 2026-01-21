@@ -19,6 +19,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
+  // ✅ FIXED: Load data from MongoDB on mount (NO mock data)
   useEffect(() => {
     refreshData();
   }, []);
@@ -30,34 +31,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
     try {
       console.log('🔄 Loading opportunities from MongoDB...');
       
-      const response = await fetch(`${API_URL}/api/google-sheets/opportunities`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      // Try to load from Google Sheets synced data first
+      const response = await fetch(`${API_URL}/api/google-sheets/opportunities`);
       
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw new Error(`Failed to fetch: ${response.statusText}`);
       }
       
       const data = await response.json();
       console.log(`✅ Loaded ${data.length} opportunities from MongoDB`);
       
-      // Ensure every opportunity has an id field
-      const dataWithIds = data.map((opp: any) => ({
-        ...opp,
-        id: opp.id || opp._id || opp.opportunityRefNo,
-      }));
-      
-      setOpportunities(dataWithIds);
+      setOpportunities(data);
       setLastSyncTime(new Date());
       
-      if (dataWithIds.length === 0) {
-        setError('No data available. Please sync from Google Sheets in the Master Panel.');
-      } else {
-        setError(null);
+      if (data.length === 0) {
+        setError('No data available. Please configure and sync Google Sheets in the Master Panel.');
       }
     } catch (err: any) {
-      const errorMsg = `Failed to load data: ${err.message}`;
+      const errorMsg = `MongoDB Error: ${err.message}. Make sure backend is running and Google Sheets data is synced.`;
       console.error('❌', errorMsg);
       setError(errorMsg);
       setOpportunities([]);

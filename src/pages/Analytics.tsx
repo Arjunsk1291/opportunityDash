@@ -27,11 +27,13 @@ import {
   STAGE_ORDER 
 } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
+import { useCurrency } from '@/contexts/CurrencyContext';
 
 const COLORS = ['hsl(199, 89%, 48%)', 'hsl(38, 92%, 50%)', 'hsl(262, 83%, 58%)', 'hsl(142, 76%, 36%)', 'hsl(0, 84%, 60%)', 'hsl(220, 9%, 46%)'];
 
 const Analytics = () => {
   const { opportunities } = useData();
+  const { formatCurrency, convertValue } = useCurrency();
   
   const stats = useMemo(() => calculateSummaryStats(opportunities), [opportunities]);
   const leaderData = useMemo(() => getLeaderboardData(opportunities), [opportunities]);
@@ -95,9 +97,12 @@ const Analytics = () => {
     }));
   }, [leaderData]);
 
-  const formatCurrency = (value: number) => {
-    if (value >= 1) return `$${value.toFixed(1)}M`;
-    return `$${(value * 1000).toFixed(0)}K`;
+  // ✅ UPDATED: Format currency as AED
+  const formatCurrencyAED = (value: number) => {
+    const convertedValue = convertValue(value);
+    if (convertedValue >= 1000000) return `AED ${(convertedValue / 1000000).toFixed(1)}M`;
+    if (convertedValue >= 1000) return `AED ${(convertedValue / 1000).toFixed(0)}K`;
+    return `AED ${convertedValue.toFixed(0)}`;
   };
 
   return (
@@ -135,13 +140,13 @@ const Analytics = () => {
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">${(stats.totalPipelineValue / 1000000).toFixed(1)}M</p>
+            <p className="text-2xl font-bold">{formatCurrencyAED(stats.totalPipelineValue)}</p>
             <p className="text-xs text-muted-foreground">Pipeline Value</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">${(stats.weightedPipeline / 1000000).toFixed(1)}M</p>
+            <p className="text-2xl font-bold">{formatCurrencyAED(stats.weightedPipeline)}</p>
             <p className="text-xs text-muted-foreground">Weighted Value</p>
           </CardContent>
         </Card>
@@ -195,9 +200,9 @@ const Analytics = () => {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={groupData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis type="number" tickFormatter={(v) => `$${v}M`} />
+                  <XAxis type="number" tickFormatter={(v) => `AED ${v}M`} />
                   <YAxis type="category" dataKey="name" width={50} />
-                  <Tooltip formatter={(v: number) => [`$${v.toFixed(1)}M`, 'Value']} />
+                  <Tooltip formatter={(v: number) => [`AED ${v.toFixed(1)}M`, 'Value']} />
                   <Bar dataKey="value" fill="hsl(217, 91%, 60%)" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -222,8 +227,8 @@ const Analytics = () => {
                 <AreaChart data={monthlyTrend}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="month" />
-                  <YAxis tickFormatter={(v) => `$${v}M`} />
-                  <Tooltip formatter={(v: number) => [`$${v.toFixed(1)}M`, 'Value']} />
+                  <YAxis tickFormatter={(v) => `AED ${v}M`} />
+                  <Tooltip formatter={(v: number) => [`AED ${v.toFixed(1)}M`, 'Value']} />
                   <Area
                     type="monotone"
                     dataKey="value"
@@ -276,9 +281,9 @@ const Analytics = () => {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={clientData.slice(0, 10)} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis type="number" tickFormatter={(v) => `$${(v / 1000000).toFixed(1)}M`} />
+                <XAxis type="number" tickFormatter={(v) => `AED ${(v / 1000000).toFixed(1)}M`} />
                 <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v: number) => [`$${(v / 1000000).toFixed(2)}M`, 'Value']} />
+                <Tooltip formatter={(v: number) => [`AED ${(v / 1000000).toFixed(2)}M`, 'Value']} />
                 <Bar dataKey="value" fill="hsl(142, 76%, 36%)" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>

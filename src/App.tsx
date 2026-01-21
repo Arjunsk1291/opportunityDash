@@ -25,8 +25,9 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <CurrencyProvider>
-        <ApprovalProvider>
-          <DataProvider>
+        {/* ✅ FIXED: DataProvider MUST come before ApprovalProvider */}
+        <DataProvider>
+          <ApprovalProvider>
             <TooltipProvider>
               <Toaster />
               <Sonner />
@@ -44,7 +45,7 @@ const App = () => (
                             <Route path="/tenders" element={<Tenders />} />
                             <Route path="/clients" element={<Clients />} />
                             <Route path="/analytics" element={<Analytics />} />
-                            <Route path="/admin" element={<Admin />} />
+                            <Route path="/master" element={<Admin />} />
                             
                             {/* Status-based routes */}
                             <Route path="/status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />
@@ -68,8 +69,8 @@ const App = () => (
                 </Routes>
               </BrowserRouter>
             </TooltipProvider>
-          </DataProvider>
-        </ApprovalProvider>
+          </ApprovalProvider>
+        </DataProvider>
       </CurrencyProvider>
     </AuthProvider>
   </QueryClientProvider>

@@ -22,7 +22,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Master user and initial demo users
 const INITIAL_USERS: { email: string; password: string; user: User }[] = [
   {
     email: 'master@example.com',
@@ -120,7 +119,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         u.user.id === userId ? { ...u, user: { ...u.user, role: newRole } } : u
       )
     );
-    // If the current user's role was changed, update them too
     setUser((current) => {
       if (current && current.id === userId) {
         const updated = { ...current, role: newRole };

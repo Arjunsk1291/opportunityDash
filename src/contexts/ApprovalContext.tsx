@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import { useData } from './DataContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -6,7 +7,7 @@ export type ApprovalStatus = 'pending' | 'approved';
 
 export interface ApprovalLogEntry {
   id: string;
-  opportunityId: string;
+  opportunityRefNo: string;
   action: 'approved' | 'reverted';
   performedBy: string;
   performedByRole: string;
@@ -16,9 +17,9 @@ export interface ApprovalLogEntry {
 interface ApprovalContextType {
   approvals: Record<string, ApprovalStatus>;
   approvalLogs: ApprovalLogEntry[];
-  getApprovalStatus: (opportunityId: string) => ApprovalStatus;
-  approveOpportunity: (opportunityId: string, performedBy: string, performedByRole: string) => void;
-  revertApproval: (opportunityId: string, performedBy: string, performedByRole: string) => void;
+  getApprovalStatus: (opportunityRefNo: string) => ApprovalStatus;
+  approveOpportunity: (opportunityRefNo: string, performedBy: string, performedByRole: string) => void;
+  revertApproval: (opportunityRefNo: string, performedBy: string, performedByRole: string) => void;
   refreshApprovals: () => void;
 }
 
@@ -27,6 +28,7 @@ const ApprovalContext = createContext<ApprovalContextType | undefined>(undefined
 export function ApprovalProvider({ children }: { children: ReactNode }) {
   const [approvals, setApprovals] = useState<Record<string, ApprovalStatus>>({});
   const [approvalLogs, setApprovalLogs] = useState<ApprovalLogEntry[]>([]);
+  const { opportunities } = useData();
 
   // Load approvals on mount
   useEffect(() => {
@@ -37,52 +39,107 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     try {
       const response = await fetch(`${API_URL}/api/approvals`);
       const data = await response.json();
-      setApprovals(data);
+      
+      // ✅ FIXED: Data is now keyed by opportunityRefNo, not opportunityId
+      const cleanedApprovals: Record<string, ApprovalStatus> = {};
+      Object.entries(data).forEach(([key, value]) => {
+        if (key && key !== 'null' && key !== 'undefined') {
+          cleanedApprovals[key] = value as ApprovalStatus;
+        }
+      });
+      setApprovals(cleanedApprovals);
       
       const logsResponse = await fetch(`${API_URL}/api/approval-logs`);
       const logs = await logsResponse.json();
       setApprovalLogs(logs);
-      console.log('✅ Approvals refreshed from backend');
+      console.log('✅ Approvals refreshed from backend:', Object.keys(cleanedApprovals).length, 'approvals');
     } catch (error) {
       console.error('❌ Failed to refresh approvals:', error);
     }
   }, []);
 
-  const getApprovalStatus = useCallback((opportunityId: string): ApprovalStatus => {
-    return approvals[opportunityId] || 'pending';
+  const getApprovalStatus = useCallback((opportunityRefNo: string): ApprovalStatus => {
+    if (!opportunityRefNo || opportunityRefNo === 'null' || opportunityRefNo === 'undefined') {
+      console.warn('⚠️  Invalid opportunityRefNo:', opportunityRefNo);
+      return 'pending';
+    }
+    // ✅ FIXED: Lookup by opportunityRefNo instead of id
+    return approvals[opportunityRefNo] || 'pending';
   }, [approvals]);
 
-  const approveOpportunity = useCallback(async (opportunityId: string, performedBy: string, performedByRole: string) => {
+  const approveOpportunity = useCallback(async (opportunityRefNo: string, performedBy: string, performedByRole: string) => {
+    if (!opportunityRefNo || opportunityRefNo === 'null' || opportunityRefNo === 'undefined') {
+      console.error('❌ Cannot approve: Invalid opportunityRefNo', opportunityRefNo);
+      return;
+    }
+
     try {
+      console.log('📤 Approving:', { opportunityRefNo, performedBy, performedByRole });
       const response = await fetch(`${API_URL}/api/approvals/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ opportunityId, performedBy, performedByRole }),
+        // ✅ FIXED: Send opportunityRefNo instead of opportunityId
+        body: JSON.stringify({ opportunityRefNo, performedBy, performedByRole }),
       });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('❌ Approval failed:', error);
+        return;
+      }
+      
       const result = await response.json();
-      setApprovals(result.approvals);
-      setApprovalLogs(result.approvalLogs);
-      console.log('✅ Approval saved');
+      
+      if (result.approvals) {
+        setApprovals(result.approvals);
+      }
+      if (result.approvalLogs) {
+        setApprovalLogs(result.approvalLogs);
+      }
+      
+      await refreshApprovals();
+      console.log('✅ Approval saved successfully');
     } catch (error) {
       console.error('❌ Failed to approve:', error);
     }
-  }, []);
+  }, [refreshApprovals]);
 
-  const revertApproval = useCallback(async (opportunityId: string, performedBy: string, performedByRole: string) => {
+  const revertApproval = useCallback(async (opportunityRefNo: string, performedBy: string, performedByRole: string) => {
+    if (!opportunityRefNo || opportunityRefNo === 'null' || opportunityRefNo === 'undefined') {
+      console.error('❌ Cannot revert: Invalid opportunityRefNo', opportunityRefNo);
+      return;
+    }
+
     try {
+      console.log('📤 Reverting:', { opportunityRefNo, performedBy, performedByRole });
       const response = await fetch(`${API_URL}/api/approvals/revert`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ opportunityId, performedBy, performedByRole }),
+        // ✅ FIXED: Send opportunityRefNo instead of opportunityId
+        body: JSON.stringify({ opportunityRefNo, performedBy, performedByRole }),
       });
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('❌ Revert failed:', error);
+        return;
+      }
+      
       const result = await response.json();
-      setApprovals(result.approvals);
-      setApprovalLogs(result.approvalLogs);
-      console.log('✅ Approval reverted');
+      
+      if (result.approvals) {
+        setApprovals(result.approvals);
+      }
+      if (result.approvalLogs) {
+        setApprovalLogs(result.approvalLogs);
+      }
+      
+      await refreshApprovals();
+      console.log('✅ Approval reverted successfully');
     } catch (error) {
       console.error('❌ Failed to revert:', error);
     }
-  }, []);
+  }, [refreshApprovals]);
 
   return (
     <ApprovalContext.Provider value={{ approvals, approvalLogs, getApprovalStatus, approveOpportunity, revertApproval, refreshApprovals }}>

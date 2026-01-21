@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertTriangle, Info, Search, CheckCircle, Clock, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Info, Search, CheckCircle, Clock, RotateCcw, RefreshCw } from 'lucide-react';
 import { Opportunity, STAGE_ORDER } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useApproval } from '@/contexts/ApprovalContext';
@@ -22,8 +22,15 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [groupFilter, setGroupFilter] = useState<string>('all');
   const { formatCurrency } = useCurrency();
-  const { getApprovalStatus, approveOpportunity, revertApproval } = useApproval();
+  const { getApprovalStatus, approveOpportunity, revertApproval, refreshApprovals } = useApproval();
   const { isAdmin, isMaster, user } = useAuth();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    refreshApprovals();
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
 
   const filteredData = data.filter(opp => {
     const matchesSearch = !search || 
@@ -62,7 +69,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
   };
 
   const getTenderType = (opp: Opportunity): string => {
-    // Check opportunityClassification for EOI or Tender type
     const classification = opp.opportunityClassification?.toLowerCase() || '';
     if (classification.includes('eoi')) return 'EOI';
     if (classification.includes('tender')) return 'Tender';
@@ -70,7 +76,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
   };
 
   const getBidNoBid = (opp: Opportunity): 'Bid' | 'No Bid' | 'Pending' => {
-    // Determine based on qualification status or explicit field
     if (opp.qualificationStatus?.toLowerCase().includes('qualified')) return 'Bid';
     if (opp.qualificationStatus?.toLowerCase().includes('not qualified')) return 'No Bid';
     if (opp.canonicalStage === 'Lost/Regretted' || opp.canonicalStage === 'On Hold/Paused') return 'No Bid';
@@ -107,6 +112,19 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                 <SelectItem value="GTS">GTS</SelectItem>
               </SelectContent>
             </Select>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleRefresh}
+                  className="h-9 px-3"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Refresh approval status</TooltipContent>
+            </Tooltip>
           </div>
         </div>
       </CardHeader>
@@ -123,7 +141,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                 <TableHead className="font-bold">RFP Received</TableHead>
                 <TableHead>Lead</TableHead>
                 <TableHead className="text-right">Value</TableHead>
-                <TableHead className="text-right">Prob.</TableHead>
                 <TableHead>Bid/No Bid</TableHead>
                 <TableHead>Approval</TableHead>
                 <TableHead className="w-16"></TableHead>
@@ -163,7 +180,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="text-right">{opp.probability}%</TableCell>
                     <TableCell>
                       <Badge 
                         variant={bidNoBid === 'Bid' ? 'default' : bidNoBid === 'No Bid' ? 'destructive' : 'secondary'}
@@ -195,6 +211,29 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                             </Tooltip>
                           )}
                         </div>
+                      ) : isMaster ? (
+                        <Select
+                          value={approvalStatus}
+                          onValueChange={(value) => handleApprovalChange(opp.id, value)}
+                        >
+                          <SelectTrigger className="h-7 w-[100px] text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pending">
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                Pending
+                              </span>
+                            </SelectItem>
+                            <SelectItem value="approved">
+                              <span className="flex items-center gap-1">
+                                <CheckCircle className="h-3 w-3" />
+                                Approved
+                              </span>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
                       ) : isAdmin ? (
                         <Select
                           value={approvalStatus}
