@@ -59,7 +59,6 @@ const Dashboard = () => {
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
 
-  // ✅ Start auto-refresh on component mount
   useEffect(() => {
     console.log('📊 Dashboard mounted - starting auto-refresh');
     startAutoRefresh();
@@ -197,6 +196,10 @@ const Dashboard = () => {
 
       <KPICards stats={stats} onKPIClick={handleKPIClick} />
 
+      {/* ✅ REORDERED: Opportunities Table at top */}
+      <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
+
+      {/* ✅ REORDERED: Funnel, At Risk, Clients below table */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
         <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
@@ -208,8 +211,7 @@ const Dashboard = () => {
         }} />
       </div>
 
-      <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
-
+      {/* Bottom widgets */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <ApprovalStatsWidget data={filteredData} />
         <DataHealthWidget {...dataHealth} />
