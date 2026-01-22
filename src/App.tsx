@@ -18,7 +18,6 @@ import { msalInstance } from "./config/msalConfig";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
-import { Sonner } from "sonner";
 
 const queryClient = new QueryClient();
 
@@ -31,7 +30,6 @@ const App = () => (
             <ApprovalProvider>
               <TooltipProvider>
                 <Toaster />
-                <Sonner />
                 <BrowserRouter>
                   <Routes>
                     <Route path="/login" element={<Login />} />
