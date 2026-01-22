@@ -434,15 +434,12 @@ app.get('/api/approval-logs', async (req, res) => {
 });
 
 // ===== DATA SYNC (Hard-coded from Google Sheets) =====
-app.post('/api/opportunities/sync-sheets', verifyToken, async (req, res) => {
+// ✅ UPDATED: Removed verifyToken middleware - now anyone can trigger sync
+app.post('/api/opportunities/sync-sheets', async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can sync data' });
-    }
-
-    console.log('\n📊 ════════════════════════════════════════');
+    console.log('\n📊 ════════════════════════════════════════════════════════════════════');
     console.log('🔄 Starting data sync from Google Sheets...');
-    console.log('📊 ════════════════════════════════════════\n');
+    console.log('📊 ════════════════════════════════════════════════════════════════════\n');
 
     // Fetch tenders from Google Sheets
     const tenders = await syncTendersFromGoogleSheets();
@@ -458,9 +455,9 @@ app.post('/api/opportunities/sync-sheets', verifyToken, async (req, res) => {
     const inserted = await SyncedOpportunity.insertMany(opportunities);
     console.log(`✅ Inserted ${inserted.length} opportunities into MongoDB`);
 
-    console.log('📊 ════════════════════════════════════════');
+    console.log('📊 ════════════════════════════════════════════════════════════════════');
     console.log('✅ DATA SYNC COMPLETE!');
-    console.log('📊 ════════════════════════════════════════\n');
+    console.log('📊 ════════════════════════════════════════════════════════════════════\n');
 
     res.json({
       success: true,
