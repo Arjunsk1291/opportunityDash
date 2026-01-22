@@ -1,3 +1,4 @@
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Clock, AlertTriangle } from 'lucide-react';
@@ -9,8 +10,11 @@ interface AtRiskWidgetProps {
 }
 
 export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
-  const submissionNearItems = data
-    .filter(o => o.isAtRisk || o.willMissDeadline)
+  const submissionWithinWeek = data
+    .filter(o => {
+      const daysToSubmission = o.daysToPlannedSubmission;
+      return daysToSubmission > 0 && daysToSubmission <= 7;
+    })
     .sort((a, b) => {
       if (a.willMissDeadline && !b.willMissDeadline) return -1;
       if (!a.willMissDeadline && b.willMissDeadline) return 1;
@@ -23,18 +27,20 @@ export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
       <CardHeader className="pb-2">
         <CardTitle className="text-lg flex items-center gap-2">
           <Clock className="h-5 w-5 text-pending" />
-          Submission Near
+          Submission Within a Week
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 max-h-[280px] overflow-auto scrollbar-thin">
-          {submissionNearItems.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">No tenders with upcoming submissions</p>
+          {submissionWithinWeek.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No tenders due within 7 days</p>
           ) : (
-            submissionNearItems.map((item) => (
-              <div 
-                key={item.id} 
-                className={`flex items-center justify-between p-2 rounded-lg bg-muted/50 transition-colors ${onSelectOpportunity ? 'cursor-pointer hover:bg-muted hover:ring-1 hover:ring-primary/20' : 'hover:bg-muted'}`}
+            submissionWithinWeek.map((item) => (
+              <div
+                key={item.id}
+                className={`flex items-center justify-between p-2 rounded-lg bg-muted/50 transition-colors ${
+                  onSelectOpportunity ? 'cursor-pointer hover:bg-muted hover:ring-1 hover:ring-primary/20' : 'hover:bg-muted'
+                }`}
                 onClick={() => onSelectOpportunity?.(item)}
               >
                 <div className="min-w-0 flex-1">
