@@ -24,7 +24,7 @@ const AZURE_TENANT_ID = process.env.AZURE_TENANT_ID;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('✅ MongoDB connected'))
@@ -48,19 +48,26 @@ const verifyToken = async (req, res, next) => {
 
     const token = authHeader.substring(7);
     
-    // Verify token signature (basic verification)
     const decoded = jwt.decode(token, { complete: true });
     if (!decoded) {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
-    const email = decoded.payload.preferred_username || decoded.payload.email;
+    // Extract email from Microsoft token - try multiple claim names
+    const email = decoded.payload.preferred_username || 
+                  decoded.payload.upn || 
+                  decoded.payload.email ||
+                  decoded.payload.mail;
+    
     if (!email) {
+      console.error('Token claims:', decoded.payload);
       return res.status(401).json({ error: 'Token missing email claim' });
     }
 
+    const cleanEmail = email.toLowerCase();
+
     // Check if user is authorized
-    const user = await AuthorizedUser.findOne({ email: email.toLowerCase() });
+    const user = await AuthorizedUser.findOne({ email: cleanEmail });
     if (!user) {
       return res.status(403).json({ error: 'User not authorized' });
     }
@@ -74,7 +81,7 @@ const verifyToken = async (req, res, next) => {
     }
 
     req.user = {
-      email: email.toLowerCase(),
+      email: cleanEmail,
       role: user.role,
       userId: user._id,
     };
@@ -101,12 +108,19 @@ app.post('/api/auth/verify-token', async (req, res) => {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
-    const email = decoded.payload.preferred_username || decoded.payload.email;
+    // Extract email from Microsoft token
+    const email = decoded.payload.preferred_username || 
+                  decoded.payload.upn || 
+                  decoded.payload.email ||
+                  decoded.payload.mail;
+    
     if (!email) {
-      return res.status(401).json({ error: 'Token missing email' });
+      console.error('Token missing email. Claims available:', Object.keys(decoded.payload));
+      return res.status(401).json({ error: 'Token missing email claim' });
     }
 
-    const user = await AuthorizedUser.findOne({ email: email.toLowerCase() });
+    const cleanEmail = email.toLowerCase();
+    const user = await AuthorizedUser.findOne({ email: cleanEmail });
     
     if (!user) {
       return res.status(403).json({ error: 'User not authorized', status: 'not_found' });
@@ -299,7 +313,6 @@ app.post('/api/users/seed', async (req, res) => {
       return res.status(400).json({ error: 'No users configured in environment variables' });
     }
 
-    // Upsert users
     const results = await Promise.all(
       usersToAdd.map(userData =>
         AuthorizedUser.findOneAndUpdate(
