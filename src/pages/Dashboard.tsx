@@ -8,11 +8,12 @@ import { DataHealthWidget } from '@/components/Dashboard/DataHealthWidget';
 import { ApprovalStatsWidget } from '@/components/Dashboard/ApprovalStatsWidget';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { AlertCircle, Loader2, RefreshCw, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { 
   calculateSummaryStats, 
   calculateFunnelData, 
@@ -206,15 +207,19 @@ const Dashboard = () => {
         <DataHealthWidget {...dataHealth} />
       </div>
 
-      {/* ✅ UPDATED: Complete Opportunity Detail Sheet */}
-      <Sheet open={!!selectedOpp} onOpenChange={() => setSelectedOpp(null)}>
-        <SheetContent className="w-full sm:w-[600px] overflow-y-auto">
+      {/* ✅ CONVERTED: Modal/Dialog instead of Sheet */}
+      <Dialog open={!!selectedOpp} onOpenChange={() => setSelectedOpp(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           {selectedOpp && (
             <div className="space-y-6">
-              <SheetHeader>
-                <SheetTitle className="text-left text-2xl">{selectedOpp.opportunityRefNo}</SheetTitle>
-                <p className="text-sm text-muted-foreground mt-2">{selectedOpp.tenderName}</p>
-              </SheetHeader>
+              <DialogHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <DialogTitle className="text-2xl">{selectedOpp.opportunityRefNo}</DialogTitle>
+                    <p className="text-sm text-muted-foreground mt-2">{selectedOpp.tenderName}</p>
+                  </div>
+                </div>
+              </DialogHeader>
 
               <Separator />
 
@@ -385,8 +390,8 @@ const Dashboard = () => {
               </div>
             </div>
           )}
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
