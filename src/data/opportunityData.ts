@@ -40,36 +40,30 @@ export interface Opportunity {
   awardStatus: string;
 }
 
+// Uppercase values matching Google Sheets
 export const STATUS_MAPPING: Record<string, string> = {
-  'PRE-BID': 'Pre-bid',
-  'RFT YET TO RECEIVE': 'Pre-bid',
-  'OPEN': 'Pre-bid',
-  'BD': 'Pre-bid',
-  'EOI': 'Pre-bid',
-  'IN PROGRESS': 'In Progress',
-  'WORKING': 'In Progress',
-  'ONGOING': 'In Progress',
-  'SUBMITTED': 'Submitted',
-  'TENDER SUBMITTED': 'Submitted',
-  'AWARDED': 'Awarded',
-  'LOST': 'Lost',
-  'REGRETTED': 'Regretted',
-  'HOLD / CLOSED': 'On Hold/Paused',
-  'HOLD': 'On Hold/Paused',
-  'CLOSED': 'Closed',
+  'WORKING': 'WORKING',
+  'SUBMITTED': 'SUBMITTED',
+  'AWARDED': 'AWARDED',
+  'LOST': 'LOST',
+  'REGRETTED': 'REGRETTED',
+  'TO START': 'TO START',
+  'ONGOING': 'ONGOING',
+  'HOLD / CLOSED': 'HOLD / CLOSED',
 };
 
-export const STAGE_ORDER = ['Pre-bid', 'In Progress', 'Submitted', 'Awarded', 'Lost', 'Regretted'];
+// Uppercase values from Google Sheets
+export const STAGE_ORDER = ['WORKING', 'SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'TO START', 'ONGOING', 'HOLD / CLOSED'];
 
 export const PROBABILITY_BY_STAGE: Record<string, number> = {
-  'Pre-bid': 10,
-  'In Progress': 40,
-  'Submitted': 60,
-  'Awarded': 100,
-  'Lost': 0,
-  'Regretted': 0,
-  'On Hold/Paused': 20,
-  'Closed': 0,
+  'WORKING': 40,
+  'SUBMITTED': 60,
+  'AWARDED': 100,
+  'LOST': 0,
+  'REGRETTED': 0,
+  'TO START': 10,
+  'ONGOING': 80,
+  'HOLD / CLOSED': 20,
 };
 
 export function calculateSummaryStats(data: Opportunity[]) {
@@ -184,8 +178,8 @@ export function getLeaderboardData(data: Opportunity[]) {
     leadStats[o.internalLead].count++;
     leadStats[o.internalLead].value += o.opportunityValue;
     
-    if (o.canonicalStage === 'Awarded') leadStats[o.internalLead].won++;
-    if (o.canonicalStage === 'Lost' || o.canonicalStage === 'Regretted') leadStats[o.internalLead].lost++;
+    if (o.canonicalStage === 'AWARDED') leadStats[o.internalLead].won++;
+    if (o.canonicalStage === 'LOST' || o.canonicalStage === 'REGRETTED') leadStats[o.internalLead].lost++;
   });
   
   return Object.entries(leadStats)
@@ -258,13 +252,14 @@ export const GROUP_CLASSIFICATIONS = [
 ];
 
 export const OPPORTUNITY_STATUSES = [
-  'Pre-bid',
-  'In Progress',
-  'Submitted',
-  'Awarded',
-  'Lost',
-  'Regretted',
-  'On Hold/Paused',
+  'WORKING',
+  'SUBMITTED',
+  'AWARDED',
+  'LOST',
+  'REGRETTED',
+  'TO START',
+  'ONGOING',
+  'HOLD / CLOSED',
 ];
 
 export const CLIENT_TYPES = [
