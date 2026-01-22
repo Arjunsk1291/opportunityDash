@@ -8,6 +8,7 @@ import { AlertCircle, Lock, Users, Trash2, CheckCircle, XCircle, Clock, RefreshC
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useState, useEffect } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -30,6 +31,7 @@ export default function Admin() {
   const [users, setUsers] = useState<AuthorizedUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [changingRole, setChangingRole] = useState<string | null>(null);
 
   useEffect(() => {
     if (isMaster) {
@@ -110,6 +112,34 @@ export default function Admin() {
     } catch (error) {
       console.error('❌ Error rejecting user:', error);
       setMessage({ type: 'error', text: '❌ Failed to reject user: ' + (error as Error).message });
+    }
+  };
+
+  const changeUserRole = async (email: string, newRole: string) => {
+    if (!token) return;
+    setChangingRole(email);
+    try {
+      const response = await fetch(API_URL + '/users/change-role', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, newRole }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to change role');
+      }
+
+      setMessage({ type: 'success', text: '🔄 User role changed to ' + newRole + ': ' + email });
+      await loadUsers();
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error) {
+      console.error('❌ Error changing role:', error);
+      setMessage({ type: 'error', text: '❌ Failed to change role: ' + (error as Error).message });
+    } finally {
+      setChangingRole(null);
     }
   };
 
@@ -301,7 +331,20 @@ export default function Admin() {
                       <TableRow key={u._id}>
                         <TableCell className="font-mono text-sm">{u.email}</TableCell>
                         <TableCell>
-                          <Badge variant="outline">{u.role}</Badge>
+                          <Select
+                            value={u.role}
+                            onValueChange={(newRole) => changeUserRole(u.email, newRole)}
+                            disabled={changingRole === u.email}
+                          >
+                            <SelectTrigger className="w-24 h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Master">Master</SelectItem>
+                              <SelectItem value="Admin">Admin</SelectItem>
+                              <SelectItem value="Basic">Basic</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">

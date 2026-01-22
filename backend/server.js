@@ -53,7 +53,6 @@ const verifyToken = async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
-    // Extract email from Microsoft token - try multiple claim names
     const email = decoded.payload.preferred_username || 
                   decoded.payload.upn || 
                   decoded.payload.email ||
@@ -66,7 +65,6 @@ const verifyToken = async (req, res, next) => {
 
     const cleanEmail = email.toLowerCase();
 
-    // Check if user is authorized
     const user = await AuthorizedUser.findOne({ email: cleanEmail });
     if (!user) {
       return res.status(403).json({ error: 'User not authorized' });
@@ -95,7 +93,6 @@ const verifyToken = async (req, res, next) => {
 
 // ===== OAUTH ENDPOINTS =====
 
-// ✅ Verify Azure token and check authorization (ALLOWS PENDING USERS)
 app.post('/api/auth/verify-token', async (req, res) => {
   try {
     const { token } = req.body;
@@ -108,7 +105,6 @@ app.post('/api/auth/verify-token', async (req, res) => {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
-    // Extract email from Microsoft token
     const email = decoded.payload.preferred_username || 
                   decoded.payload.upn || 
                   decoded.payload.email ||
@@ -122,7 +118,6 @@ app.post('/api/auth/verify-token', async (req, res) => {
     const cleanEmail = email.toLowerCase();
     let user = await AuthorizedUser.findOne({ email: cleanEmail });
     
-    // ✅ NEW: If user doesn't exist, create as pending
     if (!user) {
       console.log('📋 Creating new pending user:', cleanEmail);
       user = new AuthorizedUser({
@@ -147,7 +142,6 @@ app.post('/api/auth/verify-token', async (req, res) => {
       return res.status(403).json({ error: 'User access rejected', status: 'rejected' });
     }
 
-    // ✅ ALLOW pending users to proceed (they'll see a message)
     if (user.status === 'pending') {
       return res.json({
         success: true,
@@ -174,7 +168,6 @@ app.post('/api/auth/verify-token', async (req, res) => {
   }
 });
 
-// Record login
 app.post('/api/auth/login', verifyToken, async (req, res) => {
   try {
     const loginLog = new LoginLog({
@@ -198,7 +191,6 @@ app.post('/api/auth/login', verifyToken, async (req, res) => {
   }
 });
 
-// Get current user
 app.get('/api/auth/user', verifyToken, async (req, res) => {
   try {
     const user = await AuthorizedUser.findOne({ email: req.user.email });
@@ -217,7 +209,6 @@ app.get('/api/auth/user', verifyToken, async (req, res) => {
   }
 });
 
-// Get all authorized users (Master only)
 app.get('/api/users/authorized', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'Master') {
@@ -231,7 +222,6 @@ app.get('/api/users/authorized', verifyToken, async (req, res) => {
   }
 });
 
-// Approve pending user (Master only)
 app.post('/api/users/approve', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'Master') {
@@ -264,7 +254,6 @@ app.post('/api/users/approve', verifyToken, async (req, res) => {
   }
 });
 
-// Reject user (Master only)
 app.post('/api/users/reject', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'Master') {
@@ -297,7 +286,40 @@ app.post('/api/users/reject', verifyToken, async (req, res) => {
   }
 });
 
-// Remove approved user (Master only)
+// ✅ NEW: Change user role (Master only)
+app.post('/api/users/change-role', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can change roles' });
+    }
+
+    const { email, newRole } = req.body;
+    if (!email || !newRole) {
+      return res.status(400).json({ error: 'Email and newRole are required' });
+    }
+
+    const validRoles = ['Master', 'Admin', 'Basic'];
+    if (!validRoles.includes(newRole)) {
+      return res.status(400).json({ error: 'Invalid role. Must be Master, Admin, or Basic' });
+    }
+
+    const user = await AuthorizedUser.findOneAndUpdate(
+      { email: email.toLowerCase() },
+      { role: newRole },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    console.log('🔄 User role changed:', email, 'to', newRole, 'by', req.user.email);
+    res.json({ success: true, user });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.delete('/api/users/remove', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'Master') {
@@ -322,7 +344,6 @@ app.delete('/api/users/remove', verifyToken, async (req, res) => {
   }
 });
 
-// Seed authorized users from environment (run once)
 app.post('/api/users/seed', async (req, res) => {
   try {
     const masterEmails = (process.env.MASTER_USERS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
@@ -356,7 +377,6 @@ app.post('/api/users/seed', async (req, res) => {
   }
 });
 
-// Manual cleanup of old login logs (Master only)
 app.post('/api/logs/cleanup', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'Master') {
@@ -654,7 +674,6 @@ app.post('/api/google-sheets/auto-sync', async (req, res) => {
 const distPath = path.resolve(__dirname, '../dist');
 app.use(express.static(distPath));
 
-// SPA fallback - serve index.html for all non-API routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
