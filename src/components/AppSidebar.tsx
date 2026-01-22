@@ -43,8 +43,7 @@ import { Badge } from "@/components/ui/badge";
 
 const mainNavItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "All Tenders", url: "/opportunities", icon: FileText },
-  { title: "Tenders", url: "/tenders", icon: FileSpreadsheet },
+  { title: "Opportunities", url: "/opportunities", icon: FileText },
   { title: "Clients", url: "/clients", icon: Building2 },
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
 ];
