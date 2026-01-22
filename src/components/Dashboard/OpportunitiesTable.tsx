@@ -46,7 +46,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     try {
       console.log('🔄 FORCE SYNC: Starting manual sync from Google Sheets');
       
-      const response = await fetch(API_URL + '/google-sheets/sync', {
+      const response = await fetch(API_URL + '/opportunities/sync-sheets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });

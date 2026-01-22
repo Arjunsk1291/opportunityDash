@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { Opportunity } from '@/data/opportunityData';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -19,10 +19,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 
-  useEffect(() => {
-    refreshData();
-  }, []);
-
   const refreshData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -30,7 +26,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     try {
       console.log('🔄 Loading opportunities from MongoDB...');
       
-      const response = await fetch(API_URL + '/google-sheets/opportunities', {
+      const response = await fetch(API_URL + '/opportunities', {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -49,12 +45,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       
       setOpportunities(dataWithIds);
       setLastSyncTime(new Date());
-      
-      if (dataWithIds.length === 0) {
-        setError('No data available. Please sync from Google Sheets in the Master Panel.');
-      } else {
-        setError(null);
-      }
+      setError(null);
     } catch (err: any) {
       const errorMsg = 'Failed to load data: ' + err.message;
       console.error('❌', errorMsg);
@@ -64,6 +55,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     }
   }, []);
+
+  React.useEffect(() => {
+    refreshData();
+  }, [refreshData]);
 
   return (
     <DataContext.Provider 

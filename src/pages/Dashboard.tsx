@@ -75,36 +75,51 @@ const Dashboard = () => {
   const clientData = useMemo(() => getClientData(filteredData), [filteredData]);
   const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
 
-  const handleKPIClick = (kpiType: 'active' | 'pipeline' | 'won' | 'lost' | 'regretted' | 'upcoming') => {
+  const handleKPIClick = (kpiType: 'active' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => {
     switch (kpiType) {
       case 'active':
         setFilters({
           ...defaultFilters,
-          statuses: ['Pre-bid', 'In Progress', 'Submitted'],
+          statuses: ['WORKING', 'SUBMITTED', 'AWARDED'],
         });
         break;
-      case 'pipeline':
-        setFilters(defaultFilters);
-        break;
-      case 'won':
+      case 'awarded':
         setFilters({
           ...defaultFilters,
-          statuses: ['Awarded'],
+          statuses: ['AWARDED'],
         });
         break;
       case 'lost':
         setFilters({
           ...defaultFilters,
-          statuses: ['Lost/Regretted'],
+          statuses: ['LOST'],
         });
         break;
       case 'regretted':
         setFilters({
           ...defaultFilters,
-          statuses: ['Lost/Regretted'],
+          statuses: ['REGRETTED'],
         });
         break;
-      case 'upcoming':
+      case 'working':
+        setFilters({
+          ...defaultFilters,
+          statuses: ['WORKING'],
+        });
+        break;
+      case 'tostart':
+        setFilters({
+          ...defaultFilters,
+          statuses: ['TO START'],
+        });
+        break;
+      case 'ongoing':
+        setFilters({
+          ...defaultFilters,
+          statuses: ['ONGOING'],
+        });
+        break;
+      case 'submission':
         setFilters({
           ...defaultFilters,
           showAtRisk: true,
@@ -144,9 +159,8 @@ const Dashboard = () => {
             <strong>Next Steps:</strong>
             <ol className="list-decimal list-inside mt-2 space-y-1">
               <li>Go to Master Panel (/master)</li>
-              <li>Configure Google Sheets API settings</li>
-              <li>Map columns from your Google Sheet</li>
               <li>Click "Sync from Google Sheets"</li>
+              <li>Wait for data to load</li>
             </ol>
           </AlertDescription>
         </Alert>

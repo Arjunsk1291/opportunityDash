@@ -1,16 +1,16 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import GoogleSheetsIntegration from '@/components/GoogleSheetsIntegration';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Lock, Users, Trash2, CheckCircle, XCircle, Clock, RefreshCw } from 'lucide-react';
+import { AlertCircle, Lock, Users, Trash2, CheckCircle, XCircle, Clock, RefreshCw, Download, Database } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useState, useEffect } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -25,6 +25,13 @@ interface AuthorizedUser {
   approvedAt?: Date;
 }
 
+interface CollectionStats {
+  totalTenders: number;
+  totalValue: number;
+  lastSync?: Date;
+  statusDistribution: Record<string, number>;
+}
+
 export default function Admin() {
   const { user, isMaster, token } = useAuth();
   const navigate = useNavigate();
@@ -32,10 +39,13 @@ export default function Admin() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [changingRole, setChangingRole] = useState<string | null>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(null);
 
   useEffect(() => {
     if (isMaster) {
       loadUsers();
+      loadCollectionStats();
     }
   }, [isMaster, token]);
 
@@ -62,6 +72,54 @@ export default function Admin() {
       setMessage({ type: 'error', text: 'Failed to load users: ' + (error as Error).message });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCollectionStats = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/opportunities/stats', {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCollectionStats(data);
+      }
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  };
+
+  const syncFromGoogleSheets = async () => {
+    if (!token) return;
+    setSyncLoading(true);
+    try {
+      const response = await fetch(API_URL + '/opportunities/sync-sheets', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to sync data');
+      }
+
+      const result = await response.json();
+      setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Google Sheets` });
+      await loadCollectionStats();
+      toast.success(`Synced ${result.count} tenders`);
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error) {
+      console.error('❌ Error syncing:', error);
+      setMessage({ type: 'error', text: 'Failed to sync: ' + (error as Error).message });
+      toast.error('Sync failed');
+    } finally {
+      setSyncLoading(false);
     }
   };
 
@@ -223,7 +281,7 @@ export default function Admin() {
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="users">User Management</TabsTrigger>
-          <TabsTrigger value="google-sheets">Google Sheets</TabsTrigger>
+          <TabsTrigger value="data-sync">Data Sync</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general">
@@ -265,7 +323,7 @@ export default function Admin() {
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-green-600 mt-1">✓</span>
-                  <span>Configure Google Sheets sync</span>
+                  <span>Sync data from Google Sheets</span>
                 </div>
               </CardContent>
             </Card>
@@ -451,8 +509,71 @@ export default function Admin() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="google-sheets">
-          <GoogleSheetsIntegration />
+        <TabsContent value="data-sync">
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Database className="h-5 w-5" />
+                    <div>
+                      <CardTitle>Data Collection</CardTitle>
+                      <CardDescription>Sync tender data from Google Sheets to MongoDB</CardDescription>
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="border rounded-lg p-4">
+                    <p className="text-sm text-muted-foreground">Total Tenders</p>
+                    <p className="text-2xl font-bold">{collectionStats?.totalTenders || 0}</p>
+                  </div>
+                  <div className="border rounded-lg p-4">
+                    <p className="text-sm text-muted-foreground">Total Value</p>
+                    <p className="text-2xl font-bold">${(collectionStats?.totalValue || 0).toLocaleString()}</p>
+                  </div>
+                  <div className="border rounded-lg p-4">
+                    <p className="text-sm text-muted-foreground">Last Sync</p>
+                    <p className="text-sm font-mono">
+                      {collectionStats?.lastSync 
+                        ? new Date(collectionStats.lastSync).toLocaleString() 
+                        : 'Never'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border-t pt-6">
+                  <h3 className="font-semibold mb-3">Status Distribution</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {collectionStats?.statusDistribution && 
+                      Object.entries(collectionStats.statusDistribution).map(([status, count]) => (
+                        <div key={status} className="bg-muted p-3 rounded">
+                          <p className="text-xs text-muted-foreground">{status}</p>
+                          <p className="text-lg font-bold">{count}</p>
+                        </div>
+                      ))
+                    }
+                  </div>
+                </div>
+
+                <div className="border-t pt-6">
+                  <Button 
+                    onClick={syncFromGoogleSheets}
+                    disabled={syncLoading}
+                    size="lg"
+                    className="w-full gap-2"
+                  >
+                    <Download className={`h-4 w-4 ${syncLoading ? 'animate-spin' : ''}`} />
+                    {syncLoading ? 'Syncing...' : 'Sync from Google Sheets'}
+                  </Button>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Pulls latest tender data from your configured Google Sheet and syncs to database
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

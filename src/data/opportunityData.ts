@@ -40,7 +40,6 @@ export interface Opportunity {
   awardStatus: string;
 }
 
-// ✅ UPDATED: Lost and Regretted are now SEPARATE stages
 export const STATUS_MAPPING: Record<string, string> = {
   'PRE-BID': 'Pre-bid',
   'RFT YET TO RECEIVE': 'Pre-bid',
@@ -60,7 +59,6 @@ export const STATUS_MAPPING: Record<string, string> = {
   'CLOSED': 'Closed',
 };
 
-// ✅ UPDATED: Added Lost and Regretted separately
 export const STAGE_ORDER = ['Pre-bid', 'In Progress', 'Submitted', 'Awarded', 'Lost', 'Regretted'];
 
 export const PROBABILITY_BY_STAGE: Record<string, number> = {
@@ -75,30 +73,72 @@ export const PROBABILITY_BY_STAGE: Record<string, number> = {
 };
 
 export function calculateSummaryStats(data: Opportunity[]) {
-  const activeOpps = data.filter(o => ['In Progress', 'Submitted', 'Awarded'].includes(o.canonicalStage));
-  const wonOpps = data.filter(o => o.canonicalStage === 'Awarded');
-  const lostOpps = data.filter(o => o.canonicalStage === 'Lost');
-  const regrettedOpps = data.filter(o => o.canonicalStage === 'Regretted');
-  const atRiskOpps = data.filter(o => o.isAtRisk);
-  
-  const totalPipelineValue = activeOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
-  const weightedPipeline = activeOpps.reduce((sum, o) => sum + o.expectedValue, 0);
-  const wonValue = wonOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+  const isSubmissionNear = (receivedDate: string | null): boolean => {
+    if (!receivedDate) return false;
+    
+    const received = new Date(receivedDate);
+    const today = new Date();
+    const oneWeekAfterReceived = new Date(received);
+    oneWeekAfterReceived.setDate(received.getDate() + 7);
+    
+    const diffDays = Math.ceil((oneWeekAfterReceived.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 7;
+  };
+
+  const activeOpps = data.filter(o => 
+    ['WORKING', 'SUBMITTED', 'AWARDED'].includes(o.canonicalStage)
+  );
+
+  const awardedOpps = data.filter(o => o.canonicalStage === 'AWARDED');
+  const totalActiveValue = awardedOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+
+  const awardedCount = awardedOpps.length;
+  const awardedValue = totalActiveValue;
+
+  const lostOpps = data.filter(o => o.canonicalStage === 'LOST');
+  const lostCount = lostOpps.length;
   const lostValue = lostOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+
+  const regrettedOpps = data.filter(o => o.canonicalStage === 'REGRETTED');
+  const regrettedCount = regrettedOpps.length;
   const regrettedValue = regrettedOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
-  
+
+  const workingOpps = data.filter(o => o.canonicalStage === 'WORKING');
+  const workingCount = workingOpps.length;
+  const workingValue = workingOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+
+  const toStartOpps = data.filter(o => o.canonicalStage === 'TO START');
+  const toStartCount = toStartOpps.length;
+  const toStartValue = toStartOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+
+  const ongoingOpps = data.filter(o => o.canonicalStage === 'ONGOING');
+  const ongoingCount = ongoingOpps.length;
+  const ongoingValue = ongoingOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+
+  const submissionNearOpps = data.filter(o => isSubmissionNear(o.dateTenderReceived));
+  const submissionNearCount = submissionNearOpps.length;
+
   return {
     totalActive: activeOpps.length,
-    totalPipelineValue,
-    weightedPipeline,
-    wonCount: wonOpps.length,
-    wonValue,
-    lostCount: lostOpps.length,
-    lostValue,
-    regrettedCount: regrettedOpps.length,
-    regrettedValue,
-    atRiskCount: atRiskOpps.length,
+    totalPipelineValue: totalActiveValue,
+    weightedPipeline: awardedValue,
+    wonCount: awardedCount,
+    wonValue: awardedValue,
+    lostCount: lostCount,
+    lostValue: lostValue,
+    regrettedCount: regrettedCount,
+    regrettedValue: regrettedValue,
+    atRiskCount: submissionNearCount,
     avgDaysToSubmission: 0,
+    workingCount,
+    workingValue,
+    toStartCount,
+    toStartValue,
+    ongoingCount,
+    ongoingValue,
+    submissionNearCount,
+    awardedCount,
+    awardedValue,
   };
 }
 

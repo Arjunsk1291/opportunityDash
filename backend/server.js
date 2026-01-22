@@ -6,12 +6,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import approvalDb from './approvalDb.js';
-import GoogleSheetsConfig from './models/GoogleSheetsConfig.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
-import { fetchGoogleSheetData, mapSheetRowToOpportunity } from './services/googleSheetsService.js';
+import { syncTendersFromGoogleSheets, transformTendersToOpportunities } from './services/dataSyncService.js';
 
+import { initializeBootSync } from './services/bootSyncService.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -19,8 +19,6 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
-const AZURE_CLIENT_ID = process.env.AZURE_CLIENT_ID;
-const AZURE_TENANT_ID = process.env.AZURE_TENANT_ID;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -28,6 +26,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('✅ MongoDB connected'))
+  .then(() => { initializeBootSync(); })
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
 const mapIdField = (doc) => {
@@ -47,7 +46,6 @@ const verifyToken = async (req, res, next) => {
     }
 
     const token = authHeader.substring(7);
-    
     const decoded = jwt.decode(token, { complete: true });
     if (!decoded) {
       return res.status(401).json({ error: 'Invalid token' });
@@ -64,7 +62,6 @@ const verifyToken = async (req, res, next) => {
     }
 
     const cleanEmail = email.toLowerCase();
-
     const user = await AuthorizedUser.findOne({ email: cleanEmail });
     if (!user) {
       return res.status(403).json({ error: 'User not authorized' });
@@ -111,7 +108,6 @@ app.post('/api/auth/verify-token', async (req, res) => {
                   decoded.payload.mail;
     
     if (!email) {
-      console.error('Token missing email. Claims available:', Object.keys(decoded.payload));
       return res.status(401).json({ error: 'Token missing email claim' });
     }
 
@@ -286,7 +282,6 @@ app.post('/api/users/reject', verifyToken, async (req, res) => {
   }
 });
 
-// ✅ NEW: Change user role (Master only)
 app.post('/api/users/change-role', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'Master') {
@@ -438,234 +433,82 @@ app.get('/api/approval-logs', async (req, res) => {
   }
 });
 
-// ===== GOOGLE SHEETS CONFIG =====
-app.get('/api/google-sheets/config', async (req, res) => {
+// ===== DATA SYNC (Hard-coded from Google Sheets) =====
+app.post('/api/opportunities/sync-sheets', verifyToken, async (req, res) => {
   try {
-    const config = await GoogleSheetsConfig.findOne();
-    if (!config) {
-      return res.json({});
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can sync data' });
     }
-    res.json({
-      apiKey: config.apiKey,
-      spreadsheetId: config.spreadsheetId,
-      sheetName: config.sheetName,
-      columnMapping: config.columnMapping,
-      isActive: config.isActive,
-      lastSyncTime: config.lastSyncTime,
-      lastSyncStatus: config.lastSyncStatus,
-      lastSavedTime: config.lastSavedTime,
-      configSavedBy: config.configSavedBy,
-      autoRefreshInterval: config.autoRefreshInterval,
-      isAutoRefreshEnabled: config.isAutoRefreshEnabled,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
-app.post('/api/google-sheets/config', async (req, res) => {
-  try {
-    const { apiKey, spreadsheetId, sheetName, columnMapping, configSavedBy } = req.body;
-    
-    if (!apiKey || !spreadsheetId || !sheetName) {
-      return res.status(400).json({ error: 'apiKey, spreadsheetId, and sheetName are required' });
-    }
-    
-    let config = await GoogleSheetsConfig.findOne();
-    if (!config) {
-      config = new GoogleSheetsConfig();
-    }
-    
-    config.apiKey = apiKey;
-    config.spreadsheetId = spreadsheetId;
-    config.sheetName = sheetName;
-    config.columnMapping = columnMapping;
-    config.isActive = false;
-    config.lastSavedTime = new Date();
-    config.configSavedBy = configSavedBy || 'Master User';
-    config.autoRefreshInterval = 10;
-    config.isAutoRefreshEnabled = true;
-    
-    const saved = await config.save();
-    console.log('✅ Config saved by ' + config.configSavedBy + ' at ' + config.lastSavedTime);
-    
-    res.json({ 
-      success: true, 
-      config: saved,
-      message: 'Configuration saved successfully at ' + config.lastSavedTime.toLocaleTimeString()
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+    console.log('\n📊 ════════════════════════════════════════');
+    console.log('🔄 Starting data sync from Google Sheets...');
+    console.log('📊 ════════════════════════════════════════\n');
 
-app.post('/api/google-sheets/test', async (req, res) => {
-  try {
-    const { apiKey, spreadsheetId, sheetName } = req.body;
-    const { headerRowIndex, headers, rows } = await fetchGoogleSheetData(apiKey, spreadsheetId, sheetName);
-    const dataRowCount = rows.length - 1 - headerRowIndex;
-    
-    res.json({ 
-      success: true,
-      headerRowIndex,
-      columnCount: headers.length,
-      rowCount: dataRowCount,
-      headers: headers,
-      preview: rows.slice(headerRowIndex + 1, headerRowIndex + 4) 
-    });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
+    // Fetch tenders from Google Sheets
+    const tenders = await syncTendersFromGoogleSheets();
+    console.log(`✅ Fetched ${tenders.length} tenders from Google Sheets`);
 
-app.post('/api/google-sheets/sync', async (req, res) => {
-  try {
-    console.log('🔄 SYNC STARTED');
-    const config = await GoogleSheetsConfig.findOne();
-    if (!config) {
-      console.log('❌ NO CONFIG FOUND');
-      return res.status(400).json({ error: 'No Google Sheets configuration found' });
-    }
-    
-    console.log('📋 CONFIG FOUND, fetching data...');
-    const { headerRowIndex, rows, headers } = await fetchGoogleSheetData(config.apiKey, config.spreadsheetId, config.sheetName);
-    console.log('📍 Got ' + rows.length + ' rows, headers at row ' + headerRowIndex);
-    
-    const dataRows = rows.slice(headerRowIndex + 1);
-    console.log('📊 Processing ' + dataRows.length + ' data rows');
-    
-    const columnMapping = {};
-    Object.entries(config.columnMapping).forEach(([fieldName, colNum]) => {
-      if (colNum) {
-        columnMapping[fieldName] = parseInt(colNum);
-        console.log('  ✅ ' + fieldName + ' -> column ' + colNum);
-      }
-    });
-    
-    console.log('🗑️ Clearing old data...');
+    // Transform to Opportunity format
+    const opportunities = await transformTendersToOpportunities(tenders);
+
+    // Clear existing data and insert new
     await SyncedOpportunity.deleteMany({});
-    
-    console.log('📝 Mapping rows...');
-    const syncedData = [];
-    dataRows.forEach((row, index) => {
-      try {
-        const mapped = mapSheetRowToOpportunity(row, columnMapping);
-        if (mapped.opportunityRefNo && mapped.opportunityRefNo !== 'UNKNOWN') {
-          syncedData.push({
-            googleSheetRowId: headerRowIndex + index + 2,
-            ...mapped,
-            rawGoogleData: row,
-          });
-        }
-      } catch (e) {
-        console.error('❌ Error mapping row ' + index + ':', e.message);
-      }
-    });
-    
-    console.log('💾 Inserting ' + syncedData.length + ' opportunities...');
-    await SyncedOpportunity.insertMany(syncedData);
-    console.log('✅ INSERT COMPLETE');
-    
-    const updatedConfig = await GoogleSheetsConfig.findOne();
-    if (updatedConfig) {
-      updatedConfig.lastSyncTime = new Date();
-      updatedConfig.lastSyncStatus = 'Synced ' + syncedData.length + ' opportunities';
-      updatedConfig.isActive = true;
-      await updatedConfig.save();
-      console.log('✅ CONFIG UPDATED');
-    }
-    
-    console.log('✅ SYNC COMPLETE');
-    res.json({ 
-      success: true, 
-      syncedCount: syncedData.length,
-      message: 'Synced ' + syncedData.length + ' opportunities',
-      lastSyncTime: new Date(),
+    console.log('✅ Cleared old data from MongoDB');
+
+    const inserted = await SyncedOpportunity.insertMany(opportunities);
+    console.log(`✅ Inserted ${inserted.length} opportunities into MongoDB`);
+
+    console.log('📊 ════════════════════════════════════════');
+    console.log('✅ DATA SYNC COMPLETE!');
+    console.log('📊 ════════════════════════════════════════\n');
+
+    res.json({
+      success: true,
+      count: inserted.length,
+      syncedCount: inserted.length,
+      message: `Synced ${inserted.length} tenders from Google Sheets`,
     });
   } catch (error) {
-    console.error('❌ SYNC ERROR:', error.message);
-    res.status(500).json({ error: error.message });
+    console.error('❌ Sync error:', error.message);
+    res.status(500).json({ error: 'Sync failed: ' + error.message });
   }
 });
 
-app.get('/api/google-sheets/opportunities', async (req, res) => {
+app.post('/api/opportunities/sync-sheets/auto', async (req, res) => {
+  try {
+    console.log('🔄 AUTO-SYNC: Starting automatic sync from Google Sheets...');
+
+    // Fetch tenders from Google Sheets
+    const tenders = await syncTendersFromGoogleSheets();
+    console.log(`✅ AUTO-SYNC: Fetched ${tenders.length} tenders`);
+
+    // Transform to Opportunity format
+    const opportunities = await transformTendersToOpportunities(tenders);
+
+    // Clear existing data and insert new
+    await SyncedOpportunity.deleteMany({});
+    const inserted = await SyncedOpportunity.insertMany(opportunities);
+    console.log(`✅ AUTO-SYNC: Inserted ${inserted.length} opportunities`);
+
+    res.json({
+      success: true,
+      count: inserted.length,
+      syncedCount: inserted.length,
+      message: `Auto-synced ${inserted.length} tenders`,
+    });
+  } catch (error) {
+    console.error('❌ AUTO-SYNC: Error -', error.message);
+    res.status(500).json({ error: 'Auto-sync failed: ' + error.message });
+  }
+});
+
+// ===== OPPORTUNITIES =====
+app.get('/api/opportunities', async (req, res) => {
   try {
     const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
     const mapped = opportunities.map(opp => mapIdField(opp));
     res.json(mapped);
   } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.delete('/api/google-sheets/clear', async (req, res) => {
-  try {
-    const result = await SyncedOpportunity.deleteMany({});
-    const config = await GoogleSheetsConfig.findOne();
-    if (config) {
-      config.isActive = false;
-      config.lastSyncStatus = 'Data cleared';
-      await config.save();
-    }
-    res.json({ success: true, deletedCount: result.deletedCount });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/google-sheets/auto-sync', async (req, res) => {
-  try {
-    console.log('🔄 AUTO-SYNC TRIGGERED');
-    const config = await GoogleSheetsConfig.findOne();
-    
-    if (!config || !config.isAutoRefreshEnabled) {
-      console.log('⏭️ AUTO-SYNC DISABLED');
-      return res.json({ success: false, message: 'Auto-sync is disabled' });
-    }
-    
-    const { headerRowIndex, rows } = await fetchGoogleSheetData(config.apiKey, config.spreadsheetId, config.sheetName);
-    const dataRows = rows.slice(headerRowIndex + 1);
-    
-    const columnMapping = {};
-    Object.entries(config.columnMapping).forEach(([fieldName, colNum]) => {
-      if (colNum) {
-        columnMapping[fieldName] = parseInt(colNum);
-      }
-    });
-    
-    const syncedData = [];
-    dataRows.forEach((row, index) => {
-      try {
-        const mapped = mapSheetRowToOpportunity(row, columnMapping);
-        if (mapped.opportunityRefNo && mapped.opportunityRefNo !== 'UNKNOWN') {
-          syncedData.push({
-            googleSheetRowId: headerRowIndex + index + 2,
-            ...mapped,
-            rawGoogleData: row,
-          });
-        }
-      } catch (e) {
-        // Silent fail for auto-sync
-      }
-    });
-    
-    await SyncedOpportunity.deleteMany({});
-    await SyncedOpportunity.insertMany(syncedData);
-    
-    config.lastSyncTime = new Date();
-    config.lastSyncStatus = 'Auto-synced ' + syncedData.length + ' opportunities';
-    await config.save();
-    
-    console.log('✅ AUTO-SYNC COMPLETE: ' + syncedData.length + ' opportunities');
-    
-    res.json({ 
-      success: true, 
-      syncedCount: syncedData.length,
-      message: 'Auto-synced ' + syncedData.length + ' opportunities',
-      lastSyncTime: new Date(),
-    });
-  } catch (error) {
-    console.error('❌ AUTO-SYNC ERROR:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -679,5 +522,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log('✅ Approval server running on http://localhost:' + PORT);
+  console.log('✅ Server running on http://localhost:' + PORT);
 });
