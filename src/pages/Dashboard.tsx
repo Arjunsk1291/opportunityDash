@@ -114,6 +114,14 @@ const Dashboard = () => {
     }
   };
 
+  const handleFunnelClick = (stage: string) => {
+    console.log('🔗 Funnel clicked:', stage);
+    setFilters({
+      ...defaultFilters,
+      statuses: [stage],
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -190,7 +198,7 @@ const Dashboard = () => {
       <KPICards stats={stats} onKPIClick={handleKPIClick} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <FunnelChart data={funnelData} />
+        <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
         <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
         <ClientLeaderboard data={clientData} onClientClick={(client) => {
           setFilters({
@@ -207,7 +215,7 @@ const Dashboard = () => {
         <DataHealthWidget {...dataHealth} />
       </div>
 
-      {/* ✅ CONVERTED: Modal/Dialog instead of Sheet */}
+      {/* ✅ Modal for opportunity details */}
       <Dialog open={!!selectedOpp} onOpenChange={() => setSelectedOpp(null)}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           {selectedOpp && (
