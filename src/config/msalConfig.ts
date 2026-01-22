@@ -8,7 +8,7 @@ const redirectUri = isDev
 export const msalConfig = {
   auth: {
     clientId: 'b507bc53-ce4a-48cb-9fd2-6aa8c8e10464',
-    authority: 'https://login.microsoftonline.com/common',
+    authority: 'https://login.microsoftonline.com/18308545-013f-4a2f-9774-5516497b3c54',
     redirectUri: redirectUri,
   },
   cache: {
