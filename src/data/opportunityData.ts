@@ -38,9 +38,11 @@ export interface Opportunity {
   country: string;
   remarks: string;
   awardStatus: string;
+  avenirStatus?: string;
+  tenderResult?: string;
+  combinedStatuses?: string[];
 }
 
-// Uppercase values matching Google Sheets
 export const STATUS_MAPPING: Record<string, string> = {
   'WORKING': 'WORKING',
   'SUBMITTED': 'SUBMITTED',
@@ -52,7 +54,6 @@ export const STATUS_MAPPING: Record<string, string> = {
   'HOLD / CLOSED': 'HOLD / CLOSED',
 };
 
-// Uppercase values from Google Sheets
 export const STAGE_ORDER = ['WORKING', 'SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'TO START', 'ONGOING', 'HOLD / CLOSED'];
 
 export const PROBABILITY_BY_STAGE: Record<string, number> = {
@@ -82,14 +83,12 @@ export function calculateSummaryStats(data: Opportunity[]) {
   const activeOpps = data.filter(o => 
     ['WORKING', 'SUBMITTED', 'AWARDED'].includes(o.canonicalStage)
   );
-
   const awardedOpps = data.filter(o => o.canonicalStage === 'AWARDED');
   const totalActiveValue = awardedOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
-
   const awardedCount = awardedOpps.length;
   const awardedValue = totalActiveValue;
 
-  const lostOpps = data.filter(o => o.canonicalStage === 'LOST');
+  const lostOpps = data.filter(o => o.tenderResult === 'LOST');
   const lostCount = lostOpps.length;
   const lostValue = lostOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
 
@@ -105,7 +104,7 @@ export function calculateSummaryStats(data: Opportunity[]) {
   const toStartCount = toStartOpps.length;
   const toStartValue = toStartOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
 
-  const ongoingOpps = data.filter(o => o.canonicalStage === 'ONGOING');
+  const ongoingOpps = data.filter(o => o.tenderResult === 'ONGOING');
   const ongoingCount = ongoingOpps.length;
   const ongoingValue = ongoingOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
 
@@ -140,11 +139,20 @@ export function calculateFunnelData(data: Opportunity[]) {
   const stageCounts: Record<string, { count: number; value: number }> = {};
   
   STAGE_ORDER.forEach(stage => {
-    const stageOpps = data.filter(o => o.canonicalStage === stage);
-    stageCounts[stage] = {
-      count: stageOpps.length,
-      value: stageOpps.reduce((sum, o) => sum + o.opportunityValue, 0),
-    };
+    stageCounts[stage] = { count: 0, value: 0 };
+  });
+  
+  data.forEach(opp => {
+    let stage = opp.canonicalStage;
+    
+    if (opp.tenderResult === 'LOST' || opp.tenderResult === 'ONGOING') {
+      stage = opp.tenderResult;
+    }
+    
+    if (stageCounts[stage]) {
+      stageCounts[stage].count++;
+      stageCounts[stage].value += opp.opportunityValue;
+    }
   });
   
   const funnelData = STAGE_ORDER.map((stage, index) => {
@@ -179,7 +187,8 @@ export function getLeaderboardData(data: Opportunity[]) {
     leadStats[o.internalLead].value += o.opportunityValue;
     
     if (o.canonicalStage === 'AWARDED') leadStats[o.internalLead].won++;
-    if (o.canonicalStage === 'LOST' || o.canonicalStage === 'REGRETTED') leadStats[o.internalLead].lost++;
+    // ✅ UPDATED: Count LOST from tenderResult, not canonicalStage
+    if (o.tenderResult === 'LOST' || o.canonicalStage === 'REGRETTED') leadStats[o.internalLead].lost++;
   });
   
   return Object.entries(leadStats)

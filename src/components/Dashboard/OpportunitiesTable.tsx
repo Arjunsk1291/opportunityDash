@@ -189,7 +189,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.slice(0, 50).map((opp) => {
+              {filteredData.map((opp) => {
                 const approvalStatus = getApprovalStatus(opp.opportunityRefNo);
                 return (
                   <TableRow key={opp.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectOpportunity(opp)}>
@@ -206,7 +206,11 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                         {opp.canonicalStage || '—'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-sm">{opp.awardStatus || '—'}</TableCell>
+                    <TableCell>
+                      <Badge className={getStatusBadgeColor(opp.tenderResult || '')} variant="secondary" className="text-xs">
+                        {opp.tenderResult || '—'}
+                      </Badge>
+                    </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       {approvalStatus === 'approved' ? (
                         <div className="flex items-center gap-1">
@@ -267,7 +271,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
           </Table>
         </div>
         <div className="p-3 text-xs text-muted-foreground border-t">
-          Showing {Math.min(filteredData.length, 50)} of {filteredData.length} tenders
+          Showing {filteredData.length} of {data.length} tenders
         </div>
       </CardContent>
     </Card>

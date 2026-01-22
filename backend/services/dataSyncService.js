@@ -48,9 +48,22 @@ function parseDate(year, dateStr) {
   return null;
 }
 
+// ✅ NEW: Get unique statuses - avoid double counting when both are same
+function getUniqueStatuses(avenirStatus, tenderResult) {
+  const avenir = normalizeStatus(avenirStatus);
+  const tender = normalizeStatus(tenderResult);
+  
+  const statuses = [];
+  
+  if (avenir) statuses.push(avenir);
+  if (tender && tender !== avenir) statuses.push(tender);  // Only add if different
+  
+  return statuses;
+}
+
 export async function syncTendersFromGoogleSheets() {
   try {
-    console.log('📡 [dataSyncService] Fetching from Google Sheets...');
+    console.log('🔔 [dataSyncService] Fetching from Google Sheets...');
     
     const response = await fetchGoogleSheets();
     const rows = response.values || [];
@@ -72,7 +85,7 @@ export async function syncTendersFromGoogleSheets() {
       tenderName: findColumn(['TENDER NAME', 'DESCRIPTION']),
       year: findColumn(['YEAR']),
       dateReceived: findColumn(['DATE TENDER RECD', 'DATE RECEIVED']),
-      lead: findColumn(['LEAD', 'INTERNAL LEAD']),
+      lead: findColumn(['ASSIGNED PERSON']),  // ✅ UPDATED: Now looks for "ASSIGNED PERSON"
       value: findColumn(['TENDER VALUE']),
       avenirStatus: findColumn(['AVENIR STATUS']),
       tenderResult: findColumn(['TENDER RESULT']),
@@ -102,18 +115,22 @@ export async function syncTendersFromGoogleSheets() {
       const year = getValue(colIndices.year);
       const dateReceived = getValue(colIndices.dateReceived);
       const rfpDate = parseDate(year, dateReceived);
+      
+      const avenirStatus = normalizeStatus(getValue(colIndices.avenirStatus));
+      const tenderResult = normalizeStatus(getValue(colIndices.tenderResult));
 
       const tender = {
         opportunityRefNo: getValue(colIndices.tenderNo),
         tenderName: getValue(colIndices.tenderName),
         clientName: getValue(colIndices.client),
         opportunityClassification: getValue(colIndices.tenderType),
-        internalLead: getValue(colIndices.lead),
+        internalLead: getValue(colIndices.lead),  // ✅ UPDATED: Now captures "ASSIGNED PERSON"
         opportunityValue: getNumericValue(colIndices.value),
-        canonicalStage: normalizeStatus(getValue(colIndices.avenirStatus)),
+        canonicalStage: avenirStatus,
         dateTenderReceived: rfpDate,
-        avenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
-        tenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
+        avenirStatus: avenirStatus,
+        tenderResult: tenderResult,
+        combinedStatuses: getUniqueStatuses(avenirStatus, tenderResult),  // ✅ NEW: Both statuses (no double count)
         syncedAt: new Date(),
       };
 

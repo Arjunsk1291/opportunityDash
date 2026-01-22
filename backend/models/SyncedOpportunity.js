@@ -14,6 +14,9 @@ const syncedOpportunitySchema = new mongoose.Schema(
     opportunityClassification: String,
     qualificationStatus: String,
     tenderPlannedSubmissionDate: String,
+    avenirStatus: String,  // ✅ NEW: AVENIR STATUS from Google Sheets
+    tenderResult: String,  // ✅ NEW: TENDER RESULT from Google Sheets
+    combinedStatuses: [String],  // ✅ NEW: Array of both statuses (no double count)
     rawGoogleData: mongoose.Schema.Types.Mixed,
     syncedAt: { type: Date, default: Date.now },
   },
