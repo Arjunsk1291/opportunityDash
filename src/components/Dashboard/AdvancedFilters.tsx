@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths, subQuarters, subYears } from "date-fns";
 import { cn } from "@/lib/utils";
-import { Opportunity, STAGE_ORDER, GROUP_CLASSIFICATIONS } from "@/data/opportunityData";
+import { Opportunity, GROUP_CLASSIFICATIONS } from "@/data/opportunityData";
 
 type DatePreset = "all" | "thisMonth" | "lastMonth" | "thisQuarter" | "lastQuarter" | "thisYear" | "lastYear" | "custom";
 
@@ -33,6 +33,21 @@ const DATE_FIELD_LABELS: Record<DateField, string> = {
   tenderSubmittedDate: "Submitted Date",
   lastContactDate: "Last Activity",
 };
+
+// Map old stage values to new uppercase values from Google Sheets
+const STAGE_MAPPING: Record<string, string> = {
+  'WORKING': 'WORKING',
+  'SUBMITTED': 'SUBMITTED',
+  'AWARDED': 'AWARDED',
+  'LOST': 'LOST',
+  'REGRETTED': 'REGRETTED',
+  'TO START': 'TO START',
+  'ONGOING': 'ONGOING',
+  'HOLD / CLOSED': 'HOLD / CLOSED',
+};
+
+// All possible statuses from Google Sheets
+const STAGE_ORDER = ['WORKING', 'SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'TO START', 'ONGOING', 'HOLD / CLOSED'];
 
 const getDateRangeFromPreset = (preset: DatePreset): { from: Date | undefined; to: Date | undefined } => {
   const now = new Date();
@@ -96,7 +111,6 @@ interface AdvancedFiltersProps {
   onClearFilters: () => void;
 }
 
-// Default: All Time (no date filter applied on initial load)
 export const defaultFilters: FilterState = {
   search: "",
   statuses: [],
@@ -107,8 +121,8 @@ export const defaultFilters: FilterState = {
   qualificationStatuses: [],
   partnerInvolvement: "all",
   dateRange: { from: undefined, to: undefined },
-  datePreset: "all", // Initial bootup shows "All Time" - no date filtering
-  dateField: "dateTenderReceived", // Default to RFP Received date
+  datePreset: "all",
+  dateField: "dateTenderReceived",
   valueRange: { min: undefined, max: undefined },
   showAtRisk: false,
   showMissDeadline: false,
@@ -122,7 +136,6 @@ export function AdvancedFilters({
 }: AdvancedFiltersProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Extract unique values from data
   const uniqueValues = useMemo(() => {
     const leads = [...new Set(data.map((o) => o.internalLead).filter(Boolean))].sort();
     const clients = [...new Set(data.map((o) => o.clientName).filter(Boolean))].sort();
@@ -162,9 +175,7 @@ export function AdvancedFilters({
 
   return (
     <div className="space-y-4">
-      {/* Search and Quick Filters Row */}
       <div className="flex flex-wrap items-center gap-3">
-        {/* Search */}
         <div className="relative flex-1 min-w-[250px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -175,7 +186,6 @@ export function AdvancedFilters({
           />
         </div>
 
-        {/* Status Quick Filter */}
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">
@@ -202,31 +212,10 @@ export function AdvancedFilters({
                   </Label>
                 </div>
               ))}
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="status-lost"
-                  checked={filters.statuses.includes("Lost/Regretted")}
-                  onCheckedChange={() => toggleArrayValue("statuses", "Lost/Regretted")}
-                />
-                <Label htmlFor="status-lost" className="text-sm cursor-pointer">
-                  Lost/Regretted
-                </Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="status-hold"
-                  checked={filters.statuses.includes("On Hold/Paused")}
-                  onCheckedChange={() => toggleArrayValue("statuses", "On Hold/Paused")}
-                />
-                <Label htmlFor="status-hold" className="text-sm cursor-pointer">
-                  On Hold/Paused
-                </Label>
-              </div>
             </div>
           </PopoverContent>
         </Popover>
 
-        {/* Group Quick Filter */}
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">
@@ -257,7 +246,6 @@ export function AdvancedFilters({
           </PopoverContent>
         </Popover>
 
-        {/* Lead Quick Filter */}
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">
@@ -288,7 +276,6 @@ export function AdvancedFilters({
           </PopoverContent>
         </Popover>
 
-        {/* Client Quick Filter */}
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">
@@ -319,7 +306,6 @@ export function AdvancedFilters({
           </PopoverContent>
         </Popover>
 
-        {/* Date Field Selector */}
         <Select
           value={filters.dateField}
           onValueChange={(v) => updateFilter("dateField", v as DateField)}
@@ -336,7 +322,6 @@ export function AdvancedFilters({
           </SelectContent>
         </Select>
 
-        {/* Date Range */}
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">
@@ -416,7 +401,6 @@ export function AdvancedFilters({
           </PopoverContent>
         </Popover>
 
-        {/* More Filters Toggle */}
         <Button
           variant={isExpanded ? "secondary" : "outline"}
           size="sm"
@@ -432,7 +416,6 @@ export function AdvancedFilters({
           )}
         </Button>
 
-        {/* Clear Filters */}
         {activeFilterCount > 0 && (
           <Button variant="ghost" size="sm" onClick={onClearFilters} className="gap-1">
             <X className="h-3 w-3" />
@@ -441,10 +424,8 @@ export function AdvancedFilters({
         )}
       </div>
 
-      {/* Expanded Filters */}
       {isExpanded && (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 p-4 bg-muted/30 rounded-lg border">
-          {/* Client Type */}
           <div className="space-y-2">
             <Label className="text-xs font-medium">Client Type</Label>
             <Select
@@ -465,7 +446,6 @@ export function AdvancedFilters({
             </Select>
           </div>
 
-          {/* Qualification */}
           <div className="space-y-2">
             <Label className="text-xs font-medium">Qualification</Label>
             <Select
@@ -486,7 +466,6 @@ export function AdvancedFilters({
             </Select>
           </div>
 
-          {/* Partner Involvement */}
           <div className="space-y-2">
             <Label className="text-xs font-medium">Partner</Label>
             <Select
@@ -504,9 +483,8 @@ export function AdvancedFilters({
             </Select>
           </div>
 
-          {/* Value Range */}
           <div className="space-y-2">
-            <Label className="text-xs font-medium">Min Value ($)</Label>
+            <Label className="text-xs font-medium">Min Value (AED)</Label>
             <Input
               type="number"
               placeholder="0"
@@ -522,7 +500,7 @@ export function AdvancedFilters({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-xs font-medium">Max Value ($)</Label>
+            <Label className="text-xs font-medium">Max Value (AED)</Label>
             <Input
               type="number"
               placeholder="∞"
@@ -537,7 +515,6 @@ export function AdvancedFilters({
             />
           </div>
 
-          {/* Special Flags */}
           <div className="space-y-3">
             <Label className="text-xs font-medium">Flags</Label>
             <div className="space-y-2">
@@ -566,7 +543,6 @@ export function AdvancedFilters({
         </div>
       )}
 
-      {/* Active Filter Tags */}
       {activeFilterCount > 0 && (
         <div className="flex flex-wrap gap-2">
           {filters.search && (
@@ -638,46 +614,38 @@ export function AdvancedFilters({
   );
 }
 
-// Helper function to apply filters
 export function applyFilters(data: Opportunity[], filters: FilterState): Opportunity[] {
   return data.filter((o) => {
-    // Search
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
       const matchesSearch =
         o.tenderName.toLowerCase().includes(searchLower) ||
         o.clientName.toLowerCase().includes(searchLower) ||
         o.opportunityRefNo.toLowerCase().includes(searchLower) ||
-        o.internalLead.toLowerCase().includes(searchLower);
+        (o.internalLead && o.internalLead.toLowerCase().includes(searchLower));
       if (!matchesSearch) return false;
     }
 
-    // Status
     if (filters.statuses.length > 0 && !filters.statuses.includes(o.canonicalStage)) {
       return false;
     }
 
-    // Groups
     if (filters.groups.length > 0 && !filters.groups.includes(o.groupClassification)) {
       return false;
     }
 
-    // Leads
     if (filters.leads.length > 0 && !filters.leads.includes(o.internalLead)) {
       return false;
     }
 
-    // Clients
     if (filters.clients.length > 0 && !filters.clients.includes(o.clientName)) {
       return false;
     }
 
-    // Client Types
     if (filters.clientTypes.length > 0 && !filters.clientTypes.includes(o.clientType)) {
       return false;
     }
 
-    // Qualification
     if (
       filters.qualificationStatuses.length > 0 &&
       !filters.qualificationStatuses.includes(o.qualificationStatus)
@@ -685,20 +653,17 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
       return false;
     }
 
-    // Partner
     if (filters.partnerInvolvement === "yes" && !o.partnerInvolvement) return false;
     if (filters.partnerInvolvement === "no" && o.partnerInvolvement) return false;
 
-    // Date Range - filter by selected date field
     const dateFieldValue = o[filters.dateField];
     if (filters.dateRange.from || filters.dateRange.to) {
-      if (!dateFieldValue) return false; // Exclude if no date and range is specified
+      if (!dateFieldValue) return false;
       const dateValue = new Date(dateFieldValue);
       if (filters.dateRange.from && dateValue < filters.dateRange.from) return false;
       if (filters.dateRange.to && dateValue > filters.dateRange.to) return false;
     }
 
-    // Value Range
     if (filters.valueRange.min !== undefined && o.opportunityValue < filters.valueRange.min) {
       return false;
     }
@@ -706,7 +671,6 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
       return false;
     }
 
-    // Flags
     if (filters.showAtRisk && !o.isAtRisk) return false;
     if (filters.showMissDeadline && !o.willMissDeadline) return false;
 

@@ -12,8 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Loader2, RefreshCw, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { 
   calculateSummaryStats, 
   calculateFunnelData, 
@@ -170,7 +169,6 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* ✅ Display auto-refresh status */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-4">
           <div>
@@ -210,10 +208,8 @@ const Dashboard = () => {
 
       <KPICards stats={stats} onKPIClick={handleKPIClick} />
 
-      {/* ✅ REORDERED: Opportunities Table at top */}
       <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
 
-      {/* ✅ REORDERED: Funnel, At Risk, Clients below table */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
         <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
@@ -225,13 +221,11 @@ const Dashboard = () => {
         }} />
       </div>
 
-      {/* Bottom widgets */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <ApprovalStatsWidget data={filteredData} />
         <DataHealthWidget {...dataHealth} />
       </div>
 
-      {/* ✅ Modal for opportunity details */}
       <Dialog open={!!selectedOpp} onOpenChange={() => setSelectedOpp(null)}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           {selectedOpp && (
@@ -247,7 +241,6 @@ const Dashboard = () => {
 
               <Separator />
 
-              {/* Basic Info */}
               <div className="space-y-4">
                 <h3 className="font-semibold text-lg">Basic Information</h3>
                 <DetailGrid>
@@ -262,7 +255,6 @@ const Dashboard = () => {
 
               <Separator />
 
-              {/* Stage & Classification */}
               <div className="space-y-4">
                 <h3 className="font-semibold text-lg">Stage & Classification</h3>
                 <DetailGrid>
@@ -277,7 +269,6 @@ const Dashboard = () => {
 
               <Separator />
 
-              {/* Financial Info */}
               <div className="space-y-4">
                 <h3 className="font-semibold text-lg">Financial Information</h3>
                 <DetailGrid>
@@ -300,7 +291,6 @@ const Dashboard = () => {
 
               <Separator />
 
-              {/* Dates */}
               <div className="space-y-4">
                 <h3 className="font-semibold text-lg">Important Dates</h3>
                 <DetailGrid>
@@ -327,7 +317,6 @@ const Dashboard = () => {
 
               <Separator />
 
-              {/* Risk & Timeline */}
               <div className="space-y-4">
                 <h3 className="font-semibold text-lg">Risk & Timeline Metrics</h3>
                 <DetailGrid>
@@ -356,7 +345,6 @@ const Dashboard = () => {
 
               <Separator />
 
-              {/* Partner & Other */}
               <div className="space-y-4">
                 <h3 className="font-semibold text-lg">Partner & Additional Info</h3>
                 <DetailGrid>
@@ -378,7 +366,6 @@ const Dashboard = () => {
 
               <Separator />
 
-              {/* Data Quality */}
               <div className="space-y-4">
                 <h3 className="font-semibold text-lg">Data Quality Flags</h3>
                 <div className="text-sm space-y-2">

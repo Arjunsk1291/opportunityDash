@@ -1,4 +1,3 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Clock, AlertTriangle } from 'lucide-react';
@@ -10,17 +9,39 @@ interface AtRiskWidgetProps {
 }
 
 export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
-  const submissionWithinWeek = data
-    .filter(o => {
-      const daysToSubmission = o.daysToPlannedSubmission;
-      return daysToSubmission > 0 && daysToSubmission <= 7;
-    })
+  // Submission Near = within 7 days after RFP received
+  const isSubmissionNear = (opp: Opportunity): boolean => {
+    if (!opp.dateTenderReceived) return false;
+    
+    const received = new Date(opp.dateTenderReceived);
+    const today = new Date();
+    const oneWeekAfterReceived = new Date(received);
+    oneWeekAfterReceived.setDate(received.getDate() + 7);
+    
+    const diffDays = Math.ceil((oneWeekAfterReceived.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 7;
+  };
+
+  const submissionNear = data
+    .filter(o => isSubmissionNear(o))
     .sort((a, b) => {
-      if (a.willMissDeadline && !b.willMissDeadline) return -1;
-      if (!a.willMissDeadline && b.willMissDeadline) return 1;
-      return a.daysToPlannedSubmission - b.daysToPlannedSubmission;
+      const dateA = a.dateTenderReceived ? new Date(a.dateTenderReceived).getTime() : 0;
+      const dateB = b.dateTenderReceived ? new Date(b.dateTenderReceived).getTime() : 0;
+      return dateA - dateB;
     })
     .slice(0, 8);
+
+  const getDaysToDeadline = (opp: Opportunity): number => {
+    if (!opp.dateTenderReceived) return 0;
+    
+    const received = new Date(opp.dateTenderReceived);
+    const oneWeekAfterReceived = new Date(received);
+    oneWeekAfterReceived.setDate(received.getDate() + 7);
+    
+    const today = new Date();
+    const diffDays = Math.ceil((oneWeekAfterReceived.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    return Math.max(0, diffDays);
+  };
 
   return (
     <Card>
@@ -32,40 +53,47 @@ export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
       </CardHeader>
       <CardContent>
         <div className="space-y-2 max-h-[280px] overflow-auto scrollbar-thin">
-          {submissionWithinWeek.length === 0 ? (
+          {submissionNear.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">No tenders due within 7 days</p>
           ) : (
-            submissionWithinWeek.map((item) => (
-              <div
-                key={item.id}
-                className={`flex items-center justify-between p-2 rounded-lg bg-muted/50 transition-colors ${
-                  onSelectOpportunity ? 'cursor-pointer hover:bg-muted hover:ring-1 hover:ring-primary/20' : 'hover:bg-muted'
-                }`}
-                onClick={() => onSelectOpportunity?.(item)}
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate text-primary hover:underline">{item.tenderName}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-muted-foreground">{item.clientName}</span>
-                    <span className="text-xs text-muted-foreground">•</span>
-                    <span className="text-xs text-muted-foreground">{item.internalLead || 'Unassigned'}</span>
+            submissionNear.map((item) => {
+              const daysLeft = getDaysToDeadline(item);
+              const isUrgent = daysLeft <= 2;
+              
+              return (
+                <div
+                  key={item.id}
+                  className={`flex items-center justify-between p-2 rounded-lg transition-colors ${
+                    isUrgent ? 'bg-destructive/10' : 'bg-muted/50'
+                  } ${
+                    onSelectOpportunity ? 'cursor-pointer hover:ring-1 hover:ring-primary/20' : ''
+                  }`}
+                  onClick={() => onSelectOpportunity?.(item)}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate text-primary hover:underline">{item.tenderName}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-muted-foreground">{item.clientName}</span>
+                      <span className="text-xs text-muted-foreground">•</span>
+                      <span className="text-xs text-muted-foreground">{item.internalLead || 'Unassigned'}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 ml-2">
+                    {isUrgent ? (
+                      <Badge variant="destructive" className="text-xs">
+                        <AlertTriangle className="h-3 w-3 mr-1" />
+                        {daysLeft}d left
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-xs text-pending border-pending">
+                        <Clock className="h-3 w-3 mr-1" />
+                        {daysLeft}d left
+                      </Badge>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 ml-2">
-                  {item.willMissDeadline ? (
-                    <Badge variant="destructive" className="text-xs">
-                      <AlertTriangle className="h-3 w-3 mr-1" />
-                      {item.daysToPlannedSubmission}d left
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-xs text-pending border-pending">
-                      <Clock className="h-3 w-3 mr-1" />
-                      {item.daysToPlannedSubmission}d left
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </CardContent>

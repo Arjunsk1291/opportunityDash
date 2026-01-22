@@ -13,8 +13,8 @@ interface FunnelChartProps {
 }
 
 export function FunnelChart({ data, onStageClick }: FunnelChartProps) {
-  const maxCount = Math.max(...data.map(d => d.count));
-  const colors = ['bg-info', 'bg-warning', 'bg-pending', 'bg-success'];
+  const maxCount = Math.max(...data.map(d => d.count), 1);
+  const colors = ['bg-info', 'bg-warning', 'bg-pending', 'bg-success', 'bg-destructive', 'bg-orange-500', 'bg-cyan-600', 'bg-muted'];
   
   const formatCurrency = (value: number) => {
     if (value >= 1000000) return `AED ${(value / 1000000).toFixed(1)}M`;
@@ -55,7 +55,7 @@ export function FunnelChart({ data, onStageClick }: FunnelChartProps) {
                 </div>
                 <div className="h-8 bg-muted rounded-lg overflow-hidden ring-1 ring-transparent group-hover:ring-primary/50 transition-all">
                   <div 
-                    className={`h-full ${colors[index]} transition-all duration-500 rounded-lg flex items-center justify-center group-hover:brightness-110`}
+                    className={`h-full ${colors[index % colors.length]} transition-all duration-500 rounded-lg flex items-center justify-center group-hover:brightness-110`}
                     style={{ width: `${Math.max(width, 5)}%` }}
                   >
                     <span className="text-xs font-bold text-white">{item.count}</span>

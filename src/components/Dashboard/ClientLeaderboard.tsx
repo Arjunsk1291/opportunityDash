@@ -21,7 +21,7 @@ export function ClientLeaderboard({ data, onClientClick }: ClientLeaderboardProp
   };
 
   const topClients = data.slice(0, 8);
-  const maxValue = Math.max(...topClients.map(c => c.value));
+  const maxValue = Math.max(...topClients.map(c => c.value), 1);
 
   return (
     <Card>
@@ -33,37 +33,43 @@ export function ClientLeaderboard({ data, onClientClick }: ClientLeaderboardProp
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          {topClients.map((client, index) => (
-            <div
-              key={client.name}
-              className={`space-y-1 p-2 -mx-2 rounded-lg transition-colors ${
-                onClientClick ? 'cursor-pointer hover:bg-muted' : ''
-              }`}
-              onClick={() => onClientClick?.(client.name)}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-muted-foreground w-4">
-                    {index + 1}
-                  </span>
-                  <span
-                    className={`text-sm font-medium truncate max-w-[150px] ${
-                      onClientClick ? 'text-primary hover:underline' : ''
-                    }`}
-                  >
-                    {client.name}
-                  </span>
+          {topClients.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No clients found</p>
+          ) : (
+            topClients.map((client, index) => (
+              <div
+                key={client.name}
+                className={`space-y-1 p-2 -mx-2 rounded-lg transition-colors ${
+                  onClientClick ? 'cursor-pointer hover:bg-muted' : ''
+                }`}
+                onClick={() => onClientClick?.(client.name)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-muted-foreground w-4">
+                      {index + 1}
+                    </span>
+                    <span
+                      className={`text-sm font-medium truncate max-w-[150px] ${
+                        onClientClick ? 'text-primary hover:underline' : ''
+                      }`}
+                    >
+                      {client.name}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="text-muted-foreground">{client.count} opps</span>
+                    <span className="font-semibold">{formatCurrency(client.value)}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="text-muted-foreground">{client.count} opps</span>
-                  <span className="font-semibold">{formatCurrency(client.value)}</span>
-                </div>
+                <Progress value={(client.value / maxValue) * 100} className="h-1.5" />
               </div>
-              <Progress value={(client.value / maxValue) * 100} className="h-1.5" />
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </CardContent>
     </Card>
   );
 }
+
+
