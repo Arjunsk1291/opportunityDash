@@ -95,7 +95,7 @@ const verifyToken = async (req, res, next) => {
 
 // ===== OAUTH ENDPOINTS =====
 
-// Verify Azure token and check authorization
+// ✅ Verify Azure token and check authorization (ALLOWS PENDING USERS)
 app.post('/api/auth/verify-token', async (req, res) => {
   try {
     const { token } = req.body;
@@ -120,18 +120,44 @@ app.post('/api/auth/verify-token', async (req, res) => {
     }
 
     const cleanEmail = email.toLowerCase();
-    const user = await AuthorizedUser.findOne({ email: cleanEmail });
+    let user = await AuthorizedUser.findOne({ email: cleanEmail });
     
+    // ✅ NEW: If user doesn't exist, create as pending
     if (!user) {
-      return res.status(403).json({ error: 'User not authorized', status: 'not_found' });
+      console.log('📋 Creating new pending user:', cleanEmail);
+      user = new AuthorizedUser({
+        email: cleanEmail,
+        role: 'Basic',
+        status: 'pending',
+      });
+      await user.save();
+      
+      return res.json({
+        success: true,
+        user: {
+          email: user.email,
+          role: user.role,
+          status: user.status,
+        },
+        message: 'User pending approval. Please wait for Master to approve your access.',
+      });
     }
 
     if (user.status === 'rejected') {
       return res.status(403).json({ error: 'User access rejected', status: 'rejected' });
     }
 
+    // ✅ ALLOW pending users to proceed (they'll see a message)
     if (user.status === 'pending') {
-      return res.status(403).json({ error: 'User access pending', status: 'pending' });
+      return res.json({
+        success: true,
+        user: {
+          email: user.email,
+          role: user.role,
+          status: user.status,
+        },
+        message: 'User pending approval. Master will review your request.',
+      });
     }
 
     res.json({

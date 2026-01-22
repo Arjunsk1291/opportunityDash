@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 
 export type UserRole = 'Master' | 'Admin' | 'Basic';
+export type UserStatus = 'approved' | 'pending' | 'rejected';
 
 export interface User {
   email: string;
   role: UserRole;
+  status: UserStatus;
   lastLogin?: Date;
 }
 
@@ -14,6 +16,7 @@ interface AuthContextType {
   isMaster: boolean;
   isAdmin: boolean;
   isLoading: boolean;
+  isPending: boolean;
   logout: () => void;
   token: string | null;
   setAuthToken: (token: string) => Promise<void>;
@@ -26,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPending, setIsPending] = useState(false);
 
   // Check if user is already logged in on mount
   useEffect(() => {
@@ -44,6 +48,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const data = await response.json();
             setUser(data.user);
             setToken(savedToken);
+            if (data.user.status === 'pending') {
+              setIsPending(true);
+            }
           } else {
             // Token invalid, clear it
             sessionStorage.removeItem('oauth_token');
@@ -62,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
+    setIsPending(false);
     sessionStorage.removeItem('oauth_token');
     localStorage.removeItem('msal_account_filter');
   }, []);
@@ -85,14 +93,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(newToken);
       sessionStorage.setItem('oauth_token', newToken);
 
-      // Record login
-      await fetch(API_URL + '/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + newToken,
-        },
-      });
+      // Check if user is pending
+      if (data.user.status === 'pending') {
+        setIsPending(true);
+        console.log('⏳ User pending approval:', data.user.email);
+      } else {
+        setIsPending(false);
+        // Record login only if approved
+        await fetch(API_URL + '/auth/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + newToken,
+          },
+        });
+      }
     } catch (error) {
       console.error('Token validation error:', error);
       throw error;
@@ -100,8 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const isAuthenticated = user !== null && token !== null;
-  const isMaster = user?.role === 'Master';
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Master';
+  const isMaster = user?.role === 'Master' && user?.status === 'approved';
+  const isAdmin = (user?.role === 'Admin' || user?.role === 'Master') && user?.status === 'approved';
 
   return (
     <AuthContext.Provider
@@ -111,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isMaster,
         isAdmin,
         isLoading,
+        isPending,
         logout,
         token,
         setAuthToken,
