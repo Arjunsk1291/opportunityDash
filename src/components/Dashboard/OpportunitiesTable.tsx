@@ -132,13 +132,13 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
   const handleApprovalChange = (oppId: string, value: string) => {
     if (!user) return;
     if (value === 'approved') {
-      approveOpportunity(oppId, user.displayName, user.role);
+      approveOpportunity(oppId, user.email, user.role);
     }
   };
 
   const handleRevertApproval = (oppId: string) => {
     if (!user || !isMaster) return;
-    revertApproval(oppId, user.displayName, user.role);
+    revertApproval(oppId, user.email, user.role);
   };
 
   return (
