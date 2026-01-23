@@ -48,15 +48,6 @@ const mainNavItems = [
   { title: "Analytics", url: "/analytics", icon: BarChart3 },
 ];
 
-const statusNavItems = [
-  { title: "Pre-bid", url: "/status/pre-bid", icon: Clock, color: "text-info" },
-  { title: "In Progress", url: "/status/in-progress", icon: ChevronRight, color: "text-warning" },
-  { title: "Submitted", url: "/status/submitted", icon: Send, color: "text-[hsl(var(--pending))]" },
-  { title: "Awarded", url: "/status/awarded", icon: Award, color: "text-success" },
-  { title: "Lost/Regretted", url: "/status/lost", icon: XCircle, color: "text-destructive" },
-  { title: "On Hold", url: "/status/on-hold", icon: Pause, color: "text-muted-foreground" },
-];
-
 const adminNavItems = [
   { title: "Master Panel", url: "/master", icon: Shield },
 ];
@@ -65,10 +56,6 @@ export function AppSidebar() {
   const location = useLocation();
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  
-  const [statusOpen, setStatusOpen] = useState(
-    location.pathname.startsWith("/status")
-  );
 
   const isActive = (path: string) => {
     if (path === "/") return location.pathname === "/";
@@ -110,39 +97,6 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {/* By Status */}
-        <SidebarGroup>
-          <Collapsible open={statusOpen} onOpenChange={setStatusOpen}>
-            <CollapsibleTrigger asChild>
-              <SidebarGroupLabel className="cursor-pointer hover:bg-sidebar-accent rounded-md px-2 py-1.5 -mx-2 flex items-center justify-between">
-                <span>By Status</span>
-                {statusOpen ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronRight className="h-4 w-4" />
-                )}
-              </SidebarGroupLabel>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {statusNavItems.map((item) => (
-                    <SidebarMenuItem key={item.title}>
-                      <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                        <NavLink to={item.url}>
-                          <item.icon className={cn("h-4 w-4", item.color)} />
-                          <span>{item.title}</span>
-                        </NavLink>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </CollapsibleContent>
-          </Collapsible>
-        </SidebarGroup>
-
 
         {/* Admin Section */}
         <SidebarGroup>

@@ -38,10 +38,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
       console.log('✅ Loaded ' + data.length + ' opportunities from MongoDB');
       
-      const dataWithIds = data.map((opp: any) => ({
+      // ✅ UPDATED: Filter out opportunities with empty opportunityRefNo
+      const validData = data.filter((opp: any) => opp.opportunityRefNo && opp.opportunityRefNo.trim() !== '');
+      
+      const dataWithIds = validData.map((opp: any) => ({
         ...opp,
         id: opp.id || opp._id || opp.opportunityRefNo,
       }));
+      
+      // Log filtered count
+      if (validData.length < data.length) {
+        console.log(`⚠️  Filtered out ${data.length - validData.length} opportunities with empty refNo`);
+      }
       
       setOpportunities(dataWithIds);
       setLastSyncTime(new Date());

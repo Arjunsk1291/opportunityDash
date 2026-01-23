@@ -80,10 +80,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
     },
     { 
       label: 'Awarded', 
-      currencyValue: stats.awardedValue, 
       displayValue: stats.awardedCount,
-      isCurrency: true,
-      showCount: true,
       Icon: Trophy, 
       color: 'text-success', 
       bgColor: 'bg-success/10', 
@@ -91,10 +88,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
     },
     { 
       label: 'Lost', 
-      currencyValue: stats.lostValue, 
       displayValue: stats.lostCount,
-      isCurrency: true,
-      showCount: true,
       Icon: XCircle, 
       color: 'text-destructive', 
       bgColor: 'bg-destructive/10', 
@@ -102,10 +96,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
     },
     { 
       label: 'Regretted', 
-      currencyValue: stats.regrettedValue, 
       displayValue: stats.regrettedCount,
-      isCurrency: true,
-      showCount: true,
       Icon: ThumbsDown, 
       color: 'text-muted-foreground', 
       bgColor: 'bg-muted', 
@@ -113,10 +104,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
     },
     { 
       label: 'Working', 
-      currencyValue: stats.workingValue, 
       displayValue: stats.workingCount,
-      isCurrency: true,
-      showCount: true,
       Icon: Zap, 
       color: 'text-warning', 
       bgColor: 'bg-warning/10', 
@@ -124,10 +112,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
     },
     { 
       label: 'To Start', 
-      currencyValue: stats.toStartValue, 
       displayValue: stats.toStartCount,
-      isCurrency: true,
-      showCount: true,
       Icon: Play, 
       color: 'text-pending', 
       bgColor: 'bg-pending/10', 
@@ -135,10 +120,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
     },
     { 
       label: 'Ongoing', 
-      currencyValue: stats.ongoingValue, 
       displayValue: stats.ongoingCount,
-      isCurrency: true,
-      showCount: true,
       Icon: CheckCircle, 
       color: 'text-cyan-600', 
       bgColor: 'bg-cyan-600/10', 
@@ -173,14 +155,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
               <p className="text-xs text-muted-foreground truncate">{kpi.label}</p>
               <p className={`text-sm font-bold ${kpi.color} break-words`}>
                 {kpi.isCurrency ? (
-                  kpi.showCount ? (
-                    <span className="flex flex-col gap-0.5">
-                      <span className="text-xs">{kpi.displayValue}</span>
-                      <CurrencyDisplay value={kpi.currencyValue!} />
-                    </span>
-                  ) : (
-                    <CurrencyDisplay value={kpi.currencyValue!} />
-                  )
+                  <CurrencyDisplay value={kpi.currencyValue!} />
                 ) : (
                   kpi.displayValue
                 )}
