@@ -626,8 +626,21 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
       if (!matchesSearch) return false;
     }
 
-    if (filters.statuses.length > 0 && !filters.statuses.includes(o.canonicalStage)) {
-      return false;
+    // ✅ UPDATED: Filter by both canonicalStage AND tenderResult for LOST/ONGOING
+    if (filters.statuses.length > 0) {
+      const matchesStatus = filters.statuses.some(status => {
+        // For LOST and ONGOING, check tenderResult instead of canonicalStage
+        if (status === 'LOST') {
+          return o.tenderResult === 'LOST';
+        }
+        if (status === 'ONGOING') {
+          return o.tenderResult === 'ONGOING';
+        }
+        // For other statuses, check canonicalStage
+        return o.canonicalStage === status;
+      });
+      
+      if (!matchesStatus) return false;
     }
 
     if (filters.groups.length > 0 && !filters.groups.includes(o.groupClassification)) {
