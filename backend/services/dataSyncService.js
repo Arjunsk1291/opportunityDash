@@ -48,19 +48,6 @@ function parseDate(year, dateStr) {
   return null;
 }
 
-// ✅ NEW: Get unique statuses - avoid double counting when both are same
-function getUniqueStatuses(avenirStatus, tenderResult) {
-  const avenir = normalizeStatus(avenirStatus);
-  const tender = normalizeStatus(tenderResult);
-  
-  const statuses = [];
-  
-  if (avenir) statuses.push(avenir);
-  if (tender && tender !== avenir) statuses.push(tender);  // Only add if different
-  
-  return statuses;
-}
-
 export async function syncTendersFromGoogleSheets() {
   try {
     console.log('🔔 [dataSyncService] Fetching from Google Sheets...');
@@ -85,10 +72,11 @@ export async function syncTendersFromGoogleSheets() {
       tenderName: findColumn(['TENDER NAME', 'DESCRIPTION']),
       year: findColumn(['YEAR']),
       dateReceived: findColumn(['DATE TENDER RECD', 'DATE RECEIVED']),
-      lead: findColumn(['ASSIGNED PERSON']),  // ✅ UPDATED: Now looks for "ASSIGNED PERSON"
+      lead: findColumn(['ASSIGNED PERSON']),
       value: findColumn(['TENDER VALUE']),
       avenirStatus: findColumn(['AVENIR STATUS']),
       tenderResult: findColumn(['TENDER RESULT']),
+      groupClassification: findColumn(['GDS/GES']),  // ✅ NEW: Map GDS/GES column
     };
 
     console.log(`✅ Found ${rows.length} rows, parsing data...`);
@@ -115,22 +103,19 @@ export async function syncTendersFromGoogleSheets() {
       const year = getValue(colIndices.year);
       const dateReceived = getValue(colIndices.dateReceived);
       const rfpDate = parseDate(year, dateReceived);
-      
-      const avenirStatus = normalizeStatus(getValue(colIndices.avenirStatus));
-      const tenderResult = normalizeStatus(getValue(colIndices.tenderResult));
 
       const tender = {
         opportunityRefNo: getValue(colIndices.tenderNo),
         tenderName: getValue(colIndices.tenderName),
         clientName: getValue(colIndices.client),
         opportunityClassification: getValue(colIndices.tenderType),
-        internalLead: getValue(colIndices.lead),  // ✅ UPDATED: Now captures "ASSIGNED PERSON"
+        internalLead: getValue(colIndices.lead),
         opportunityValue: getNumericValue(colIndices.value),
-        canonicalStage: avenirStatus,
+        canonicalStage: normalizeStatus(getValue(colIndices.avenirStatus)),
         dateTenderReceived: rfpDate,
-        avenirStatus: avenirStatus,
-        tenderResult: tenderResult,
-        combinedStatuses: getUniqueStatuses(avenirStatus, tenderResult),  // ✅ NEW: Both statuses (no double count)
+        avenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
+        tenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
+        groupClassification: getValue(colIndices.groupClassification),  // ✅ NEW: Map from GDS/GES column
         syncedAt: new Date(),
       };
 
@@ -154,7 +139,6 @@ export async function transformTendersToOpportunities(tenders) {
     googleSheetRowId: `sheet-${tender.opportunityRefNo}`,
     qualificationStatus: 'Pending',
     tenderPlannedSubmissionDate: null,
-    groupClassification: 'GES',
     rawGoogleData: { synced: new Date().toISOString() },
   }));
 }
