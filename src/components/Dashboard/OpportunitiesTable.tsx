@@ -77,7 +77,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     }
   };
 
-  // ✅ UPDATED: Search ALL columns INCLUDING AVENIR STATUS, TENDER RESULT, Approval
   const filteredData = data.filter(opp => {
     if (!search) return true;
     
@@ -102,16 +101,18 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     );
   });
 
+  // ✅ UPDATED: Color coding for status badges
   const getStatusBadgeColor = (status: string) => {
     const statusUpper = status.toUpperCase();
-    if (statusUpper === 'AWARDED') return 'bg-success/20 text-success';
-    if (statusUpper === 'LOST') return 'bg-destructive/20 text-destructive';
-    if (statusUpper === 'REGRETTED') return 'bg-muted text-muted-foreground';
-    if (statusUpper === 'WORKING') return 'bg-warning/20 text-warning';
-    if (statusUpper === 'SUBMITTED') return 'bg-pending/20 text-pending';
-    if (statusUpper === 'TO START') return 'bg-info/20 text-info';
-    if (statusUpper === 'ONGOING') return 'bg-cyan-600/20 text-cyan-600';
-    return 'bg-muted text-muted-foreground';
+    if (statusUpper === 'AWARDED') return 'bg-success/20 text-success border-success/30';
+    if (statusUpper === 'LOST') return 'bg-destructive/20 text-destructive border-destructive/30';
+    if (statusUpper === 'REGRETTED') return 'bg-muted text-muted-foreground border-muted-foreground/30';
+    if (statusUpper === 'WORKING') return 'bg-warning/20 text-warning border-warning/30';
+    if (statusUpper === 'SUBMITTED') return 'bg-blue-500/20 text-blue-600 border-blue-500/30';
+    if (statusUpper === 'TO START') return 'bg-purple-500/20 text-purple-600 border-purple-500/30';
+    if (statusUpper === 'ONGOING') return 'bg-cyan-600/20 text-cyan-600 border-cyan-600/30';
+    if (statusUpper === 'HOLD / CLOSED') return 'bg-slate-500/20 text-slate-600 border-slate-500/30';
+    return 'bg-muted text-muted-foreground border-muted-foreground/30';
   };
 
   const handleApprovalChange = (oppId: string, value: string) => {
@@ -214,12 +215,18 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                       AED {opp.opportunityValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </TableCell>
                     <TableCell>
-                      <Badge className={getStatusBadgeColor(opp.canonicalStage)} variant="secondary" className="text-xs">
+                      <Badge 
+                        variant="outline"
+                        className={`text-xs border ${getStatusBadgeColor(opp.canonicalStage)}`}
+                      >
                         {opp.canonicalStage || '—'}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge className={getStatusBadgeColor(opp.tenderResult || '')} variant="secondary" className="text-xs">
+                      <Badge 
+                        variant="outline"
+                        className={`text-xs border ${getStatusBadgeColor(opp.tenderResult || '')}`}
+                      >
                         {opp.tenderResult || '—'}
                       </Badge>
                     </TableCell>
