@@ -46,12 +46,10 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         onClearFilters={() => setFilters({ ...defaultFilters, statuses: statusFilter ? [statusFilter] : [] })}
       />
 
-      {/* ✅ EXPANDED: Full page table with flex-1 min-h-0 */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
       </div>
 
-      {/* ✅ CONVERTED: Modal instead of Sheet */}
       <Dialog open={!!selectedOpp} onOpenChange={() => setSelectedOpp(null)}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           {selectedOpp && (

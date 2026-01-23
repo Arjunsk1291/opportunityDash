@@ -55,6 +55,7 @@ function parseDate(year, dateStr) {
     const month = monthMap[monthKey];
     if (month) return `${year}-${month}-${day}`;
   }
+
   return null;
 }
 
@@ -66,71 +67,67 @@ function getUniqueStatuses(avenirStatus, tenderResult) {
   const statuses = [];
   
   if (avenir) statuses.push(avenir);
-  if (tender && tender !== avenir) statuses.push(tender);  // ✅ Only add if different
+  if (tender && tender !== avenir) statuses.push(tender);
   
   return statuses;
 }
 
-async function collectData() {
+async function main() {
+  log('\n════════════════════════════════════════', 'cyan');
+  log('📊 GOOGLE SHEETS DATA COLLECTOR', 'bright');
+  log('════════════════════════════════════════\n', 'cyan');
+
   try {
-    log('\n════════════════════════════════════════', 'cyan');
-    log('📊 GOOGLE SHEETS DATA COLLECTOR', 'bright');
-    log('════════════════════════════════════════\n', 'cyan');
-
     log('📡 Fetching data from Google Sheets...', 'blue');
-    const range = `${SHEET_NAME}!B4:Z1000`;
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?key=${GOOGLE_API_KEY}`;
-
+    
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SHEET_NAME)}?key=${GOOGLE_API_KEY}`;
     const response = await fetchData(url);
-    const rows = response.values || [];
-
-    if (rows.length < 2) {
-      log('❌ No data found in Google Sheet', 'red');
-      return;
+    
+    if (!response.values || response.values.length < 4) {
+      log('❌ No data found in sheet', 'red');
+      process.exit(1);
     }
 
-    log(`✅ Received ${rows.length} rows from sheet\n`, 'green');
+    const allRows = response.values;
+    log(`✅ Received ${allRows.length} rows from sheet\n`, 'green');
 
-    const headers = rows[0].map(h => h?.toString().trim().toUpperCase() || '');
-    log('📋 COLUMN HEADERS FOUND:', 'yellow');
-    headers.forEach((h, idx) => {
-      if (h) log(`  [${idx}] ${h}`, 'dim');
+    const headerRow = allRows[3];
+    log('📋 COLUMN HEADERS FOUND:', 'bright');
+    headerRow.forEach((header, idx) => {
+      log(`  [${idx}] ${header}`);
     });
-    log('', 'reset');
 
-    const findColumn = (keywords) => {
-      return headers.findIndex(h => keywords.some(k => h.includes(k.toUpperCase())));
+    log('\n🔍 MAPPED COLUMNS:', 'bright');
+    
+    const columnMap = {
+      tenderNo: headerRow.indexOf('TENDER NO'),
+      tenderType: headerRow.indexOf('TENDER TYPE'),
+      client: headerRow.indexOf('CLIENT'),
+      tenderName: headerRow.indexOf('TENDER NAME'),
+      year: headerRow.indexOf('YEAR'),
+      dateReceived: headerRow.indexOf('DATE TENDER RECD'),
+      lead: headerRow.indexOf('ASSIGNED PERSON'),
+      value: headerRow.indexOf('TENDER VALUE'),
+      avenirStatus: headerRow.indexOf('AVENIR STATUS'),
+      tenderResult: headerRow.indexOf('TENDER RESULT'),
+      groupClassification: headerRow.indexOf('GDS/GES'),  // ✅ NEW: Map GDS/GES column
     };
 
-    const colIndices = {
-      tenderNo: findColumn(['TENDER NO', 'REF NO']),
-      tenderType: findColumn(['TENDER TYPE']),
-      client: findColumn(['CLIENT']),
-      tenderName: findColumn(['TENDER NAME', 'DESCRIPTION']),
-      year: findColumn(['YEAR']),
-      dateReceived: findColumn(['DATE TENDER RECD', 'DATE RECEIVED']),
-      lead: findColumn(['ASSIGNED PERSON']),
-      value: findColumn(['TENDER VALUE']),
-      avenirStatus: findColumn(['AVENIR STATUS']),
-      tenderResult: findColumn(['TENDER RESULT']),
-    };
-
-    log('🔍 MAPPED COLUMNS:', 'yellow');
-    Object.entries(colIndices).forEach(([key, idx]) => {
-      const status = idx >= 0 ? `${colors.green}✓${colors.reset}` : `${colors.red}✗${colors.reset}`;
-      log(`  ${status} ${key}: column ${idx}`, 'dim');
+    Object.entries(columnMap).forEach(([key, idx]) => {
+      const symbol = idx >= 0 ? '✓' : '✗';
+      const color = idx >= 0 ? 'green' : 'red';
+      log(`  ${symbol} ${key}: column ${idx}`, color);
     });
-    log('', 'reset');
 
     const tenders = [];
-    let skipped = 0;
+    let emptyRowsSkipped = 0;
 
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row || row.length === 0) continue;
-
-      const hasContent = row.some(cell => cell && cell.toString().trim() !== '');
-      if (!hasContent) { skipped++; continue; }
+    for (let i = 4; i < allRows.length; i++) {
+      const row = allRows[i];
+      if (!row || !row[columnMap.tenderNo]) {
+        emptyRowsSkipped++;
+        continue;
+      }
 
       const getValue = (colIdx) => {
         if (colIdx < 0 || colIdx >= row.length) return '';
@@ -142,24 +139,25 @@ async function collectData() {
         return parseFloat(val) || 0;
       };
 
-      const year = getValue(colIndices.year);
-      const dateReceived = getValue(colIndices.dateReceived);
+      const year = getValue(columnMap.year);
+      const dateReceived = getValue(columnMap.dateReceived);
       const rfpDate = parseDate(year, dateReceived);
-
-      const avenirStatus = getValue(colIndices.avenirStatus);
-      const tenderResult = getValue(colIndices.tenderResult);
+      
+      const avenirStatus = normalizeStatus(getValue(columnMap.avenirStatus));
+      const tenderResult = normalizeStatus(getValue(columnMap.tenderResult));
 
       const tender = {
-        refNo: getValue(colIndices.tenderNo),
-        tenderType: getValue(colIndices.tenderType),
-        client: getValue(colIndices.client),
-        tenderName: getValue(colIndices.tenderName),
+        refNo: getValue(columnMap.tenderNo),
+        tenderType: getValue(columnMap.tenderType),
+        client: getValue(columnMap.client),
+        tenderName: getValue(columnMap.tenderName),
         rfpReceivedDate: rfpDate,
-        lead: getValue(colIndices.lead),
-        value: getNumericValue(colIndices.value),
-        avenirStatus: normalizeStatus(avenirStatus),
-        tenderResult: normalizeStatus(tenderResult),
-        statuses: getUniqueStatuses(avenirStatus, tenderResult),  // ✅ Unique statuses array
+        lead: getValue(columnMap.lead),
+        value: getNumericValue(columnMap.value),
+        avenirStatus: avenirStatus,
+        tenderResult: tenderResult,
+        groupClassification: getValue(columnMap.groupClassification),  // ✅ NEW: Capture GDS/GES
+        statuses: getUniqueStatuses(avenirStatus, tenderResult),
       };
 
       if (tender.refNo || tender.client || tender.tenderName) {
@@ -167,75 +165,88 @@ async function collectData() {
       }
     }
 
-    log(`✅ Parsed ${tenders.length} tenders (${skipped} empty rows skipped)\n`, 'green');
+    log(`\n✅ Parsed ${tenders.length} tenders (${emptyRowsSkipped} empty rows skipped)\n`, 'green');
 
-    log('📌 FIRST 5 TENDERS:', 'yellow');
-    log('════════════════════════════════════════', 'cyan');
-    
-    tenders.slice(0, 5).forEach((tender, idx) => {
-      log(`\n[${idx + 1}] ${tender.refNo || 'N/A'}`, 'bright');
-      log(`    Client: ${tender.client}`, 'cyan');
-      log(`    Name: ${tender.tenderName}`, 'cyan');
-      log(`    Type: ${tender.tenderType}`, 'cyan');
-      log(`    Lead: ${tender.lead || 'UNASSIGNED'}`, 'cyan');
-      log(`    Value: $${tender.value.toLocaleString()}`, 'bright');
-      log(`    AVENIR Status: ${tender.avenirStatus}`, 'cyan');
-      log(`    TENDER Result: ${tender.tenderResult}`, 'cyan');
-      log(`    Combined Statuses: ${tender.statuses.join(' + ') || 'NONE'}`, 'cyan');  // ✅ Shows both
-      log(`    RFP Date: ${tender.rfpReceivedDate || 'N/A'}`, 'cyan');
+    log('📌 FIRST 5 TENDERS:', 'bright');
+    log('════════════════════════════════════════\n', 'cyan');
+
+    tenders.slice(0, 5).forEach((t, idx) => {
+      log(`[${idx + 1}] ${t.refNo}`, 'yellow');
+      log(`    Client: ${t.client}`);
+      log(`    Name: ${t.tenderName}`);
+      log(`    Type: ${t.tenderType}`);
+      log(`    Lead: ${t.lead}`);
+      log(`    Group: ${t.groupClassification || 'N/A'}`);  // ✅ NEW: Show GDS/GES
+      log(`    Value: $${parseFloat(t.value).toLocaleString()}`);
+      log(`    AVENIR Status: ${t.avenirStatus}`);
+      log(`    TENDER Result: ${t.tenderResult}`);
+      log(`    Combined Statuses: ${t.statuses.join(' + ') || 'NONE'}`);
+      log(`    RFP Date: ${t.rfpReceivedDate || 'N/A'}\n`);
     });
 
-    log('\n\n📊 DATA STATISTICS:', 'yellow');
-    log('════════════════════════════════════════', 'cyan');
+    const totalValue = tenders.reduce((sum, t) => sum + (parseFloat(t.value) || 0), 0);
+    const avgValue = totalValue / tenders.length;
 
     const statusCounts = {};
-    let totalValue = 0;
-
-    // ✅ Count each unique status separately (no double counting)
-    tenders.forEach(tender => {
-      tender.statuses.forEach(status => {
+    tenders.forEach(t => {
+      t.statuses.forEach(status => {
         statusCounts[status] = (statusCounts[status] || 0) + 1;
       });
-      totalValue += tender.value;
     });
 
-    log(`Total Tenders: ${tenders.length}`, 'bright');
-    log(`Total Value: $${totalValue.toLocaleString()}`, 'bright');
-    log(`Average Value: $${(totalValue / tenders.length).toLocaleString()}`, 'bright');
-    log(`\n${colors.yellow}Status Distribution (AVENIR STATUS + TENDER RESULT):${colors.reset}`);
-    
-    Object.entries(statusCounts)
-      .sort((a, b) => b[1] - a[1])
-      .forEach(([status, count]) => {
-        const pct = ((count / tenders.length) * 100).toFixed(1);
-        log(`  ${status || 'UNKNOWN'}: ${count} (${pct}%)`, 'cyan');
-      });
+    const groupCounts = {};  // ✅ NEW: Count by group classification
+    tenders.forEach(t => {
+      const group = t.groupClassification || 'UNASSIGNED';
+      groupCounts[group] = (groupCounts[group] || 0) + 1;
+    });
 
-    log(`\n${colors.yellow}Top 10 Leads:${colors.reset}`);
     const leadCounts = {};
-    tenders.forEach(tender => {
-      const lead = tender.lead || 'UNASSIGNED';
-      leadCounts[lead] = (leadCounts[lead] || 0) + 1;
+    tenders.forEach(t => {
+      const l = t.lead || 'UNASSIGNED';
+      leadCounts[l] = (leadCounts[l] || 0) + 1;
     });
 
-    Object.entries(leadCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .forEach(([lead, count]) => {
-        log(`  ${lead}: ${count}`, 'cyan');
+    const topLeads = Object.entries(leadCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10);
+
+    log('📊 DATA STATISTICS:', 'bright');
+    log('════════════════════════════════════════', 'cyan');
+    log(`Total Tenders: ${tenders.length}`);
+    log(`Total Value: $${totalValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}`);
+    log(`Average Value: $${avgValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}\n`);
+
+    log('Status Distribution:', 'yellow');
+    Object.entries(statusCounts)
+      .sort(([, a], [, b]) => b - a)
+      .forEach(([status, count]) => {
+        const percentage = ((count / tenders.length) * 100).toFixed(1);
+        log(`  ${status}: ${count} (${percentage}%)`);
       });
 
-    log('\n\n💾 DATA COLLECTION COMPLETE', 'yellow');
+    log('\nGroup Classification Distribution:', 'yellow');  // ✅ NEW: Show group distribution
+    Object.entries(groupCounts)
+      .sort(([, a], [, b]) => b - a)
+      .forEach(([group, count]) => {
+        const percentage = ((count / tenders.length) * 100).toFixed(1);
+        log(`  ${group}: ${count} (${percentage}%)`);
+      });
+
+    log('\nTop 10 Leads:', 'yellow');
+    topLeads.forEach(([lead, count]) => {
+      log(`  ${lead}: ${count}`);
+    });
+
+    log('\n💾 DATA COLLECTION COMPLETE', 'bright');
     log('════════════════════════════════════════', 'cyan');
     log('✅ Data collection complete!', 'green');
-    log(`✅ Ready to sync ${tenders.length} tenders to MongoDB`, 'green');
+    log('✅ Ready to sync ' + tenders.length + ' tenders to MongoDB', 'green');
     log('✅ All columns mapped successfully\n', 'green');
 
   } catch (error) {
-    log(`\n❌ ERROR: ${error.message}`, 'red');
-    log('Check Google API key and Spreadsheet ID', 'yellow');
+    log('\n❌ ERROR: ' + error.message, 'red');
     process.exit(1);
   }
 }
 
-collectData();
+main();

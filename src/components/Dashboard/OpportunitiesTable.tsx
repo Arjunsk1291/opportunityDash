@@ -77,17 +77,27 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     }
   };
 
+  // ✅ UPDATED: Search ALL columns case-insensitively
   const filteredData = data.filter(opp => {
-    const matchesSearch = !search || 
-      opp.opportunityRefNo.toLowerCase().includes(search.toLowerCase()) ||
-      opp.tenderName.toLowerCase().includes(search.toLowerCase()) ||
-      opp.opportunityClassification.toLowerCase().includes(search.toLowerCase()) ||
-      opp.clientName.toLowerCase().includes(search.toLowerCase()) ||
-      (opp.dateTenderReceived?.toLowerCase().includes(search.toLowerCase()) || false) ||
-      (opp.internalLead?.toLowerCase().includes(search.toLowerCase()) || false) ||
-      opp.opportunityValue.toString().includes(search);
+    if (!search) return true;
     
-    return matchesSearch;
+    const searchLower = search.toLowerCase();
+    
+    return (
+      opp.opportunityRefNo?.toLowerCase().includes(searchLower) ||
+      opp.tenderName?.toLowerCase().includes(searchLower) ||
+      opp.opportunityClassification?.toLowerCase().includes(searchLower) ||
+      opp.clientName?.toLowerCase().includes(searchLower) ||
+      opp.dateTenderReceived?.toLowerCase().includes(searchLower) ||
+      opp.internalLead?.toLowerCase().includes(searchLower) ||
+      opp.canonicalStage?.toLowerCase().includes(searchLower) ||
+      opp.avenirStatus?.toLowerCase().includes(searchLower) ||
+      opp.tenderResult?.toLowerCase().includes(searchLower) ||
+      opp.opportunityValue?.toString().includes(searchLower) ||
+      opp.groupClassification?.toLowerCase().includes(searchLower) ||
+      opp.qualificationStatus?.toLowerCase().includes(searchLower) ||
+      opp.remarks?.toLowerCase().includes(searchLower)
+    );
   });
 
   const getStatusBadgeColor = (status: string) => {
@@ -130,7 +140,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input 
-                  placeholder="Search..." 
+                  placeholder="Search any column..." 
                   value={search} 
                   onChange={(e) => setSearch(e.target.value)} 
                   className="pl-8 w-56 h-9" 

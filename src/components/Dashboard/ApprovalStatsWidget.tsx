@@ -2,28 +2,23 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, Clock } from 'lucide-react';
 import { useApproval } from '@/contexts/ApprovalContext';
+import { Opportunity } from '@/data/opportunityData';
 
-export function ApprovalStatsWidget() {
-  const { approvals } = useApproval();
+interface ApprovalStatsWidgetProps {
+  data: Opportunity[];
+}
 
-  if (!approvals) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-primary" />
-            Approval Status
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        </CardContent>
-      </Card>
-    );
-  }
+export function ApprovalStatsWidget({ data }: ApprovalStatsWidgetProps) {
+  const { getApprovalStatus } = useApproval();
 
-  const approvedCount = Object.values(approvals).filter(status => status === 'approved').length;
-  const pendingCount = Object.values(approvals).filter(status => status === 'pending').length;
+  // ✅ UPDATED: Count from filteredData using approval context
+  const approvedCount = data.filter(opp => 
+    getApprovalStatus(opp.opportunityRefNo) === 'approved'
+  ).length;
+
+  const pendingCount = data.filter(opp => 
+    getApprovalStatus(opp.opportunityRefNo) === 'pending'
+  ).length;
 
   return (
     <Card>
