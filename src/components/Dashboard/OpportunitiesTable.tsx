@@ -77,11 +77,12 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     }
   };
 
-  // ✅ UPDATED: Search ALL columns case-insensitively
+  // ✅ UPDATED: Search ALL columns INCLUDING AVENIR STATUS, TENDER RESULT, Approval
   const filteredData = data.filter(opp => {
     if (!search) return true;
     
     const searchLower = search.toLowerCase();
+    const approvalStatus = getApprovalStatus(opp.opportunityRefNo);
     
     return (
       opp.opportunityRefNo?.toLowerCase().includes(searchLower) ||
@@ -90,13 +91,14 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       opp.clientName?.toLowerCase().includes(searchLower) ||
       opp.dateTenderReceived?.toLowerCase().includes(searchLower) ||
       opp.internalLead?.toLowerCase().includes(searchLower) ||
+      opp.opportunityValue?.toString().includes(searchLower) ||
       opp.canonicalStage?.toLowerCase().includes(searchLower) ||
       opp.avenirStatus?.toLowerCase().includes(searchLower) ||
       opp.tenderResult?.toLowerCase().includes(searchLower) ||
-      opp.opportunityValue?.toString().includes(searchLower) ||
       opp.groupClassification?.toLowerCase().includes(searchLower) ||
       opp.qualificationStatus?.toLowerCase().includes(searchLower) ||
-      opp.remarks?.toLowerCase().includes(searchLower)
+      opp.remarks?.toLowerCase().includes(searchLower) ||
+      approvalStatus?.toLowerCase().includes(searchLower)
     );
   });
 
@@ -140,7 +142,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input 
-                  placeholder="Search any column..." 
+                  placeholder="Search all columns..." 
                   value={search} 
                   onChange={(e) => setSearch(e.target.value)} 
                   className="pl-8 w-56 h-9" 
