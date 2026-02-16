@@ -2,14 +2,19 @@ import mongoose from 'mongoose';
 
 const approvalSchema = new mongoose.Schema(
   {
-    // ✅ FIXED: Use opportunityRefNo as unique key instead of opportunityId
     opportunityRefNo: { type: String, required: true, unique: true },
-    // Keep opportunityId for backward compatibility but not required
-    opportunityId: { type: String, default: null },
-    status: { type: String, enum: ['pending', 'approved'], default: 'pending' },
-    approvedBy: { type: String, default: null },
-    approvedByRole: { type: String, default: null },
-    approvalDate: { type: Date, default: null },
+    status: {
+      type: String,
+      enum: ['pending', 'proposal_head_approved', 'fully_approved'],
+      default: 'pending',
+    },
+    proposalHeadApproved: { type: Boolean, default: false },
+    proposalHeadBy: { type: String, default: null },
+    proposalHeadAt: { type: Date, default: null },
+    svpApproved: { type: Boolean, default: false },
+    svpBy: { type: String, default: null },
+    svpAt: { type: Date, default: null },
+    svpGroup: { type: String, default: null },
   },
   { timestamps: true }
 );
