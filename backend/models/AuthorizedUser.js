@@ -7,10 +7,18 @@ const authorizedUserSchema = new mongoose.Schema({
     unique: true,
     lowercase: true,
   },
+  displayName: {
+    type: String,
+    default: '',
+  },
   role: {
     type: String,
-    enum: ['Master', 'Admin', 'Basic'],
+    enum: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
     required: true,
+  },
+  assignedGroup: {
+    type: String,
+    default: null,
   },
   status: {
     type: String,

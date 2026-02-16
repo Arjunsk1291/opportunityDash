@@ -14,8 +14,6 @@ import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import PendingApproval from "./pages/PendingApproval";
 import NotFound from "./pages/NotFound";
-import { MsalProvider } from "@azure/msal-react";
-import { msalInstance } from "./config/msalConfig";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
@@ -90,8 +88,7 @@ function AppRoutes() {
 }
 
 const App = () => (
-  <MsalProvider instance={msalInstance}>
-    <QueryClientProvider client={queryClient}>
+  <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <CurrencyProvider>
           <DataProvider>
@@ -104,8 +101,7 @@ const App = () => (
           </DataProvider>
         </CurrencyProvider>
       </AuthProvider>
-    </QueryClientProvider>
-  </MsalProvider>
+  </QueryClientProvider>
 );
 
 export default App;
