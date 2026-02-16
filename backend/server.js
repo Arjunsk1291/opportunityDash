@@ -4,14 +4,13 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import jwt from 'jsonwebtoken';
 import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGoogleSheets, transformTendersToOpportunities } from './services/dataSyncService.js';
-
 import { initializeBootSync } from './services/bootSyncService.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -37,32 +36,28 @@ const mapIdField = (doc) => {
   };
 };
 
-// ===== AUTH MIDDLEWARE =====
+const getUsernameFromRequest = (req) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.substring(7).trim().toLowerCase();
+  }
+
+  const headerUsername = req.headers['x-username'];
+  if (typeof headerUsername === 'string') {
+    return headerUsername.trim().toLowerCase();
+  }
+
+  return null;
+};
+
 const verifyToken = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing authorization token' });
+    const username = getUsernameFromRequest(req);
+    if (!username) {
+      return res.status(401).json({ error: 'Missing username authorization' });
     }
 
-    const token = authHeader.substring(7);
-    const decoded = jwt.decode(token, { complete: true });
-    if (!decoded) {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
-
-    const email = decoded.payload.preferred_username || 
-                  decoded.payload.upn || 
-                  decoded.payload.email ||
-                  decoded.payload.mail;
-    
-    if (!email) {
-      console.error('Token claims:', decoded.payload);
-      return res.status(401).json({ error: 'Token missing email claim' });
-    }
-
-    const cleanEmail = email.toLowerCase();
-    const user = await AuthorizedUser.findOne({ email: cleanEmail });
+    const user = await AuthorizedUser.findOne({ email: username });
     if (!user) {
       return res.status(403).json({ error: 'User not authorized' });
     }
@@ -76,59 +71,48 @@ const verifyToken = async (req, res, next) => {
     }
 
     req.user = {
-      email: cleanEmail,
+      email: user.email,
+      displayName: user.displayName || user.email,
       role: user.role,
+      status: user.status,
+      assignedGroup: user.assignedGroup || null,
       userId: user._id,
     };
 
     next();
   } catch (error) {
-    console.error('Token verification error:', error.message);
-    res.status(401).json({ error: 'Token verification failed' });
+    console.error('Username verification error:', error.message);
+    res.status(401).json({ error: 'Username verification failed' });
   }
 };
 
-// ===== OAUTH ENDPOINTS =====
-
 app.post('/api/auth/verify-token', async (req, res) => {
   try {
-    const { token } = req.body;
-    if (!token) {
-      return res.status(400).json({ error: 'Token is required' });
+    const rawUsername = req.body?.username || req.body?.token;
+    const username = rawUsername?.toString().trim().toLowerCase();
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
     }
 
-    const decoded = jwt.decode(token, { complete: true });
-    if (!decoded) {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
+    let user = await AuthorizedUser.findOne({ email: username });
 
-    const email = decoded.payload.preferred_username || 
-                  decoded.payload.upn || 
-                  decoded.payload.email ||
-                  decoded.payload.mail;
-    
-    if (!email) {
-      return res.status(401).json({ error: 'Token missing email claim' });
-    }
-
-    const cleanEmail = email.toLowerCase();
-    let user = await AuthorizedUser.findOne({ email: cleanEmail });
-    
     if (!user) {
-      console.log('📋 Creating new pending user:', cleanEmail);
       user = new AuthorizedUser({
-        email: cleanEmail,
+        email: username,
+        displayName: username,
         role: 'Basic',
         status: 'pending',
       });
       await user.save();
-      
+
       return res.json({
         success: true,
         user: {
           email: user.email,
+          displayName: user.displayName,
           role: user.role,
           status: user.status,
+          assignedGroup: user.assignedGroup,
         },
         message: 'User pending approval. Please wait for Master to approve your access.',
       });
@@ -138,28 +122,19 @@ app.post('/api/auth/verify-token', async (req, res) => {
       return res.status(403).json({ error: 'User access rejected', status: 'rejected' });
     }
 
-    if (user.status === 'pending') {
-      return res.json({
-        success: true,
-        user: {
-          email: user.email,
-          role: user.role,
-          status: user.status,
-        },
-        message: 'User pending approval. Master will review your request.',
-      });
-    }
-
-    res.json({
+    return res.json({
       success: true,
       user: {
         email: user.email,
+        displayName: user.displayName || user.email,
         role: user.role,
         status: user.status,
+        assignedGroup: user.assignedGroup,
       },
+      message: user.status === 'pending' ? 'User pending approval. Master will review your request.' : 'Login successful',
     });
   } catch (error) {
-    console.error('Token verification error:', error.message);
+    console.error('Auth verification error:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -188,21 +163,13 @@ app.post('/api/auth/login', verifyToken, async (req, res) => {
 });
 
 app.get('/api/auth/user', verifyToken, async (req, res) => {
-  try {
-    const user = await AuthorizedUser.findOne({ email: req.user.email });
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json({
-      email: user.email,
-      role: user.role,
-      status: user.status,
-      lastLogin: user.lastLogin,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+  res.json({
+    email: req.user.email,
+    displayName: req.user.displayName,
+    role: req.user.role,
+    status: req.user.status,
+    assignedGroup: req.user.assignedGroup,
+  });
 });
 
 app.get('/api/users/authorized', verifyToken, async (req, res) => {
@@ -211,8 +178,8 @@ app.get('/api/users/authorized', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master users can view this' });
     }
 
-    const users = await AuthorizedUser.find().sort({ createdAt: -1 });
-    res.json(users);
+    const users = await AuthorizedUser.find().sort({ createdAt: -1 }).lean();
+    res.json(users.map(mapIdField));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -243,7 +210,6 @@ app.post('/api/users/approve', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log('✅ User approved:', email, 'by', req.user.email);
     res.json({ success: true, user });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -275,7 +241,6 @@ app.post('/api/users/reject', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log('❌ User rejected:', email, 'by', req.user.email);
     res.json({ success: true, user });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -288,19 +253,20 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master users can change roles' });
     }
 
-    const { email, newRole } = req.body;
+    const { email, newRole, assignedGroup } = req.body;
     if (!email || !newRole) {
       return res.status(400).json({ error: 'Email and newRole are required' });
     }
 
-    const validRoles = ['Master', 'Admin', 'Basic'];
+    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
     if (!validRoles.includes(newRole)) {
-      return res.status(400).json({ error: 'Invalid role. Must be Master, Admin, or Basic' });
+      return res.status(400).json({ error: 'Invalid role' });
     }
 
+    const update = { role: newRole, assignedGroup: newRole === 'SVP' ? (assignedGroup || null) : null };
     const user = await AuthorizedUser.findOneAndUpdate(
       { email: email.toLowerCase() },
-      { role: newRole },
+      update,
       { new: true }
     );
 
@@ -308,7 +274,6 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log('🔄 User role changed:', email, 'to', newRole, 'by', req.user.email);
     res.json({ success: true, user });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -332,41 +297,7 @@ app.delete('/api/users/remove', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    console.log('🗑️ User removed:', email, 'by', req.user.email);
     res.json({ success: true, message: 'User removed' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/users/seed', async (req, res) => {
-  try {
-    const masterEmails = (process.env.MASTER_USERS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    const adminEmails = (process.env.ADMIN_USERS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    const basicEmails = (process.env.BASIC_USERS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-
-    const usersToAdd = [
-      ...masterEmails.map(email => ({ email, role: 'Master', status: 'approved' })),
-      ...adminEmails.map(email => ({ email, role: 'Admin', status: 'approved' })),
-      ...basicEmails.map(email => ({ email, role: 'Basic', status: 'approved' })),
-    ];
-
-    if (usersToAdd.length === 0) {
-      return res.status(400).json({ error: 'No users configured in environment variables' });
-    }
-
-    const results = await Promise.all(
-      usersToAdd.map(userData =>
-        AuthorizedUser.findOneAndUpdate(
-          { email: userData.email },
-          userData,
-          { upsert: true, new: true }
-        )
-      )
-    );
-
-    console.log('✅ Seeded', results.length, 'authorized users');
-    res.json({ success: true, count: results.length, users: results });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -380,126 +311,133 @@ app.post('/api/logs/cleanup', verifyToken, async (req, res) => {
 
     const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
     const result = await LoginLog.deleteMany({ loginTime: { $lt: fifteenDaysAgo } });
-
-    console.log('🗑️ Cleaned up', result.deletedCount, 'old login logs');
     res.json({ success: true, deletedCount: result.deletedCount });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// ===== APPROVALS =====
-app.get('/api/approvals', async (req, res) => {
+app.get('/api/approvals', verifyToken, async (req, res) => {
   try {
     const approvals = await approvalDb.getApprovals();
-    res.json(approvals);
+    const approvalStates = await approvalDb.getApprovalStates();
+    res.json({ approvals, approvalStates });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/approvals/approve', async (req, res) => {
+app.post('/api/approvals/approve-proposal-head', verifyToken, async (req, res) => {
   try {
-    const { opportunityRefNo, performedBy, performedByRole } = req.body;
+    if (!['ProposalHead', 'Master'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Proposal Head or Master can approve step 1' });
+    }
+
+    const { opportunityRefNo } = req.body;
     if (!opportunityRefNo) {
       return res.status(400).json({ error: 'opportunityRefNo is required' });
     }
-    const result = await approvalDb.approveOpportunity(opportunityRefNo, performedBy, performedByRole);
+
+    const result = await approvalDb.approveAsProposalHead(opportunityRefNo, req.user.displayName, req.user.role);
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/approvals/revert', async (req, res) => {
+app.post('/api/approvals/approve-svp', verifyToken, async (req, res) => {
   try {
-    const { opportunityRefNo, performedBy, performedByRole } = req.body;
+    if (!['SVP', 'Master'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only SVP or Master can approve step 2' });
+    }
+
+    const { opportunityRefNo, group } = req.body;
     if (!opportunityRefNo) {
       return res.status(400).json({ error: 'opportunityRefNo is required' });
     }
-    const result = await approvalDb.revertApproval(opportunityRefNo, performedBy, performedByRole);
+
+    if (req.user.role === 'SVP' && req.user.assignedGroup && group && req.user.assignedGroup !== group) {
+      return res.status(403).json({ error: 'SVP can only approve assigned group tenders' });
+    }
+
+    const result = await approvalDb.approveAsSVP(opportunityRefNo, req.user.displayName, req.user.role, group || req.user.assignedGroup);
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/approval-logs', async (req, res) => {
+app.post('/api/approvals/revert', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can revert approvals' });
+    }
+
+    const { opportunityRefNo } = req.body;
+    if (!opportunityRefNo) {
+      return res.status(400).json({ error: 'opportunityRefNo is required' });
+    }
+
+    const result = await approvalDb.revertApproval(opportunityRefNo, req.user.displayName, req.user.role);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/approval-logs', verifyToken, async (req, res) => {
   try {
     const logs = await approvalDb.getApprovalLogs();
-    res.json(logs);
+    res.json(logs.map((log) => ({
+      id: log._id?.toString(),
+      opportunityRefNo: log.opportunityRefNo,
+      action: log.action,
+      performedBy: log.performedBy,
+      performedByRole: log.performedByRole,
+      group: log.group,
+      timestamp: log.createdAt,
+    })));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// ===== DATA SYNC (Hard-coded from Google Sheets) =====
-// ✅ UPDATED: Removed verifyToken middleware - now anyone can trigger sync
-app.post('/api/opportunities/sync-sheets', async (req, res) => {
+app.post('/api/opportunities/sync-sheets', verifyToken, async (req, res) => {
   try {
-    console.log('\n📊 ════════════════════════════════════════════════════════════════════');
-    console.log('🔄 Starting data sync from Google Sheets...');
-    console.log('📊 ════════════════════════════════════════════════════════════════════\n');
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can sync data' });
+    }
 
-    // Fetch tenders from Google Sheets
     const tenders = await syncTendersFromGoogleSheets();
-    console.log(`✅ Fetched ${tenders.length} tenders from Google Sheets`);
-
-    // Transform to Opportunity format
     const opportunities = await transformTendersToOpportunities(tenders);
 
-    // Clear existing data and insert new
     await SyncedOpportunity.deleteMany({});
-    console.log('✅ Cleared old data from MongoDB');
-
     const inserted = await SyncedOpportunity.insertMany(opportunities);
-    console.log(`✅ Inserted ${inserted.length} opportunities into MongoDB`);
 
-    console.log('📊 ════════════════════════════════════════════════════════════════════');
-    console.log('✅ DATA SYNC COMPLETE!');
-    console.log('📊 ════════════════════════════════════════════════════════════════════\n');
-
-    res.json({
-      success: true,
-      count: inserted.length,
-      syncedCount: inserted.length,
-      message: `Synced ${inserted.length} tenders from Google Sheets`,
-    });
+    res.json({ success: true, count: inserted.length, syncedCount: inserted.length });
   } catch (error) {
-    console.error('❌ Sync error:', error.message);
     res.status(500).json({ error: 'Sync failed: ' + error.message });
   }
 });
 
-app.post('/api/opportunities/sync-sheets/auto', async (req, res) => {
+app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) => {
   try {
-    console.log('🔄 AUTO-SYNC: Starting automatic sync from Google Sheets...');
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can sync data' });
+    }
 
-    // Fetch tenders from Google Sheets
     const tenders = await syncTendersFromGoogleSheets();
-    console.log(`✅ AUTO-SYNC: Fetched ${tenders.length} tenders`);
-
-    // Transform to Opportunity format
     const opportunities = await transformTendersToOpportunities(tenders);
 
-    // Clear existing data and insert new
     await SyncedOpportunity.deleteMany({});
     const inserted = await SyncedOpportunity.insertMany(opportunities);
-    console.log(`✅ AUTO-SYNC: Inserted ${inserted.length} opportunities`);
 
-    res.json({
-      success: true,
-      count: inserted.length,
-      syncedCount: inserted.length,
-      message: `Auto-synced ${inserted.length} tenders`,
-    });
+    res.json({ success: true, count: inserted.length, syncedCount: inserted.length });
   } catch (error) {
-    console.error('❌ AUTO-SYNC: Error -', error.message);
     res.status(500).json({ error: 'Auto-sync failed: ' + error.message });
   }
 });
 
-// ===== OPPORTUNITIES =====
 app.get('/api/opportunities', async (req, res) => {
   try {
     const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
@@ -510,7 +448,24 @@ app.get('/api/opportunities', async (req, res) => {
   }
 });
 
-// Serve frontend static files
+app.get('/api/opportunities/stats', verifyToken, async (req, res) => {
+  try {
+    const opportunities = await SyncedOpportunity.find().lean();
+    const totalTenders = opportunities.length;
+    const totalValue = opportunities.reduce((sum, opp) => sum + (opp.opportunityValue || 0), 0);
+    const lastSync = opportunities[0]?.syncedAt || null;
+    const statusDistribution = opportunities.reduce((acc, opp) => {
+      const key = opp.avenirStatus || 'UNKNOWN';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    res.json({ totalTenders, totalValue, lastSync, statusDistribution });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 const distPath = path.resolve(__dirname, '../dist');
 app.use(express.static(distPath));
 

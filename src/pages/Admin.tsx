@@ -17,7 +17,8 @@ const API_URL = import.meta.env.VITE_API_URL || '/api';
 interface AuthorizedUser {
   _id: string;
   email: string;
-  role: 'Master' | 'Admin' | 'Basic';
+  role: 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'Basic';
+  assignedGroup?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   lastLogin?: Date;
   createdAt: Date;
@@ -400,6 +401,8 @@ export default function Admin() {
                             <SelectContent>
                               <SelectItem value="Master">Master</SelectItem>
                               <SelectItem value="Admin">Admin</SelectItem>
+                              <SelectItem value="ProposalHead">Proposal Head</SelectItem>
+                              <SelectItem value="SVP">SVP</SelectItem>
                               <SelectItem value="Basic">Basic</SelectItem>
                             </SelectContent>
                           </Select>
