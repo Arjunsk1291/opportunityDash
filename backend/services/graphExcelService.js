@@ -71,17 +71,75 @@ async function acquireAppToken() {
   return token.access_token;
 }
 
+
+export async function startDeviceCodeFlow() {
+  validateEnv();
+  const deviceCodeUrl = `https://login.microsoftonline.com/${process.env.GRAPH_TENANT_ID}/oauth2/v2.0/devicecode`;
+  const body = new URLSearchParams({
+    client_id: process.env.GRAPH_CLIENT_ID,
+    scope: DELEGATED_SCOPES,
+  });
+
+  const response = await fetch(deviceCodeUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+
+  const data = await response.json();
+  if (!response.ok || !data.device_code) {
+    throw new Error(data.error_description || data.error || `Failed to start device code flow (${response.status})`);
+  }
+
+  return {
+    deviceCode: data.device_code,
+    userCode: data.user_code,
+    verificationUri: data.verification_uri,
+    verificationUriComplete: data.verification_uri_complete,
+    expiresIn: Number(data.expires_in || 900),
+    interval: Number(data.interval || 5),
+    message: data.message,
+  };
+}
+
+export async function exchangeDeviceCodeForToken(deviceCode) {
+  if (!deviceCode) {
+    throw new Error('deviceCode is required');
+  }
+
+  const token = await postToken({
+    grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+    scope: DELEGATED_SCOPES,
+    device_code: deviceCode,
+  });
+
+  return {
+    accessToken: token.access_token,
+    refreshToken: token.refresh_token || '',
+    expiresIn: Number(token.expires_in || 3600),
+    scope: token.scope || DELEGATED_SCOPES,
+  };
+}
 export async function bootstrapDelegatedToken({ username, password }) {
   if (!username || !password) {
     throw new Error('username and password are required');
   }
 
-  const token = await postToken({
-    grant_type: 'password',
-    scope: DELEGATED_SCOPES,
-    username,
-    password,
-  });
+  let token;
+  try {
+    token = await postToken({
+      grant_type: 'password',
+      scope: DELEGATED_SCOPES,
+      username,
+      password,
+    });
+  } catch (error) {
+    const msg = String(error.message || error);
+    if (msg.includes('AADSTS50076')) {
+      throw new Error('AADSTS50076: MFA required. Use device-code bootstrap instead of username/password.');
+    }
+    throw error;
+  }
 
   return {
     accessToken: token.access_token,

@@ -10,7 +10,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
-import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken } from './services/graphExcelService.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, startDeviceCodeFlow, exchangeDeviceCodeForToken, protectRefreshToken } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -63,6 +63,9 @@ const syncFromConfiguredGraph = async () => {
 
   return inserted.length;
 };
+
+
+const pendingDeviceCodeLogins = new Map();
 
 const getUsernameFromRequest = (req) => {
   const authHeader = req.headers.authorization;
@@ -547,6 +550,83 @@ app.post('/api/graph/preview-rows', verifyToken, async (req, res) => {
   }
 });
 
+
+
+app.post('/api/graph/auth/device-code/start', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can start device-code auth' });
+    }
+
+    const deviceFlow = await startDeviceCodeFlow();
+    pendingDeviceCodeLogins.set(deviceFlow.deviceCode, {
+      createdAt: Date.now(),
+      expiresAt: Date.now() + (deviceFlow.expiresIn * 1000),
+      requestedBy: req.user.email,
+    });
+
+    res.json({ success: true, ...deviceFlow });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/graph/auth/device-code/complete', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can complete device-code auth' });
+    }
+
+    const { deviceCode } = req.body || {};
+    if (!deviceCode) {
+      return res.status(400).json({ error: 'deviceCode is required' });
+    }
+
+    const pending = pendingDeviceCodeLogins.get(deviceCode);
+    if (!pending) {
+      return res.status(404).json({ error: 'Unknown device code. Start flow again.' });
+    }
+
+    if (Date.now() > pending.expiresAt) {
+      pendingDeviceCodeLogins.delete(deviceCode);
+      return res.status(400).json({ error: 'Device code expired. Start flow again.' });
+    }
+
+    try {
+      const tokenResult = await exchangeDeviceCodeForToken(deviceCode);
+      if (!tokenResult.refreshToken) {
+        return res.status(500).json({ error: 'No refresh token returned from device-code flow.' });
+      }
+
+      const config = await getGraphConfig();
+      config.graphAuthMode = 'delegated';
+      config.graphAccountUsername = req.user.email;
+      config.graphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
+      config.graphTokenUpdatedAt = new Date();
+      config.updatedBy = req.user.email;
+      await config.save();
+
+      pendingDeviceCodeLogins.delete(deviceCode);
+      return res.json({ success: true, message: 'Delegated token captured and stored.' });
+    } catch (error) {
+      const msg = String(error.message || error);
+      if (msg.includes('authorization_pending')) {
+        return res.status(202).json({ success: false, state: 'authorization_pending', error: 'Authorization pending. Complete login in browser and retry.' });
+      }
+      if (msg.includes('authorization_declined')) {
+        pendingDeviceCodeLogins.delete(deviceCode);
+        return res.status(400).json({ success: false, state: 'authorization_declined', error: 'Authorization declined by user.' });
+      }
+      if (msg.includes('expired_token')) {
+        pendingDeviceCodeLogins.delete(deviceCode);
+        return res.status(400).json({ success: false, state: 'expired_token', error: 'Device code expired. Start flow again.' });
+      }
+      throw error;
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.get('/api/graph/auth/status', verifyToken, async (req, res) => {
   try {

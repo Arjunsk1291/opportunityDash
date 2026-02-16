@@ -104,10 +104,14 @@ Auto-sync uses the same Graph configuration.
 
 ### One-time delegated token bootstrap (your account)
 
-If your tenant permissions require a user-bound token, you can bootstrap and store a refresh token from **Master Panel → Data Sync**:
+If your tenant requires MFA (AADSTS50076), use **Device Code Auth** in **Master Panel → Data Sync**:
 
-1. Enter your Microsoft username/password in **Graph Account Bootstrap (one-time)**.
-2. Click **Authenticate & Store Token**.
-3. Once stored, Graph calls use your delegated token automatically (with refresh).
+1. Click **Start Device Auth**.
+2. Open the shown Microsoft verification URL and complete MFA.
+3. Return to Admin panel and click **Complete Device Auth**.
+4. Delegated refresh token is stored encrypted and auto-refreshed in backend.
 
-If bootstrap is not configured, backend falls back to application token (`client_credentials`).
+Fallback (no MFA only):
+- You can still use **Username/Password Auth** if your tenant allows ROPC and MFA is not enforced.
+
+If delegated bootstrap is not configured, backend falls back to application token (`client_credentials`).
