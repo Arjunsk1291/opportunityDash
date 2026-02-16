@@ -13,7 +13,7 @@ export function ApprovalStatsWidget({ data }: ApprovalStatsWidgetProps) {
 
   // ✅ UPDATED: Count from filteredData using approval context
   const approvedCount = data.filter(opp => 
-    getApprovalStatus(opp.opportunityRefNo) === 'approved'
+    getApprovalStatus(opp.opportunityRefNo) === 'fully_approved'
   ).length;
 
   const pendingCount = data.filter(opp => 
