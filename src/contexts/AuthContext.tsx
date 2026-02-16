@@ -1,12 +1,15 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 
-export type UserRole = 'Master' | 'Admin' | 'Basic';
+export type UserRole = 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'Basic';
 export type UserStatus = 'approved' | 'pending' | 'rejected';
 
 export interface User {
+  id?: string;
   email: string;
+  displayName: string;
   role: UserRole;
   status: UserStatus;
+  assignedGroup?: string | null;
   lastLogin?: Date;
 }
 
@@ -15,11 +18,16 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isMaster: boolean;
   isAdmin: boolean;
+  isProposalHead: boolean;
+  isSVP: boolean;
   isLoading: boolean;
   isPending: boolean;
   logout: () => void;
   token: string | null;
-  setAuthToken: (token: string) => Promise<void>;
+  loginWithUsername: (username: string) => Promise<void>;
+  getAllUsers: () => User[];
+  updateUserRole: (userId: string, newRole: UserRole, assignedGroup?: string) => Promise<void>;
+  refreshCurrentUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,31 +38,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, setIsPending] = useState(false);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
 
-  // Check if user is already logged in on mount
+  const authHeaders = useCallback(
+    () => token ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token } : { 'Content-Type': 'application/json' },
+    [token]
+  );
+
+  const refreshCurrentUser = useCallback(async () => {
+    if (!token) return;
+    const response = await fetch(API_URL + '/auth/user', { headers: authHeaders() });
+    if (!response.ok) {
+      throw new Error('Failed to refresh user');
+    }
+    const data = await response.json();
+    const nextUser: User = {
+      email: data.email,
+      displayName: data.displayName || data.email,
+      role: data.role,
+      status: data.status,
+      assignedGroup: data.assignedGroup || null,
+    };
+    setUser(nextUser);
+    setIsPending(nextUser.status === 'pending');
+  }, [authHeaders, token]);
+
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const savedToken = sessionStorage.getItem('oauth_token');
-        if (savedToken) {
-          // Verify token with backend
-          const response = await fetch(API_URL + '/auth/verify-token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: savedToken }),
-          });
+        const savedUsername = sessionStorage.getItem('username_token');
+        if (!savedUsername) return;
 
-          if (response.ok) {
-            const data = await response.json();
-            setUser(data.user);
-            setToken(savedToken);
-            if (data.user.status === 'pending') {
-              setIsPending(true);
-            }
-          } else {
-            // Token invalid, clear it
-            sessionStorage.removeItem('oauth_token');
-          }
+        const response = await fetch(API_URL + '/auth/verify-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: savedUsername }),
+        });
+
+        if (!response.ok) {
+          sessionStorage.removeItem('username_token');
+          return;
+        }
+
+        const data = await response.json();
+        const nextUser: User = {
+          email: data.user.email,
+          displayName: data.user.displayName || data.user.email,
+          role: data.user.role,
+          status: data.user.status,
+          assignedGroup: data.user.assignedGroup || null,
+        };
+        setUser(nextUser);
+        setToken(savedUsername);
+        setIsPending(nextUser.status === 'pending');
+
+        if (nextUser.status === 'approved') {
+          await fetch(API_URL + '/auth/login', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: 'Bearer ' + savedUsername,
+            },
+          });
         }
       } catch (error) {
         console.error('Auth check error:', error);
@@ -69,54 +114,105 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);
+    setAllUsers([]);
     setIsPending(false);
-    sessionStorage.removeItem('oauth_token');
-    localStorage.removeItem('msal_account_filter');
+    sessionStorage.removeItem('username_token');
   }, []);
 
-  const setAuthToken = useCallback(async (newToken: string) => {
-    try {
-      // Verify token with backend
-      const response = await fetch(API_URL + '/auth/verify-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: newToken }),
-      });
+  const loginWithUsername = useCallback(async (username: string) => {
+    const normalizedUsername = username.trim().toLowerCase();
+    const response = await fetch(API_URL + '/auth/verify-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: normalizedUsername }),
+    });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error);
-      }
-
-      const data = await response.json();
-      setUser(data.user);
-      setToken(newToken);
-      sessionStorage.setItem('oauth_token', newToken);
-
-      // Check if user is pending
-      if (data.user.status === 'pending') {
-        setIsPending(true);
-        console.log('⏳ User pending approval:', data.user.email);
-      } else {
-        setIsPending(false);
-        // Record login only if approved
-        await fetch(API_URL + '/auth/login', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + newToken,
-          },
-        });
-      }
-    } catch (error) {
-      console.error('Token validation error:', error);
-      throw error;
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Login failed');
     }
+
+    const nextUser: User = {
+      email: data.user.email,
+      displayName: data.user.displayName || data.user.email,
+      role: data.user.role,
+      status: data.user.status,
+      assignedGroup: data.user.assignedGroup || null,
+    };
+
+    setUser(nextUser);
+    setToken(normalizedUsername);
+    sessionStorage.setItem('username_token', normalizedUsername);
+
+    if (nextUser.status === 'pending') {
+      setIsPending(true);
+      return;
+    }
+
+    setIsPending(false);
+    await fetch(API_URL + '/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + normalizedUsername,
+      },
+    });
   }, []);
+
+  const getAllUsers = useCallback(() => allUsers, [allUsers]);
+
+  const fetchUsers = useCallback(async () => {
+    if (!token || user?.role !== 'Master') return;
+    const response = await fetch(API_URL + '/users/authorized', { headers: authHeaders() });
+    if (!response.ok) return;
+    const data = await response.json();
+    setAllUsers(data.map((u: any) => ({
+      id: u.id || u._id,
+      email: u.email,
+      displayName: u.displayName || u.email,
+      role: u.role,
+      status: u.status,
+      assignedGroup: u.assignedGroup || null,
+    })));
+  }, [authHeaders, token, user?.role]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  const updateUserRole = useCallback(async (userId: string, newRole: UserRole, assignedGroup?: string) => {
+    if (!token || user?.role !== 'Master') {
+      throw new Error('Only Master users can change roles');
+    }
+
+    const targetUser = allUsers.find((u) => (u.id || u.email) === userId);
+    if (!targetUser) {
+      throw new Error('User not found');
+    }
+
+    const response = await fetch(API_URL + '/users/change-role', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        email: targetUser.email,
+        newRole,
+        assignedGroup: newRole === 'SVP' ? (assignedGroup || targetUser.assignedGroup || null) : null,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update role');
+    }
+
+    await fetchUsers();
+  }, [allUsers, authHeaders, fetchUsers, token, user?.role]);
 
   const isAuthenticated = user !== null && token !== null;
   const isMaster = user?.role === 'Master' && user?.status === 'approved';
-  const isAdmin = (user?.role === 'Admin' || user?.role === 'Master') && user?.status === 'approved';
+  const isAdmin = ['Admin', 'Master'].includes(user?.role || '') && user?.status === 'approved';
+  const isProposalHead = ['ProposalHead', 'Master'].includes(user?.role || '') && user?.status === 'approved';
+  const isSVP = ['SVP', 'Master'].includes(user?.role || '') && user?.status === 'approved';
 
   return (
     <AuthContext.Provider
@@ -125,11 +221,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated,
         isMaster,
         isAdmin,
+        isProposalHead,
+        isSVP,
         isLoading,
         isPending,
         logout,
         token,
-        setAuthToken,
+        loginWithUsername,
+        getAllUsers,
+        updateUserRole,
+        refreshCurrentUser,
       }}
     >
       {children}
