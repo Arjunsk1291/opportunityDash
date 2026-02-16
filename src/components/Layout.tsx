@@ -58,7 +58,7 @@ export function Layout({ children }: LayoutProps) {
                   </div>
                   <DropdownMenuSeparator />
                   {isAdmin && (
-                    <DropdownMenuItem onClick={() => navigate('/admin')}>
+                    <DropdownMenuItem onClick={() => navigate('/master')}>
                       <Shield className="h-4 w-4 mr-2" />
                       Admin Panel
                     </DropdownMenuItem>

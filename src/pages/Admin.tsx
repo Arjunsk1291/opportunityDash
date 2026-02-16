@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { useState, useEffect } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
@@ -17,7 +19,8 @@ const API_URL = import.meta.env.VITE_API_URL || '/api';
 interface AuthorizedUser {
   _id: string;
   email: string;
-  role: 'Master' | 'Admin' | 'Basic';
+  role: 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'Basic';
+  assignedGroup?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   lastLogin?: Date;
   createdAt: Date;
@@ -32,6 +35,20 @@ interface CollectionStats {
   statusDistribution: Record<string, number>;
 }
 
+interface GraphConfig {
+  id?: string;
+  shareLink: string;
+  driveId: string;
+  fileId: string;
+  worksheetName: string;
+  dataRange: string;
+  headerRowOffset: number;
+  syncIntervalMinutes: number;
+  fieldMapping?: Record<string, string | string[]>;
+  lastResolvedAt?: string;
+  lastSyncAt?: string;
+}
+
 export default function Admin() {
   const { user, isMaster, token } = useAuth();
   const navigate = useNavigate();
@@ -41,11 +58,26 @@ export default function Admin() {
   const [changingRole, setChangingRole] = useState<string | null>(null);
   const [syncLoading, setSyncLoading] = useState(false);
   const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(null);
+  const [graphConfig, setGraphConfig] = useState<GraphConfig>({
+    shareLink: '',
+    driveId: '',
+    fileId: '',
+    worksheetName: '',
+    dataRange: 'B4:Z2000',
+    headerRowOffset: 0,
+    syncIntervalMinutes: 10,
+    fieldMapping: {},
+  });
+  const [worksheets, setWorksheets] = useState<Array<{ id: string; name: string }>>([]);
+  const [mappingText, setMappingText] = useState('{}');
+  const [configSaving, setConfigSaving] = useState(false);
+  const [previewRows, setPreviewRows] = useState<string[][]>([]);
 
   useEffect(() => {
     if (isMaster) {
       loadUsers();
       loadCollectionStats();
+      loadGraphConfig();
     }
   }, [isMaster, token]);
 
@@ -93,11 +125,11 @@ export default function Admin() {
     }
   };
 
-  const syncFromGoogleSheets = async () => {
+  const syncFromGraphExcel = async () => {
     if (!token) return;
     setSyncLoading(true);
     try {
-      const response = await fetch(API_URL + '/opportunities/sync-sheets', {
+      const response = await fetch(API_URL + '/opportunities/sync-graph', {
         method: 'POST',
         headers: {
           'Authorization': 'Bearer ' + token,
@@ -110,9 +142,9 @@ export default function Admin() {
       }
 
       const result = await response.json();
-      setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Google Sheets` });
+      setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Graph Excel` });
       await loadCollectionStats();
-      toast.success(`Synced ${result.count} tenders`);
+      toast.success(`Synced ${result.count} tenders from Graph Excel`);
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
       console.error('❌ Error syncing:', error);
@@ -120,6 +152,167 @@ export default function Admin() {
       toast.error('Sync failed');
     } finally {
       setSyncLoading(false);
+    }
+  };
+
+
+  const loadGraphConfig = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/graph/config', {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const next: GraphConfig = {
+        shareLink: data.shareLink || '',
+        driveId: data.driveId || '',
+        fileId: data.fileId || '',
+        worksheetName: data.worksheetName || '',
+        dataRange: data.dataRange || 'B4:Z2000',
+        headerRowOffset: Number(data.headerRowOffset || 0),
+        syncIntervalMinutes: data.syncIntervalMinutes || 10,
+        fieldMapping: data.fieldMapping || {},
+        lastResolvedAt: data.lastResolvedAt,
+        lastSyncAt: data.lastSyncAt,
+      };
+      setGraphConfig(next);
+      setMappingText(JSON.stringify(next.fieldMapping || {}, null, 2));
+      if (next.driveId && next.fileId) {
+        await loadWorksheets(next.driveId, next.fileId);
+      }
+    } catch (error) {
+      console.error('Failed to load graph config:', error);
+    }
+  };
+
+  const loadWorksheets = async (driveId: string, fileId: string) => {
+    if (!token || !driveId || !fileId) return;
+    try {
+      const response = await fetch(API_URL + '/graph/worksheets', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ driveId, fileId }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setWorksheets(data.sheets || []);
+      }
+    } catch (error) {
+      console.error('Failed to load worksheets:', error);
+    }
+  };
+
+  const resolveShareLink = async () => {
+    if (!token || !graphConfig.shareLink) return;
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/graph/resolve-share-link', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ shareLink: graphConfig.shareLink }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to resolve share link');
+      }
+
+      setGraphConfig((prev) => ({
+        ...prev,
+        driveId: data.driveId || prev.driveId,
+        fileId: data.fileId || prev.fileId,
+      }));
+      await loadWorksheets(data.driveId, data.fileId);
+      toast.success('Share link resolved successfully');
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+
+  const previewHeaderRows = async () => {
+    if (!token || !graphConfig.driveId || !graphConfig.fileId || !graphConfig.worksheetName) {
+      toast.error('Drive ID, File ID and Worksheet are required for preview');
+      return;
+    }
+
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/graph/preview-rows', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          driveId: graphConfig.driveId,
+          fileId: graphConfig.fileId,
+          worksheetName: graphConfig.worksheetName,
+          dataRange: graphConfig.dataRange || 'B4:Z60',
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to preview rows');
+      }
+
+      setPreviewRows(data.previewRows || []);
+      toast.success('Preview loaded. Choose the header row below.');
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const saveGraphConfig = async () => {
+    if (!token) return;
+    setConfigSaving(true);
+    try {
+      let mapping: Record<string, unknown> = {};
+      try {
+        mapping = JSON.parse(mappingText || '{}');
+      } catch {
+        throw new Error('Field mapping must be valid JSON');
+      }
+
+      const payload = {
+        ...graphConfig,
+        fieldMapping: mapping,
+      };
+
+      const response = await fetch(API_URL + '/graph/config', {
+        method: 'PUT',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save graph config');
+      }
+
+      setGraphConfig((prev) => ({ ...prev, ...(data.config || {}) }));
+      toast.success('Graph configuration saved');
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
     }
   };
 
@@ -323,7 +516,7 @@ export default function Admin() {
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-green-600 mt-1">✓</span>
-                  <span>Sync data from Google Sheets</span>
+                  <span>Sync data from Graph Excel</span>
                 </div>
               </CardContent>
             </Card>
@@ -400,6 +593,8 @@ export default function Admin() {
                             <SelectContent>
                               <SelectItem value="Master">Master</SelectItem>
                               <SelectItem value="Admin">Admin</SelectItem>
+                              <SelectItem value="ProposalHead">Proposal Head</SelectItem>
+                              <SelectItem value="SVP">SVP</SelectItem>
                               <SelectItem value="Basic">Basic</SelectItem>
                             </SelectContent>
                           </Select>
@@ -518,12 +713,124 @@ export default function Admin() {
                     <Database className="h-5 w-5" />
                     <div>
                       <CardTitle>Data Collection</CardTitle>
-                      <CardDescription>Sync tender data from Google Sheets to MongoDB</CardDescription>
+                      <CardDescription>Configure and sync tender data from Microsoft Graph Excel to MongoDB</CardDescription>
                     </div>
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
+
+
+                <div className="border rounded-lg p-4 space-y-4">
+                  <h3 className="font-semibold">Graph Excel Configuration</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="md:col-span-2 space-y-1">
+                      <p className="text-xs text-muted-foreground">Share Link</p>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Paste SharePoint/OneDrive share link"
+                          value={graphConfig.shareLink}
+                          onChange={(e) => setGraphConfig((prev) => ({ ...prev, shareLink: e.target.value }))}
+                        />
+                        <Button variant="outline" onClick={resolveShareLink} disabled={configSaving || !graphConfig.shareLink}>
+                          Resolve
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Drive ID</p>
+                      <Input value={graphConfig.driveId} onChange={(e) => setGraphConfig((prev) => ({ ...prev, driveId: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">File ID</p>
+                      <Input value={graphConfig.fileId} onChange={(e) => setGraphConfig((prev) => ({ ...prev, fileId: e.target.value }))} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Worksheet</p>
+                      <Select
+                        value={graphConfig.worksheetName || '__none__'}
+                        onValueChange={(value) => setGraphConfig((prev) => ({ ...prev, worksheetName: value === '__none__' ? '' : value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select worksheet" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Select worksheet</SelectItem>
+                          {worksheets.map((sheet) => (
+                            <SelectItem key={sheet.id || sheet.name} value={sheet.name}>{sheet.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Data Range (e.g. B4:Z2000)</p>
+                      <Input
+                        value={graphConfig.dataRange}
+                        onChange={(e) => setGraphConfig((prev) => ({ ...prev, dataRange: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Auto-sync Interval (minutes)</p>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={graphConfig.syncIntervalMinutes}
+                        onChange={(e) => setGraphConfig((prev) => ({ ...prev, syncIntervalMinutes: Number(e.target.value) || 10 }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Header Row Offset (0-based in preview)</p>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={graphConfig.headerRowOffset}
+                        onChange={(e) => setGraphConfig((prev) => ({ ...prev, headerRowOffset: Math.max(0, Number(e.target.value) || 0) }))}
+                      />
+                    </div>
+                    <div className="md:col-span-2 space-y-1">
+                      <p className="text-xs text-muted-foreground">Custom Field Mapping (JSON, optional)</p>
+                      <Textarea rows={8} value={mappingText} onChange={(e) => setMappingText(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" onClick={() => loadWorksheets(graphConfig.driveId, graphConfig.fileId)} disabled={!graphConfig.driveId || !graphConfig.fileId}>
+                      Refresh Sheets
+                    </Button>
+                    <Button variant="outline" onClick={previewHeaderRows} disabled={!graphConfig.driveId || !graphConfig.fileId || !graphConfig.worksheetName || configSaving}>
+                      Preview Rows
+                    </Button>
+                    <Button onClick={saveGraphConfig} disabled={configSaving}>
+                      {configSaving ? 'Saving...' : 'Save Graph Config'}
+                    </Button>
+                  </div>
+                </div>
+
+
+
+                {previewRows.length > 0 && (
+                  <div className="border rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold">Header Row Detection</h3>
+                      <p className="text-xs text-muted-foreground">Select which row should be treated as the header.</p>
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-auto">
+                      {previewRows.map((row, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          className={`w-full text-left border rounded p-2 text-xs ${graphConfig.headerRowOffset === idx ? 'border-primary bg-primary/10' : 'border-border'}`}
+                          onClick={() => setGraphConfig((prev) => ({ ...prev, headerRowOffset: idx }))}
+                        >
+                          <span className="font-semibold mr-2">Row {idx}</span>
+                          {row.slice(0, 8).map((cell, i) => (
+                            <span key={i} className="mr-2">{String(cell || '').slice(0, 20)} |</span>
+                          ))}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="border rounded-lg p-4">
                     <p className="text-sm text-muted-foreground">Total Tenders</p>
@@ -559,16 +866,16 @@ export default function Admin() {
 
                 <div className="border-t pt-6">
                   <Button 
-                    onClick={syncFromGoogleSheets}
+                    onClick={syncFromGraphExcel}
                     disabled={syncLoading}
                     size="lg"
                     className="w-full gap-2"
                   >
                     <Download className={`h-4 w-4 ${syncLoading ? 'animate-spin' : ''}`} />
-                    {syncLoading ? 'Syncing...' : 'Sync from Google Sheets'}
+                    {syncLoading ? 'Syncing...' : 'Sync from Graph Excel'}
                   </Button>
                   <p className="text-xs text-muted-foreground mt-2">
-                    Pulls latest tender data from your configured Google Sheet and syncs to database
+                    Pulls latest tender data from your configured Microsoft Graph Excel and syncs to database
                   </p>
                 </div>
               </CardContent>
