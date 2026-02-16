@@ -10,7 +10,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
-import { resolveShareLink, getWorksheets, getWorksheetRangeValues } from './services/graphExcelService.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -481,9 +481,9 @@ app.post('/api/graph/resolve-share-link', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'shareLink is required' });
     }
 
-    const resolved = await resolveShareLink(shareLink);
-
     const config = await getGraphConfig();
+    const resolved = await resolveShareLink(shareLink, config);
+
     config.shareLink = shareLink;
     config.driveId = resolved.driveId;
     config.fileId = resolved.fileId;
@@ -508,7 +508,8 @@ app.post('/api/graph/worksheets', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'driveId and fileId are required' });
     }
 
-    const sheets = await getWorksheets({ driveId, fileId });
+    const config = await getGraphConfig();
+    const sheets = await getWorksheets({ driveId, fileId, config });
     res.json({ success: true, sheets });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -527,11 +528,13 @@ app.post('/api/graph/preview-rows', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'driveId, fileId and worksheetName are required' });
     }
 
+    const config = await getGraphConfig();
     const rows = await getWorksheetRangeValues({
       driveId,
       fileId,
       worksheetName,
       rangeAddress: dataRange || 'B4:Z60',
+      config,
     });
 
     res.json({
@@ -539,6 +542,76 @@ app.post('/api/graph/preview-rows', verifyToken, async (req, res) => {
       rowCount: rows.length,
       previewRows: rows.slice(0, 20),
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+app.get('/api/graph/auth/status', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can view auth status' });
+    }
+
+    const config = await getGraphConfig();
+    res.json({
+      success: true,
+      authMode: config.graphAuthMode || 'application',
+      accountUsername: config.graphAccountUsername || '',
+      hasRefreshToken: !!config.graphRefreshTokenEnc,
+      tokenUpdatedAt: config.graphTokenUpdatedAt || null,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can bootstrap Graph auth' });
+    }
+
+    const { username, password } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ error: 'username and password are required' });
+    }
+
+    const tokenResult = await bootstrapDelegatedToken({ username, password });
+    if (!tokenResult.refreshToken) {
+      return res.status(500).json({ error: 'No refresh token returned. Check Azure app delegated permissions and offline_access scope.' });
+    }
+
+    const config = await getGraphConfig();
+    config.graphAuthMode = 'delegated';
+    config.graphAccountUsername = String(username).toLowerCase();
+    config.graphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
+    config.graphTokenUpdatedAt = new Date();
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, message: 'Delegated token bootstrapped and stored securely.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/graph/auth/clear', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can clear Graph auth' });
+    }
+
+    const config = await getGraphConfig();
+    config.graphAuthMode = 'application';
+    config.graphAccountUsername = '';
+    config.graphRefreshTokenEnc = '';
+    config.graphTokenUpdatedAt = null;
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, message: 'Delegated token cleared. Falling back to application auth.' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

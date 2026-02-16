@@ -100,3 +100,14 @@ Set these variables in your backend environment (`backend/.env` for local, deplo
 10. Click **Sync from Graph Excel** to load data into MongoDB.
 
 Auto-sync uses the same Graph configuration.
+
+
+### One-time delegated token bootstrap (your account)
+
+If your tenant permissions require a user-bound token, you can bootstrap and store a refresh token from **Master Panel → Data Sync**:
+
+1. Enter your Microsoft username/password in **Graph Account Bootstrap (one-time)**.
+2. Click **Authenticate & Store Token**.
+3. Once stored, Graph calls use your delegated token automatically (with refresh).
+
+If bootstrap is not configured, backend falls back to application token (`client_credentials`).

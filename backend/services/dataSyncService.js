@@ -67,6 +67,7 @@ export async function syncTendersFromGraph(config) {
     fileId: config.fileId,
     worksheetName: config.worksheetName,
     rangeAddress: config.dataRange || 'B4:Z2000',
+    config,
   });
 
   if (!rows.length) {

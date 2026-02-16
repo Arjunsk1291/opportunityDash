@@ -49,6 +49,13 @@ interface GraphConfig {
   lastSyncAt?: string;
 }
 
+interface GraphAuthStatus {
+  authMode: 'application' | 'delegated';
+  accountUsername: string;
+  hasRefreshToken: boolean;
+  tokenUpdatedAt?: string | null;
+}
+
 export default function Admin() {
   const { user, isMaster, token } = useAuth();
   const navigate = useNavigate();
@@ -72,12 +79,20 @@ export default function Admin() {
   const [mappingText, setMappingText] = useState('{}');
   const [configSaving, setConfigSaving] = useState(false);
   const [previewRows, setPreviewRows] = useState<string[][]>([]);
+  const [graphAuthStatus, setGraphAuthStatus] = useState<GraphAuthStatus>({
+    authMode: 'application',
+    accountUsername: '',
+    hasRefreshToken: false,
+  });
+  const [bootstrapUsername, setBootstrapUsername] = useState('');
+  const [bootstrapPassword, setBootstrapPassword] = useState('');
 
   useEffect(() => {
     if (isMaster) {
       loadUsers();
       loadCollectionStats();
       loadGraphConfig();
+      loadGraphAuthStatus();
     }
   }, [isMaster, token]);
 
@@ -155,6 +170,83 @@ export default function Admin() {
     }
   };
 
+
+
+  const loadGraphAuthStatus = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/graph/auth/status', {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setGraphAuthStatus({
+        authMode: data.authMode || 'application',
+        accountUsername: data.accountUsername || '',
+        hasRefreshToken: !!data.hasRefreshToken,
+        tokenUpdatedAt: data.tokenUpdatedAt || null,
+      });
+    } catch (error) {
+      console.error('Failed to load graph auth status:', error);
+    }
+  };
+
+  const bootstrapGraphAuth = async () => {
+    if (!token || !bootstrapUsername || !bootstrapPassword) {
+      toast.error('Username and password are required');
+      return;
+    }
+
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/graph/auth/bootstrap', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username: bootstrapUsername, password: bootstrapPassword }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to bootstrap graph auth');
+
+      setBootstrapPassword('');
+      toast.success('Graph delegated token stored successfully');
+      await loadGraphAuthStatus();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const clearGraphAuth = async () => {
+    if (!token) return;
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/graph/auth/clear', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to clear graph auth');
+
+      toast.success('Cleared delegated token. Using application auth now.');
+      await loadGraphAuthStatus();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
 
   const loadGraphConfig = async () => {
     if (!token) return;
@@ -722,7 +814,32 @@ export default function Admin() {
 
 
                 <div className="border rounded-lg p-4 space-y-4">
-                  <h3 className="font-semibold">Graph Excel Configuration</h3>
+                  <h3 className="font-semibold">Graph Account Bootstrap (one-time)</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="md:col-span-2 rounded border p-3 text-xs text-muted-foreground">
+                      Current mode: <strong>{graphAuthStatus.authMode}</strong>{' '}
+                      {graphAuthStatus.accountUsername ? `(${graphAuthStatus.accountUsername})` : ''}
+                      {graphAuthStatus.tokenUpdatedAt ? ` • token updated ${new Date(graphAuthStatus.tokenUpdatedAt).toLocaleString()}` : ''}
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Microsoft Username</p>
+                      <Input value={bootstrapUsername} onChange={(e) => setBootstrapUsername(e.target.value)} placeholder="your-account@company.com" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Microsoft Password</p>
+                      <Input type="password" value={bootstrapPassword} onChange={(e) => setBootstrapPassword(e.target.value)} placeholder="••••••••" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="default" onClick={bootstrapGraphAuth} disabled={configSaving || !bootstrapUsername || !bootstrapPassword}>
+                      Authenticate & Store Token
+                    </Button>
+                    <Button variant="outline" onClick={clearGraphAuth} disabled={configSaving}>
+                      Clear Stored Token
+                    </Button>
+                  </div>
+
+                  <h3 className="font-semibold mt-6">Graph Excel Configuration</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="md:col-span-2 space-y-1">
                       <p className="text-xs text-muted-foreground">Share Link</p>
