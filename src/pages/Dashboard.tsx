@@ -158,7 +158,7 @@ const Dashboard = () => {
             <strong>Next Steps:</strong>
             <ol className="list-decimal list-inside mt-2 space-y-1">
               <li>Go to Master Panel (/master)</li>
-              <li>Click "Sync from Google Sheets"</li>
+              <li>Click "Sync from Graph Excel"</li>
               <li>Wait for data to load</li>
             </ol>
           </AlertDescription>

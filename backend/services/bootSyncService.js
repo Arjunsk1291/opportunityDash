@@ -1,32 +1,24 @@
-import { syncTendersFromGoogleSheets, transformTendersToOpportunities } from './dataSyncService.js';
+import { syncTendersFromGraph, transformTendersToOpportunities } from './dataSyncService.js';
 import SyncedOpportunity from '../models/SyncedOpportunity.js';
+import GraphSyncConfig from '../models/GraphSyncConfig.js';
 
 export async function initializeBootSync() {
   try {
-    console.log('\n📊 ════════════════════════════════════════');
-    console.log('🚀 BOOT SYNC: Starting automatic data sync...');
-    console.log('📊 ════════════════════════════════════════\n');
+    const config = await GraphSyncConfig.findOne().lean();
+    if (!config?.driveId || !config?.fileId || !config?.worksheetName) {
+      console.log('ℹ️  BOOT SYNC skipped: Graph Excel config not set yet.');
+      return { success: false, message: 'Graph config missing, boot sync skipped' };
+    }
 
-    const existingCount = await SyncedOpportunity.countDocuments();
-    console.log(`📋 Current documents in MongoDB: ${existingCount}`);
+    console.log('🚀 BOOT SYNC: syncing from Microsoft Graph Excel...');
 
-    console.log('📡 Fetching data from Google Sheets...');
-    const tenders = await syncTendersFromGoogleSheets();
-    console.log(`✅ Fetched ${tenders.length} tenders from Google Sheets`);
-
+    const tenders = await syncTendersFromGraph(config);
     const opportunities = await transformTendersToOpportunities(tenders);
-    console.log(`✅ Transformed ${opportunities.length} opportunities`);
 
-    const deleteResult = await SyncedOpportunity.deleteMany({});
-    console.log(`✅ Cleared ${deleteResult.deletedCount} old documents`);
-
+    await SyncedOpportunity.deleteMany({});
     const insertResult = await SyncedOpportunity.insertMany(opportunities);
-    console.log(`✅ Inserted ${insertResult.length} new opportunities into MongoDB`);
 
-    console.log('\n📊 ════════════════════════════════════════');
-    console.log('✅ BOOT SYNC COMPLETE!');
-    console.log(`📊 Total records synced: ${insertResult.length}`);
-    console.log('📊 ════════════════════════════════════════\n');
+    await GraphSyncConfig.updateOne({ _id: config._id }, { $set: { lastSyncAt: new Date() } });
 
     return {
       success: true,
@@ -34,12 +26,11 @@ export async function initializeBootSync() {
       message: `Boot sync successful: ${insertResult.length} tenders loaded`,
     };
   } catch (error) {
-    console.error('\n❌ BOOT SYNC ERROR:', error.message);
-    console.log('⚠️  Continuing with empty database...\n');
+    console.error('❌ BOOT SYNC ERROR:', error.message);
     return {
       success: false,
       error: error.message,
-      message: 'Boot sync failed, database may be empty',
+      message: 'Boot sync failed',
     };
   }
 }
