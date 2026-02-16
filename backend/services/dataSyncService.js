@@ -1,27 +1,4 @@
-import https from 'https';
-
-const GOOGLE_API_KEY = 'AIzaSyCrcexNBXPTaclKhCzkONVwCngRij837j0';
-const SPREADSHEET_ID = '1DrnoJDytUd3_2uL5C3yyHT4yX4kleonTXaxiLgPCYK4';
-const SHEET_NAME = 'MASTER TENDER LIST AVENIR';
-
-function fetchGoogleSheets() {
-  return new Promise((resolve, reject) => {
-    const range = `${SHEET_NAME}!B4:Z1000`;
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?key=${GOOGLE_API_KEY}`;
-
-    https.get(url, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(data));
-        } catch (e) {
-          reject(new Error('Failed to parse Google Sheets response'));
-        }
-      });
-    }).on('error', reject);
-  });
-}
+import { getWorksheetRows } from './graphExcelService.js';
 
 function normalizeStatus(status) {
   if (!status) return '';
@@ -48,97 +25,121 @@ function parseDate(year, dateStr) {
   return null;
 }
 
-export async function syncTendersFromGoogleSheets() {
-  try {
-    console.log('🔔 [dataSyncService] Fetching from Google Sheets...');
-    
-    const response = await fetchGoogleSheets();
-    const rows = response.values || [];
+const DEFAULT_MAPPING = {
+  tenderNo: ['TENDER NO', 'REF NO'],
+  tenderType: ['TENDER TYPE'],
+  client: ['CLIENT'],
+  tenderName: ['TENDER NAME', 'DESCRIPTION'],
+  year: ['YEAR'],
+  dateReceived: ['DATE TENDER RECD', 'DATE RECEIVED'],
+  lead: ['ASSIGNED PERSON'],
+  value: ['TENDER VALUE'],
+  avenirStatus: ['AVENIR STATUS'],
+  tenderResult: ['TENDER RESULT'],
+  groupClassification: ['GDS/GES', 'GROUP'],
+};
 
-    if (rows.length < 2) {
-      throw new Error('No data found in Google Sheet');
+function findColumn(headers, candidates) {
+  return headers.findIndex((h) => candidates.some((candidate) => h.includes(candidate.toUpperCase())));
+}
+
+function resolveMapping(fieldMapping = {}) {
+  const normalized = {};
+  for (const [key, value] of Object.entries({ ...DEFAULT_MAPPING, ...fieldMapping })) {
+    if (Array.isArray(value)) {
+      normalized[key] = value.map((v) => String(v).toUpperCase());
+    } else if (typeof value === 'string' && value.trim()) {
+      normalized[key] = [value.trim().toUpperCase()];
+    } else {
+      normalized[key] = DEFAULT_MAPPING[key] || [];
     }
-
-    const headers = rows[0].map(h => h?.toString().trim().toUpperCase() || '');
-
-    const findColumn = (keywords) => {
-      return headers.findIndex(h => keywords.some(k => h.includes(k.toUpperCase())));
-    };
-
-    const colIndices = {
-      tenderNo: findColumn(['TENDER NO', 'REF NO']),
-      tenderType: findColumn(['TENDER TYPE']),
-      client: findColumn(['CLIENT']),
-      tenderName: findColumn(['TENDER NAME', 'DESCRIPTION']),
-      year: findColumn(['YEAR']),
-      dateReceived: findColumn(['DATE TENDER RECD', 'DATE RECEIVED']),
-      lead: findColumn(['ASSIGNED PERSON']),
-      value: findColumn(['TENDER VALUE']),
-      avenirStatus: findColumn(['AVENIR STATUS']),
-      tenderResult: findColumn(['TENDER RESULT']),
-      groupClassification: findColumn(['GDS/GES']),  // ✅ NEW: Map GDS/GES column
-    };
-
-    console.log(`✅ Found ${rows.length} rows, parsing data...`);
-
-    const tenders = [];
-
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row || row.length === 0) continue;
-
-      const hasContent = row.some(cell => cell && cell.toString().trim() !== '');
-      if (!hasContent) continue;
-
-      const getValue = (colIdx) => {
-        if (colIdx < 0 || colIdx >= row.length) return '';
-        return row[colIdx]?.toString().trim() || '';
-      };
-
-      const getNumericValue = (colIdx) => {
-        const val = getValue(colIdx).replace(/[^0-9.-]/g, '');
-        return parseFloat(val) || 0;
-      };
-
-      const year = getValue(colIndices.year);
-      const dateReceived = getValue(colIndices.dateReceived);
-      const rfpDate = parseDate(year, dateReceived);
-
-      const tender = {
-        opportunityRefNo: getValue(colIndices.tenderNo),
-        tenderName: getValue(colIndices.tenderName),
-        clientName: getValue(colIndices.client),
-        opportunityClassification: getValue(colIndices.tenderType),
-        internalLead: getValue(colIndices.lead),
-        opportunityValue: getNumericValue(colIndices.value),
-        canonicalStage: normalizeStatus(getValue(colIndices.avenirStatus)),
-        dateTenderReceived: rfpDate,
-        avenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
-        tenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
-        groupClassification: getValue(colIndices.groupClassification),  // ✅ NEW: Map from GDS/GES column
-        syncedAt: new Date(),
-      };
-
-      if (tender.opportunityRefNo || tender.clientName || tender.tenderName) {
-        tenders.push(tender);
-      }
-    }
-
-    console.log(`✅ Parsed ${tenders.length} tenders from Google Sheets`);
-    return tenders;
-
-  } catch (error) {
-    console.error('❌ [dataSyncService] Error:', error.message);
-    throw error;
   }
+  return normalized;
+}
+
+export async function syncTendersFromGraph(config) {
+  if (!config?.driveId || !config?.fileId || !config?.worksheetName) {
+    throw new Error('Graph sync config missing driveId/fileId/worksheetName');
+  }
+
+  const rows = await getWorksheetRows({
+    driveId: config.driveId,
+    fileId: config.fileId,
+    worksheetName: config.worksheetName,
+  });
+
+  if (!rows.length) {
+    throw new Error('No data found in selected worksheet');
+  }
+
+  const headers = rows[0].map((h) => h?.toString().trim().toUpperCase() || '');
+  const mapping = resolveMapping(config.fieldMapping || {});
+
+  const colIndices = {
+    tenderNo: findColumn(headers, mapping.tenderNo),
+    tenderType: findColumn(headers, mapping.tenderType),
+    client: findColumn(headers, mapping.client),
+    tenderName: findColumn(headers, mapping.tenderName),
+    year: findColumn(headers, mapping.year),
+    dateReceived: findColumn(headers, mapping.dateReceived),
+    lead: findColumn(headers, mapping.lead),
+    value: findColumn(headers, mapping.value),
+    avenirStatus: findColumn(headers, mapping.avenirStatus),
+    tenderResult: findColumn(headers, mapping.tenderResult),
+    groupClassification: findColumn(headers, mapping.groupClassification),
+  };
+
+  const tenders = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+
+    const hasContent = row.some((cell) => cell && cell.toString().trim() !== '');
+    if (!hasContent) continue;
+
+    const getValue = (colIdx) => {
+      if (colIdx < 0 || colIdx >= row.length) return '';
+      return row[colIdx]?.toString().trim() || '';
+    };
+
+    const getNumericValue = (colIdx) => {
+      const val = getValue(colIdx).replace(/[^0-9.-]/g, '');
+      return parseFloat(val) || 0;
+    };
+
+    const year = getValue(colIndices.year);
+    const dateReceived = getValue(colIndices.dateReceived);
+    const rfpDate = parseDate(year, dateReceived);
+
+    const tender = {
+      opportunityRefNo: getValue(colIndices.tenderNo),
+      tenderName: getValue(colIndices.tenderName),
+      clientName: getValue(colIndices.client),
+      opportunityClassification: getValue(colIndices.tenderType),
+      internalLead: getValue(colIndices.lead),
+      opportunityValue: getNumericValue(colIndices.value),
+      canonicalStage: normalizeStatus(getValue(colIndices.avenirStatus)),
+      dateTenderReceived: rfpDate,
+      avenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
+      tenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
+      groupClassification: getValue(colIndices.groupClassification),
+      syncedAt: new Date(),
+    };
+
+    if (tender.opportunityRefNo || tender.clientName || tender.tenderName) {
+      tenders.push(tender);
+    }
+  }
+
+  return tenders;
 }
 
 export async function transformTendersToOpportunities(tenders) {
-  return tenders.map(tender => ({
+  return tenders.map((tender) => ({
     ...tender,
-    googleSheetRowId: `sheet-${tender.opportunityRefNo}`,
+    graphRowId: `graph-${tender.opportunityRefNo}`,
     qualificationStatus: 'Pending',
     tenderPlannedSubmissionDate: null,
-    rawGoogleData: { synced: new Date().toISOString() },
+    rawGraphData: { synced: new Date().toISOString() },
   }));
 }

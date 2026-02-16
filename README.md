@@ -71,3 +71,30 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Microsoft Graph Excel Sync Configuration
+
+Backend now supports syncing opportunities from a SharePoint/OneDrive Excel file via Microsoft Graph.
+
+### Required backend environment variables
+
+Set these variables in your backend environment (`backend/.env` for local, deployment secrets in production):
+
+- `GRAPH_TENANT_ID`
+- `GRAPH_CLIENT_ID`
+- `GRAPH_CLIENT_SECRET`
+
+> Keep these values server-side only. Do not expose them in frontend code or browser storage.
+
+### Admin setup flow
+
+1. Login as **Master** user.
+2. Open **Master Panel → Data Sync**.
+3. Paste your Excel **Share Link** and click **Resolve**.
+4. Confirm/adjust `Drive ID` and `File ID`.
+5. Click **Refresh Sheets** and choose a worksheet.
+6. Optionally provide custom field mapping JSON.
+7. Click **Save Graph Config**.
+8. Click **Sync from Graph Excel** to load data into MongoDB.
+
+Auto-sync uses the same Graph configuration.

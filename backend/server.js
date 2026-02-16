@@ -8,7 +8,9 @@ import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
-import { syncTendersFromGoogleSheets, transformTendersToOpportunities } from './services/dataSyncService.js';
+import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
+import GraphSyncConfig from './models/GraphSyncConfig.js';
+import { resolveShareLink, getWorksheets } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,6 +36,32 @@ const mapIdField = (doc) => {
     ...doc,
     id: doc._id?.toString() || doc._id || null,
   };
+};
+
+const getGraphConfig = async () => {
+  let config = await GraphSyncConfig.findOne();
+  if (!config) {
+    config = await GraphSyncConfig.create({});
+  }
+  return config;
+};
+
+const syncFromConfiguredGraph = async () => {
+  const config = await getGraphConfig();
+  if (!config.driveId || !config.fileId || !config.worksheetName) {
+    throw new Error('Graph config is incomplete. Please configure Share Link / Drive / File / Worksheet in admin panel.');
+  }
+
+  const tenders = await syncTendersFromGraph(config);
+  const opportunities = await transformTendersToOpportunities(tenders);
+
+  await SyncedOpportunity.deleteMany({});
+  const inserted = await SyncedOpportunity.insertMany(opportunities);
+
+  config.lastSyncAt = new Date();
+  await config.save();
+
+  return inserted.length;
 };
 
 const getUsernameFromRequest = (req) => {
@@ -402,19 +430,123 @@ app.get('/api/approval-logs', verifyToken, async (req, res) => {
   }
 });
 
-app.post('/api/opportunities/sync-sheets', verifyToken, async (req, res) => {
+app.get('/api/graph/config', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can view graph config' });
+    }
+
+    const config = await getGraphConfig();
+    res.json(mapIdField(config.toObject()));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/graph/config', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can update graph config' });
+    }
+
+    const config = await getGraphConfig();
+    const { shareLink, driveId, fileId, worksheetName, syncIntervalMinutes, fieldMapping } = req.body || {};
+
+    if (shareLink !== undefined) config.shareLink = String(shareLink || '');
+    if (driveId !== undefined) config.driveId = String(driveId || '');
+    if (fileId !== undefined) config.fileId = String(fileId || '');
+    if (worksheetName !== undefined) config.worksheetName = String(worksheetName || '');
+    if (syncIntervalMinutes !== undefined) config.syncIntervalMinutes = Number(syncIntervalMinutes) || 10;
+    if (fieldMapping !== undefined && typeof fieldMapping === 'object') config.fieldMapping = fieldMapping;
+
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, config: mapIdField(config.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/graph/resolve-share-link', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can resolve links' });
+    }
+
+    const { shareLink } = req.body || {};
+    if (!shareLink) {
+      return res.status(400).json({ error: 'shareLink is required' });
+    }
+
+    const resolved = await resolveShareLink(shareLink);
+
+    const config = await getGraphConfig();
+    config.shareLink = shareLink;
+    config.driveId = resolved.driveId;
+    config.fileId = resolved.fileId;
+    config.lastResolvedAt = new Date();
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, ...resolved, config: mapIdField(config.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/graph/worksheets', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can list worksheets' });
+    }
+
+    const { driveId, fileId } = req.body || {};
+    if (!driveId || !fileId) {
+      return res.status(400).json({ error: 'driveId and fileId are required' });
+    }
+
+    const sheets = await getWorksheets({ driveId, fileId });
+    res.json({ success: true, sheets });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
   try {
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can sync data' });
     }
 
-    const tenders = await syncTendersFromGoogleSheets();
-    const opportunities = await transformTendersToOpportunities(tenders);
+    const count = await syncFromConfiguredGraph();
+    res.json({ success: true, count, syncedCount: count });
+  } catch (error) {
+    res.status(500).json({ error: 'Sync failed: ' + error.message });
+  }
+});
 
-    await SyncedOpportunity.deleteMany({});
-    const inserted = await SyncedOpportunity.insertMany(opportunities);
+app.post('/api/opportunities/sync-graph/auto', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can sync data' });
+    }
 
-    res.json({ success: true, count: inserted.length, syncedCount: inserted.length });
+    const count = await syncFromConfiguredGraph();
+    res.json({ success: true, count, syncedCount: count });
+  } catch (error) {
+    res.status(500).json({ error: 'Auto-sync failed: ' + error.message });
+  }
+});
+
+// Backward-compatible aliases
+app.post('/api/opportunities/sync-sheets', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can sync data' });
+    }
+    const count = await syncFromConfiguredGraph();
+    res.json({ success: true, count, syncedCount: count });
   } catch (error) {
     res.status(500).json({ error: 'Sync failed: ' + error.message });
   }
@@ -425,14 +557,8 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can sync data' });
     }
-
-    const tenders = await syncTendersFromGoogleSheets();
-    const opportunities = await transformTendersToOpportunities(tenders);
-
-    await SyncedOpportunity.deleteMany({});
-    const inserted = await SyncedOpportunity.insertMany(opportunities);
-
-    res.json({ success: true, count: inserted.length, syncedCount: inserted.length });
+    const count = await syncFromConfiguredGraph();
+    res.json({ success: true, count, syncedCount: count });
   } catch (error) {
     res.status(500).json({ error: 'Auto-sync failed: ' + error.message });
   }

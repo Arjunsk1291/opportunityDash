@@ -18,7 +18,7 @@ export function useAutoRefresh() {
       console.log('🔄 AUTO-SYNC: Triggered at', new Date().toLocaleTimeString());
       setAutoRefreshStatus('syncing');
 
-      const response = await fetch(API_URL + '/opportunities/sync-sheets/auto', {
+      const response = await fetch(API_URL + '/opportunities/sync-graph/auto', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
