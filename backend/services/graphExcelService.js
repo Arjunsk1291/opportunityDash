@@ -1,7 +1,6 @@
 import { Buffer } from 'buffer';
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
-
 const requiredEnv = ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET'];
 
 function validateEnv() {
@@ -40,6 +39,7 @@ async function graphRequest(path, token) {
   const response = await fetch(`${GRAPH_BASE_URL}${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+
   const text = await response.text();
   let data;
   try {
@@ -49,8 +49,9 @@ async function graphRequest(path, token) {
   }
 
   if (!response.ok) {
-    const message = data?.error?.message || text || `Graph request failed (${response.status})`;
-    throw new Error(message);
+    const statusDetail = `${response.status} ${response.statusText}`.trim();
+    const graphError = data?.error?.message || data?.error?.code || text;
+    throw new Error(`Graph request failed (${statusDetail}): ${graphError || 'Unknown error'}`);
   }
 
   return data;
@@ -64,8 +65,13 @@ function toShareToken(url) {
     .replace(/=+$/, '');
 }
 
+function encodeSheetName(sheetName) {
+  return sheetName.replace(/'/g, "''");
+}
+
 export async function resolveShareLink(shareLink) {
   if (!shareLink) throw new Error('shareLink is required');
+
   const token = await acquireAppToken();
   const shareToken = toShareToken(shareLink);
   const item = await graphRequest(`/shares/u!${shareToken}/driveItem`, token);
@@ -80,6 +86,7 @@ export async function resolveShareLink(shareLink) {
 
 export async function getWorksheets({ driveId, fileId }) {
   if (!driveId || !fileId) throw new Error('driveId and fileId are required');
+
   const token = await acquireAppToken();
   const data = await graphRequest(`/drives/${driveId}/items/${fileId}/workbook/worksheets`, token);
   return (data.value || []).map((sheet) => ({
@@ -89,17 +96,30 @@ export async function getWorksheets({ driveId, fileId }) {
   }));
 }
 
-export async function getWorksheetRows({ driveId, fileId, worksheetName }) {
+export async function getWorksheetRangeValues({ driveId, fileId, worksheetName, rangeAddress }) {
   if (!driveId || !fileId || !worksheetName) {
     throw new Error('driveId, fileId and worksheetName are required');
   }
 
   const token = await acquireAppToken();
-  const escapedSheetName = worksheetName.replace(/'/g, "''");
+  const sheet = encodeSheetName(worksheetName);
+
+  if (rangeAddress && rangeAddress.trim()) {
+    const range = encodeURIComponent(rangeAddress.trim());
+    const rangeData = await graphRequest(
+      `/drives/${driveId}/items/${fileId}/workbook/worksheets('${sheet}')/range(address='${range}')`,
+      token,
+    );
+    return rangeData.values || [];
+  }
+
   const usedRange = await graphRequest(
-    `/drives/${driveId}/items/${fileId}/workbook/worksheets('${encodeURIComponent(escapedSheetName)}')/usedRange`,
+    `/drives/${driveId}/items/${fileId}/workbook/worksheets('${sheet}')/usedRange`,
     token,
   );
-
   return usedRange.values || [];
+}
+
+export async function getWorksheetRows({ driveId, fileId, worksheetName, rangeAddress }) {
+  return getWorksheetRangeValues({ driveId, fileId, worksheetName, rangeAddress });
 }

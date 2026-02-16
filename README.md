@@ -93,8 +93,10 @@ Set these variables in your backend environment (`backend/.env` for local, deplo
 3. Paste your Excel **Share Link** and click **Resolve**.
 4. Confirm/adjust `Drive ID` and `File ID`.
 5. Click **Refresh Sheets** and choose a worksheet.
-6. Optionally provide custom field mapping JSON.
-7. Click **Save Graph Config**.
-8. Click **Sync from Graph Excel** to load data into MongoDB.
+6. Set **Data Range** (default `B4:Z2000`) if your headers/data start below row 1.
+7. Click **Preview Rows** and select the correct header row offset.
+8. Optionally provide custom field mapping JSON.
+9. Click **Save Graph Config**.
+10. Click **Sync from Graph Excel** to load data into MongoDB.
 
 Auto-sync uses the same Graph configuration.

@@ -66,13 +66,19 @@ export async function syncTendersFromGraph(config) {
     driveId: config.driveId,
     fileId: config.fileId,
     worksheetName: config.worksheetName,
+    rangeAddress: config.dataRange || 'B4:Z2000',
   });
 
   if (!rows.length) {
     throw new Error('No data found in selected worksheet');
   }
 
-  const headers = rows[0].map((h) => h?.toString().trim().toUpperCase() || '');
+  const headerRowOffset = Number(config.headerRowOffset || 0);
+  if (headerRowOffset < 0 || headerRowOffset >= rows.length) {
+    throw new Error(`Invalid headerRowOffset (${headerRowOffset}) for ${rows.length} rows`);
+  }
+
+  const headers = (rows[headerRowOffset] || []).map((h) => h?.toString().trim().toUpperCase() || '');
   const mapping = resolveMapping(config.fieldMapping || {});
 
   const colIndices = {
@@ -91,7 +97,7 @@ export async function syncTendersFromGraph(config) {
 
   const tenders = [];
 
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = headerRowOffset + 1; i < rows.length; i++) {
     const row = rows[i] || [];
 
     const hasContent = row.some((cell) => cell && cell.toString().trim() !== '');

@@ -10,7 +10,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
-import { resolveShareLink, getWorksheets } from './services/graphExcelService.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -450,12 +450,14 @@ app.put('/api/graph/config', verifyToken, async (req, res) => {
     }
 
     const config = await getGraphConfig();
-    const { shareLink, driveId, fileId, worksheetName, syncIntervalMinutes, fieldMapping } = req.body || {};
+    const { shareLink, driveId, fileId, worksheetName, dataRange, headerRowOffset, syncIntervalMinutes, fieldMapping } = req.body || {};
 
     if (shareLink !== undefined) config.shareLink = String(shareLink || '');
     if (driveId !== undefined) config.driveId = String(driveId || '');
     if (fileId !== undefined) config.fileId = String(fileId || '');
     if (worksheetName !== undefined) config.worksheetName = String(worksheetName || '');
+    if (dataRange !== undefined) config.dataRange = String(dataRange || 'B4:Z2000');
+    if (headerRowOffset !== undefined) config.headerRowOffset = Math.max(0, Number(headerRowOffset) || 0);
     if (syncIntervalMinutes !== undefined) config.syncIntervalMinutes = Number(syncIntervalMinutes) || 10;
     if (fieldMapping !== undefined && typeof fieldMapping === 'object') config.fieldMapping = fieldMapping;
 
@@ -508,6 +510,35 @@ app.post('/api/graph/worksheets', verifyToken, async (req, res) => {
 
     const sheets = await getWorksheets({ driveId, fileId });
     res.json({ success: true, sheets });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+app.post('/api/graph/preview-rows', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can preview worksheet rows' });
+    }
+
+    const { driveId, fileId, worksheetName, dataRange } = req.body || {};
+    if (!driveId || !fileId || !worksheetName) {
+      return res.status(400).json({ error: 'driveId, fileId and worksheetName are required' });
+    }
+
+    const rows = await getWorksheetRangeValues({
+      driveId,
+      fileId,
+      worksheetName,
+      rangeAddress: dataRange || 'B4:Z60',
+    });
+
+    res.json({
+      success: true,
+      rowCount: rows.length,
+      previewRows: rows.slice(0, 20),
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

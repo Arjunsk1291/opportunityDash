@@ -41,6 +41,8 @@ interface GraphConfig {
   driveId: string;
   fileId: string;
   worksheetName: string;
+  dataRange: string;
+  headerRowOffset: number;
   syncIntervalMinutes: number;
   fieldMapping?: Record<string, string | string[]>;
   lastResolvedAt?: string;
@@ -61,12 +63,15 @@ export default function Admin() {
     driveId: '',
     fileId: '',
     worksheetName: '',
+    dataRange: 'B4:Z2000',
+    headerRowOffset: 0,
     syncIntervalMinutes: 10,
     fieldMapping: {},
   });
   const [worksheets, setWorksheets] = useState<Array<{ id: string; name: string }>>([]);
   const [mappingText, setMappingText] = useState('{}');
   const [configSaving, setConfigSaving] = useState(false);
+  const [previewRows, setPreviewRows] = useState<string[][]>([]);
 
   useEffect(() => {
     if (isMaster) {
@@ -167,6 +172,8 @@ export default function Admin() {
         driveId: data.driveId || '',
         fileId: data.fileId || '',
         worksheetName: data.worksheetName || '',
+        dataRange: data.dataRange || 'B4:Z2000',
+        headerRowOffset: Number(data.headerRowOffset || 0),
         syncIntervalMinutes: data.syncIntervalMinutes || 10,
         fieldMapping: data.fieldMapping || {},
         lastResolvedAt: data.lastResolvedAt,
@@ -226,6 +233,43 @@ export default function Admin() {
       }));
       await loadWorksheets(data.driveId, data.fileId);
       toast.success('Share link resolved successfully');
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+
+  const previewHeaderRows = async () => {
+    if (!token || !graphConfig.driveId || !graphConfig.fileId || !graphConfig.worksheetName) {
+      toast.error('Drive ID, File ID and Worksheet are required for preview');
+      return;
+    }
+
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/graph/preview-rows', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          driveId: graphConfig.driveId,
+          fileId: graphConfig.fileId,
+          worksheetName: graphConfig.worksheetName,
+          dataRange: graphConfig.dataRange || 'B4:Z60',
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to preview rows');
+      }
+
+      setPreviewRows(data.previewRows || []);
+      toast.success('Preview loaded. Choose the header row below.');
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -719,12 +763,28 @@ export default function Admin() {
                       </Select>
                     </div>
                     <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Data Range (e.g. B4:Z2000)</p>
+                      <Input
+                        value={graphConfig.dataRange}
+                        onChange={(e) => setGraphConfig((prev) => ({ ...prev, dataRange: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Auto-sync Interval (minutes)</p>
                       <Input
                         type="number"
                         min={1}
                         value={graphConfig.syncIntervalMinutes}
                         onChange={(e) => setGraphConfig((prev) => ({ ...prev, syncIntervalMinutes: Number(e.target.value) || 10 }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground">Header Row Offset (0-based in preview)</p>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={graphConfig.headerRowOffset}
+                        onChange={(e) => setGraphConfig((prev) => ({ ...prev, headerRowOffset: Math.max(0, Number(e.target.value) || 0) }))}
                       />
                     </div>
                     <div className="md:col-span-2 space-y-1">
@@ -736,11 +796,40 @@ export default function Admin() {
                     <Button variant="secondary" onClick={() => loadWorksheets(graphConfig.driveId, graphConfig.fileId)} disabled={!graphConfig.driveId || !graphConfig.fileId}>
                       Refresh Sheets
                     </Button>
+                    <Button variant="outline" onClick={previewHeaderRows} disabled={!graphConfig.driveId || !graphConfig.fileId || !graphConfig.worksheetName || configSaving}>
+                      Preview Rows
+                    </Button>
                     <Button onClick={saveGraphConfig} disabled={configSaving}>
                       {configSaving ? 'Saving...' : 'Save Graph Config'}
                     </Button>
                   </div>
                 </div>
+
+
+
+                {previewRows.length > 0 && (
+                  <div className="border rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold">Header Row Detection</h3>
+                      <p className="text-xs text-muted-foreground">Select which row should be treated as the header.</p>
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-auto">
+                      {previewRows.map((row, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          className={`w-full text-left border rounded p-2 text-xs ${graphConfig.headerRowOffset === idx ? 'border-primary bg-primary/10' : 'border-border'}`}
+                          onClick={() => setGraphConfig((prev) => ({ ...prev, headerRowOffset: idx }))}
+                        >
+                          <span className="font-semibold mr-2">Row {idx}</span>
+                          {row.slice(0, 8).map((cell, i) => (
+                            <span key={i} className="mr-2">{String(cell || '').slice(0, 20)} |</span>
+                          ))}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="border rounded-lg p-4">
