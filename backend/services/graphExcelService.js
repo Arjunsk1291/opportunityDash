@@ -3,7 +3,7 @@ import crypto from 'crypto';
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const requiredEnv = ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET'];
-const DELEGATED_SCOPES = 'offline_access Files.Read Sites.Read.All User.Read';
+const DELEGATED_SCOPES = 'offline_access Files.Read.Selected Sites.Selected User.Read';
 
 function validateEnv() {
   const missing = requiredEnv.filter((name) => !process.env[name]);
@@ -136,7 +136,7 @@ export async function bootstrapDelegatedToken({ username, password }) {
   } catch (error) {
     const msg = String(error.message || error);
     if (msg.includes('AADSTS50076')) {
-      throw new Error('AADSTS50076: MFA required. Use device-code bootstrap instead of username/password.');
+      throw new Error('AADSTS50076: MFA required. Use Device Code Auth in Admin panel. Also ensure delegated permissions include Files.Read.Selected, Sites.Selected, User.Read.');
     }
     throw error;
   }
@@ -147,6 +147,10 @@ export async function bootstrapDelegatedToken({ username, password }) {
     expiresIn: Number(token.expires_in || 3600),
     scope: token.scope || DELEGATED_SCOPES,
   };
+}
+
+function shouldAllowAppFallback() {
+  return String(process.env.GRAPH_ALLOW_APP_FALLBACK || '').toLowerCase() === 'true';
 }
 
 async function acquireTokenFromConfig(config) {
@@ -171,6 +175,10 @@ async function acquireTokenFromConfig(config) {
     } catch (error) {
       // fall through to app token
     }
+  }
+
+  if (!shouldAllowAppFallback()) {
+    throw new Error('No delegated refresh token configured. Complete Graph account bootstrap in Admin panel.');
   }
 
   const appToken = await acquireAppToken();
