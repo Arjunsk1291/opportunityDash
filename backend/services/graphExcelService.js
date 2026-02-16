@@ -5,15 +5,39 @@ const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const requiredEnv = ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET'];
 const DELEGATED_SCOPES = 'offline_access Files.Read.Selected Sites.Selected User.Read';
 
+<<<<<<< codex/review-entire-repository-for-improvements-qb955j
+function envValue(name, fallback = '') {
+  const value = process.env[name];
+  return typeof value === 'string' ? value.trim() : fallback;
+}
+
+function graphClientSecret() {
+  return envValue('GRAPH_CLIENT_SECRET') || envValue('CLIENT_SECRET') || envValue('AZURE_CLIENT_SECRET');
+}
+
+function validateEnv() {
+  const values = {
+    GRAPH_TENANT_ID: envValue('GRAPH_TENANT_ID'),
+    GRAPH_CLIENT_ID: envValue('GRAPH_CLIENT_ID'),
+    GRAPH_CLIENT_SECRET: graphClientSecret(),
+  };
+
+  const missing = requiredEnv.filter((name) => !values[name]);
+=======
 function validateEnv() {
   const missing = requiredEnv.filter((name) => !process.env[name]);
+>>>>>>> main
   if (missing.length) {
     throw new Error(`Missing Graph env vars: ${missing.join(', ')}`);
   }
 }
 
 function encryptionKey() {
+<<<<<<< codex/review-entire-repository-for-improvements-qb955j
+  const keySeed = envValue('GRAPH_TOKEN_ENCRYPTION_KEY') || graphClientSecret();
+=======
   const keySeed = process.env.GRAPH_TOKEN_ENCRYPTION_KEY || process.env.GRAPH_CLIENT_SECRET;
+>>>>>>> main
   return crypto.createHash('sha256').update(String(keySeed)).digest();
 }
 
@@ -41,6 +65,18 @@ function decryptText(payload) {
 
 async function postToken(params) {
   validateEnv();
+<<<<<<< codex/review-entire-repository-for-improvements-qb955j
+  const tokenUrl = `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/token`;
+  const clientSecret = graphClientSecret();
+
+  const body = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    body.set(key, String(value));
+  });
+  body.set('client_id', envValue('GRAPH_CLIENT_ID'));
+  body.set('client_secret', clientSecret);
+=======
   const tokenUrl = `https://login.microsoftonline.com/${process.env.GRAPH_TENANT_ID}/oauth2/v2.0/token`;
 
   const body = new URLSearchParams({
@@ -48,6 +84,7 @@ async function postToken(params) {
     client_secret: process.env.GRAPH_CLIENT_SECRET,
     ...params,
   });
+>>>>>>> main
 
   const response = await fetch(tokenUrl, {
     method: 'POST',
