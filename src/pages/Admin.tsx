@@ -86,9 +86,6 @@ export default function Admin() {
   });
   const [bootstrapUsername, setBootstrapUsername] = useState('');
   const [bootstrapPassword, setBootstrapPassword] = useState('');
-  const [deviceCode, setDeviceCode] = useState('');
-  const [deviceCodeMessage, setDeviceCodeMessage] = useState('');
-  const [verificationUri, setVerificationUri] = useState('');
 
   useEffect(() => {
     if (isMaster) {
@@ -215,10 +212,15 @@ export default function Admin() {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to bootstrap graph auth');
+      if (!response.ok) {
+        if (data.error === 'MFA_REQUIRED') throw new Error('MFA is enabled on this account. Use a non-MFA service account.');
+        if (data.error === 'INVALID_CREDENTIALS') throw new Error('Invalid username or password.');
+        if (data.error === 'USER_NOT_FOUND') throw new Error('User not found in this tenant.');
+        throw new Error(data.message || data.error || 'Failed to bootstrap graph auth');
+      }
 
       setBootstrapPassword('');
-      toast.success('Graph delegated token stored successfully');
+      toast.success('Connected! Delegated Graph token stored securely.');
       await loadGraphAuthStatus();
     } catch (error) {
       toast.error((error as Error).message);
@@ -252,67 +254,6 @@ export default function Admin() {
   };
 
 
-  const startDeviceCodeBootstrap = async () => {
-    if (!token) return;
-    setConfigSaving(true);
-    try {
-      const response = await fetch(API_URL + '/graph/auth/device-code/start', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to start device-code login');
-
-      setDeviceCode(data.deviceCode || '');
-      setDeviceCodeMessage(data.message || 'Open verification URL and sign in with MFA');
-      setVerificationUri(data.verificationUriComplete || data.verificationUri || '');
-      toast.success('Device code started. Complete auth in browser then click Complete Device Auth.');
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setConfigSaving(false);
-    }
-  };
-
-  const completeDeviceCodeBootstrap = async () => {
-    if (!token || !deviceCode) {
-      toast.error('Start device-code flow first');
-      return;
-    }
-
-    setConfigSaving(true);
-    try {
-      const response = await fetch(API_URL + '/graph/auth/device-code/complete', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ deviceCode }),
-      });
-
-      const data = await response.json();
-      if (response.status === 202) {
-        toast.message(data.error || 'Authorization pending. Finish browser login and retry.');
-        return;
-      }
-      if (!response.ok) throw new Error(data.error || 'Failed to complete device-code login');
-
-      toast.success('Device-code auth complete. Delegated token stored.');
-      setDeviceCode('');
-      setDeviceCodeMessage('');
-      setVerificationUri('');
-      await loadGraphAuthStatus();
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setConfigSaving(false);
-    }
-  };
 
   const loadGraphConfig = async () => {
     if (!token) return;
@@ -883,44 +824,26 @@ export default function Admin() {
                   <h3 className="font-semibold">Graph Account Bootstrap (one-time)</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="md:col-span-2 rounded border p-3 text-xs text-muted-foreground">
-                      Current mode: <strong>{graphAuthStatus.authMode}</strong>{' '}
+                      Status: <strong>{graphAuthStatus.hasRefreshToken ? '✅ Excel Connected (Delegated Auth)' : '❌ Not Connected'}</strong>{' '}
                       {graphAuthStatus.accountUsername ? `(${graphAuthStatus.accountUsername})` : ''}
                       {graphAuthStatus.tokenUpdatedAt ? ` • token updated ${new Date(graphAuthStatus.tokenUpdatedAt).toLocaleString()}` : ''}
                     </div>
-                    <div className="md:col-span-2 rounded border border-amber-300 bg-amber-50 p-3 text-xs">
-                      If your account enforces MFA (AADSTS50076), use <strong>Device Code Auth</strong> below.
-                      Username/password is fallback only when MFA is not required.
+                    <div className="md:col-span-2 rounded border p-3 text-xs text-muted-foreground">
+                      Use one-time delegated bootstrap with your Microsoft account credentials. If this account has MFA enforced,
+                      use a non-MFA service account for bootstrap.
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Microsoft Username (fallback)</p>
-                      <Input value={bootstrapUsername} onChange={(e) => setBootstrapUsername(e.target.value)} placeholder="your-account@company.com" />
+                      <p className="text-xs text-muted-foreground">Microsoft Username</p>
+                      <Input value={bootstrapUsername} onChange={(e) => setBootstrapUsername(e.target.value)} placeholder="arjun.s@avenirengineering.com" />
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Microsoft Password (fallback)</p>
+                      <p className="text-xs text-muted-foreground">Microsoft Password</p>
                       <Input type="password" value={bootstrapPassword} onChange={(e) => setBootstrapPassword(e.target.value)} placeholder="••••••••" />
-                    </div>
-
-                    <div className="md:col-span-2 space-y-2 rounded border p-3">
-                      <p className="text-xs text-muted-foreground font-medium">Device Code Auth (recommended)</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button variant="default" onClick={startDeviceCodeBootstrap} disabled={configSaving}>
-                          Start Device Auth
-                        </Button>
-                        <Button variant="secondary" onClick={completeDeviceCodeBootstrap} disabled={configSaving || !deviceCode}>
-                          Complete Device Auth
-                        </Button>
-                      </div>
-                      {deviceCodeMessage && <p className="text-xs text-muted-foreground whitespace-pre-wrap">{deviceCodeMessage}</p>}
-                      {verificationUri && (
-                        <a className="text-xs text-blue-600 underline break-all" href={verificationUri} target="_blank" rel="noreferrer">
-                          {verificationUri}
-                        </a>
-                      )}
                     </div>
                   </div>
                   <div className="flex gap-2">
                     <Button variant="outline" onClick={bootstrapGraphAuth} disabled={configSaving || !bootstrapUsername || !bootstrapPassword}>
-                      Username/Password Auth
+                      Connect Excel
                     </Button>
                     <Button variant="outline" onClick={clearGraphAuth} disabled={configSaving}>
                       Clear Stored Token

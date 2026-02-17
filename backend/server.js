@@ -10,7 +10,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
-import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, startDeviceCodeFlow, exchangeDeviceCodeForToken, protectRefreshToken, getGraphTokenDebugSnapshot } from './services/graphExcelService.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -550,110 +550,6 @@ app.post('/api/graph/preview-rows', verifyToken, async (req, res) => {
 
 
 
-app.post('/api/graph/auth/device-code/start', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can start device-code auth' });
-    }
-
-    const deviceFlow = await startDeviceCodeFlow();
-    const config = await getGraphConfig();
-    config.pendingDeviceCode = deviceFlow.deviceCode;
-    config.pendingDeviceCodeRequestedBy = req.user.email;
-    config.pendingDeviceCodeCreatedAt = new Date();
-    config.pendingDeviceCodeExpiresAt = new Date(Date.now() + (deviceFlow.expiresIn * 1000));
-    config.updatedBy = req.user.email;
-    await config.save();
-
-    res.json({ success: true, ...deviceFlow });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/graph/auth/device-code/complete', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can complete device-code auth' });
-    }
-
-    const { deviceCode } = req.body || {};
-    if (!deviceCode) {
-      return res.status(400).json({ error: 'deviceCode is required' });
-    }
-
-    const config = await getGraphConfig();
-    const pendingCode = config.pendingDeviceCode || '';
-    if (!pendingCode || pendingCode !== deviceCode) {
-      return res.status(404).json({ error: 'Unknown device code. Start flow again.' });
-    }
-
-    const pendingExpiresAt = config.pendingDeviceCodeExpiresAt ? new Date(config.pendingDeviceCodeExpiresAt).getTime() : 0;
-    if (!pendingExpiresAt || Date.now() > pendingExpiresAt) {
-      config.pendingDeviceCode = '';
-      config.pendingDeviceCodeRequestedBy = '';
-      config.pendingDeviceCodeCreatedAt = null;
-      config.pendingDeviceCodeExpiresAt = null;
-      await config.save();
-      return res.status(400).json({ error: 'Device code expired. Start flow again.' });
-    }
-
-    try {
-      const debugSnapshot = getGraphTokenDebugSnapshot();
-      if (String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true') {
-        console.log('[graph-token-debug] device-code-complete env snapshot:', debugSnapshot);
-      }
-
-      const tokenResult = await exchangeDeviceCodeForToken(deviceCode);
-      if (!tokenResult.refreshToken) {
-        return res.status(500).json({ error: 'No refresh token returned from device-code flow.' });
-      }
-
-      config.graphAuthMode = 'delegated';
-      config.graphAccountUsername = req.user.email;
-      config.graphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
-      config.graphTokenUpdatedAt = new Date();
-      config.pendingDeviceCode = '';
-      config.pendingDeviceCodeRequestedBy = '';
-      config.pendingDeviceCodeCreatedAt = null;
-      config.pendingDeviceCodeExpiresAt = null;
-      config.updatedBy = req.user.email;
-      await config.save();
-
-      return res.json({ success: true, message: 'Delegated token captured and stored.' });
-    } catch (error) {
-      const msg = String(error.message || error);
-      if (msg.includes('authorization_pending')) {
-        return res.status(202).json({ success: false, state: 'authorization_pending', error: 'Authorization pending. Complete login in browser and retry.' });
-      }
-      if (msg.includes('authorization_declined')) {
-        config.pendingDeviceCode = '';
-        config.pendingDeviceCodeRequestedBy = '';
-        config.pendingDeviceCodeCreatedAt = null;
-        config.pendingDeviceCodeExpiresAt = null;
-        await config.save();
-        return res.status(400).json({ success: false, state: 'authorization_declined', error: 'Authorization declined by user.' });
-      }
-      if (msg.includes('expired_token')) {
-        config.pendingDeviceCode = '';
-        config.pendingDeviceCodeRequestedBy = '';
-        config.pendingDeviceCodeCreatedAt = null;
-        config.pendingDeviceCodeExpiresAt = null;
-        await config.save();
-        return res.status(400).json({ success: false, state: 'expired_token', error: 'Device code expired. Start flow again.' });
-      }
-      throw error;
-    }
-  } catch (error) {
-    const includeDebug = String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true';
-    const payload = { error: error.message };
-    if (includeDebug) {
-      payload.graphTokenDebug = getGraphTokenDebugSnapshot();
-    }
-    res.status(500).json(payload);
-  }
-});
-
 app.get('/api/graph/auth/status', verifyToken, async (req, res) => {
   try {
     if (!['Master', 'Admin'].includes(req.user.role)) {
@@ -667,8 +563,6 @@ app.get('/api/graph/auth/status', verifyToken, async (req, res) => {
       accountUsername: config.graphAccountUsername || '',
       hasRefreshToken: !!config.graphRefreshTokenEnc,
       tokenUpdatedAt: config.graphTokenUpdatedAt || null,
-      hasPendingDeviceCode: !!config.pendingDeviceCode,
-      pendingDeviceCodeExpiresAt: config.pendingDeviceCodeExpiresAt || null,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -688,7 +582,7 @@ app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
 
     const tokenResult = await bootstrapDelegatedToken({ username, password });
     if (!tokenResult.refreshToken) {
-      return res.status(500).json({ error: 'No refresh token returned. Check Azure app delegated permissions and offline_access scope.' });
+      return res.status(500).json({ error: 'No refresh token returned. Check Azure app delegated permissions and token settings.' });
     }
 
     const config = await getGraphConfig();
@@ -699,9 +593,19 @@ app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
     config.updatedBy = req.user.email;
     await config.save();
 
-    res.json({ success: true, message: 'Delegated token bootstrapped and stored securely.' });
+    res.json({ success: true, message: 'Bootstrap complete. Delegated token cached securely.', scope: tokenResult.scope, mode: 'delegated' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const msg = String(error.message || error);
+    if (msg.includes('AADSTS50076') || msg.toLowerCase().includes('mfa')) {
+      return res.status(400).json({ error: 'MFA_REQUIRED', message: 'MFA is enabled. Use a non-MFA service account for bootstrap.' });
+    }
+    if (msg.includes('AADSTS50126')) {
+      return res.status(400).json({ error: 'INVALID_CREDENTIALS', message: 'Invalid username or password.' });
+    }
+    if (msg.includes('AADSTS50034')) {
+      return res.status(400).json({ error: 'USER_NOT_FOUND', message: 'User not found in this tenant.' });
+    }
+    res.status(500).json({ error: msg });
   }
 });
 
@@ -716,10 +620,6 @@ app.post('/api/graph/auth/clear', verifyToken, async (req, res) => {
     config.graphAccountUsername = '';
     config.graphRefreshTokenEnc = '';
     config.graphTokenUpdatedAt = null;
-    config.pendingDeviceCode = '';
-    config.pendingDeviceCodeRequestedBy = '';
-    config.pendingDeviceCodeCreatedAt = null;
-    config.pendingDeviceCodeExpiresAt = null;
     config.updatedBy = req.user.email;
     await config.save();
 
