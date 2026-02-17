@@ -3,7 +3,11 @@ import crypto from 'crypto';
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const requiredEnv = ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET'];
+<<<<<<< codex/review-entire-repository-for-improvements-30a65i
 const DELEGATED_SCOPES = ['Files.Read.Selected', 'Sites.Selected', 'User.Read'];
+=======
+const DELEGATED_SCOPES = ['Files.Read.Selected', 'Sites.Selected', 'User.Read', 'offline_access'];
+>>>>>>> main
 
 function envValue(name, fallback = '') {
   const value = process.env[name];
