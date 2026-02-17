@@ -3,7 +3,7 @@ import crypto from 'crypto';
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const requiredEnv = ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET'];
-const DELEGATED_SCOPES = 'offline_access Files.Read.Selected Sites.Selected User.Read';
+const DELEGATED_SCOPES = ['Files.Read.Selected', 'Sites.Selected', 'User.Read'];
 
 function envValue(name, fallback = '') {
   const value = process.env[name];
@@ -12,6 +12,19 @@ function envValue(name, fallback = '') {
 
 function graphClientSecret() {
   return envValue('GRAPH_CLIENT_SECRET') || envValue('CLIENT_SECRET') || envValue('AZURE_CLIENT_SECRET');
+}
+
+function isGuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+
+function debugEnabled() {
+  return String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true';
+}
+
+function maskValue(value) {
+  if (!value) return '❌ EMPTY';
+  return `${String(value).slice(0, 10)}...`;
 }
 
 function validateEnv() {
@@ -24,6 +37,10 @@ function validateEnv() {
   const missing = requiredEnv.filter((name) => !values[name]);
   if (missing.length) {
     throw new Error(`Missing Graph env vars: ${missing.join(', ')}`);
+  }
+
+  if (isGuid(values.GRAPH_CLIENT_SECRET)) {
+    throw new Error('GRAPH_CLIENT_SECRET appears to be a Secret ID (GUID). Use the Secret VALUE from Azure App Registration.');
   }
 }
 
@@ -54,8 +71,25 @@ function decryptText(payload) {
   return decrypted.toString('utf8');
 }
 
+function delegatedScopesString() {
+  return DELEGATED_SCOPES.join(' ');
+}
+
+function logTokenDebug() {
+  if (!debugEnabled()) return;
+
+  console.log('[graph-token-debug] GRAPH_CLIENT_SECRET:', maskValue(envValue('GRAPH_CLIENT_SECRET')));
+  console.log('[graph-token-debug] CLIENT_SECRET:', maskValue(envValue('CLIENT_SECRET')));
+  console.log('[graph-token-debug] AZURE_CLIENT_SECRET:', maskValue(envValue('AZURE_CLIENT_SECRET')));
+  console.log('[graph-token-debug] Final secret used:', maskValue(graphClientSecret()));
+  console.log('[graph-token-debug] GRAPH_TENANT_ID:', maskValue(envValue('GRAPH_TENANT_ID')));
+  console.log('[graph-token-debug] GRAPH_CLIENT_ID:', maskValue(envValue('GRAPH_CLIENT_ID')));
+}
+
 async function postToken(params) {
   validateEnv();
+  logTokenDebug();
+
   const tokenUrl = `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/token`;
   const clientSecret = graphClientSecret();
 
@@ -75,7 +109,11 @@ async function postToken(params) {
 
   const data = await response.json();
   if (!response.ok || !data.access_token) {
-    throw new Error(data.error_description || data.error || `Token acquisition failed (${response.status})`);
+    const message = data.error_description || data.error || `Token acquisition failed (${response.status})`;
+    if (String(message).includes('AADSTS7000218')) {
+      throw new Error('AADSTS7000218: client_secret not accepted. Ensure backend env GRAPH_CLIENT_SECRET uses the secret VALUE (not Secret ID), and restart the server.');
+    }
+    throw new Error(message);
   }
 
   return data;
@@ -89,13 +127,12 @@ async function acquireAppToken() {
   return token.access_token;
 }
 
-
 export async function startDeviceCodeFlow() {
   validateEnv();
-  const deviceCodeUrl = `https://login.microsoftonline.com/${process.env.GRAPH_TENANT_ID}/oauth2/v2.0/devicecode`;
+  const deviceCodeUrl = `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/devicecode`;
   const body = new URLSearchParams({
-    client_id: process.env.GRAPH_CLIENT_ID,
-    scope: DELEGATED_SCOPES,
+    client_id: envValue('GRAPH_CLIENT_ID'),
+    scope: delegatedScopesString(),
   });
 
   const response = await fetch(deviceCodeUrl, {
@@ -127,7 +164,7 @@ export async function exchangeDeviceCodeForToken(deviceCode) {
 
   const token = await postToken({
     grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-    scope: DELEGATED_SCOPES,
+    scope: delegatedScopesString(),
     device_code: deviceCode,
   });
 
@@ -135,9 +172,10 @@ export async function exchangeDeviceCodeForToken(deviceCode) {
     accessToken: token.access_token,
     refreshToken: token.refresh_token || '',
     expiresIn: Number(token.expires_in || 3600),
-    scope: token.scope || DELEGATED_SCOPES,
+    scope: token.scope || delegatedScopesString(),
   };
 }
+
 export async function bootstrapDelegatedToken({ username, password }) {
   if (!username || !password) {
     throw new Error('username and password are required');
@@ -147,14 +185,14 @@ export async function bootstrapDelegatedToken({ username, password }) {
   try {
     token = await postToken({
       grant_type: 'password',
-      scope: DELEGATED_SCOPES,
+      scope: delegatedScopesString(),
       username,
       password,
     });
   } catch (error) {
     const msg = String(error.message || error);
     if (msg.includes('AADSTS50076')) {
-      throw new Error('AADSTS50076: MFA required. Use Device Code Auth in Admin panel. Also ensure delegated permissions include Files.Read.Selected, Sites.Selected, User.Read.');
+      throw new Error('AADSTS50076: MFA required. Use Device Code Auth in Admin panel. Ensure delegated permissions include Files.Read.Selected, Sites.Selected, User.Read.');
     }
     throw error;
   }
@@ -163,7 +201,7 @@ export async function bootstrapDelegatedToken({ username, password }) {
     accessToken: token.access_token,
     refreshToken: token.refresh_token || '',
     expiresIn: Number(token.expires_in || 3600),
-    scope: token.scope || DELEGATED_SCOPES,
+    scope: token.scope || delegatedScopesString(),
   };
 }
 
@@ -179,7 +217,7 @@ async function acquireTokenFromConfig(config) {
       if (refreshToken) {
         const refreshed = await postToken({
           grant_type: 'refresh_token',
-          scope: DELEGATED_SCOPES,
+          scope: delegatedScopesString(),
           refresh_token: refreshToken,
         });
 
@@ -190,8 +228,8 @@ async function acquireTokenFromConfig(config) {
           mode: 'delegated',
         };
       }
-    } catch (error) {
-      // fall through to app token
+    } catch {
+      // fall through to app token when explicitly allowed
     }
   }
 
