@@ -65,8 +65,6 @@ const syncFromConfiguredGraph = async () => {
 };
 
 
-const pendingDeviceCodeLogins = new Map();
-
 const getUsernameFromRequest = (req) => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -559,11 +557,13 @@ app.post('/api/graph/auth/device-code/start', verifyToken, async (req, res) => {
     }
 
     const deviceFlow = await startDeviceCodeFlow();
-    pendingDeviceCodeLogins.set(deviceFlow.deviceCode, {
-      createdAt: Date.now(),
-      expiresAt: Date.now() + (deviceFlow.expiresIn * 1000),
-      requestedBy: req.user.email,
-    });
+    const config = await getGraphConfig();
+    config.pendingDeviceCode = deviceFlow.deviceCode;
+    config.pendingDeviceCodeRequestedBy = req.user.email;
+    config.pendingDeviceCodeCreatedAt = new Date();
+    config.pendingDeviceCodeExpiresAt = new Date(Date.now() + (deviceFlow.expiresIn * 1000));
+    config.updatedBy = req.user.email;
+    await config.save();
 
     res.json({ success: true, ...deviceFlow });
   } catch (error) {
@@ -582,13 +582,19 @@ app.post('/api/graph/auth/device-code/complete', verifyToken, async (req, res) =
       return res.status(400).json({ error: 'deviceCode is required' });
     }
 
-    const pending = pendingDeviceCodeLogins.get(deviceCode);
-    if (!pending) {
+    const config = await getGraphConfig();
+    const pendingCode = config.pendingDeviceCode || '';
+    if (!pendingCode || pendingCode !== deviceCode) {
       return res.status(404).json({ error: 'Unknown device code. Start flow again.' });
     }
 
-    if (Date.now() > pending.expiresAt) {
-      pendingDeviceCodeLogins.delete(deviceCode);
+    const pendingExpiresAt = config.pendingDeviceCodeExpiresAt ? new Date(config.pendingDeviceCodeExpiresAt).getTime() : 0;
+    if (!pendingExpiresAt || Date.now() > pendingExpiresAt) {
+      config.pendingDeviceCode = '';
+      config.pendingDeviceCodeRequestedBy = '';
+      config.pendingDeviceCodeCreatedAt = null;
+      config.pendingDeviceCodeExpiresAt = null;
+      await config.save();
       return res.status(400).json({ error: 'Device code expired. Start flow again.' });
     }
 
@@ -603,15 +609,17 @@ app.post('/api/graph/auth/device-code/complete', verifyToken, async (req, res) =
         return res.status(500).json({ error: 'No refresh token returned from device-code flow.' });
       }
 
-      const config = await getGraphConfig();
       config.graphAuthMode = 'delegated';
       config.graphAccountUsername = req.user.email;
       config.graphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
       config.graphTokenUpdatedAt = new Date();
+      config.pendingDeviceCode = '';
+      config.pendingDeviceCodeRequestedBy = '';
+      config.pendingDeviceCodeCreatedAt = null;
+      config.pendingDeviceCodeExpiresAt = null;
       config.updatedBy = req.user.email;
       await config.save();
 
-      pendingDeviceCodeLogins.delete(deviceCode);
       return res.json({ success: true, message: 'Delegated token captured and stored.' });
     } catch (error) {
       const msg = String(error.message || error);
@@ -619,11 +627,19 @@ app.post('/api/graph/auth/device-code/complete', verifyToken, async (req, res) =
         return res.status(202).json({ success: false, state: 'authorization_pending', error: 'Authorization pending. Complete login in browser and retry.' });
       }
       if (msg.includes('authorization_declined')) {
-        pendingDeviceCodeLogins.delete(deviceCode);
+        config.pendingDeviceCode = '';
+        config.pendingDeviceCodeRequestedBy = '';
+        config.pendingDeviceCodeCreatedAt = null;
+        config.pendingDeviceCodeExpiresAt = null;
+        await config.save();
         return res.status(400).json({ success: false, state: 'authorization_declined', error: 'Authorization declined by user.' });
       }
       if (msg.includes('expired_token')) {
-        pendingDeviceCodeLogins.delete(deviceCode);
+        config.pendingDeviceCode = '';
+        config.pendingDeviceCodeRequestedBy = '';
+        config.pendingDeviceCodeCreatedAt = null;
+        config.pendingDeviceCodeExpiresAt = null;
+        await config.save();
         return res.status(400).json({ success: false, state: 'expired_token', error: 'Device code expired. Start flow again.' });
       }
       throw error;
@@ -651,6 +667,8 @@ app.get('/api/graph/auth/status', verifyToken, async (req, res) => {
       accountUsername: config.graphAccountUsername || '',
       hasRefreshToken: !!config.graphRefreshTokenEnc,
       tokenUpdatedAt: config.graphTokenUpdatedAt || null,
+      hasPendingDeviceCode: !!config.pendingDeviceCode,
+      pendingDeviceCodeExpiresAt: config.pendingDeviceCodeExpiresAt || null,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -698,6 +716,10 @@ app.post('/api/graph/auth/clear', verifyToken, async (req, res) => {
     config.graphAccountUsername = '';
     config.graphRefreshTokenEnc = '';
     config.graphTokenUpdatedAt = null;
+    config.pendingDeviceCode = '';
+    config.pendingDeviceCodeRequestedBy = '';
+    config.pendingDeviceCodeCreatedAt = null;
+    config.pendingDeviceCodeExpiresAt = null;
     config.updatedBy = req.user.email;
     await config.save();
 
