@@ -1,15 +1,16 @@
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { msalInstance, loginRequest } from '@/config/msalConfig';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
 import { AlertCircle, Loader2 } from 'lucide-react';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, loginWithUsername } = useAuth();
+  const [username, setUsername] = useState('');
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,23 +20,16 @@ export default function Login() {
     }
   }, [isAuthenticated, isLoading, navigate]);
 
-  const handleMicrosoftLogin = async () => {
+  const handleLogin = async (event: FormEvent) => {
+    event.preventDefault();
     try {
       setIsSigningIn(true);
       setError(null);
-
-      const loginResponse = await msalInstance.loginPopup(loginRequest);
-
-      if (loginResponse) {
-        // Redirect to auth callback which will handle token validation
-        navigate('/auth/callback');
-      }
+      await loginWithUsername(username);
+      navigate('/');
     } catch (err: any) {
-      console.error('Login error:', err);
-      const errorMsg = err.errorCode === 'user_cancelled_login'
-        ? 'Login was cancelled'
-        : err.error?.message || 'Failed to sign in with Microsoft. Please try again.';
-      setError(errorMsg);
+      setError(err.message || 'Failed to sign in. Please try again.');
+    } finally {
       setIsSigningIn(false);
     }
   };
@@ -53,7 +47,7 @@ export default function Login() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-2">
           <CardTitle className="text-2xl">Opportunity Dashboard</CardTitle>
-          <CardDescription>Sign in with your Microsoft 365 account</CardDescription>
+          <CardDescription>Sign in with your username</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
@@ -63,31 +57,28 @@ export default function Login() {
             </Alert>
           )}
 
-          <Button
-            onClick={handleMicrosoftLogin}
-            disabled={isSigningIn}
-            size="lg"
-            className="w-full"
-            variant="default"
-          >
-            {isSigningIn ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Signing in...
-              </>
-            ) : (
-              <>
-                <svg className="mr-2 h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M11.4 24H0V12.6h11.4V24ZM24 24H12.6V12.6H24V24ZM11.4 11.4H0V0h11.4v11.4Zm12.6 0H12.6V0H24v11.4Z" />
-                </svg>
-                Sign in with Microsoft
-              </>
-            )}
-          </Button>
+          <form onSubmit={handleLogin} className="space-y-3">
+            <Input
+              placeholder="username or email"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+            />
+            <Button type="submit" disabled={isSigningIn || !username.trim()} size="lg" className="w-full">
+              {isSigningIn ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                'Sign in'
+              )}
+            </Button>
+          </form>
 
           <div className="text-center text-sm text-muted-foreground">
             <p>Only authorized users can access this application.</p>
-            <p className="mt-2">Contact your administrator if you need access.</p>
+            <p className="mt-2">New users will be placed in pending approval.</p>
           </div>
         </CardContent>
       </Card>

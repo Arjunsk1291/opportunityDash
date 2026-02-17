@@ -1,143 +1,154 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
-import { useData } from './DataContext';
+import { useAuth } from './AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
-export type ApprovalStatus = 'pending' | 'approved';
+export type ApprovalStatus = 'pending' | 'proposal_head_approved' | 'fully_approved';
+
+export interface ApprovalState {
+  status: ApprovalStatus;
+  proposalHeadApproved: boolean;
+  proposalHeadBy?: string | null;
+  svpApproved: boolean;
+  svpBy?: string | null;
+  svpGroup?: string | null;
+}
 
 export interface ApprovalLogEntry {
   id: string;
   opportunityRefNo: string;
-  action: 'approved' | 'reverted';
+  action: 'proposal_head_approved' | 'svp_approved' | 'reverted';
   performedBy: string;
   performedByRole: string;
+  group?: string | null;
   timestamp: string;
 }
 
 interface ApprovalContextType {
   approvals: Record<string, ApprovalStatus>;
+  approvalStates: Record<string, ApprovalState>;
   approvalLogs: ApprovalLogEntry[];
   getApprovalStatus: (opportunityRefNo: string) => ApprovalStatus;
-  approveOpportunity: (opportunityRefNo: string, performedBy: string, performedByRole: string) => void;
-  revertApproval: (opportunityRefNo: string, performedBy: string, performedByRole: string) => void;
-  refreshApprovals: () => void;
+  getApprovalState: (opportunityRefNo: string) => ApprovalState;
+  approveAsProposalHead: (opportunityRefNo: string) => Promise<void>;
+  approveAsSVP: (opportunityRefNo: string, group?: string) => Promise<void>;
+  revertApproval: (opportunityRefNo: string) => Promise<void>;
+  refreshApprovals: () => Promise<void>;
 }
 
 const ApprovalContext = createContext<ApprovalContextType | undefined>(undefined);
 
+const defaultState: ApprovalState = {
+  status: 'pending',
+  proposalHeadApproved: false,
+  svpApproved: false,
+};
+
 export function ApprovalProvider({ children }: { children: ReactNode }) {
   const [approvals, setApprovals] = useState<Record<string, ApprovalStatus>>({});
+  const [approvalStates, setApprovalStates] = useState<Record<string, ApprovalState>>({});
   const [approvalLogs, setApprovalLogs] = useState<ApprovalLogEntry[]>([]);
-  const { opportunities } = useData();
+  const { token, isAuthenticated } = useAuth();
 
-  useEffect(() => {
-    refreshApprovals();
-  }, []);
+  const headers = useCallback(
+    () => token ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token } : { 'Content-Type': 'application/json' },
+    [token]
+  );
 
   const refreshApprovals = useCallback(async () => {
+    if (!isAuthenticated || !token) return;
+
     try {
-      const response = await fetch(API_URL + '/approvals');
+      const response = await fetch(API_URL + '/approvals', { headers: headers() });
+      if (!response.ok) {
+        throw new Error('Failed to load approvals');
+      }
       const data = await response.json();
-      
-      const cleanedApprovals: Record<string, ApprovalStatus> = {};
-      Object.entries(data).forEach(([key, value]) => {
-        if (key && key !== 'null' && key !== 'undefined') {
-          cleanedApprovals[key] = value as ApprovalStatus;
-        }
-      });
-      setApprovals(cleanedApprovals);
-      
-      const logsResponse = await fetch(API_URL + '/approval-logs');
+      setApprovals(data.approvals || {});
+      setApprovalStates(data.approvalStates || {});
+
+      const logsResponse = await fetch(API_URL + '/approval-logs', { headers: headers() });
+      if (!logsResponse.ok) {
+        throw new Error('Failed to load approval logs');
+      }
       const logs = await logsResponse.json();
       setApprovalLogs(logs);
-      console.log('✅ Approvals refreshed from backend:', Object.keys(cleanedApprovals).length, 'approvals');
     } catch (error) {
       console.error('❌ Failed to refresh approvals:', error);
     }
-  }, []);
+  }, [headers, isAuthenticated, token]);
+
+  useEffect(() => {
+    refreshApprovals();
+  }, [refreshApprovals]);
 
   const getApprovalStatus = useCallback((opportunityRefNo: string): ApprovalStatus => {
-    if (!opportunityRefNo || opportunityRefNo === 'null' || opportunityRefNo === 'undefined') {
-      console.warn('⚠️  Invalid opportunityRefNo:', opportunityRefNo);
-      return 'pending';
-    }
     return approvals[opportunityRefNo] || 'pending';
   }, [approvals]);
 
-  const approveOpportunity = useCallback(async (opportunityRefNo: string, performedBy: string, performedByRole: string) => {
-    if (!opportunityRefNo || opportunityRefNo === 'null' || opportunityRefNo === 'undefined') {
-      console.error('❌ Cannot approve: Invalid opportunityRefNo', opportunityRefNo);
-      return;
+  const getApprovalState = useCallback((opportunityRefNo: string): ApprovalState => {
+    return approvalStates[opportunityRefNo] || defaultState;
+  }, [approvalStates]);
+
+  const approveAsProposalHead = useCallback(async (opportunityRefNo: string) => {
+    const response = await fetch(API_URL + '/approvals/approve-proposal-head', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ opportunityRefNo }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Proposal Head approval failed');
     }
 
-    try {
-      console.log('📤 Approving:', { opportunityRefNo, performedBy, performedByRole });
-      const response = await fetch(API_URL + '/approvals/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ opportunityRefNo, performedBy, performedByRole }),
-      });
-      
-      if (!response.ok) {
-        const error = await response.text();
-        console.error('❌ Approval failed:', error);
-        return;
-      }
-      
-      const result = await response.json();
-      
-      if (result.approvals) {
-        setApprovals(result.approvals);
-      }
-      if (result.approvalLogs) {
-        setApprovalLogs(result.approvalLogs);
-      }
-      
-      await refreshApprovals();
-      console.log('✅ Approval saved successfully');
-    } catch (error) {
-      console.error('❌ Failed to approve:', error);
-    }
-  }, [refreshApprovals]);
+    await refreshApprovals();
+  }, [headers, refreshApprovals]);
 
-  const revertApproval = useCallback(async (opportunityRefNo: string, performedBy: string, performedByRole: string) => {
-    if (!opportunityRefNo || opportunityRefNo === 'null' || opportunityRefNo === 'undefined') {
-      console.error('❌ Cannot revert: Invalid opportunityRefNo', opportunityRefNo);
-      return;
+  const approveAsSVP = useCallback(async (opportunityRefNo: string, group?: string) => {
+    const response = await fetch(API_URL + '/approvals/approve-svp', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ opportunityRefNo, group }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'SVP approval failed');
     }
 
-    try {
-      console.log('📤 Reverting:', { opportunityRefNo, performedBy, performedByRole });
-      const response = await fetch(API_URL + '/approvals/revert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ opportunityRefNo, performedBy, performedByRole }),
-      });
-      
-      if (!response.ok) {
-        const error = await response.text();
-        console.error('❌ Revert failed:', error);
-        return;
-      }
-      
-      const result = await response.json();
-      
-      if (result.approvals) {
-        setApprovals(result.approvals);
-      }
-      if (result.approvalLogs) {
-        setApprovalLogs(result.approvalLogs);
-      }
-      
-      await refreshApprovals();
-      console.log('✅ Approval reverted successfully');
-    } catch (error) {
-      console.error('❌ Failed to revert:', error);
+    await refreshApprovals();
+  }, [headers, refreshApprovals]);
+
+  const revertApproval = useCallback(async (opportunityRefNo: string) => {
+    const response = await fetch(API_URL + '/approvals/revert', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ opportunityRefNo }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Revert failed');
     }
-  }, [refreshApprovals]);
+
+    await refreshApprovals();
+  }, [headers, refreshApprovals]);
 
   return (
-    <ApprovalContext.Provider value={{ approvals, approvalLogs, getApprovalStatus, approveOpportunity, revertApproval, refreshApprovals }}>
+    <ApprovalContext.Provider
+      value={{
+        approvals,
+        approvalStates,
+        approvalLogs,
+        getApprovalStatus,
+        getApprovalState,
+        approveAsProposalHead,
+        approveAsSVP,
+        revertApproval,
+        refreshApprovals,
+      }}
+    >
       {children}
     </ApprovalContext.Provider>
   );
