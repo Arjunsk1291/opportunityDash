@@ -71,3 +71,47 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Microsoft Graph Excel Sync Configuration
+
+Backend now supports syncing opportunities from a SharePoint/OneDrive Excel file via Microsoft Graph.
+
+### Required backend environment variables
+
+Set these variables in your backend environment (`backend/.env` for local, deployment secrets in production):
+
+- `GRAPH_TENANT_ID`
+- `GRAPH_CLIENT_ID`
+- `GRAPH_CLIENT_SECRET`
+
+> Keep these values server-side only. Do not expose them in frontend code or browser storage.
+
+### Admin setup flow
+
+1. Login as **Master** user.
+2. Open **Master Panel → Data Sync**.
+3. Paste your Excel **Share Link** and click **Resolve**.
+4. Confirm/adjust `Drive ID` and `File ID`.
+5. Click **Refresh Sheets** and choose a worksheet.
+6. Set **Data Range** (default `B4:Z2000`) if your headers/data start below row 1.
+7. Click **Preview Rows** and select the correct header row offset.
+8. Optionally provide custom field mapping JSON.
+9. Click **Save Graph Config**.
+10. Click **Sync from Graph Excel** to load data into MongoDB.
+
+Auto-sync uses the same Graph configuration.
+
+
+### One-time delegated token bootstrap (your account)
+
+If your tenant requires MFA (AADSTS50076), use **Device Code Auth** in **Master Panel → Data Sync**:
+
+1. Click **Start Device Auth**.
+2. Open the shown Microsoft verification URL and complete MFA.
+3. Return to Admin panel and click **Complete Device Auth**.
+4. Delegated refresh token is stored encrypted and auto-refreshed in backend.
+
+Fallback (no MFA only):
+- You can still use **Username/Password Auth** if your tenant allows ROPC and MFA is not enforced.
+
+If delegated bootstrap is not configured, backend falls back to application token (`client_credentials`).
