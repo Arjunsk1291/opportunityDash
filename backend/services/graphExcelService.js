@@ -86,6 +86,41 @@ function logTokenDebug() {
   console.log('[graph-token-debug] GRAPH_CLIENT_ID:', maskValue(envValue('GRAPH_CLIENT_ID')));
 }
 
+function logTokenRequestDetails(params, body) {
+  if (!debugEnabled()) return;
+
+  console.log('[graph-token-debug] postToken params:', {
+    grant_type: params?.grant_type || '',
+    hasDeviceCode: !!params?.device_code,
+    hasClientSecret: !!graphClientSecret(),
+  });
+
+  const entries = {};
+  for (const [key, value] of body.entries()) {
+    if (key === 'client_secret') {
+      entries[key] = maskValue(value);
+    } else if (key === 'device_code') {
+      entries[key] = `${String(value).slice(0, 20)}...`;
+    } else {
+      entries[key] = value;
+    }
+  }
+  console.log('[graph-token-debug] postToken final body:', entries);
+}
+
+function buildTokenErrorMessage(responseStatus, data) {
+  const description = data?.error_description || data?.error || `Token acquisition failed (${responseStatus})`;
+  const code = data?.error || '';
+  const trace = data?.trace_id || '';
+  const correlation = data?.correlation_id || '';
+
+  const parts = [description];
+  if (code) parts.push(`code=${code}`);
+  if (trace) parts.push(`trace_id=${trace}`);
+  if (correlation) parts.push(`correlation_id=${correlation}`);
+  return parts.join(' | ');
+}
+
 
 export function getGraphTokenDebugSnapshot() {
   return {
@@ -114,6 +149,8 @@ async function postToken(params) {
   body.set('client_id', envValue('GRAPH_CLIENT_ID'));
   body.set('client_secret', clientSecret);
 
+  logTokenRequestDetails(params, body);
+
   const response = await fetch(tokenUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -121,12 +158,12 @@ async function postToken(params) {
   });
 
   const data = await response.json();
+  if (debugEnabled()) {
+    console.log('[graph-token-debug] raw token response:', { status: response.status, data });
+  }
+
   if (!response.ok || !data.access_token) {
-    const message = data.error_description || data.error || `Token acquisition failed (${response.status})`;
-    if (String(message).includes('AADSTS7000218')) {
-      throw new Error('AADSTS7000218: client_secret not accepted. Ensure backend env GRAPH_CLIENT_SECRET uses the secret VALUE (not Secret ID), and restart the server.');
-    }
-    throw new Error(message);
+    throw new Error(buildTokenErrorMessage(response.status, data));
   }
 
   return data;
