@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useData } from '@/contexts/DataContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const AUTO_REFRESH_INTERVAL = 10 * 60 * 1000;
 
 export function useAutoRefresh() {
   const { refreshData } = useData();
+  const { token } = useAuth();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isAutoRefreshActive, setIsAutoRefreshActive] = useState(false);
   const [lastAutoRefreshTime, setLastAutoRefreshTime] = useState<Date | null>(null);
@@ -16,9 +18,12 @@ export function useAutoRefresh() {
       console.log('🔄 AUTO-SYNC: Triggered at', new Date().toLocaleTimeString());
       setAutoRefreshStatus('syncing');
 
-      const response = await fetch(API_URL + '/opportunities/sync-sheets/auto', {
+      const response = await fetch(API_URL + '/opportunities/sync-graph/auto', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        },
       });
 
       if (!response.ok) {
@@ -38,7 +43,7 @@ export function useAutoRefresh() {
       setAutoRefreshStatus('error');
       setTimeout(() => setAutoRefreshStatus('idle'), 5000);
     }
-  }, [refreshData]);
+  }, [refreshData, token]);
 
   const startAutoRefresh = useCallback(() => {
     if (intervalRef.current) {
