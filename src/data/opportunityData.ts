@@ -41,6 +41,13 @@ export interface Opportunity {
   avenirStatus?: string;
   tenderResult?: string;
   combinedStatuses?: string[];
+  rawGraphData?: {
+    year?: string;
+    dateReceived?: string;
+    rfpReceivedDisplay?: string;
+    rowSnapshot?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
 }
 
 export const STATUS_MAPPING: Record<string, string> = {

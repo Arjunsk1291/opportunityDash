@@ -34,12 +34,20 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
+  const getRfpReceivedDisplay = (tender: Opportunity) => {
+    return tender.dateTenderReceived
+      || (typeof tender.rawGraphData?.rfpReceivedDisplay === 'string' ? tender.rawGraphData.rfpReceivedDisplay : '')
+      || '';
+  };
+
   const filteredData = data.filter((tender) => {
     const searchLower = search.toLowerCase();
+    const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
     const matchesSearch = !search
       || tender.tenderName?.toLowerCase().includes(searchLower)
       || tender.clientName?.toLowerCase().includes(searchLower)
-      || tender.opportunityRefNo?.toLowerCase().includes(searchLower);
+      || tender.opportunityRefNo?.toLowerCase().includes(searchLower)
+      || rfpReceivedDisplay.includes(searchLower);
 
     const matchesStatus = statusFilter === 'ALL'
       || tender.avenirStatus?.toUpperCase() === statusFilter;
@@ -140,7 +148,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                     <TableCell>
                       <Badge variant="outline" className="text-xs font-mono">{tender.groupClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="font-bold text-sm">{tender.dateTenderReceived || <span className="text-muted-foreground font-normal">—</span>}</TableCell>
+                    <TableCell className="font-bold text-sm">{getRfpReceivedDisplay(tender) || <span className="text-muted-foreground font-normal">—</span>}</TableCell>
                     <TableCell>{tender.internalLead || <span className="text-muted-foreground text-xs">Unassigned</span>}</TableCell>
                     <TableCell className="text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
                     <TableCell>

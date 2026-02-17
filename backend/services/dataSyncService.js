@@ -5,9 +5,14 @@ function normalizeStatus(status) {
   return status.toString().trim().toUpperCase();
 }
 
-function parseDate(year, dateStr) {
-  if (!dateStr || dateStr === '' || dateStr === '-') return null;
-  if (!year || year === '') year = new Date().getFullYear().toString();
+function parseDate(year, dateValue) {
+  if (dateValue === null || dateValue === undefined || String(dateValue).trim() === '' || String(dateValue).trim() === '-') {
+    return null;
+  }
+
+  const raw = String(dateValue).trim();
+  const normalizedYear = String(year || '').trim();
+  const fallbackYear = normalizedYear || String(new Date().getFullYear());
 
   const monthMap = {
     jan: '01', feb: '02', mar: '03', apr: '04',
@@ -15,15 +20,56 @@ function parseDate(year, dateStr) {
     sep: '09', oct: '10', nov: '11', dec: '12',
   };
 
-  const dayMonthMatch = dateStr.toString().match(/^(\d{1,2})[\s-](\w+)$/i);
-  if (dayMonthMatch) {
-    const day = dayMonthMatch[1].padStart(2, '0');
-    const monthKey = dayMonthMatch[2].toLowerCase().substring(0, 3);
-    const month = monthMap[monthKey];
-    if (month) return `${year}-${month}-${day}`;
+  const toIso = (y, m, d) => {
+    if (!y || !m || !d) return null;
+    const yearNum = Number(y);
+    const monthNum = Number(m);
+    const dayNum = Number(d);
+    if (!Number.isInteger(yearNum) || !Number.isInteger(monthNum) || !Number.isInteger(dayNum)) return null;
+    if (monthNum < 1 || monthNum > 12 || dayNum < 1 || dayNum > 31) return null;
+    return `${String(yearNum).padStart(4, '0')}-${String(monthNum).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+  };
+
+  const fullDate = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (fullDate) {
+    return toIso(fullDate[1], fullDate[2], fullDate[3]);
   }
+
+  const withYearLast = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
+  if (withYearLast) {
+    const yy = withYearLast[3].length === 2 ? `20${withYearLast[3]}` : withYearLast[3];
+    return toIso(yy, withYearLast[2], withYearLast[1]);
+  }
+
+  const dayMonthNumeric = raw.match(/^(\d{1,2})[-/](\d{1,2})$/);
+  if (dayMonthNumeric) {
+    return toIso(fallbackYear, dayMonthNumeric[2], dayMonthNumeric[1]);
+  }
+
+  const dayMonthText = raw.match(/^(\d{1,2})[\s-](\w+)$/i);
+  if (dayMonthText) {
+    const day = dayMonthText[1];
+    const monthKey = dayMonthText[2].toLowerCase().substring(0, 3);
+    const month = monthMap[monthKey];
+    if (month) return toIso(fallbackYear, month, day);
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
   return null;
 }
+
+function buildRfpReceivedDisplay(year, dateValue, isoDate) {
+  if (isoDate) return isoDate;
+  const rawDate = String(dateValue || '').trim();
+  const rawYear = String(year || '').trim();
+  if (rawDate && rawYear) return `${rawDate}-${rawYear}`;
+  return rawDate || rawYear || '';
+}
+
 
 const DEFAULT_MAPPING = {
   tenderNo: ['TENDER NO', 'REF NO'],
@@ -114,9 +160,16 @@ export async function syncTendersFromGraph(config) {
       return parseFloat(val) || 0;
     };
 
+    const rowSnapshot = {};
+    headers.forEach((header, idx) => {
+      const key = header || `COLUMN_${idx + 1}`;
+      rowSnapshot[key] = row[idx] ?? '';
+    });
+
     const year = getValue(colIndices.year);
     const dateReceived = getValue(colIndices.dateReceived);
     const rfpDate = parseDate(year, dateReceived);
+    const rfpReceivedDisplay = buildRfpReceivedDisplay(year, dateReceived, rfpDate);
 
     const tender = {
       opportunityRefNo: getValue(colIndices.tenderNo),
@@ -126,10 +179,16 @@ export async function syncTendersFromGraph(config) {
       internalLead: getValue(colIndices.lead),
       opportunityValue: getNumericValue(colIndices.value),
       canonicalStage: normalizeStatus(getValue(colIndices.avenirStatus)),
-      dateTenderReceived: rfpDate,
+      dateTenderReceived: rfpDate || null,
       avenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
       tenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
       groupClassification: getValue(colIndices.groupClassification),
+      rawGraphData: {
+        year,
+        dateReceived,
+        rfpReceivedDisplay,
+        rowSnapshot,
+      },
       syncedAt: new Date(),
     };
 
@@ -147,6 +206,6 @@ export async function transformTendersToOpportunities(tenders) {
     graphRowId: `graph-${tender.opportunityRefNo}`,
     qualificationStatus: 'Pending',
     tenderPlannedSubmissionDate: null,
-    rawGraphData: { synced: new Date().toISOString() },
+    rawGraphData: { ...(tender.rawGraphData || {}), synced: new Date().toISOString() },
   }));
 }
