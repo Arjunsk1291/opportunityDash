@@ -51,6 +51,14 @@ function DetailGrid({ children }: { children: React.ReactNode }) {
   );
 }
 
+
+function displayUnknown(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (Array.isArray(value)) return value.map((item) => String(item)).join(', ');
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
 const Dashboard = () => {
   const { opportunities, isLoading, error, lastSyncTime } = useData();
   const { formatCurrency } = useCurrency();
@@ -158,7 +166,7 @@ const Dashboard = () => {
             <strong>Next Steps:</strong>
             <ol className="list-decimal list-inside mt-2 space-y-1">
               <li>Go to Master Panel (/master)</li>
-              <li>Click "Sync from Google Sheets"</li>
+              <li>Click "Sync from Graph Excel"</li>
               <li>Wait for data to load</li>
             </ol>
           </AlertDescription>
@@ -362,6 +370,22 @@ const Dashboard = () => {
                     fullWidth
                   />
                 </DetailGrid>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg">Extracted Sheet Values</h3>
+                <div className="rounded border p-3 max-h-72 overflow-auto">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    {Object.entries(selectedOpp.rawGraphData?.rowSnapshot || selectedOpp.rawGraphData || {}).map(([key, value]) => (
+                      <div key={key}>
+                        <p className="text-xs text-muted-foreground">{key}</p>
+                        <p className="font-medium break-words">{displayUnknown(value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <Separator />
