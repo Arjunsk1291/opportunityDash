@@ -86,6 +86,19 @@ function logTokenDebug() {
   console.log('[graph-token-debug] GRAPH_CLIENT_ID:', maskValue(envValue('GRAPH_CLIENT_ID')));
 }
 
+
+export function getGraphTokenDebugSnapshot() {
+  return {
+    GRAPH_CLIENT_SECRET: maskValue(envValue('GRAPH_CLIENT_SECRET')),
+    CLIENT_SECRET: maskValue(envValue('CLIENT_SECRET')),
+    AZURE_CLIENT_SECRET: maskValue(envValue('AZURE_CLIENT_SECRET')),
+    RESOLVED_SECRET: maskValue(graphClientSecret()),
+    RESOLVED_SECRET_IS_GUID: isGuid(graphClientSecret()),
+    GRAPH_TENANT_ID: maskValue(envValue('GRAPH_TENANT_ID')),
+    GRAPH_CLIENT_ID: maskValue(envValue('GRAPH_CLIENT_ID')),
+  };
+}
+
 async function postToken(params) {
   validateEnv();
   logTokenDebug();

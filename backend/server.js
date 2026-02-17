@@ -10,7 +10,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
-import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, startDeviceCodeFlow, exchangeDeviceCodeForToken, protectRefreshToken } from './services/graphExcelService.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, startDeviceCodeFlow, exchangeDeviceCodeForToken, protectRefreshToken, getGraphTokenDebugSnapshot } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -593,6 +593,11 @@ app.post('/api/graph/auth/device-code/complete', verifyToken, async (req, res) =
     }
 
     try {
+      const debugSnapshot = getGraphTokenDebugSnapshot();
+      if (String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true') {
+        console.log('[graph-token-debug] device-code-complete env snapshot:', debugSnapshot);
+      }
+
       const tokenResult = await exchangeDeviceCodeForToken(deviceCode);
       if (!tokenResult.refreshToken) {
         return res.status(500).json({ error: 'No refresh token returned from device-code flow.' });
@@ -624,7 +629,12 @@ app.post('/api/graph/auth/device-code/complete', verifyToken, async (req, res) =
       throw error;
     }
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const includeDebug = String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true';
+    const payload = { error: error.message };
+    if (includeDebug) {
+      payload.graphTokenDebug = getGraphTokenDebugSnapshot();
+    }
+    res.status(500).json(payload);
   }
 });
 
