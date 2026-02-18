@@ -72,20 +72,19 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     return matchesSearch && matchesStatus;
   });
 
-  const getStatusBadge = (status?: string) => {
-    const upperStatus = status?.toUpperCase() || '';
-    const variants: Record<string, string> = {
-      'TO START': 'bg-info/20 text-info',
-      WORKING: 'bg-warning/20 text-warning',
-      ONGOING: 'bg-warning/20 text-warning',
-      SUBMITTED: 'bg-pending/20 text-pending',
-      AWARDED: 'bg-success/20 text-success',
-      LOST: 'bg-destructive/20 text-destructive',
-      REGRETTED: 'bg-muted text-muted-foreground',
-      'HOLD / CLOSED': 'bg-muted text-muted-foreground',
-    };
-    return variants[upperStatus] || 'bg-muted text-muted-foreground';
+  const getStatusBadge = (status: string) => {
+  const upperStatus = status?.toUpperCase() || '';
+  const variants: Record<string, string> = {
+    'AWARDED': 'bg-success/20 text-success',
+    'WORKING': 'bg-warning/20 text-warning',
+    'TO START': 'bg-info/20 text-info',
+    'SUBMITTED': 'bg-pending/20 text-pending',
+    'ONGOING': 'bg-warning/20 text-warning',
+    'HOLD / CLOSED': 'bg-muted text-muted-foreground',
+    'REGRETTED': 'bg-muted text-muted-foreground',
   };
+  return variants[upperStatus] || 'bg-muted text-muted-foreground';
+};
 
   const getTenderResultBadge = (result?: string) => {
     const upperResult = result?.toUpperCase() || '';
@@ -97,6 +96,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     };
     return variants[upperResult] || 'bg-muted/50 text-muted-foreground';
   };
+  return variants[upperResult] || 'bg-muted/50 text-muted-foreground';
+};
 
   const canSVPApprove = (tender: Opportunity) => {
     if (isMaster) return true;
