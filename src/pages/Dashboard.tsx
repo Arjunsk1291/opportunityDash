@@ -365,8 +365,13 @@ const Dashboard = () => {
                     value={selectedOpp.partnerName || '—'}
                   />
                   <DetailRow 
-                    label="Remarks" 
-                    value={selectedOpp.remarks || '—'}
+                    label="Remarks/Reason" 
+                    value={selectedOpp.remarksReason || '—'}
+                    fullWidth
+                  />
+                  <DetailRow 
+                    label="Comments" 
+                    value={selectedOpp.comments || '—'}
                     fullWidth
                   />
                 </DetailGrid>

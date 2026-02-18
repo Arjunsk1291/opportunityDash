@@ -622,7 +622,9 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
         o.tenderName.toLowerCase().includes(searchLower) ||
         o.clientName.toLowerCase().includes(searchLower) ||
         o.opportunityRefNo.toLowerCase().includes(searchLower) ||
-        (o.internalLead && o.internalLead.toLowerCase().includes(searchLower));
+        (o.internalLead && o.internalLead.toLowerCase().includes(searchLower)) ||
+        (o.remarksReason && o.remarksReason.toLowerCase().includes(searchLower)) ||
+        (o.comments && o.comments.toLowerCase().includes(searchLower));
       if (!matchesSearch) return false;
     }
 
