@@ -36,7 +36,8 @@ export interface Opportunity {
   partnerInvolvement: boolean;
   partnerName: string;
   country: string;
-  remarks: string;
+  comments?: string;
+  remarksReason?: string;
   awardStatus: string;
   avenirStatus?: string;
   tenderResult?: string;

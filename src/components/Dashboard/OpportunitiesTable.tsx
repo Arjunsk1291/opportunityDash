@@ -18,7 +18,7 @@ interface OpportunitiesTableProps {
   onSelectOpportunity?: (opp: Opportunity) => void;
 }
 
-const AVENIR_STATUS_OPTIONS = ['ALL', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'AWARDED', 'TO START', 'WORKING'];
+const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED'];
 
 export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
@@ -47,6 +47,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       || tender.tenderName?.toLowerCase().includes(searchLower)
       || tender.clientName?.toLowerCase().includes(searchLower)
       || tender.opportunityRefNo?.toLowerCase().includes(searchLower)
+      || tender.remarksReason?.toLowerCase().includes(searchLower)
+      || tender.comments?.toLowerCase().includes(searchLower)
       || rfpReceivedDisplay.includes(searchLower);
 
     const matchesStatus = statusFilter === 'ALL'
@@ -60,10 +62,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     const variants: Record<string, string> = {
       'TO START': 'bg-info/20 text-info',
       WORKING: 'bg-warning/20 text-warning',
-      ONGOING: 'bg-warning/20 text-warning',
-      SUBMITTED: 'bg-pending/20 text-pending',
       AWARDED: 'bg-success/20 text-success',
-      LOST: 'bg-destructive/20 text-destructive',
       REGRETTED: 'bg-muted text-muted-foreground',
       'HOLD / CLOSED': 'bg-muted text-muted-foreground',
     };
@@ -73,8 +72,9 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
   const getTenderResultBadge = (result?: string) => {
     const upperResult = result?.toUpperCase() || '';
     const variants: Record<string, string> = {
-      ONGOING: 'bg-warning/20 text-warning',
+      LOST: 'bg-destructive/20 text-destructive',
       AWARDED: 'bg-success/20 text-success',
+      UNKNOWN: 'bg-muted/50 text-muted-foreground',
     };
     return variants[upperResult] || 'bg-muted/50 text-muted-foreground';
   };
@@ -126,9 +126,10 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                 <TableHead>Lead</TableHead>
                 <TableHead className="text-right">Value</TableHead>
                 <TableHead>AVENIR STATUS</TableHead>
+                <TableHead className="max-w-[150px]">Remarks/Reason</TableHead>
                 <TableHead>TENDER RESULT</TableHead>
                 <TableHead className="w-[220px]">Approval</TableHead>
-                <TableHead className="w-16">Remarks</TableHead>
+                <TableHead className="w-16">Comments</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -160,6 +161,11 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                     <TableCell>
                       <Badge className={getStatusBadge(tender.avenirStatus)}>{tender.avenirStatus || '—'}</Badge>
                     </TableCell>
+                    <TableCell className="max-w-[150px]">
+                      <div className="truncate text-xs" title={tender.remarksReason || ''}>
+                        {tender.remarksReason || <span className="text-muted-foreground">—</span>}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       {tender.tenderResult ? (
                         <Badge className={getTenderResultBadge(tender.tenderResult)}>{tender.tenderResult}</Badge>
@@ -180,7 +186,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                       />
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      {tender.remarks && (
+                      {tender.comments && (
                         <Popover>
                           <PopoverTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-6 w-6">
@@ -190,8 +196,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                           <PopoverContent className="w-80">
                             <div className="space-y-2">
                               <div>
-                                <p className="text-xs font-medium text-muted-foreground">Remarks/Reason</p>
-                                <p className="text-sm">{tender.remarks}</p>
+                                <p className="text-xs font-medium text-muted-foreground">Comments</p>
+                                <p className="text-sm">{tender.comments}</p>
                               </div>
                             </div>
                           </PopoverContent>

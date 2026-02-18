@@ -122,6 +122,8 @@ const DEFAULT_MAPPING = {
   avenirStatus: ['AVENIR STATUS'],
   tenderResult: ['TENDER RESULT'],
   groupClassification: ['GDS/GES', 'GROUP'],
+  remarksReason: ['REMARKS/REASON'],
+  comments: ['REMARKS'],
 };
 
 function findColumn(headers, candidates) {
@@ -179,6 +181,8 @@ export async function syncTendersFromGraph(config) {
     avenirStatus: findColumn(headers, mapping.avenirStatus),
     tenderResult: findColumn(headers, mapping.tenderResult),
     groupClassification: findColumn(headers, mapping.groupClassification),
+    remarksReason: findColumn(headers, mapping.remarksReason),
+    comments: findColumn(headers, mapping.comments),
   };
 
   const tenders = [];
@@ -228,6 +232,8 @@ export async function syncTendersFromGraph(config) {
       avenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
       tenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
       groupClassification: getValue(colIndices.groupClassification),
+      remarksReason: getValue(colIndices.remarksReason),
+      comments: getValue(colIndices.comments),
       rawGraphData: {
         year,
         dateReceived,
