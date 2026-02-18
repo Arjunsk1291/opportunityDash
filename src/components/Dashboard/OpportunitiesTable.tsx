@@ -40,14 +40,13 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       || '';
   };
 
-  const filteredData = data.filter((tender) => {
-    const searchLower = search.toLowerCase();
-    const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
+  const buildSearchableText = (tender: Opportunity) => {
     const approvalSearchValue = getApprovalStatus(tender.opportunityRefNo).toLowerCase();
     const rowSnapshot = tender.rawGraphData?.rowSnapshot && typeof tender.rawGraphData.rowSnapshot === 'object'
       ? Object.values(tender.rawGraphData.rowSnapshot).map((value) => String(value ?? '')).join(' ').toLowerCase()
       : '';
-    const allSearchable = [
+
+    return [
       tender.opportunityRefNo,
       tender.tenderName,
       tender.opportunityClassification,
@@ -63,6 +62,12 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       tender.comments,
       rowSnapshot,
     ].map((value) => String(value ?? '').toLowerCase()).join(' ');
+  };
+
+  const filteredData = data.filter((tender) => {
+    const searchLower = search.toLowerCase();
+    const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
+    const allSearchable = buildSearchableText(tender);
 
     const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);
 
