@@ -14,6 +14,8 @@ const syncedOpportunitySchema = new mongoose.Schema(
     opportunityClassification: String,
     qualificationStatus: String,
     tenderPlannedSubmissionDate: String,
+    country: String,
+    probability: { type: Number, default: 0 },
     avenirStatus: String,  // ✅ NEW: AVENIR STATUS from Google Sheets
     tenderResult: String,  // ✅ NEW: TENDER RESULT from Google Sheets
     remarksReason: String,

@@ -18,7 +18,7 @@ interface OpportunitiesTableProps {
   onSelectOpportunity?: (opp: Opportunity) => void;
 }
 
-const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING'];
+const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
 
 export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
@@ -86,13 +86,15 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
   return variants[upperStatus] || 'bg-muted text-muted-foreground';
 };
 
-  const getTenderResultBadge = (result: string) => {
-  const upperResult = result?.toUpperCase() || '';
-  const variants: Record<string, string> = {
-    'AWARDED': 'bg-success/20 text-success',
-    'LOST': 'bg-destructive/20 text-destructive',
-    'ONGOING': 'bg-warning/20 text-warning',
-    'UNKNOWN': 'bg-muted/50 text-muted-foreground',
+  const getTenderResultBadge = (result?: string) => {
+    const upperResult = result?.toUpperCase() || '';
+    const variants: Record<string, string> = {
+      ONGOING: 'bg-warning/20 text-warning',
+      LOST: 'bg-destructive/20 text-destructive',
+      AWARDED: 'bg-success/20 text-success',
+      UNKNOWN: 'bg-muted/50 text-muted-foreground',
+    };
+    return variants[upperResult] || 'bg-muted/50 text-muted-foreground';
   };
   return variants[upperResult] || 'bg-muted/50 text-muted-foreground';
 };
