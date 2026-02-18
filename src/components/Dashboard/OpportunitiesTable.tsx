@@ -18,7 +18,7 @@ interface OpportunitiesTableProps {
   onSelectOpportunity?: (opp: Opportunity) => void;
 }
 
-const AVENIR_STATUS_OPTIONS = ['ALL', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'AWARDED', 'TO START', 'WORKING'];
+const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
 
 export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
@@ -40,14 +40,36 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       || '';
   };
 
+  const buildSearchableText = (tender: Opportunity) => {
+    const approvalSearchValue = getApprovalStatus(tender.opportunityRefNo).toLowerCase();
+    const rowSnapshot = tender.rawGraphData?.rowSnapshot && typeof tender.rawGraphData.rowSnapshot === 'object'
+      ? Object.values(tender.rawGraphData.rowSnapshot).map((value) => String(value ?? '')).join(' ').toLowerCase()
+      : '';
+
+    return [
+      tender.opportunityRefNo,
+      tender.tenderName,
+      tender.opportunityClassification,
+      tender.clientName,
+      tender.groupClassification,
+      getRfpReceivedDisplay(tender),
+      tender.internalLead,
+      tender.opportunityValue,
+      tender.avenirStatus,
+      tender.remarksReason,
+      tender.tenderResult,
+      approvalSearchValue,
+      tender.comments,
+      rowSnapshot,
+    ].map((value) => String(value ?? '').toLowerCase()).join(' ');
+  };
+
   const filteredData = data.filter((tender) => {
     const searchLower = search.toLowerCase();
     const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
-    const matchesSearch = !search
-      || tender.tenderName?.toLowerCase().includes(searchLower)
-      || tender.clientName?.toLowerCase().includes(searchLower)
-      || tender.opportunityRefNo?.toLowerCase().includes(searchLower)
-      || rfpReceivedDisplay.includes(searchLower);
+    const allSearchable = buildSearchableText(tender);
+
+    const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);
 
     const matchesStatus = statusFilter === 'ALL'
       || tender.avenirStatus?.toUpperCase() === statusFilter;
@@ -74,7 +96,9 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     const upperResult = result?.toUpperCase() || '';
     const variants: Record<string, string> = {
       ONGOING: 'bg-warning/20 text-warning',
+      LOST: 'bg-destructive/20 text-destructive',
       AWARDED: 'bg-success/20 text-success',
+      UNKNOWN: 'bg-muted/50 text-muted-foreground',
     };
     return variants[upperResult] || 'bg-muted/50 text-muted-foreground';
   };
@@ -118,6 +142,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
             <TableHeader className="sticky top-0 bg-card z-10">
               <TableRow>
                 <TableHead className="w-24">Ref No.</TableHead>
+                <TableHead className="min-w-[200px]">Tender Name</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Client</TableHead>
                 <TableHead>Group</TableHead>
@@ -125,9 +150,10 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                 <TableHead>Lead</TableHead>
                 <TableHead className="text-right">Value</TableHead>
                 <TableHead>AVENIR STATUS</TableHead>
+                <TableHead className="max-w-[150px]">Remarks/Reason</TableHead>
                 <TableHead>TENDER RESULT</TableHead>
                 <TableHead className="w-[220px]">Approval</TableHead>
-                <TableHead className="w-16">Remarks</TableHead>
+                <TableHead className="w-16">Comments</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -141,6 +167,11 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                     onClick={() => onSelectOpportunity?.(tender)}
                   >
                     <TableCell className="font-mono text-xs">{tender.opportunityRefNo || '—'}</TableCell>
+                    <TableCell className="max-w-[250px]">
+                      <div className="truncate" title={tender.tenderName || ''}>
+                        {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-xs">{tender.opportunityClassification || '—'}</Badge>
                     </TableCell>
@@ -153,6 +184,27 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                     <TableCell className="text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
                     <TableCell>
                       <Badge className={getStatusBadge(tender.avenirStatus)}>{tender.avenirStatus || '—'}</Badge>
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {tender.remarksReason ? (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-6 w-6">
+                              <MessageSquare className="h-4 w-4 text-info" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-80">
+                            <div className="space-y-2">
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground">Remarks/Reason</p>
+                                <p className="text-sm">{tender.remarksReason}</p>
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {tender.tenderResult ? (
@@ -174,7 +226,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                       />
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      {tender.remarks && (
+                      {tender.comments && (
                         <Popover>
                           <PopoverTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-6 w-6">
@@ -184,8 +236,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                           <PopoverContent className="w-80">
                             <div className="space-y-2">
                               <div>
-                                <p className="text-xs font-medium text-muted-foreground">Remarks/Reason</p>
-                                <p className="text-sm">{tender.remarks}</p>
+                                <p className="text-xs font-medium text-muted-foreground">Comments</p>
+                                <p className="text-sm">{tender.comments}</p>
                               </div>
                             </div>
                           </PopoverContent>

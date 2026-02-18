@@ -4,7 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth, UserRole } from '@/contexts/AuthContext';
 import { Users, Crown, Shield, User, FileCheck, Briefcase } from 'lucide-react';
 
-const GROUPS = ['GES', 'GDS', 'GTN', 'GTS'];
+const GROUPS = ['GES', 'GDS', 'GTS'];
 
 export default function UserRolesPanel() {
   const { getAllUsers, updateUserRole, isMaster } = useAuth();

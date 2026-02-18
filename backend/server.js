@@ -79,6 +79,18 @@ const getUsernameFromRequest = (req) => {
   return null;
 };
 
+
+const BOOTSTRAP_MASTER_EMAILS = new Set(
+  [
+    ...String(process.env.MASTER_USERS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
+    'arjun.s@avenirengineering.com',
+  ],
+);
+
+function isBootstrapMaster(email) {
+  return BOOTSTRAP_MASTER_EMAILS.has(String(email || '').trim().toLowerCase());
+}
+
 const verifyToken = async (req, res, next) => {
   try {
     const username = getUsernameFromRequest(req);
@@ -126,11 +138,12 @@ app.post('/api/auth/verify-token', async (req, res) => {
     let user = await AuthorizedUser.findOne({ email: username });
 
     if (!user) {
+      const bootstrapMaster = isBootstrapMaster(username);
       user = new AuthorizedUser({
         email: username,
         displayName: username,
-        role: 'Basic',
-        status: 'pending',
+        role: bootstrapMaster ? 'Master' : 'Basic',
+        status: bootstrapMaster ? 'approved' : 'pending',
       });
       await user.save();
 
@@ -143,12 +156,20 @@ app.post('/api/auth/verify-token', async (req, res) => {
           status: user.status,
           assignedGroup: user.assignedGroup,
         },
-        message: 'User pending approval. Please wait for Master to approve your access.',
+        message: bootstrapMaster
+          ? 'Login successful as bootstrap Master user.'
+          : 'User pending approval. Please wait for Master to approve your access.',
       });
     }
 
     if (user.status === 'rejected') {
       return res.status(403).json({ error: 'User access rejected', status: 'rejected' });
+    }
+
+    if (isBootstrapMaster(username) && (user.role !== 'Master' || user.status !== 'approved')) {
+      user.role = 'Master';
+      user.status = 'approved';
+      await user.save();
     }
 
     return res.json({
