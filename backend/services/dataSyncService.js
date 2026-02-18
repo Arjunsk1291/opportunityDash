@@ -10,6 +10,18 @@ function parseDate(year, dateValue) {
     return null;
   }
 
+  if (dateValue instanceof Date && !Number.isNaN(dateValue.getTime())) {
+    return dateValue.toISOString().slice(0, 10);
+  }
+
+  if (typeof dateValue === 'object' && dateValue !== null && typeof dateValue.toISOString === 'function') {
+    try {
+      return dateValue.toISOString().slice(0, 10);
+    } catch {
+      // continue with string parsing fallback
+    }
+  }
+
   const raw = String(dateValue).trim();
   const normalizedYear = String(year || '').trim();
   const fallbackYear = normalizedYear || String(new Date().getFullYear());
@@ -29,6 +41,15 @@ function parseDate(year, dateValue) {
     if (monthNum < 1 || monthNum > 12 || dayNum < 1 || dayNum > 31) return null;
     return `${String(yearNum).padStart(4, '0')}-${String(monthNum).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
   };
+
+  const numericValue = Number(raw);
+  if (!Number.isNaN(numericValue) && numericValue > 40000 && numericValue < 60000) {
+    const excelEpoch = new Date(1899, 11, 30);
+    const excelDate = new Date(excelEpoch.getTime() + numericValue * 24 * 60 * 60 * 1000);
+    if (!Number.isNaN(excelDate.getTime())) {
+      return excelDate.toISOString().slice(0, 10);
+    }
+  }
 
   const fullDate = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
   if (fullDate) {
@@ -64,9 +85,27 @@ function parseDate(year, dateValue) {
 
 function buildRfpReceivedDisplay(year, dateValue, isoDate) {
   if (isoDate) return isoDate;
+
+  if (dateValue instanceof Date && !Number.isNaN(dateValue.getTime())) {
+    return dateValue.toISOString().slice(0, 10);
+  }
+
+  if (typeof dateValue === 'object' && dateValue !== null && typeof dateValue.toISOString === 'function') {
+    try {
+      return dateValue.toISOString().slice(0, 10);
+    } catch {
+      // continue with fallback formatting
+    }
+  }
+
   const rawDate = String(dateValue || '').trim();
   const rawYear = String(year || '').trim();
-  if (rawDate && rawYear) return `${rawDate}-${rawYear}`;
+
+  if (rawDate && rawDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    return rawDate;
+  }
+
+  if (rawDate && rawYear && rawDate !== rawYear) return `${rawDate} ${rawYear}`;
   return rawDate || rawYear || '';
 }
 
@@ -150,9 +189,15 @@ export async function syncTendersFromGraph(config) {
     const hasContent = row.some((cell) => cell && cell.toString().trim() !== '');
     if (!hasContent) continue;
 
-    const getValue = (colIdx) => {
+    const getRawValue = (colIdx) => {
       if (colIdx < 0 || colIdx >= row.length) return '';
-      return row[colIdx]?.toString().trim() || '';
+      return row[colIdx] ?? '';
+    };
+
+    const getValue = (colIdx) => {
+      const value = getRawValue(colIdx);
+      if (value === null || value === undefined) return '';
+      return value.toString().trim();
     };
 
     const getNumericValue = (colIdx) => {
@@ -167,7 +212,7 @@ export async function syncTendersFromGraph(config) {
     });
 
     const year = getValue(colIndices.year);
-    const dateReceived = getValue(colIndices.dateReceived);
+    const dateReceived = getRawValue(colIndices.dateReceived);
     const rfpDate = parseDate(year, dateReceived);
     const rfpReceivedDisplay = buildRfpReceivedDisplay(year, dateReceived, rfpDate);
 

@@ -118,6 +118,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
             <TableHeader className="sticky top-0 bg-card z-10">
               <TableRow>
                 <TableHead className="w-24">Ref No.</TableHead>
+                <TableHead className="min-w-[200px]">Tender Name</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Client</TableHead>
                 <TableHead>Group</TableHead>
@@ -141,6 +142,11 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                     onClick={() => onSelectOpportunity?.(tender)}
                   >
                     <TableCell className="font-mono text-xs">{tender.opportunityRefNo || '—'}</TableCell>
+                    <TableCell className="max-w-[250px]">
+                      <div className="truncate" title={tender.tenderName || ''}>
+                        {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-xs">{tender.opportunityClassification || '—'}</Badge>
                     </TableCell>
