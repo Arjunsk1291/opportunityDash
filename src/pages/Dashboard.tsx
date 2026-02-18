@@ -250,140 +250,41 @@ const Dashboard = () => {
               <Separator />
 
               <div className="space-y-4">
-                <h3 className="font-semibold text-lg">Basic Information</h3>
+                <h3 className="font-semibold text-lg">Mapped Opportunity Overview</h3>
                 <DetailGrid>
-                  <DetailRow label="Client Name" value={selectedOpp.clientName} />
-                  <DetailRow label="Client Type" value={selectedOpp.clientType} />
-                  <DetailRow label="Tender Name" value={selectedOpp.tenderName} />
-                  <DetailRow label="Internal Lead" value={selectedOpp.internalLead || '—'} />
-                  <DetailRow label="Country" value={selectedOpp.country} />
-                  <DetailRow label="Opportunity Status" value={selectedOpp.opportunityStatus} />
+                  <DetailRow label="Ref No" value={selectedOpp.opportunityRefNo || '—'} />
+                  <DetailRow label="Tender Name" value={selectedOpp.tenderName || '—'} />
+                  <DetailRow label="Type" value={selectedOpp.opportunityClassification || '—'} />
+                  <DetailRow label="Client" value={selectedOpp.clientName || '—'} />
+                  <DetailRow label="Group" value={selectedOpp.groupClassification || '—'} />
+                  <DetailRow label="Lead" value={selectedOpp.internalLead || '—'} />
+                  <DetailRow label="AVENIR Status" value={selectedOpp.avenirStatus || '—'} />
+                  <DetailRow label="Tender Result" value={selectedOpp.tenderResult || '—'} />
+                  <DetailRow label="Qualification" value={selectedOpp.qualificationStatus || '—'} />
+                  <DetailRow label="Value" value={formatCurrency(selectedOpp.opportunityValue || 0)} />
+                  <DetailRow label="RFP Received" value={selectedOpp.dateTenderReceived || selectedOpp.rawGraphData?.rfpReceivedDisplay || '—'} />
+                  <DetailRow label="Planned Submission" value={selectedOpp.tenderPlannedSubmissionDate || '—'} />
+                  <DetailRow label="Submitted" value={selectedOpp.tenderSubmittedDate || '—'} />
+                  <DetailRow label="Remarks/Reason" value={selectedOpp.remarksReason || '—'} fullWidth />
+                  <DetailRow label="Comments" value={selectedOpp.comments || '—'} fullWidth />
                 </DetailGrid>
               </div>
 
               <Separator />
 
               <div className="space-y-4">
-                <h3 className="font-semibold text-lg">Stage & Classification</h3>
-                <DetailGrid>
-                  <DetailRow label="Canonical Stage" value={selectedOpp.canonicalStage} />
-                  <DetailRow label="Qualification Status" value={selectedOpp.qualificationStatus} />
-                  <DetailRow label="Opportunity Classification" value={selectedOpp.opportunityClassification || '—'} />
-                  <DetailRow label="Group Classification" value={selectedOpp.groupClassification} />
-                  <DetailRow label="Domain/Sub Group" value={selectedOpp.domainSubGroup} />
-                  <DetailRow label="Award Status" value={selectedOpp.awardStatus || '—'} />
-                </DetailGrid>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <h3 className="font-semibold text-lg">Financial Information</h3>
-                <DetailGrid>
-                  <DetailRow 
-                    label="Opportunity Value" 
-                    value={`AED ${selectedOpp.opportunityValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`} 
-                    imputed={selectedOpp.opportunityValue_imputed}
-                  />
-                  <DetailRow 
-                    label="Probability %" 
-                    value={`${selectedOpp.probability}%`}
-                    imputed={selectedOpp.probability_imputed}
-                  />
-                  <DetailRow 
-                    label="Expected Value" 
-                    value={formatCurrency(selectedOpp.expectedValue)}
-                  />
-                </DetailGrid>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <h3 className="font-semibold text-lg">Important Dates</h3>
-                <DetailGrid>
-                  <DetailRow 
-                    label="Tender Received Date" 
-                    value={selectedOpp.dateTenderReceived || '—'}
-                  />
-                  <DetailRow 
-                    label="Planned Submission Date" 
-                    value={selectedOpp.tenderPlannedSubmissionDate || '—'}
-                    imputed={selectedOpp.tenderPlannedSubmissionDate_imputed}
-                  />
-                  <DetailRow 
-                    label="Submitted Date" 
-                    value={selectedOpp.tenderSubmittedDate || '—'}
-                  />
-                  <DetailRow 
-                    label="Last Contact Date" 
-                    value={selectedOpp.lastContactDate || '—'}
-                    imputed={selectedOpp.lastContactDate_imputed}
-                  />
-                </DetailGrid>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <h3 className="font-semibold text-lg">Risk & Timeline Metrics</h3>
-                <DetailGrid>
-                  <DetailRow 
-                    label="Days Since Received" 
-                    value={`${selectedOpp.daysSinceTenderReceived} days`}
-                  />
-                  <DetailRow 
-                    label="Days to Submission" 
-                    value={`${selectedOpp.daysToPlannedSubmission} days`}
-                  />
-                  <DetailRow 
-                    label="Aged Days" 
-                    value={`${selectedOpp.agedDays} days`}
-                  />
-                  <DetailRow 
-                    label="Will Miss Deadline" 
-                    value={selectedOpp.willMissDeadline ? '🔴 Yes' : '✅ No'}
-                  />
-                  <DetailRow 
-                    label="Is At Risk" 
-                    value={selectedOpp.isAtRisk ? '⚠️ Yes' : '✅ No'}
-                  />
-                </DetailGrid>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <h3 className="font-semibold text-lg">Partner & Additional Info</h3>
-                <DetailGrid>
-                  <DetailRow 
-                    label="Partner Involvement" 
-                    value={selectedOpp.partnerInvolvement ? '✅ Yes' : 'No'}
-                  />
-                  <DetailRow 
-                    label="Partner Name" 
-                    value={selectedOpp.partnerName || '—'}
-                  />
-                  <DetailRow 
-                    label="Remarks" 
-                    value={selectedOpp.remarks || '—'}
-                    fullWidth
-                  />
-                </DetailGrid>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <h3 className="font-semibold text-lg">Extracted Sheet Values</h3>
-                <div className="rounded border p-3 max-h-72 overflow-auto">
+                <h3 className="font-semibold text-lg">New Sheet Mapped Fields (Raw Snapshot)</h3>
+                <div className="rounded border p-3 max-h-96 overflow-auto">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                    {Object.entries(selectedOpp.rawGraphData?.rowSnapshot || selectedOpp.rawGraphData || {}).map(([key, value]) => (
+                    {Object.entries(selectedOpp.rawGraphData?.rowSnapshot || {}).map(([key, value]) => (
                       <div key={key}>
                         <p className="text-xs text-muted-foreground">{key}</p>
                         <p className="font-medium break-words">{displayUnknown(value)}</p>
                       </div>
                     ))}
+                    {!selectedOpp.rawGraphData?.rowSnapshot && (
+                      <p className="text-sm text-muted-foreground col-span-full">No row snapshot available for this record.</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -391,36 +292,16 @@ const Dashboard = () => {
               <Separator />
 
               <div className="space-y-4">
-                <h3 className="font-semibold text-lg">Data Quality Flags</h3>
-                <div className="text-sm space-y-2">
-                  {selectedOpp.opportunityValue_imputed && (
-                    <div className="text-yellow-700 bg-yellow-50 p-2 rounded text-xs">
-                      📌 Value: {selectedOpp.opportunityValue_imputation_reason}
-                    </div>
-                  )}
-                  {selectedOpp.probability_imputed && (
-                    <div className="text-yellow-700 bg-yellow-50 p-2 rounded text-xs">
-                      📌 Probability: {selectedOpp.probability_imputation_reason}
-                    </div>
-                  )}
-                  {selectedOpp.tenderPlannedSubmissionDate_imputed && (
-                    <div className="text-yellow-700 bg-yellow-50 p-2 rounded text-xs">
-                      📌 Submission Date: {selectedOpp.tenderPlannedSubmissionDate_imputation_reason}
-                    </div>
-                  )}
-                  {selectedOpp.lastContactDate_imputed && (
-                    <div className="text-yellow-700 bg-yellow-50 p-2 rounded text-xs">
-                      📌 Last Contact: {selectedOpp.lastContactDate_imputation_reason}
-                    </div>
-                  )}
-                  {!selectedOpp.opportunityValue_imputed && 
-                   !selectedOpp.probability_imputed && 
-                   !selectedOpp.tenderPlannedSubmissionDate_imputed && 
-                   !selectedOpp.lastContactDate_imputed && (
-                    <div className="text-green-700 bg-green-50 p-2 rounded text-xs">
-                      ✅ All data is verified and complete
-                    </div>
-                  )}
+                <h3 className="font-semibold text-lg">All API Fields</h3>
+                <div className="rounded border p-3 max-h-96 overflow-auto">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    {Object.entries(selectedOpp).map(([key, value]) => (
+                      <div key={key}>
+                        <p className="text-xs text-muted-foreground">{key}</p>
+                        <p className="font-medium break-words">{displayUnknown(value)}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

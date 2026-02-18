@@ -35,7 +35,8 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       'At Risk': opp.isAtRisk ? 'Yes' : 'No',
       'Approval Status': getApprovalStatus(opp.id) === 'approved' ? 'Approved' : 'Pending',
       'Partner': opp.partnerName || '',
-      'Remarks': opp.remarks || '',
+      'Remarks/Reason': opp.remarksReason || '',
+      'Comments': opp.comments || '',
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);

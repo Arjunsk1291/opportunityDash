@@ -618,12 +618,27 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
   return data.filter((o) => {
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
-      const matchesSearch =
-        o.tenderName.toLowerCase().includes(searchLower) ||
-        o.clientName.toLowerCase().includes(searchLower) ||
-        o.opportunityRefNo.toLowerCase().includes(searchLower) ||
-        (o.internalLead && o.internalLead.toLowerCase().includes(searchLower));
-      if (!matchesSearch) return false;
+      const rowSnapshot = o.rawGraphData?.rowSnapshot && typeof o.rawGraphData.rowSnapshot === 'object'
+        ? Object.values(o.rawGraphData.rowSnapshot).map((value) => String(value ?? '')).join(' ').toLowerCase()
+        : '';
+      const searchableBlob = [
+        o.opportunityRefNo,
+        o.tenderName,
+        o.opportunityClassification,
+        o.clientName,
+        o.groupClassification,
+        o.dateTenderReceived,
+        o.tenderPlannedSubmissionDate,
+        o.tenderSubmittedDate,
+        o.internalLead,
+        o.opportunityValue,
+        o.avenirStatus,
+        o.tenderResult,
+        o.remarksReason,
+        o.comments,
+        rowSnapshot,
+      ].map((value) => String(value ?? '').toLowerCase()).join(' ');
+      if (!searchableBlob.includes(searchLower)) return false;
     }
 
     // ✅ UPDATED: Filter by both canonicalStage AND tenderResult for LOST/ONGOING
