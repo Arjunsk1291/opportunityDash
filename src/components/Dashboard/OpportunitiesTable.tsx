@@ -18,7 +18,7 @@ interface OpportunitiesTableProps {
   onSelectOpportunity?: (opp: Opportunity) => void;
 }
 
-const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
+const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING'];
 
 export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
@@ -72,28 +72,30 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     return matchesSearch && matchesStatus;
   });
 
-  const getStatusBadge = (status?: string) => {
-    const upperStatus = status?.toUpperCase() || '';
-    const variants: Record<string, string> = {
-      'TO START': 'bg-info/20 text-info',
-      WORKING: 'bg-warning/20 text-warning',
-      AWARDED: 'bg-success/20 text-success',
-      REGRETTED: 'bg-muted text-muted-foreground',
-      'HOLD / CLOSED': 'bg-muted text-muted-foreground',
-    };
-    return variants[upperStatus] || 'bg-muted text-muted-foreground';
+  const getStatusBadge = (status: string) => {
+  const upperStatus = status?.toUpperCase() || '';
+  const variants: Record<string, string> = {
+    'AWARDED': 'bg-success/20 text-success',
+    'WORKING': 'bg-warning/20 text-warning',
+    'TO START': 'bg-info/20 text-info',
+    'SUBMITTED': 'bg-pending/20 text-pending',
+    'ONGOING': 'bg-warning/20 text-warning',
+    'HOLD / CLOSED': 'bg-muted text-muted-foreground',
+    'REGRETTED': 'bg-muted text-muted-foreground',
   };
+  return variants[upperStatus] || 'bg-muted text-muted-foreground';
+};
 
-  const getTenderResultBadge = (result?: string) => {
-    const upperResult = result?.toUpperCase() || '';
-    const variants: Record<string, string> = {
-      ONGOING: 'bg-warning/20 text-warning',
-      LOST: 'bg-destructive/20 text-destructive',
-      AWARDED: 'bg-success/20 text-success',
-      UNKNOWN: 'bg-muted/50 text-muted-foreground',
-    };
-    return variants[upperResult] || 'bg-muted/50 text-muted-foreground';
+  const getTenderResultBadge = (result: string) => {
+  const upperResult = result?.toUpperCase() || '';
+  const variants: Record<string, string> = {
+    'AWARDED': 'bg-success/20 text-success',
+    'LOST': 'bg-destructive/20 text-destructive',
+    'ONGOING': 'bg-warning/20 text-warning',
+    'UNKNOWN': 'bg-muted/50 text-muted-foreground',
   };
+  return variants[upperResult] || 'bg-muted/50 text-muted-foreground';
+};
 
   const canSVPApprove = (tender: Opportunity) => {
     if (isMaster) return true;
