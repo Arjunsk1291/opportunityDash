@@ -12,6 +12,7 @@ import { useApproval } from '@/contexts/ApprovalContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -70,26 +71,24 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     const allSearchable = buildSearchableText(tender);
 
     const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);
-
-    const matchesStatus = statusFilter === 'ALL'
-      || tender.avenirStatus?.toUpperCase() === statusFilter;
+    const matchesStatus = statusFilter === 'ALL' || tender.avenirStatus?.toUpperCase() === statusFilter;
 
     return matchesSearch && matchesStatus;
   });
 
   const getStatusBadge = (status: string) => {
-  const upperStatus = status?.toUpperCase() || '';
-  const variants: Record<string, string> = {
-    'AWARDED': 'bg-success/20 text-success',
-    'WORKING': 'bg-warning/20 text-warning',
-    'TO START': 'bg-info/20 text-info',
-    'SUBMITTED': 'bg-pending/20 text-pending',
-    'ONGOING': 'bg-warning/20 text-warning',
-    'HOLD / CLOSED': 'bg-muted text-muted-foreground',
-    'REGRETTED': 'bg-muted text-muted-foreground',
+    const upperStatus = status?.toUpperCase() || '';
+    const variants: Record<string, string> = {
+      'AWARDED': 'bg-success/20 text-success',
+      'WORKING': 'bg-warning/20 text-warning',
+      'TO START': 'bg-info/20 text-info',
+      'SUBMITTED': 'bg-pending/20 text-pending',
+      'ONGOING': 'bg-warning/20 text-warning',
+      'HOLD / CLOSED': 'bg-muted text-muted-foreground',
+      'REGRETTED': 'bg-muted text-muted-foreground',
+    };
+    return variants[upperStatus] || 'bg-muted text-muted-foreground';
   };
-  return variants[upperStatus] || 'bg-muted text-muted-foreground';
-};
 
   const getTenderResultBadge = (result?: string) => {
     const upperResult = result?.toUpperCase() || '';
@@ -101,8 +100,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     };
     return variants[upperResult] || 'bg-muted/50 text-muted-foreground';
   };
-  return variants[upperResult] || 'bg-muted/50 text-muted-foreground';
-};
 
   const canSVPApprove = (tender: Opportunity) => {
     if (isMaster) return true;
@@ -151,10 +148,10 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                 <TableHead>Lead</TableHead>
                 <TableHead className="text-right">Value</TableHead>
                 <TableHead>AVENIR STATUS</TableHead>
-                <TableHead className="max-w-[150px]">Remarks/Reason</TableHead>
-                <TableHead>TENDER RESULT</TableHead>
+                <TableHead className="max-w-[150px]">Remarks</TableHead>
+                <TableHead>RESULT</TableHead>
                 <TableHead className="w-[220px]">Approval</TableHead>
-                <TableHead className="w-16">Comments</TableHead>
+                <TableHead className="w-16">Info</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -180,8 +177,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                     <TableCell>
                       <Badge variant="outline" className="text-xs font-mono">{tender.groupClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="font-bold text-sm">{getRfpReceivedDisplay(tender) || <span className="text-muted-foreground font-normal">—</span>}</TableCell>
-                    <TableCell>{tender.internalLead || <span className="text-muted-foreground text-xs">Unassigned</span>}</TableCell>
+                    <TableCell className="font-bold text-sm">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
+                    <TableCell>{tender.internalLead || 'Unassigned'}</TableCell>
                     <TableCell className="text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
                     <TableCell>
                       <Badge className={getStatusBadge(tender.avenirStatus)}>{tender.avenirStatus || '—'}</Badge>
@@ -195,24 +192,16 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                             </Button>
                           </PopoverTrigger>
                           <PopoverContent className="w-80">
-                            <div className="space-y-2">
-                              <div>
-                                <p className="text-xs font-medium text-muted-foreground">Remarks/Reason</p>
-                                <p className="text-sm">{tender.remarksReason}</p>
-                              </div>
-                            </div>
+                            <p className="text-xs font-medium text-muted-foreground">Remarks/Reason</p>
+                            <p className="text-sm">{tender.remarksReason}</p>
                           </PopoverContent>
                         </Popover>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+                      ) : '—'}
                     </TableCell>
                     <TableCell>
                       {tender.tenderResult ? (
                         <Badge className={getTenderResultBadge(tender.tenderResult)}>{tender.tenderResult}</Badge>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">—</span>
-                      )}
+                      ) : '—'}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <ApprovalCell
@@ -227,31 +216,29 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                       />
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      {tender.comments && (
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-6 w-6">
-                              <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-80">
-                            <div className="space-y-2">
-                              <div>
-                                <p className="text-xs font-medium text-muted-foreground">Comments</p>
-                                <p className="text-sm">{tender.comments}</p>
-                              </div>
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                      )}
-                      {tender.isAtRisk && (
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <AlertTriangle className="h-4 w-4 text-warning" />
-                          </TooltipTrigger>
-                          <TooltipContent>Potentially at risk opportunity</TooltipContent>
-                        </Tooltip>
-                      )}
+                      <div className="flex gap-1">
+                        {tender.comments && (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-6 w-6">
+                                <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80">
+                              <p className="text-xs font-medium text-muted-foreground">Comments</p>
+                              <p className="text-sm">{tender.comments}</p>
+                            </PopoverContent>
+                          </Popover>
+                        )}
+                        {tender.isAtRisk && (
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <AlertTriangle className="h-4 w-4 text-warning" />
+                            </TooltipTrigger>
+                            <TooltipContent>Potentially at risk opportunity</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
