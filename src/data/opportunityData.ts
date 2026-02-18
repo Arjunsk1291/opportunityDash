@@ -262,10 +262,8 @@ export function calculateDataHealth(data: Opportunity[]) {
 
 export const GROUP_CLASSIFICATIONS = [
   'GES',
-  'GDS', 
-  'GTN',
+  'GDS',
   'GTS',
-  'General',
 ];
 
 export const OPPORTUNITY_STATUSES = [

@@ -18,7 +18,7 @@ interface OpportunitiesTableProps {
   onSelectOpportunity?: (opp: Opportunity) => void;
 }
 
-const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED'];
+const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
 
 export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
@@ -43,13 +43,28 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
   const filteredData = data.filter((tender) => {
     const searchLower = search.toLowerCase();
     const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
-    const matchesSearch = !search
-      || tender.tenderName?.toLowerCase().includes(searchLower)
-      || tender.clientName?.toLowerCase().includes(searchLower)
-      || tender.opportunityRefNo?.toLowerCase().includes(searchLower)
-      || tender.remarksReason?.toLowerCase().includes(searchLower)
-      || tender.comments?.toLowerCase().includes(searchLower)
-      || rfpReceivedDisplay.includes(searchLower);
+    const approvalSearchValue = getApprovalStatus(tender.opportunityRefNo).toLowerCase();
+    const rowSnapshot = tender.rawGraphData?.rowSnapshot && typeof tender.rawGraphData.rowSnapshot === 'object'
+      ? Object.values(tender.rawGraphData.rowSnapshot).map((value) => String(value ?? '')).join(' ').toLowerCase()
+      : '';
+    const allSearchable = [
+      tender.opportunityRefNo,
+      tender.tenderName,
+      tender.opportunityClassification,
+      tender.clientName,
+      tender.groupClassification,
+      getRfpReceivedDisplay(tender),
+      tender.internalLead,
+      tender.opportunityValue,
+      tender.avenirStatus,
+      tender.remarksReason,
+      tender.tenderResult,
+      approvalSearchValue,
+      tender.comments,
+      rowSnapshot,
+    ].map((value) => String(value ?? '').toLowerCase()).join(' ');
+
+    const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);
 
     const matchesStatus = statusFilter === 'ALL'
       || tender.avenirStatus?.toUpperCase() === statusFilter;
@@ -72,6 +87,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
   const getTenderResultBadge = (result?: string) => {
     const upperResult = result?.toUpperCase() || '';
     const variants: Record<string, string> = {
+      ONGOING: 'bg-warning/20 text-warning',
       LOST: 'bg-destructive/20 text-destructive',
       AWARDED: 'bg-success/20 text-success',
       UNKNOWN: 'bg-muted/50 text-muted-foreground',
@@ -161,10 +177,26 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                     <TableCell>
                       <Badge className={getStatusBadge(tender.avenirStatus)}>{tender.avenirStatus || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="max-w-[150px]">
-                      <div className="truncate text-xs" title={tender.remarksReason || ''}>
-                        {tender.remarksReason || <span className="text-muted-foreground">—</span>}
-                      </div>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {tender.remarksReason ? (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-6 w-6">
+                              <MessageSquare className="h-4 w-4 text-info" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-80">
+                            <div className="space-y-2">
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground">Remarks/Reason</p>
+                                <p className="text-sm">{tender.remarksReason}</p>
+                              </div>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {tender.tenderResult ? (
