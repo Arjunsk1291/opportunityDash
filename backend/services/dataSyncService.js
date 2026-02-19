@@ -118,7 +118,7 @@ const DEFAULT_MAPPING = {
   year: ['Year '],
   dateReceived: ['date tender recd', 'DATE RECEIVED'],
   lead: ['Assigned Person'],
-  value: [' Tender value '],
+  value: [' Tender value ', 'Tender value', 'TENDER VALUE', 'VALUE'],
   avenirStatus: ['AVENIR STATUS'],
   tenderResult: ['TENDER RESULT'],
   groupClassification: ['GDS/GES', 'GROUP'],

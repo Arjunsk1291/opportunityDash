@@ -65,16 +65,22 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     ].map((value) => String(value ?? '').toLowerCase()).join(' ');
   };
 
-  const filteredData = data.filter((tender) => {
-    const searchLower = search.toLowerCase();
-    const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
-    const allSearchable = buildSearchableText(tender);
+  const filteredData = data
+    .filter((tender) => {
+      const searchLower = search.toLowerCase();
+      const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
+      const allSearchable = buildSearchableText(tender);
 
-    const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);
-    const matchesStatus = statusFilter === 'ALL' || tender.avenirStatus?.toUpperCase() === statusFilter;
+      const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);
+      const matchesStatus = statusFilter === 'ALL' || tender.avenirStatus?.toUpperCase() === statusFilter;
 
-    return matchesSearch && matchesStatus;
-  });
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => {
+      const aTime = new Date(a.syncedAt || a.updatedAt || a.createdAt || a.dateTenderReceived || 0).getTime();
+      const bTime = new Date(b.syncedAt || b.updatedAt || b.createdAt || b.dateTenderReceived || 0).getTime();
+      return bTime - aTime;
+    });
 
   const getStatusBadge = (status: string) => {
     const upperStatus = status?.toUpperCase() || '';
@@ -155,7 +161,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.slice(0, 50).map((tender) => {
+              {filteredData.map((tender) => {
                 const approvalStatus = getApprovalStatus(tender.opportunityRefNo);
                 const approvalState = getApprovalState(tender.opportunityRefNo);
                 return (
@@ -247,7 +253,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
           </Table>
         </div>
         <div className="p-3 text-xs text-muted-foreground border-t">
-          Showing {Math.min(filteredData.length, 50)} of {filteredData.length} tenders
+          Showing latest first: {filteredData.length} of {data.length} tenders (scroll to view all)
         </div>
       </CardContent>
     </Card>
