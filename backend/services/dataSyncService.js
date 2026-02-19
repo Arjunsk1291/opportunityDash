@@ -112,13 +112,13 @@ function buildRfpReceivedDisplay(year, dateValue, isoDate) {
 
 const DEFAULT_MAPPING = {
   tenderNo: ['Tender no', 'REF NO'],
-  tenderType: ['Tender Type '],
+  tenderType: ['Tender Type ', 'Type'],
   client: ['Client'],
   tenderName: ['Tender name', 'DESCRIPTION'],
   year: ['Year '],
   dateReceived: ['date tender recd', 'DATE RECEIVED'],
   lead: ['Assigned Person'],
-  value: [' Tender value '],
+  value: [' Tender value ', 'Tender value', 'TENDER VALUE', 'VALUE'],
   avenirStatus: ['AVENIR STATUS'],
   tenderResult: ['TENDER RESULT'],
   groupClassification: ['GDS/GES', 'GROUP'],

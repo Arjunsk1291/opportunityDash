@@ -75,6 +75,28 @@ function delegatedScopesString() {
   return DELEGATED_SCOPES.join(' ');
 }
 
+
+function delegatedConsentScopesString() {
+  return [...DELEGATED_SCOPES, 'Mail.Send'].join(' ');
+}
+
+export function buildDelegatedConsentUrl({ loginHint } = {}) {
+  validateEnv();
+  const params = new URLSearchParams({
+    client_id: envValue('GRAPH_CLIENT_ID'),
+    response_type: 'code',
+    redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
+    scope: delegatedConsentScopesString(),
+    prompt: 'consent',
+  });
+
+  if (loginHint) {
+    params.set('login_hint', String(loginHint).trim().toLowerCase());
+  }
+
+  return `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/authorize?${params.toString()}`;
+}
+
 function logTokenDebug() {
   if (!debugEnabled()) return;
 
