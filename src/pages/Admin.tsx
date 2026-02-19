@@ -68,6 +68,15 @@ interface NotificationRule {
   isActive?: boolean;
 }
 
+interface MailboxAuthFlow {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete?: string;
+  expiresIn?: number;
+  message?: string;
+}
+
 interface GraphAuthStatus {
   authMode: 'application' | 'delegated';
   accountUsername: string;
@@ -107,6 +116,8 @@ export default function Admin() {
   const [bootstrapPassword, setBootstrapPassword] = useState('');
   const [consentUrl, setConsentUrl] = useState('');
   const [mailConfig, setMailConfig] = useState<MailConfig>({ serviceEmail: '', smtpHost: '', smtpPort: 587, smtpPassword: '' });
+  const [mailboxAuthFlow, setMailboxAuthFlow] = useState<MailboxAuthFlow | null>(null);
+  const [mailboxAuthStatus, setMailboxAuthStatus] = useState<{ hasGraphRefreshToken: boolean; graphTokenUpdatedAt?: string | null; lastUpdatedBy?: string | null }>({ hasGraphRefreshToken: false });
   const [notificationRules, setNotificationRules] = useState<NotificationRule[]>([]);
   const [newRule, setNewRule] = useState<NotificationRule>({
     triggerEvent: 'NEW_TENDER_SYNCED',
@@ -126,6 +137,7 @@ export default function Admin() {
       fetchConsentUrl();
       loadMailConfig();
       loadNotificationRules();
+      loadMailboxAuthStatus();
     }
   }, [isMaster, token]);
 
@@ -600,6 +612,67 @@ export default function Admin() {
     }
   };
 
+
+
+  const loadMailboxAuthStatus = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/admin/mailbox/status', { headers: { Authorization: 'Bearer ' + token } });
+      if (!response.ok) return;
+      const data = await response.json();
+      setMailboxAuthStatus({
+        hasGraphRefreshToken: !!data.hasGraphRefreshToken,
+        graphTokenUpdatedAt: data.graphTokenUpdatedAt || null,
+        lastUpdatedBy: data.lastUpdatedBy || null,
+      });
+      if (data.serviceEmail) {
+        setMailConfig((prev) => ({ ...prev, serviceEmail: data.serviceEmail }));
+      }
+    } catch (error) {
+      console.error('Failed to load mailbox auth status:', error);
+    }
+  };
+
+  const initiateMailboxAuth = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/admin/mailbox/initiate', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to start device code flow');
+      setMailboxAuthFlow({
+        deviceCode: data.deviceCode,
+        userCode: data.userCode,
+        verificationUri: data.verificationUri,
+        verificationUriComplete: data.verificationUriComplete,
+        expiresIn: data.expiresIn,
+        message: data.message,
+      });
+      toast.success('Device code generated. Complete verification on Microsoft page.');
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  };
+
+  const finalizeMailboxAuth = async () => {
+    if (!token || !mailboxAuthFlow?.deviceCode) return;
+    try {
+      const response = await fetch(API_URL + '/admin/mailbox/finalize', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceCode: mailboxAuthFlow.deviceCode, email: mailConfig.serviceEmail }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || 'Mailbox authorization not completed yet');
+      toast.success('Service mailbox authorized successfully.');
+      setMailboxAuthFlow(null);
+      await loadMailboxAuthStatus();
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  };
 
   const loadMailConfig = async () => {
     if (!token) return;
@@ -1188,6 +1261,28 @@ export default function Admin() {
                   <TabsTrigger value="templates">Template Editor</TabsTrigger>
                 </TabsList>
                 <TabsContent value="smtp" className="space-y-3">
+                  <div className="border rounded p-3 space-y-2 text-sm">
+                    <p className="font-medium">Service Mailbox (URI-free Device Code Flow)</p>
+                    <p className="text-xs text-muted-foreground">
+                      Status: {mailboxAuthStatus.hasGraphRefreshToken ? '✅ Connected' : '❌ Not connected'}
+                      {mailboxAuthStatus.graphTokenUpdatedAt ? ` • updated ${new Date(mailboxAuthStatus.graphTokenUpdatedAt).toLocaleString()}` : ''}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" variant="secondary" onClick={initiateMailboxAuth}>Connect Service Account</Button>
+                      <Button type="button" variant="outline" onClick={finalizeMailboxAuth} disabled={!mailboxAuthFlow}>I have entered the code</Button>
+                    </div>
+                    {mailboxAuthFlow && (
+                      <div className="rounded border p-3 text-xs space-y-1 bg-muted/30">
+                        <p>1) Go to: <strong>{mailboxAuthFlow.verificationUri}</strong></p>
+                        <p>2) Enter code: <strong className="font-mono text-base">{mailboxAuthFlow.userCode}</strong></p>
+                        {mailboxAuthFlow.verificationUriComplete && (
+                          <Button type="button" size="sm" variant="outline" onClick={() => window.open(mailboxAuthFlow.verificationUriComplete, '_blank', 'noopener,noreferrer')}>
+                            Open verification page
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <Input placeholder="Service Email" value={mailConfig.serviceEmail} onChange={(e) => setMailConfig((p) => ({ ...p, serviceEmail: e.target.value }))} />
                   <Input placeholder="SMTP Host" value={mailConfig.smtpHost} onChange={(e) => setMailConfig((p) => ({ ...p, smtpHost: e.target.value }))} />
                   <Input type="number" placeholder="SMTP Port" value={mailConfig.smtpPort} onChange={(e) => setMailConfig((p) => ({ ...p, smtpPort: Number(e.target.value) || 587 }))} />

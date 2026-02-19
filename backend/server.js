@@ -10,6 +10,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, startDeviceCodeFlow, exchangeDeviceCodeForToken, mailboxDelegatedScopesString } from './services/graphExcelService.js';
 import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 import SystemConfig from './models/SystemConfig.js';
@@ -700,12 +701,79 @@ const getSystemConfig = async () => {
   return config;
 };
 
+
+app.post('/api/admin/mailbox/initiate', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can initiate mailbox auth' });
+
+    const flowData = await startDeviceCodeFlow({ scopes: mailboxDelegatedScopesString() });
+    res.json({ success: true, ...flowData });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/mailbox/finalize', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can finalize mailbox auth' });
+
+    const { deviceCode, email } = req.body || {};
+    if (!deviceCode) return res.status(400).json({ error: 'deviceCode is required' });
+
+    const tokens = await exchangeDeviceCodeForToken(deviceCode, { scopes: mailboxDelegatedScopesString() });
+    if (!tokens.refreshToken) {
+      return res.status(500).json({ error: 'No refresh token returned. Please re-run device code flow.' });
+    }
+
+    const config = await getSystemConfig();
+    if (email !== undefined) config.serviceEmail = String(email || '').trim().toLowerCase();
+    config.graphRefreshTokenEnc = protectRefreshToken(tokens.refreshToken);
+    config.graphTokenUpdatedAt = new Date();
+    config.lastUpdatedBy = req.user.email;
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, message: 'Service mailbox authenticated successfully.' });
+  } catch (error) {
+    const msg = String(error.message || error);
+    if (msg.includes('authorization_pending')) {
+      return res.status(400).json({ error: 'AUTHORIZATION_PENDING', message: 'Authorization is still pending. Complete verification and retry.' });
+    }
+    if (msg.includes('expired_token') || msg.includes('code_expired')) {
+      return res.status(400).json({ error: 'DEVICE_CODE_EXPIRED', message: 'Device code expired. Start a new authorization flow.' });
+    }
+    if (msg.includes('AADSTS65001')) {
+      return res.status(400).json({ error: 'CONSENT_REQUIRED', message: 'Consent required for this account. Complete consent on verification site and retry.' });
+    }
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.get('/api/admin/mailbox/status', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can view mailbox auth status' });
+
+    const config = await getSystemConfig();
+    res.json({
+      success: true,
+      serviceEmail: config.serviceEmail || '',
+      hasGraphRefreshToken: !!config.graphRefreshTokenEnc,
+      graphTokenUpdatedAt: config.graphTokenUpdatedAt || null,
+      lastUpdatedBy: config.lastUpdatedBy || null,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/system-config/mail', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can view mail config' });
     const config = await getSystemConfig();
     const payload = mapIdField(config.toObject());
     payload.encryptedPassword = payload.encryptedPassword ? '********' : '';
+    payload.hasGraphRefreshToken = !!payload.graphRefreshTokenEnc;
+    payload.graphRefreshTokenEnc = payload.graphRefreshTokenEnc ? '********' : '';
     res.json(payload);
   } catch (error) {
     res.status(500).json({ error: error.message });
