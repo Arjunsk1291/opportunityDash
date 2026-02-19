@@ -75,7 +75,6 @@ function delegatedScopesString() {
   return DELEGATED_SCOPES.join(' ');
 }
 
-
 function delegatedConsentScopesString() {
   return [...DELEGATED_SCOPES, 'Mail.Send'].join(' ');
 }
@@ -85,11 +84,7 @@ export function buildDelegatedConsentUrl({ loginHint } = {}) {
   const params = new URLSearchParams({
     client_id: envValue('GRAPH_CLIENT_ID'),
     response_type: 'code',
-<<<<<<< codex/conduct-repo-research-and-map-columns-v7v6hz
     redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
-=======
-    redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://localhost',
->>>>>>> main
     scope: delegatedConsentScopesString(),
     prompt: 'consent',
   });
@@ -146,7 +141,6 @@ function buildTokenErrorMessage(responseStatus, data) {
   if (correlation) parts.push(`correlation_id=${correlation}`);
   return parts.join(' | ');
 }
-
 
 export function getGraphTokenDebugSnapshot() {
   return {
@@ -305,7 +299,7 @@ async function acquireTokenFromConfig(config) {
         };
       }
     } catch {
-      // fall through to app token when explicitly allowed
+      // fall through to app token
     }
   }
 
@@ -323,8 +317,7 @@ async function acquireTokenFromConfig(config) {
 }
 
 export async function getAccessTokenWithConfig(config) {
-  const tokenResult = await acquireTokenFromConfig(config);
-  return tokenResult;
+  return await acquireTokenFromConfig(config);
 }
 
 async function graphRequest(path, token) {
