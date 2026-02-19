@@ -10,7 +10,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
-import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken } from './services/graphExcelService.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 import SystemConfig from './models/SystemConfig.js';
 import NotificationRule from './models/NotificationRule.js';
@@ -590,6 +590,21 @@ app.post('/api/graph/preview-rows', verifyToken, async (req, res) => {
 
 
 
+
+app.get('/api/graph/auth/consent-url', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can view consent URL' });
+    }
+
+    const loginHint = req.query?.loginHint ? String(req.query.loginHint) : '';
+    const consentUrl = buildDelegatedConsentUrl({ loginHint });
+    res.json({ success: true, consentUrl });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/graph/auth/status', verifyToken, async (req, res) => {
   try {
     if (!['Master', 'Admin'].includes(req.user.role)) {
@@ -610,12 +625,13 @@ app.get('/api/graph/auth/status', verifyToken, async (req, res) => {
 });
 
 app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
+  const username = req.body?.username || '';
   try {
     if (req.user.role !== 'Master') {
       return res.status(403).json({ error: 'Only Master users can bootstrap Graph auth' });
     }
 
-    const { username, password } = req.body || {};
+    const { password } = req.body || {};
     if (!username || !password) {
       return res.status(400).json({ error: 'username and password are required' });
     }
@@ -644,6 +660,14 @@ app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
     }
     if (msg.includes('AADSTS50034')) {
       return res.status(400).json({ error: 'USER_NOT_FOUND', message: 'User not found in this tenant.' });
+    }
+    if (msg.includes('AADSTS65001')) {
+      const consentUrl = buildDelegatedConsentUrl({ loginHint: username });
+      return res.status(400).json({
+        error: 'CONSENT_REQUIRED',
+        message: 'This account has not granted consent to the app yet. Open consent URL and accept once, then retry bootstrap.',
+        consentUrl,
+      });
     }
     res.status(500).json({ error: msg });
   }

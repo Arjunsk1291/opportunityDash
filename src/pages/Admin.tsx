@@ -105,6 +105,7 @@ export default function Admin() {
   });
   const [bootstrapUsername, setBootstrapUsername] = useState('');
   const [bootstrapPassword, setBootstrapPassword] = useState('');
+  const [consentUrl, setConsentUrl] = useState('');
   const [mailConfig, setMailConfig] = useState<MailConfig>({ serviceEmail: '', smtpHost: '', smtpPort: 587, smtpPassword: '' });
   const [notificationRules, setNotificationRules] = useState<NotificationRule[]>([]);
   const [newRule, setNewRule] = useState<NotificationRule>({
@@ -122,6 +123,7 @@ export default function Admin() {
       loadCollectionStats();
       loadGraphConfig();
       loadGraphAuthStatus();
+      fetchConsentUrl();
       loadMailConfig();
       loadNotificationRules();
     }
@@ -225,6 +227,27 @@ export default function Admin() {
     }
   };
 
+
+  const fetchConsentUrl = async (loginHint?: string) => {
+    if (!token) return;
+    try {
+      const query = loginHint ? `?loginHint=${encodeURIComponent(loginHint)}` : '';
+      const response = await fetch(API_URL + '/graph/auth/consent-url' + query, {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to fetch consent URL');
+      setConsentUrl(data.consentUrl || '');
+      return data.consentUrl || '';
+    } catch (error) {
+      console.error('Failed to load consent URL:', error);
+      return '';
+    }
+  };
+
   const bootstrapGraphAuth = async () => {
     if (!token || !bootstrapUsername || !bootstrapPassword) {
       toast.error('Username and password are required');
@@ -247,6 +270,10 @@ export default function Admin() {
         if (data.error === 'MFA_REQUIRED') throw new Error('MFA is enabled on this account. Use a non-MFA service account.');
         if (data.error === 'INVALID_CREDENTIALS') throw new Error('Invalid username or password.');
         if (data.error === 'USER_NOT_FOUND') throw new Error('User not found in this tenant.');
+        if (data.error === 'CONSENT_REQUIRED') {
+          setConsentUrl(data.consentUrl || '');
+          throw new Error('Consent required for this account. Open the consent URL, accept once, then retry Connect Excel.');
+        }
         throw new Error(data.message || data.error || 'Failed to bootstrap graph auth');
       }
 
@@ -941,6 +968,32 @@ export default function Admin() {
                     <div className="md:col-span-2 rounded border p-3 text-xs text-muted-foreground">
                       Use one-time delegated bootstrap with your Microsoft account credentials. If this account has MFA enforced,
                       use a non-MFA service account for bootstrap.
+                    </div>
+                    <div className="md:col-span-2 rounded border p-3 text-xs text-muted-foreground space-y-2">
+                      <p>If you get <strong>AADSTS65001</strong>, grant one-time consent for the service account, then retry bootstrap.</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={async () => {
+                            const url = consentUrl || await fetchConsentUrl(bootstrapUsername);
+                            if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                          }}
+                          disabled={configSaving}
+                        >
+                          Open Consent URL
+                        </Button>
+                        {consentUrl && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => navigator.clipboard.writeText(consentUrl)}
+                            disabled={configSaving}
+                          >
+                            Copy Consent URL
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Microsoft Username</p>
