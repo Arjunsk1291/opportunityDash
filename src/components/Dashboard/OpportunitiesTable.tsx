@@ -141,7 +141,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
               <TableRow>
                 <TableHead className="w-24">Ref No.</TableHead>
                 <TableHead className="min-w-[200px]">Tender Name</TableHead>
-                <TableHead>Type</TableHead>
+                <TableHead>Tender Type</TableHead>
                 <TableHead>Client</TableHead>
                 <TableHead>Group</TableHead>
                 <TableHead className="font-bold">RFP Received</TableHead>
