@@ -147,7 +147,6 @@ function buildTokenErrorMessage(responseStatus, data) {
   return parts.join(' | ');
 }
 
-
 export function getGraphTokenDebugSnapshot() {
   return {
     GRAPH_CLIENT_SECRET: maskValue(envValue('GRAPH_CLIENT_SECRET')),
@@ -305,7 +304,7 @@ async function acquireTokenFromConfig(config) {
         };
       }
     } catch {
-      // fall through to app token when explicitly allowed
+      // fall through to app token
     }
   }
 
@@ -323,8 +322,7 @@ async function acquireTokenFromConfig(config) {
 }
 
 export async function getAccessTokenWithConfig(config) {
-  const tokenResult = await acquireTokenFromConfig(config);
-  return tokenResult;
+  return await acquireTokenFromConfig(config);
 }
 
 async function graphRequest(path, token) {
