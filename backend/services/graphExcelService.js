@@ -85,7 +85,11 @@ export function buildDelegatedConsentUrl({ loginHint } = {}) {
   const params = new URLSearchParams({
     client_id: envValue('GRAPH_CLIENT_ID'),
     response_type: 'code',
+<<<<<<< codex/conduct-repo-research-and-map-columns-v7v6hz
+    redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
+=======
     redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://localhost',
+>>>>>>> main
     scope: delegatedConsentScopesString(),
     prompt: 'consent',
   });
