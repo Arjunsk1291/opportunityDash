@@ -12,6 +12,10 @@ import { syncTendersFromGraph, transformTendersToOpportunities } from './service
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
+import SystemConfig from './models/SystemConfig.js';
+import NotificationRule from './models/NotificationRule.js';
+import { encryptSecret } from './services/cryptoService.js';
+import { notifySvpsForNewTenders } from './services/notificationService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,6 +61,12 @@ const syncFromConfiguredGraph = async () => {
 
   await SyncedOpportunity.deleteMany({});
   const inserted = await SyncedOpportunity.insertMany(opportunities);
+
+  try {
+    await notifySvpsForNewTenders(tenders);
+  } catch (error) {
+    console.error('Notification dispatch failed (sync continues):', error.message);
+  }
 
   config.lastSyncAt = new Date();
   await config.save();
@@ -308,12 +318,21 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Email and newRole are required' });
     }
 
-    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
+    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'MASTER', 'PROPOSAL_HEAD'];
     if (!validRoles.includes(newRole)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
 
-    const update = { role: newRole, assignedGroup: newRole === 'SVP' ? (assignedGroup || null) : null };
+    if (newRole === 'SVP' && !assignedGroup) {
+      return res.status(400).json({ error: 'assignedGroup is required for SVP users' });
+    }
+
+    const normalizedGroup = assignedGroup ? String(assignedGroup).toUpperCase() : null;
+    if (normalizedGroup && !['GES', 'GDS', 'GTS'].includes(normalizedGroup)) {
+      return res.status(400).json({ error: 'assignedGroup must be one of GES, GDS, GTS' });
+    }
+
+    const update = { role: newRole, assignedGroup: newRole === 'SVP' ? normalizedGroup : null };
     const user = await AuthorizedUser.findOneAndUpdate(
       { email: email.toLowerCase() },
       update,
@@ -645,6 +664,110 @@ app.post('/api/graph/auth/clear', verifyToken, async (req, res) => {
     await config.save();
 
     res.json({ success: true, message: 'Delegated token cleared. Falling back to application auth.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+const getSystemConfig = async () => {
+  let config = await SystemConfig.findOne();
+  if (!config) config = await SystemConfig.create({});
+  return config;
+};
+
+app.get('/api/system-config/mail', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can view mail config' });
+    const config = await getSystemConfig();
+    const payload = mapIdField(config.toObject());
+    payload.encryptedPassword = payload.encryptedPassword ? '********' : '';
+    res.json(payload);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/system-config/mail', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can update mail config' });
+    const { serviceEmail, smtpHost, smtpPort, smtpPassword } = req.body || {};
+    const config = await getSystemConfig();
+
+    if (serviceEmail !== undefined) config.serviceEmail = String(serviceEmail || '').trim().toLowerCase();
+    if (smtpHost !== undefined) config.smtpHost = String(smtpHost || '').trim();
+    if (smtpPort !== undefined) config.smtpPort = Number(smtpPort) || 587;
+    if (smtpPassword) config.encryptedPassword = encryptSecret(smtpPassword);
+
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, config: { serviceEmail: config.serviceEmail, smtpHost: config.smtpHost, smtpPort: config.smtpPort, hasPassword: !!config.encryptedPassword } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/notification-rules', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can view notification rules' });
+    const rules = await NotificationRule.find().sort({ createdAt: -1 }).lean();
+    res.json(rules.map(mapIdField));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/notification-rules', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can create notification rules' });
+    const payload = req.body || {};
+    const created = await NotificationRule.create({
+      triggerEvent: payload.triggerEvent || 'NEW_TENDER_SYNCED',
+      recipientRole: 'SVP',
+      useGroupMatching: payload.useGroupMatching !== false,
+      emailSubject: payload.emailSubject || 'New Tender Synced: {{tenderName}}',
+      emailBody: payload.emailBody || '<p>New tender {{tenderName}}</p>',
+      isActive: payload.isActive !== false,
+      createdBy: req.user.email,
+      updatedBy: req.user.email,
+    });
+    res.json({ success: true, rule: mapIdField(created.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/notification-rules/:id', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can update notification rules' });
+    const { id } = req.params;
+    const payload = req.body || {};
+    const update = {
+      triggerEvent: payload.triggerEvent,
+      recipientRole: 'SVP',
+      useGroupMatching: payload.useGroupMatching,
+      emailSubject: payload.emailSubject,
+      emailBody: payload.emailBody,
+      isActive: payload.isActive,
+      updatedBy: req.user.email,
+    };
+    Object.keys(update).forEach((k) => update[k] === undefined && delete update[k]);
+
+    const rule = await NotificationRule.findByIdAndUpdate(id, update, { new: true });
+    if (!rule) return res.status(404).json({ error: 'Rule not found' });
+    res.json({ success: true, rule: mapIdField(rule.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/notification-rules/:id', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can delete notification rules' });
+    const result = await NotificationRule.findByIdAndDelete(req.params.id);
+    if (!result) return res.status(404).json({ error: 'Rule not found' });
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
