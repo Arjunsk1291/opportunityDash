@@ -797,6 +797,9 @@ app.put('/api/system-config/mail', verifyToken, async (req, res) => {
     if (!process.env.GRAPH_TENANT_ID && tenantId !== undefined) config.tenantId = String(tenantId || '').trim();
     if (!(process.env.AZURE_CLIENT_ID || process.env.GRAPH_CLIENT_ID) && clientId !== undefined) config.clientId = String(clientId || '').trim();
     if (!(process.env.CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET || process.env.GRAPH_CLIENT_SECRET) && clientSecret !== undefined) config.clientSecret = String(clientSecret || '').trim();
+    if (tenantId !== undefined) config.tenantId = String(tenantId || '').trim();
+    if (clientId !== undefined) config.clientId = String(clientId || '').trim();
+    if (clientSecret !== undefined) config.clientSecret = String(clientSecret || '').trim();
     if (serviceUsername !== undefined) config.serviceUsername = String(serviceUsername || '').trim().toLowerCase();
 
     config.updatedBy = req.user.email;
