@@ -5,8 +5,6 @@ const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const requiredEnv = ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET'];
 const DELEGATED_SCOPES = ['Files.Read.Selected', 'Sites.Selected', 'User.Read', 'offline_access'];
 
-// --- Utility Helpers ---
-
 function envValue(name, fallback = '') {
   const value = process.env[name];
   return typeof value === 'string' ? value.trim() : fallback;
@@ -46,8 +44,6 @@ function validateEnv() {
   }
 }
 
-// --- Encryption ---
-
 function encryptionKey() {
   const keySeed = envValue('GRAPH_TOKEN_ENCRYPTION_KEY') || graphClientSecret();
   return crypto.createHash('sha256').update(String(keySeed)).digest();
@@ -75,47 +71,12 @@ function decryptText(payload) {
   return decrypted.toString('utf8');
 }
 
-// --- Auth Helpers ---
-
 function delegatedScopesString() {
   return DELEGATED_SCOPES.join(' ');
 }
 
-
 function delegatedConsentScopesString() {
   return [...DELEGATED_SCOPES, 'Mail.Send'].join(' ');
-}
-
-export function mailboxDelegatedScopesString() {
-  return delegatedConsentScopesString();
-}
-
-export function buildDelegatedConsentUrl({ loginHint } = {}) {
-  validateEnv();
-  const params = new URLSearchParams({
-    client_id: envValue('GRAPH_CLIENT_ID'),
-    response_type: 'code',
-    redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
-    scope: delegatedConsentScopesString(),
-    prompt: 'consent',
-  });
-
-  if (loginHint) {
-    params.set('login_hint', String(loginHint).trim().toLowerCase());
-  }
-
-  return `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/authorize?${params.toString()}`;
-}
-
-function logTokenDebug() {
-  if (!debugEnabled()) return;
-
-  console.log('[graph-token-debug] GRAPH_CLIENT_SECRET:', maskValue(envValue('GRAPH_CLIENT_SECRET')));
-  console.log('[graph-token-debug] CLIENT_SECRET:', maskValue(envValue('CLIENT_SECRET')));
-  console.log('[graph-token-debug] AZURE_CLIENT_SECRET:', maskValue(envValue('AZURE_CLIENT_SECRET')));
-  console.log('[graph-token-debug] Final secret used:', maskValue(graphClientSecret()));
-  console.log('[graph-token-debug] GRAPH_TENANT_ID:', maskValue(envValue('GRAPH_TENANT_ID')));
-  console.log('[graph-token-debug] GRAPH_CLIENT_ID:', maskValue(envValue('GRAPH_CLIENT_ID')));
 }
 
 export function mailboxDelegatedScopesString() {
@@ -157,8 +118,6 @@ export function getGraphTokenDebugSnapshot() {
     GRAPH_CLIENT_ID: maskValue(envValue('GRAPH_CLIENT_ID')),
   };
 }
-
-// --- Token Acquisition ---
 
 async function postToken(params) {
   validateEnv();
@@ -274,8 +233,6 @@ async function acquireTokenFromConfig(config) {
 export async function getAccessTokenWithConfig(config) {
   return await acquireTokenFromConfig(config);
 }
-
-// --- Graph Requests ---
 
 async function graphRequest(path, token) {
   const response = await fetch(`${GRAPH_BASE_URL}${path}`, {
