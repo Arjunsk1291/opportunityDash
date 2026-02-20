@@ -11,7 +11,6 @@ import Clients from "./pages/Clients";
 import Analytics from "./pages/Analytics";
 import Admin from "./pages/Admin";
 import Login from "./pages/Login";
-import AuthCallback from "./pages/AuthCallback";
 import PendingApproval from "./pages/PendingApproval";
 import NotFound from "./pages/NotFound";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -40,7 +39,6 @@ function AppRoutes() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/auth/callback" element={<AuthCallback />} />
         
         {/* ✅ Show pending page if user is pending */}
         {isPending && isAuthenticated && (

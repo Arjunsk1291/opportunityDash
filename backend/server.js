@@ -10,8 +10,12 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
-import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken } from './services/graphExcelService.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, startDeviceCodeFlow, exchangeDeviceCodeForToken, mailboxDelegatedScopesString } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
+import SystemConfig from './models/SystemConfig.js';
+import NotificationRule from './models/NotificationRule.js';
+import { encryptSecret } from './services/cryptoService.js';
+import { notifySvpsForNewTenders } from './services/notificationService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,6 +61,12 @@ const syncFromConfiguredGraph = async () => {
 
   await SyncedOpportunity.deleteMany({});
   const inserted = await SyncedOpportunity.insertMany(opportunities);
+
+  try {
+    await notifySvpsForNewTenders(tenders);
+  } catch (error) {
+    console.error('Notification dispatch failed (sync continues):', error.message);
+  }
 
   config.lastSyncAt = new Date();
   await config.save();
@@ -308,12 +318,21 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Email and newRole are required' });
     }
 
-    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
+    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'MASTER', 'PROPOSAL_HEAD'];
     if (!validRoles.includes(newRole)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
 
-    const update = { role: newRole, assignedGroup: newRole === 'SVP' ? (assignedGroup || null) : null };
+    if (newRole === 'SVP' && !assignedGroup) {
+      return res.status(400).json({ error: 'assignedGroup is required for SVP users' });
+    }
+
+    const normalizedGroup = assignedGroup ? String(assignedGroup).toUpperCase() : null;
+    if (normalizedGroup && !['GES', 'GDS', 'GTS'].includes(normalizedGroup)) {
+      return res.status(400).json({ error: 'assignedGroup must be one of GES, GDS, GTS' });
+    }
+
+    const update = { role: newRole, assignedGroup: newRole === 'SVP' ? normalizedGroup : null };
     const user = await AuthorizedUser.findOneAndUpdate(
       { email: email.toLowerCase() },
       update,
@@ -571,6 +590,21 @@ app.post('/api/graph/preview-rows', verifyToken, async (req, res) => {
 
 
 
+
+app.get('/api/graph/auth/consent-url', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can view consent URL' });
+    }
+
+    const loginHint = req.query?.loginHint ? String(req.query.loginHint) : '';
+    const consentUrl = buildDelegatedConsentUrl({ loginHint });
+    res.json({ success: true, consentUrl });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/graph/auth/status', verifyToken, async (req, res) => {
   try {
     if (!['Master', 'Admin'].includes(req.user.role)) {
@@ -591,12 +625,13 @@ app.get('/api/graph/auth/status', verifyToken, async (req, res) => {
 });
 
 app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
+  const username = req.body?.username || '';
   try {
     if (req.user.role !== 'Master') {
       return res.status(403).json({ error: 'Only Master users can bootstrap Graph auth' });
     }
 
-    const { username, password } = req.body || {};
+    const { password } = req.body || {};
     if (!username || !password) {
       return res.status(400).json({ error: 'username and password are required' });
     }
@@ -626,6 +661,14 @@ app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
     if (msg.includes('AADSTS50034')) {
       return res.status(400).json({ error: 'USER_NOT_FOUND', message: 'User not found in this tenant.' });
     }
+    if (msg.includes('AADSTS65001')) {
+      const consentUrl = buildDelegatedConsentUrl({ loginHint: username });
+      return res.status(400).json({
+        error: 'CONSENT_REQUIRED',
+        message: 'This account has not granted consent to the app yet. Open consent URL and accept once, then retry bootstrap.',
+        consentUrl,
+      });
+    }
     res.status(500).json({ error: msg });
   }
 });
@@ -645,6 +688,211 @@ app.post('/api/graph/auth/clear', verifyToken, async (req, res) => {
     await config.save();
 
     res.json({ success: true, message: 'Delegated token cleared. Falling back to application auth.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+const getSystemConfig = async () => {
+  let config = await SystemConfig.findOne();
+  if (!config) config = await SystemConfig.create({});
+  return config;
+};
+
+
+app.post('/api/admin/mailbox/initiate', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can initiate mailbox auth' });
+
+    const flowData = await startDeviceCodeFlow({ scopes: mailboxDelegatedScopesString() });
+    res.json({ success: true, ...flowData });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/mailbox/finalize', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can finalize mailbox auth' });
+
+    const { deviceCode, email } = req.body || {};
+    if (!deviceCode) return res.status(400).json({ error: 'deviceCode is required' });
+
+    const tokens = await exchangeDeviceCodeForToken(deviceCode, { scopes: mailboxDelegatedScopesString() });
+    if (!tokens.refreshToken) {
+      return res.status(500).json({ error: 'No refresh token returned. Please re-run device code flow.' });
+    }
+
+    const config = await getSystemConfig();
+    if (email !== undefined) config.serviceEmail = String(email || '').trim().toLowerCase();
+    config.graphRefreshTokenEnc = protectRefreshToken(tokens.refreshToken);
+    config.graphTokenUpdatedAt = new Date();
+    config.lastUpdatedBy = req.user.email;
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, message: 'Service mailbox authenticated successfully.' });
+  } catch (error) {
+    const msg = String(error.message || error);
+    if (msg.includes('authorization_pending')) {
+      return res.status(400).json({ error: 'AUTHORIZATION_PENDING', message: 'Authorization is still pending. Complete verification and retry.' });
+    }
+    if (msg.includes('expired_token') || msg.includes('code_expired')) {
+      return res.status(400).json({ error: 'DEVICE_CODE_EXPIRED', message: 'Device code expired. Start a new authorization flow.' });
+    }
+    if (msg.includes('AADSTS65001')) {
+      return res.status(400).json({ error: 'CONSENT_REQUIRED', message: 'Consent required for this account. Complete consent on verification site and retry.' });
+    }
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.get('/api/admin/mailbox/status', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can view mailbox auth status' });
+
+    const config = await getSystemConfig();
+    res.json({
+      success: true,
+      serviceEmail: config.serviceEmail || '',
+      hasGraphRefreshToken: !!config.graphRefreshTokenEnc,
+      graphTokenUpdatedAt: config.graphTokenUpdatedAt || null,
+      lastUpdatedBy: config.lastUpdatedBy || null,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/system-config/mail', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can view mail config' });
+    const config = await getSystemConfig();
+    const payload = mapIdField(config.toObject());
+    payload.encryptedPassword = payload.encryptedPassword ? '********' : '';
+    payload.hasGraphRefreshToken = !!payload.graphRefreshTokenEnc;
+    payload.graphRefreshTokenEnc = payload.graphRefreshTokenEnc ? '********' : '';
+    res.json(payload);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/system-config/mail', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can update mail config' });
+    const { serviceEmail, smtpHost, smtpPort, smtpPassword, tenantId, clientId, clientSecret, serviceUsername } = req.body || {};
+    const config = await getSystemConfig();
+
+    if (serviceEmail !== undefined) config.serviceEmail = String(serviceEmail || '').trim().toLowerCase();
+    if (smtpHost !== undefined) config.smtpHost = String(smtpHost || '').trim();
+    if (smtpPort !== undefined) config.smtpPort = Number(smtpPort) || 587;
+    if (smtpPassword) config.encryptedPassword = encryptSecret(smtpPassword);
+    if (tenantId !== undefined) config.tenantId = String(tenantId || '').trim();
+    if (clientId !== undefined) config.clientId = String(clientId || '').trim();
+    if (clientSecret !== undefined) config.clientSecret = String(clientSecret || '').trim();
+    if (serviceUsername !== undefined) config.serviceUsername = String(serviceUsername || '').trim().toLowerCase();
+
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, config: { serviceEmail: config.serviceEmail, smtpHost: config.smtpHost, smtpPort: config.smtpPort, hasPassword: !!config.encryptedPassword, tenantId: config.tenantId, clientId: config.clientId, clientSecret: config.clientSecret ? '********' : '', serviceUsername: config.serviceUsername } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/notification-rules', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can view notification rules' });
+    const rules = await NotificationRule.find().sort({ createdAt: -1 }).lean();
+    res.json(rules.map(mapIdField));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+app.get('/api/notification-rules/preview', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can preview notification routing' });
+
+    const triggerEvent = String(req.query?.triggerEvent || 'NEW_TENDER_SYNCED');
+    const groupClassification = String(req.query?.groupClassification || '').toUpperCase();
+
+    const rules = await NotificationRule.find({ triggerEvent, recipientRole: 'SVP', isActive: true }).lean();
+    const previews = [];
+
+    for (const rule of rules) {
+      const query = { role: 'SVP', status: 'approved' };
+      if (rule.useGroupMatching && groupClassification) query.assignedGroup = groupClassification;
+      const recipients = await AuthorizedUser.find(query).lean();
+      previews.push({
+        ruleId: String(rule._id),
+        triggerEvent: rule.triggerEvent,
+        useGroupMatching: !!rule.useGroupMatching,
+        groupClassification: groupClassification || null,
+        recipients: recipients.map((r) => ({ email: r.email, assignedGroup: r.assignedGroup || null })),
+      });
+    }
+
+    res.json({ success: true, preview: previews });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/notification-rules', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can create notification rules' });
+    const payload = req.body || {};
+    const created = await NotificationRule.create({
+      triggerEvent: payload.triggerEvent || 'NEW_TENDER_SYNCED',
+      recipientRole: 'SVP',
+      useGroupMatching: payload.useGroupMatching !== false,
+      emailSubject: payload.emailSubject || 'New Tender Synced: {{tenderName}}',
+      emailBody: payload.emailBody || '<p>New tender {{tenderName}}</p>',
+      isActive: payload.isActive !== false,
+      createdBy: req.user.email,
+      updatedBy: req.user.email,
+    });
+    res.json({ success: true, rule: mapIdField(created.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/notification-rules/:id', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can update notification rules' });
+    const { id } = req.params;
+    const payload = req.body || {};
+    const update = {
+      triggerEvent: payload.triggerEvent,
+      recipientRole: 'SVP',
+      useGroupMatching: payload.useGroupMatching,
+      emailSubject: payload.emailSubject,
+      emailBody: payload.emailBody,
+      isActive: payload.isActive,
+      updatedBy: req.user.email,
+    };
+    Object.keys(update).forEach((k) => update[k] === undefined && delete update[k]);
+
+    const rule = await NotificationRule.findByIdAndUpdate(id, update, { new: true });
+    if (!rule) return res.status(404).json({ error: 'Rule not found' });
+    res.json({ success: true, rule: mapIdField(rule.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/notification-rules/:id', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can delete notification rules' });
+    const result = await NotificationRule.findByIdAndDelete(req.params.id);
+    if (!result) return res.status(404).json({ error: 'Rule not found' });
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

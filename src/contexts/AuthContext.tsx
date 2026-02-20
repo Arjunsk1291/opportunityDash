@@ -32,6 +32,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+const DEFAULT_MASTER_USERNAME = (import.meta.env.VITE_DEFAULT_MASTER_USERNAME || 'arjun.s@avenirengineering.com').toLowerCase();
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -67,16 +68,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const checkAuth = async () => {
       try {
         const savedUsername = sessionStorage.getItem('username_token');
-        if (!savedUsername) return;
+        const candidateUsername = (savedUsername || DEFAULT_MASTER_USERNAME).toLowerCase();
 
         const response = await fetch(API_URL + '/auth/verify-token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: savedUsername }),
+          body: JSON.stringify({ username: candidateUsername }),
         });
 
         if (!response.ok) {
-          sessionStorage.removeItem('username_token');
+          if (savedUsername) {
+            sessionStorage.removeItem('username_token');
+          }
           return;
         }
 
@@ -89,15 +92,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           assignedGroup: data.user.assignedGroup || null,
         };
         setUser(nextUser);
-        setToken(savedUsername);
+        setToken(candidateUsername);
         setIsPending(nextUser.status === 'pending');
+        sessionStorage.setItem('username_token', candidateUsername);
 
         if (nextUser.status === 'approved') {
           await fetch(API_URL + '/auth/login', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: 'Bearer ' + savedUsername,
+              Authorization: 'Bearer ' + candidateUsername,
             },
           });
         }
