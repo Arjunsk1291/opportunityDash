@@ -112,13 +112,13 @@ function buildRfpReceivedDisplay(year, dateValue, isoDate) {
 
 const DEFAULT_MAPPING = {
   tenderNo: ['Tender no', 'REF NO'],
-  tenderType: ['Tender Type '],
+  tenderType: ['Tender Type ', 'Type'],
   client: ['Client'],
   tenderName: ['Tender name', 'DESCRIPTION'],
   year: ['Year '],
   dateReceived: ['date tender recd', 'DATE RECEIVED'],
   lead: ['Assigned Person'],
-  value: [' Tender value '],
+  value: [' Tender value ', 'Tender value', 'TENDER VALUE', 'VALUE'],
   avenirStatus: ['AVENIR STATUS'],
   tenderResult: ['TENDER RESULT'],
   groupClassification: ['GDS/GES', 'GROUP'],
@@ -127,6 +127,7 @@ const DEFAULT_MAPPING = {
   country: ['COUNTRY', 'REGION', 'LOCATION'],
   probability: ['PROBABILITY', 'WIN %', 'CHANCE'],
   submissionDeadline: ['SUBMISSION DEADLINE', 'DUE DATE', 'TENDER PLANNED SUBMISSION DATE'],
+  tenderSubmittedDate: ['TENDER SUBMITTED DATE', 'TENDER SUBMITTED', 'SUBMITTED DATE'],
 };
 
 function findColumn(headers, candidates) {
@@ -189,6 +190,7 @@ export async function syncTendersFromGraph(config) {
     country: findColumn(headers, mapping.country),
     probability: findColumn(headers, mapping.probability),
     submissionDeadline: findColumn(headers, mapping.submissionDeadline),
+    tenderSubmittedDate: findColumn(headers, mapping.tenderSubmittedDate),
   };
 
   const tenders = [];
@@ -224,8 +226,10 @@ export async function syncTendersFromGraph(config) {
     const year = getValue(colIndices.year);
     const dateReceived = getRawValue(colIndices.dateReceived);
     const submissionDeadlineRaw = getRawValue(colIndices.submissionDeadline);
+    const tenderSubmittedRaw = getRawValue(colIndices.tenderSubmittedDate);
     const rfpDate = parseDate(year, dateReceived);
     const plannedSubmissionDate = parseDate(year, submissionDeadlineRaw);
+    const tenderSubmittedDate = parseDate(year, tenderSubmittedRaw);
     const rfpReceivedDisplay = buildRfpReceivedDisplay(year, dateReceived, rfpDate);
 
     const tender = {
@@ -240,6 +244,7 @@ export async function syncTendersFromGraph(config) {
       canonicalStage: normalizeStatus(getValue(colIndices.avenirStatus)),
       dateTenderReceived: rfpDate || null,
       tenderPlannedSubmissionDate: plannedSubmissionDate || null,
+      tenderSubmittedDate: tenderSubmittedDate || null,
       avenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
       tenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
       groupClassification: getValue(colIndices.groupClassification),
@@ -250,6 +255,7 @@ export async function syncTendersFromGraph(config) {
         dateReceived,
         rfpReceivedDisplay,
         submissionDeadlineRaw,
+        tenderSubmittedRaw,
         rowSnapshot,
       },
       syncedAt: new Date(),
