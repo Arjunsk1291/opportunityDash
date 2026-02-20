@@ -41,6 +41,10 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       || '';
   };
 
+  const getSubmissionDisplay = (tender: Opportunity) => {
+    return tender.tenderSubmittedDate || tender.tenderPlannedSubmissionDate || '';
+  };
+
   const buildSearchableText = (tender: Opportunity) => {
     const approvalSearchValue = getApprovalStatus(tender.opportunityRefNo).toLowerCase();
     const rowSnapshot = tender.rawGraphData?.rowSnapshot && typeof tender.rawGraphData.rowSnapshot === 'object'
@@ -57,6 +61,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       tender.internalLead,
       tender.opportunityValue,
       tender.avenirStatus,
+      getSubmissionDisplay(tender),
       tender.remarksReason,
       tender.tenderResult,
       approvalSearchValue,
@@ -65,16 +70,22 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     ].map((value) => String(value ?? '').toLowerCase()).join(' ');
   };
 
-  const filteredData = data.filter((tender) => {
-    const searchLower = search.toLowerCase();
-    const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
-    const allSearchable = buildSearchableText(tender);
+  const filteredData = data
+    .filter((tender) => {
+      const searchLower = search.toLowerCase();
+      const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
+      const allSearchable = buildSearchableText(tender);
 
-    const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);
-    const matchesStatus = statusFilter === 'ALL' || tender.avenirStatus?.toUpperCase() === statusFilter;
+      const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);
+      const matchesStatus = statusFilter === 'ALL' || tender.avenirStatus?.toUpperCase() === statusFilter;
 
-    return matchesSearch && matchesStatus;
-  });
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => {
+      const aTime = new Date(a.syncedAt || a.updatedAt || a.createdAt || a.dateTenderReceived || 0).getTime();
+      const bTime = new Date(b.syncedAt || b.updatedAt || b.createdAt || b.dateTenderReceived || 0).getTime();
+      return bTime - aTime;
+    });
 
   const getStatusBadge = (status: string) => {
     const upperStatus = status?.toUpperCase() || '';
@@ -141,10 +152,11 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
               <TableRow>
                 <TableHead className="w-24">Ref No.</TableHead>
                 <TableHead className="min-w-[200px]">Tender Name</TableHead>
-                <TableHead>Type</TableHead>
+                <TableHead>Tender Type</TableHead>
                 <TableHead>Client</TableHead>
                 <TableHead>Group</TableHead>
                 <TableHead className="font-bold">RFP Received</TableHead>
+                <TableHead className="font-bold">Submission</TableHead>
                 <TableHead>Lead</TableHead>
                 <TableHead className="text-right">Value</TableHead>
                 <TableHead>AVENIR STATUS</TableHead>
@@ -155,7 +167,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.slice(0, 50).map((tender) => {
+              {filteredData.map((tender) => {
                 const approvalStatus = getApprovalStatus(tender.opportunityRefNo);
                 const approvalState = getApprovalState(tender.opportunityRefNo);
                 return (
@@ -178,6 +190,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                       <Badge variant="outline" className="text-xs font-mono">{tender.groupClassification || '—'}</Badge>
                     </TableCell>
                     <TableCell className="font-bold text-sm">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
+                    <TableCell className="font-bold text-sm">{getSubmissionDisplay(tender) || '—'}</TableCell>
                     <TableCell>{tender.internalLead || 'Unassigned'}</TableCell>
                     <TableCell className="text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
                     <TableCell>
@@ -247,7 +260,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
           </Table>
         </div>
         <div className="p-3 text-xs text-muted-foreground border-t">
-          Showing {Math.min(filteredData.length, 50)} of {filteredData.length} tenders
+          Showing latest first: {filteredData.length} of {data.length} tenders (scroll to view all)
         </div>
       </CardContent>
     </Card>
