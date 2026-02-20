@@ -13,11 +13,12 @@ const authorizedUserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+    enum: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'MASTER', 'PROPOSAL_HEAD'],
     required: true,
   },
   assignedGroup: {
     type: String,
+    enum: ['GES', 'GDS', 'GTS', null],
     default: null,
   },
   status: {
@@ -41,6 +42,13 @@ const authorizedUserSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+});
+
+authorizedUserSchema.pre('save', function enforceSvpGroup(next) {
+  if (this.role === 'SVP' && !this.assignedGroup) {
+    return next(new Error('assignedGroup is required for SVP users'));
+  }
+  return next();
 });
 
 export default mongoose.model('AuthorizedUser', authorizedUserSchema);

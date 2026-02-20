@@ -1,7 +1,5 @@
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import {
   BarChart,
   Bar,
@@ -14,17 +12,13 @@ import {
   Pie,
   Cell,
   Legend,
-  LineChart,
-  Line,
   AreaChart,
   Area,
 } from 'recharts';
-import { TrendingUp, Users, Building2, Target, Calendar, DollarSign } from 'lucide-react';
+import { Building2, Target, Calendar, DollarSign } from 'lucide-react';
 import { 
-  calculateSummaryStats, 
-  getLeaderboardData, 
+  calculateSummaryStats,
   getClientData,
-  STAGE_ORDER 
 } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
@@ -33,10 +27,9 @@ const COLORS = ['hsl(199, 89%, 48%)', 'hsl(38, 92%, 50%)', 'hsl(262, 83%, 58%)',
 
 const Analytics = () => {
   const { opportunities } = useData();
-  const { formatCurrency, convertValue } = useCurrency();
+  const { convertValue } = useCurrency();
   
   const stats = useMemo(() => calculateSummaryStats(opportunities), [opportunities]);
-  const leaderData = useMemo(() => getLeaderboardData(opportunities), [opportunities]);
   const clientData = useMemo(() => getClientData(opportunities), [opportunities]);
 
   // Stage distribution
@@ -86,16 +79,6 @@ const Analytics = () => {
         value: data.value / 1000000,
       }));
   }, [opportunities]);
-
-  // Win/Loss by lead
-  const leadPerformance = useMemo(() => {
-    return leaderData.slice(0, 8).map(l => ({
-      name: l.name,
-      won: l.won,
-      lost: l.lost,
-      winRate: l.winRate,
-    }));
-  }, [leaderData]);
 
   // ✅ UPDATED: Format currency as AED
   const formatCurrencyAED = (value: number) => {
@@ -153,7 +136,7 @@ const Analytics = () => {
       </div>
 
       {/* Charts Row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         {/* Stage Distribution Pie */}
         <Card>
           <CardHeader>
@@ -242,30 +225,7 @@ const Analytics = () => {
           </CardContent>
         </Card>
 
-        {/* Lead Performance */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" />
-              Lead Win/Loss Performance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={leadPerformance}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="won" name="Won" fill="hsl(142, 76%, 36%)" stackId="a" />
-                  <Bar dataKey="lost" name="Lost" fill="hsl(0, 84%, 60%)" stackId="a" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+
       </div>
 
       {/* Top Clients */}
