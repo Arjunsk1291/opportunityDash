@@ -42,8 +42,8 @@ export default function Login() {
       setError(null);
       await loginWithUsername(username);
       navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Failed to sign in. Please try again.');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to sign in. Please try again.'));
     } finally {
       setIsSigningIn(false);
     }

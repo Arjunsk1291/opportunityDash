@@ -170,7 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const response = await fetch(API_URL + '/users/authorized', { headers: authHeaders() });
     if (!response.ok) return;
     const data = await response.json();
-    setAllUsers(data.map((u: any) => ({
+    setAllUsers((data as AuthorizedUserResponse[]).map((u) => ({
       id: u.id || u._id,
       email: u.email,
       displayName: u.displayName || u.email,

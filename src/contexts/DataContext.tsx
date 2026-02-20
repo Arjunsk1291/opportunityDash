@@ -51,9 +51,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       console.log('✅ Loaded ' + data.length + ' opportunities from MongoDB');
       
       // ✅ UPDATED: Filter out opportunities with empty opportunityRefNo
-      const validData = data.filter((opp: any) => opp.opportunityRefNo && opp.opportunityRefNo.trim() !== '');
+      const validData = (data as OpportunityApiRecord[]).filter((opp) => opp.opportunityRefNo && opp.opportunityRefNo.trim() !== '');
       
-      const dataWithIds = validData.map((opp: any) => ({
+      const dataWithIds = validData.map((opp) => ({
         ...opp,
         id: opp.id || opp._id || opp.opportunityRefNo,
         isAtRisk: computeSubmissionNear(opp),
@@ -64,11 +64,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         console.log(`⚠️  Filtered out ${data.length - validData.length} opportunities with empty refNo`);
       }
       
-      setOpportunities(dataWithIds);
+      setOpportunities(dataWithIds as Opportunity[]);
       setLastSyncTime(new Date());
       setError(null);
-    } catch (err: any) {
-      const errorMsg = 'Failed to load data: ' + err.message;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      const errorMsg = 'Failed to load data: ' + message;
       console.error('❌', errorMsg);
       setError(errorMsg);
       setOpportunities([]);
