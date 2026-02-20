@@ -59,6 +59,15 @@ interface MailConfig {
   clientId?: string;
   clientSecret?: string;
   serviceUsername?: string;
+  envManagedConfidential?: { tenantId: boolean; clientId: boolean; clientSecret: boolean };
+}
+
+interface NotificationPreviewItem {
+  ruleId: string;
+  triggerEvent: string;
+  useGroupMatching: boolean;
+  groupClassification: string | null;
+  recipients: Array<{ email: string; assignedGroup: string | null }>;
 }
 
 interface NotificationRule {
@@ -123,6 +132,8 @@ export default function Admin() {
   const [mailboxAuthFlow, setMailboxAuthFlow] = useState<MailboxAuthFlow | null>(null);
   const [mailboxAuthStatus, setMailboxAuthStatus] = useState<{ hasGraphRefreshToken: boolean; graphTokenUpdatedAt?: string | null; lastUpdatedBy?: string | null }>({ hasGraphRefreshToken: false });
   const [notificationRules, setNotificationRules] = useState<NotificationRule[]>([]);
+  const [notificationPreview, setNotificationPreview] = useState<NotificationPreviewItem[]>([]);
+  const [previewGroup, setPreviewGroup] = useState('GTS');
   const [newRule, setNewRule] = useState<NotificationRule>({
     triggerEvent: 'NEW_TENDER_SYNCED',
     recipientRole: 'SVP',
@@ -142,6 +153,7 @@ export default function Admin() {
       loadMailConfig();
       loadNotificationRules();
       loadMailboxAuthStatus();
+      loadNotificationPreview('GTS');
     }
   }, [isMaster, token]);
 
@@ -684,6 +696,7 @@ export default function Admin() {
       const response = await fetch(API_URL + '/system-config/mail', { headers: { Authorization: 'Bearer ' + token } });
       if (!response.ok) return;
       const data = await response.json();
+      setMailConfig((prev) => ({ ...prev, serviceEmail: data.serviceEmail || '', smtpHost: data.smtpHost || '', smtpPort: data.smtpPort || 587, smtpPassword: '', tenantId: data.tenantId || '', clientId: data.clientId || '', clientSecret: '', serviceUsername: data.serviceUsername || '', envManagedConfidential: data.envManagedConfidential || { tenantId: false, clientId: false, clientSecret: false } }));
       setMailConfig((prev) => ({ ...prev, serviceEmail: data.serviceEmail || '', smtpHost: data.smtpHost || '', smtpPort: data.smtpPort || 587, smtpPassword: '', tenantId: data.tenantId || '', clientId: data.clientId || '', clientSecret: '', serviceUsername: data.serviceUsername || '' }));
     } catch (error) {
       console.error('Failed to load mail config:', error);
@@ -716,6 +729,20 @@ export default function Admin() {
       setNotificationRules(data || []);
     } catch (error) {
       console.error('Failed to load notification rules:', error);
+    }
+  };
+
+  const loadNotificationPreview = async (groupClassification?: string) => {
+    if (!token) return;
+    try {
+      const group = (groupClassification || previewGroup || '').toUpperCase();
+      const query = new URLSearchParams({ triggerEvent: 'NEW_TENDER_SYNCED', groupClassification: group }).toString();
+      const response = await fetch(API_URL + '/notification-rules/preview?' + query, { headers: { Authorization: 'Bearer ' + token } });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to preview routing');
+      setNotificationPreview(data.preview || []);
+    } catch (error) {
+      setMessage({ type: 'error', text: '❌ Failed to preview notification routing: ' + (error as Error).message });
     }
   };
 
@@ -1297,6 +1324,14 @@ export default function Admin() {
                       <li>Service Account Password: mailbox password (stored encrypted)</li>
                     </ul>
                   </div>
+                  {(mailConfig.envManagedConfidential?.tenantId || mailConfig.envManagedConfidential?.clientId || mailConfig.envManagedConfidential?.clientSecret) && (
+                    <div className="rounded border p-2 text-xs text-muted-foreground">
+                      Confidential client fields are <strong>Managed by System (.env)</strong> and take precedence over UI values.
+                    </div>
+                  )}
+                  <Input placeholder="Tenant ID" value={mailConfig.tenantId || ''} disabled={!!mailConfig.envManagedConfidential?.tenantId} onChange={(e) => setMailConfig((p) => ({ ...p, tenantId: e.target.value }))} />
+                  <Input placeholder="Client ID" value={mailConfig.clientId || ''} disabled={!!mailConfig.envManagedConfidential?.clientId} onChange={(e) => setMailConfig((p) => ({ ...p, clientId: e.target.value }))} />
+                  <Input type="password" placeholder="Client Secret" value={mailConfig.clientSecret || ''} disabled={!!mailConfig.envManagedConfidential?.clientSecret} onChange={(e) => setMailConfig((p) => ({ ...p, clientSecret: e.target.value }))} />
                   <Input placeholder="Tenant ID" value={mailConfig.tenantId || ''} onChange={(e) => setMailConfig((p) => ({ ...p, tenantId: e.target.value }))} />
                   <Input placeholder="Client ID" value={mailConfig.clientId || ''} onChange={(e) => setMailConfig((p) => ({ ...p, clientId: e.target.value }))} />
                   <Input type="password" placeholder="Client Secret" value={mailConfig.clientSecret || ''} onChange={(e) => setMailConfig((p) => ({ ...p, clientSecret: e.target.value }))} />
@@ -1306,6 +1341,29 @@ export default function Admin() {
                   <Button onClick={saveMailConfig}>Save Microsoft Graph API Integration</Button>
                 </TabsContent>
                 <TabsContent value="rules" className="space-y-3">
+                  <div className="rounded border p-3 text-xs text-muted-foreground">
+                    <p className="font-semibold text-foreground mb-1">Notification Rule Guide (easy setup)</p>
+                    <ol className="list-decimal list-inside space-y-1">
+                      <li><strong>Trigger:</strong> NEW_TENDER_SYNCED = email after Graph sync inserts tenders.</li>
+                      <li><strong>Recipient Role:</strong> SVP users only.</li>
+                      <li><strong>Group Matching:</strong> ON = only SVPs whose assignedGroup matches tender.groupClassification.</li>
+                      <li><strong>Email Subject/Body:</strong> Use placeholders below. Final email content is sent in bold for visibility.</li>
+                    </ol>
+                  </div>
+                  <Input placeholder="Email Subject" value={newRule.emailSubject} onChange={(e) => setNewRule((p) => ({ ...p, emailSubject: e.target.value }))} />
+                  <Textarea placeholder="Email HTML Body" value={newRule.emailBody} onChange={(e) => setNewRule((p) => ({ ...p, emailBody: e.target.value }))} />
+                  <div className="flex gap-2">
+                    <Button onClick={createNotificationRule}>Create Rule</Button>
+                    <Input className="max-w-[130px]" placeholder="Group (GTS)" value={previewGroup} onChange={(e) => setPreviewGroup(e.target.value.toUpperCase())} />
+                    <Button variant="outline" onClick={() => loadNotificationPreview(previewGroup)}>Preview Who Gets Email</Button>
+                  </div>
+                  <div className="space-y-2">
+                    {notificationPreview.map((item) => (
+                      <div key={item.ruleId} className="border rounded p-3 text-xs">
+                        <p className="font-semibold">Trigger: {item.triggerEvent} • Group: {item.groupClassification || 'Any'} • Matching: {item.useGroupMatching ? 'On' : 'Off'}</p>
+                        <p className="text-muted-foreground mt-1">Recipients: {item.recipients.length ? item.recipients.map((r) => `${r.email}${r.assignedGroup ? ` (${r.assignedGroup})` : ''}`).join(', ') : 'No recipients matched'}</p>
+                      </div>
+                    ))}
                   <Input placeholder="Email Subject" value={newRule.emailSubject} onChange={(e) => setNewRule((p) => ({ ...p, emailSubject: e.target.value }))} />
                   <Textarea placeholder="Email HTML Body" value={newRule.emailBody} onChange={(e) => setNewRule((p) => ({ ...p, emailBody: e.target.value }))} />
                   <Button onClick={createNotificationRule}>Create Rule</Button>
@@ -1322,6 +1380,11 @@ export default function Admin() {
                   </div>
                 </TabsContent>
                 <TabsContent value="templates" className="space-y-3">
+                  <div className="rounded border p-3 text-xs text-muted-foreground">
+                    <p className="font-semibold text-foreground">Available placeholders</p>
+                    <p>{'{{tenderName}}'}, {'{{value}}'}, {'{{refNo}}'}, {'{{groupClassification}}'}, {'{{clientName}}'}, {'{{tenderType}}'}, {'{{internalLead}}'}, {'{{country}}'}, {'{{probability}}'}, {'{{avenirStatus}}'}, {'{{tenderResult}}'}, {'{{submissionDate}}'}, {'{{rfpReceivedDate}}'}</p>
+                    <p className="mt-1">Tip: keep HTML simple and readable. System wraps final content in bold for high visibility.</p>
+                  </div>
                   <p className="text-sm text-muted-foreground">Use placeholders: {'{{tenderName}}'}, {'{{value}}'}, {'{{refNo}}'}, {'{{groupClassification}}'}</p>
                   <Textarea value={newRule.emailBody} onChange={(e) => setNewRule((p) => ({ ...p, emailBody: e.target.value }))} className="min-h-[220px]" />
                 </TabsContent>

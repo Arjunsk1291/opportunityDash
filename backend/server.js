@@ -773,6 +773,11 @@ app.get('/api/system-config/mail', verifyToken, async (req, res) => {
     payload.encryptedPassword = payload.encryptedPassword ? '********' : '';
     payload.hasGraphRefreshToken = !!payload.graphRefreshTokenEnc;
     payload.graphRefreshTokenEnc = payload.graphRefreshTokenEnc ? '********' : '';
+    payload.envManagedConfidential = {
+      tenantId: !!process.env.GRAPH_TENANT_ID,
+      clientId: !!(process.env.AZURE_CLIENT_ID || process.env.GRAPH_CLIENT_ID),
+      clientSecret: !!(process.env.CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET || process.env.GRAPH_CLIENT_SECRET),
+    };
     res.json(payload);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -789,6 +794,9 @@ app.put('/api/system-config/mail', verifyToken, async (req, res) => {
     if (smtpHost !== undefined) config.smtpHost = String(smtpHost || '').trim();
     if (smtpPort !== undefined) config.smtpPort = Number(smtpPort) || 587;
     if (smtpPassword) config.encryptedPassword = encryptSecret(smtpPassword);
+    if (!process.env.GRAPH_TENANT_ID && tenantId !== undefined) config.tenantId = String(tenantId || '').trim();
+    if (!(process.env.AZURE_CLIENT_ID || process.env.GRAPH_CLIENT_ID) && clientId !== undefined) config.clientId = String(clientId || '').trim();
+    if (!(process.env.CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET || process.env.GRAPH_CLIENT_SECRET) && clientSecret !== undefined) config.clientSecret = String(clientSecret || '').trim();
     if (tenantId !== undefined) config.tenantId = String(tenantId || '').trim();
     if (clientId !== undefined) config.clientId = String(clientId || '').trim();
     if (clientSecret !== undefined) config.clientSecret = String(clientSecret || '').trim();
@@ -808,6 +816,36 @@ app.get('/api/notification-rules', verifyToken, async (req, res) => {
     if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can view notification rules' });
     const rules = await NotificationRule.find().sort({ createdAt: -1 }).lean();
     res.json(rules.map(mapIdField));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+app.get('/api/notification-rules/preview', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can preview notification routing' });
+
+    const triggerEvent = String(req.query?.triggerEvent || 'NEW_TENDER_SYNCED');
+    const groupClassification = String(req.query?.groupClassification || '').toUpperCase();
+
+    const rules = await NotificationRule.find({ triggerEvent, recipientRole: 'SVP', isActive: true }).lean();
+    const previews = [];
+
+    for (const rule of rules) {
+      const query = { role: 'SVP', status: 'approved' };
+      if (rule.useGroupMatching && groupClassification) query.assignedGroup = groupClassification;
+      const recipients = await AuthorizedUser.find(query).lean();
+      previews.push({
+        ruleId: String(rule._id),
+        triggerEvent: rule.triggerEvent,
+        useGroupMatching: !!rule.useGroupMatching,
+        groupClassification: groupClassification || null,
+        recipients: recipients.map((r) => ({ email: r.email, assignedGroup: r.assignedGroup || null })),
+      });
+    }
+
+    res.json({ success: true, preview: previews });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
