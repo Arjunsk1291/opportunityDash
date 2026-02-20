@@ -3,6 +3,24 @@ import { Opportunity } from '@/data/opportunityData';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
+type OpportunityApiRecord = Partial<Opportunity> & {
+  _id?: string;
+  id?: string;
+  opportunityRefNo?: string;
+};
+
+function computeSubmissionNear(opp: Partial<Opportunity>): boolean {
+  const raw = opp?.tenderSubmittedDate || opp?.tenderPlannedSubmissionDate;
+  if (!raw) return false;
+  const target = new Date(raw);
+  if (Number.isNaN(target.getTime())) return false;
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  target.setHours(0,0,0,0);
+  const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  return diffDays >= 0 && diffDays <= 7;
+}
+
 interface DataContextType {
   opportunities: Opportunity[];
   isLoading: boolean;
@@ -39,11 +57,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       console.log('✅ Loaded ' + data.length + ' opportunities from MongoDB');
       
       // ✅ UPDATED: Filter out opportunities with empty opportunityRefNo
-      const validData = data.filter((opp: any) => opp.opportunityRefNo && opp.opportunityRefNo.trim() !== '');
+      const validData = (data as OpportunityApiRecord[]).filter((opp) => opp.opportunityRefNo && opp.opportunityRefNo.trim() !== '');
       
-      const dataWithIds = validData.map((opp: any) => ({
+      const dataWithIds = validData.map((opp) => ({
         ...opp,
         id: opp.id || opp._id || opp.opportunityRefNo,
+        isAtRisk: computeSubmissionNear(opp),
       }));
       
       // Log filtered count
@@ -51,11 +70,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         console.log(`⚠️  Filtered out ${data.length - validData.length} opportunities with empty refNo`);
       }
       
-      setOpportunities(dataWithIds);
+      setOpportunities(dataWithIds as Opportunity[]);
       setLastSyncTime(new Date());
       setError(null);
-    } catch (err: any) {
-      const errorMsg = 'Failed to load data: ' + err.message;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      const errorMsg = 'Failed to load data: ' + message;
       console.error('❌', errorMsg);
       setError(errorMsg);
       setOpportunities([]);

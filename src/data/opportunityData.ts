@@ -76,15 +76,17 @@ export const PROBABILITY_BY_STAGE: Record<string, number> = {
 };
 
 export function calculateSummaryStats(data: Opportunity[]) {
-  const isSubmissionNear = (receivedDate: string | null): boolean => {
-    if (!receivedDate) return false;
-    
-    const received = new Date(receivedDate);
+  const isSubmissionNear = (submissionDate: string | null): boolean => {
+    if (!submissionDate) return false;
+
+    const target = new Date(submissionDate);
+    if (Number.isNaN(target.getTime())) return false;
+
     const today = new Date();
-    const oneWeekAfterReceived = new Date(received);
-    oneWeekAfterReceived.setDate(received.getDate() + 7);
-    
-    const diffDays = Math.ceil((oneWeekAfterReceived.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    today.setHours(0, 0, 0, 0);
+    target.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     return diffDays >= 0 && diffDays <= 7;
   };
 
@@ -116,7 +118,7 @@ export function calculateSummaryStats(data: Opportunity[]) {
   const ongoingCount = ongoingOpps.length;
   const ongoingValue = ongoingOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
 
-  const submissionNearOpps = data.filter(o => isSubmissionNear(o.dateTenderReceived));
+  const submissionNearOpps = data.filter(o => isSubmissionNear(o.tenderSubmittedDate || o.tenderPlannedSubmissionDate));
   const submissionNearCount = submissionNearOpps.length;
 
   return {

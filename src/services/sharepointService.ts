@@ -149,10 +149,10 @@ class SharePointService {
   /**
    * Map Excel row to our TypeScript interface
    */
-  private mapExcelRowToInterface(row: any): ExcelRow {
+  private mapExcelRowToInterface(row: Record<string, unknown>): ExcelRow {
     return {
-      srNo: parseInt(row['Sr.no']) || 0,
-      year: parseInt(row['Year']) || new Date().getFullYear(),
+      srNo: parseInt(String(row['Sr.no'] ?? ''), 10) || 0,
+      year: parseInt(String(row['Year'] ?? ''), 10) || new Date().getFullYear(),
       tenderNo: row['Tender no'] || '',
       tenderName: row['Tender name'] || '',
       client: row['Client'] || '',
@@ -171,10 +171,10 @@ class SharePointService {
       tenderResult: row['TENDER RESULT'] || null,
       tenderStatus: row['TENDER STATUS -'] || null,
       currency: row['Currency, USD/AED'] || null,
-      gmPercent: parseFloat(row['GM%']) || null,
-      tenderValue: parseFloat(row[' Tender value ']) || null,
-      subContractValue: parseFloat(row['Sub-contract value']) || null,
-      gmValue: parseFloat(row['GM Value']) || null,
+      gmPercent: parseFloat(String(row['GM%'] ?? '')) || null,
+      tenderValue: parseFloat(String(row[' Tender value '] ?? '')) || null,
+      subContractValue: parseFloat(String(row['Sub-contract value'] ?? '')) || null,
+      gmValue: parseFloat(String(row['GM Value'] ?? '')) || null,
       goPercent: row['Go%'] || null,
       getPercent: row['Get %'] || null,
       goGetPercent: row['GO/Get %'] || null,
