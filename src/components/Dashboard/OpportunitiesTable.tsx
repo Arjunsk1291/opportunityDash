@@ -41,6 +41,10 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       || '';
   };
 
+  const getSubmissionDisplay = (tender: Opportunity) => {
+    return tender.tenderSubmittedDate || tender.tenderPlannedSubmissionDate || '';
+  };
+
   const buildSearchableText = (tender: Opportunity) => {
     const approvalSearchValue = getApprovalStatus(tender.opportunityRefNo).toLowerCase();
     const rowSnapshot = tender.rawGraphData?.rowSnapshot && typeof tender.rawGraphData.rowSnapshot === 'object'
@@ -57,6 +61,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       tender.internalLead,
       tender.opportunityValue,
       tender.avenirStatus,
+      getSubmissionDisplay(tender),
       tender.remarksReason,
       tender.tenderResult,
       approvalSearchValue,
@@ -151,6 +156,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                 <TableHead>Client</TableHead>
                 <TableHead>Group</TableHead>
                 <TableHead className="font-bold">RFP Received</TableHead>
+                <TableHead className="font-bold">Submission</TableHead>
                 <TableHead>Lead</TableHead>
                 <TableHead className="text-right">Value</TableHead>
                 <TableHead>AVENIR STATUS</TableHead>
@@ -184,6 +190,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                       <Badge variant="outline" className="text-xs font-mono">{tender.groupClassification || '—'}</Badge>
                     </TableCell>
                     <TableCell className="font-bold text-sm">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
+                    <TableCell className="font-bold text-sm">{getSubmissionDisplay(tender) || '—'}</TableCell>
                     <TableCell>{tender.internalLead || 'Unassigned'}</TableCell>
                     <TableCell className="text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
                     <TableCell>

@@ -1287,6 +1287,16 @@ export default function Admin() {
                       </div>
                     )}
                   </div>
+                  <div className="rounded border p-3 text-xs text-muted-foreground">
+                    Fill these fields from your Azure App Registration + service mailbox:
+                    <ul className="list-disc list-inside mt-1">
+                      <li>Tenant ID: Directory (tenant) ID</li>
+                      <li>Client ID: Application (client) ID</li>
+                      <li>Client Secret: Secret VALUE (not Secret ID)</li>
+                      <li>Service Username: tender-notify@avenirengineering.com</li>
+                      <li>Service Account Password: mailbox password (stored encrypted)</li>
+                    </ul>
+                  </div>
                   <Input placeholder="Tenant ID" value={mailConfig.tenantId || ''} onChange={(e) => setMailConfig((p) => ({ ...p, tenantId: e.target.value }))} />
                   <Input placeholder="Client ID" value={mailConfig.clientId || ''} onChange={(e) => setMailConfig((p) => ({ ...p, clientId: e.target.value }))} />
                   <Input type="password" placeholder="Client Secret" value={mailConfig.clientSecret || ''} onChange={(e) => setMailConfig((p) => ({ ...p, clientSecret: e.target.value }))} />

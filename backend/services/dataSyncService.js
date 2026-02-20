@@ -127,11 +127,18 @@ const DEFAULT_MAPPING = {
   country: ['COUNTRY', 'REGION', 'LOCATION'],
   probability: ['PROBABILITY', 'WIN %', 'CHANCE'],
   submissionDeadline: ['SUBMISSION DEADLINE', 'DUE DATE', 'TENDER PLANNED SUBMISSION DATE'],
-  tenderSubmittedDate: ['TENDER SUBMITTED DATE', 'TENDER SUBMITTED', 'SUBMITTED DATE'],
+  tenderSubmittedDate: ['TENDER SUBMITTED DATE', 'TENDER SUBMITTED', 'TENDER  SUBMITTED', 'SUBMITTED DATE'],
 };
 
+function normalizeHeader(value) {
+  return String(value || '').toUpperCase().replace(/\s+/g, ' ').trim();
+}
+
 function findColumn(headers, candidates) {
-  return headers.findIndex((h) => candidates.some((candidate) => h.includes(candidate.toUpperCase())));
+  return headers.findIndex((h) => {
+    const normalizedHeader = normalizeHeader(h);
+    return candidates.some((candidate) => normalizedHeader.includes(normalizeHeader(candidate)));
+  });
 }
 
 function resolveMapping(fieldMapping = {}) {
