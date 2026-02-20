@@ -696,8 +696,8 @@ export default function Admin() {
       const response = await fetch(API_URL + '/system-config/mail', { headers: { Authorization: 'Bearer ' + token } });
       if (!response.ok) return;
       const data = await response.json();
-      setMailConfig((prev) => ({ ...prev, serviceEmail: data.serviceEmail || '', smtpHost: data.smtpHost || '', smtpPort: data.smtpPort || 587, smtpPassword: '', tenantId: data.tenantId || '', clientId: data.clientId || '', clientSecret: '', serviceUsername: data.serviceUsername || '', envManagedConfidential: data.envManagedConfidential || { tenantId: false, clientId: false, clientSecret: false } }));
-      setMailConfig((prev) => ({ ...prev, serviceEmail: data.serviceEmail || '', smtpHost: data.smtpHost || '', smtpPort: data.smtpPort || 587, smtpPassword: '', tenantId: data.tenantId || '', clientId: data.clientId || '', clientSecret: '', serviceUsername: data.serviceUsername || '' }));
+      setMailConfig((prev) => ({ ...prev, ...(data || {}), clientSecret: '', serviceUsername: data.serviceUsername || '' }));
+      setMailConfig((prev) => ({ ...prev, ...(data || {}), clientSecret: '', serviceUsername: data.serviceUsername || '' }));
     } catch (error) {
       console.error('Failed to load mail config:', error);
     }
@@ -1336,7 +1336,8 @@ export default function Admin() {
                   <Input placeholder="Client ID" value={mailConfig.clientId || ''} onChange={(e) => setMailConfig((p) => ({ ...p, clientId: e.target.value }))} />
                   <Input type="password" placeholder="Client Secret" value={mailConfig.clientSecret || ''} onChange={(e) => setMailConfig((p) => ({ ...p, clientSecret: e.target.value }))} />
                   <Input placeholder="Service Username (tender-notify@...)" value={mailConfig.serviceUsername || ''} onChange={(e) => setMailConfig((p) => ({ ...p, serviceUsername: e.target.value }))} />
-                  <Input placeholder="Service Email (optional display/from)" value={mailConfig.serviceEmail} onChange={(e) => setMailConfig((p) => ({ ...p, serviceEmail: e.target.value }))} />
+                  <Input value={mailConfig.serviceEmail} onChange={(e) => setMailConfig((p) => ({ ...p, serviceEmail: e.target.value }))} />                  <Input value={mailConfig.serviceEmail} onChange={(e) => setMailConfig((p) => ({ ...p, serviceEmail: e.target.value }))} />
+                  <Input value={mailConfig.serviceEmail} onChange={(e) => setMailConfig((p) => ({ ...p, serviceEmail: e.target.value }))} />
                   <Input type="password" placeholder="Service Account Password" value={mailConfig.smtpPassword || ''} onChange={(e) => setMailConfig((p) => ({ ...p, smtpPassword: e.target.value }))} />
                   <Button onClick={saveMailConfig}>Save Microsoft Graph API Integration</Button>
                 </TabsContent>
@@ -1351,7 +1352,7 @@ export default function Admin() {
                     </ol>
                   </div>
                   <Input placeholder="Email Subject" value={newRule.emailSubject} onChange={(e) => setNewRule((p) => ({ ...p, emailSubject: e.target.value }))} />
-                  <Textarea placeholder="Email HTML Body" value={newRule.emailBody} onChange={(e) => setNewRule((p) => ({ ...p, emailBody: e.target.value }))} />
+                  <Textarea value={newRule.emailBody} onChange={(e) => setNewRule((p) => ({ ...p, emailBody: e.target.value }))} className="min-h-[220px]" />
                   <div className="flex gap-2">
                     <Button onClick={createNotificationRule}>Create Rule</Button>
                     <Input className="max-w-[130px]" placeholder="Group (GTS)" value={previewGroup} onChange={(e) => setPreviewGroup(e.target.value.toUpperCase())} />
@@ -1365,7 +1366,7 @@ export default function Admin() {
                       </div>
                     ))}
                   <Input placeholder="Email Subject" value={newRule.emailSubject} onChange={(e) => setNewRule((p) => ({ ...p, emailSubject: e.target.value }))} />
-                  <Textarea placeholder="Email HTML Body" value={newRule.emailBody} onChange={(e) => setNewRule((p) => ({ ...p, emailBody: e.target.value }))} />
+                  <Textarea value={newRule.emailBody} onChange={(e) => setNewRule((p) => ({ ...p, emailBody: e.target.value }))} className="min-h-[220px]" />
                   <Button onClick={createNotificationRule}>Create Rule</Button>
                   <div className="space-y-2">
                     {notificationRules.map((rule) => (
