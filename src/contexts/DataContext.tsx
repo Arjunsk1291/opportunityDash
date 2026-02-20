@@ -3,13 +3,7 @@ import { Opportunity } from '@/data/opportunityData';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
-type OpportunityApiRecord = Partial<Opportunity> & {
-  _id?: string;
-  id?: string;
-  opportunityRefNo?: string;
-};
-
-function computeSubmissionNear(opp: Partial<Opportunity>): boolean {
+function computeSubmissionNear(opp: any): boolean {
   const raw = opp?.tenderSubmittedDate || opp?.tenderPlannedSubmissionDate;
   if (!raw) return false;
   const target = new Date(raw);

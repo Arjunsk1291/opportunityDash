@@ -9,13 +9,6 @@ import { AlertCircle, Loader2 } from 'lucide-react';
 
 const DEFAULT_MASTER_USERNAME = (import.meta.env.VITE_DEFAULT_MASTER_USERNAME || 'arjun.s@avenirengineering.com').toLowerCase();
 
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallback;
-}
-
 export default function Login() {
   const navigate = useNavigate();
   const { isAuthenticated, isLoading, loginWithUsername } = useAuth();
@@ -35,8 +28,8 @@ export default function Login() {
       setError(null);
       await loginWithUsername(DEFAULT_MASTER_USERNAME);
       navigate('/');
-    } catch (err) {
-      setError(getErrorMessage(err, 'Failed to enter as default master user.'));
+    } catch (err: any) {
+      setError(err.message || 'Failed to enter as default master user.');
     } finally {
       setIsSigningIn(false);
     }
