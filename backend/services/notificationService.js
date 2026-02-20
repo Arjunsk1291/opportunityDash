@@ -49,7 +49,7 @@ export async function notifySvpsForNewTenders(tenders) {
               html,
             });
           } catch (error) {
-            console.error(`Notification email failed for ${recipient.email}:`, error.message);
+            console.error(`Notification email failed for ${recipient.email}:`, error.code || 'UNKNOWN', error.message);
           }
         }
       } catch (error) {

@@ -55,6 +55,10 @@ interface MailConfig {
   smtpHost: string;
   smtpPort: number;
   smtpPassword?: string;
+  tenantId?: string;
+  clientId?: string;
+  clientSecret?: string;
+  serviceUsername?: string;
 }
 
 interface NotificationRule {
@@ -680,7 +684,7 @@ export default function Admin() {
       const response = await fetch(API_URL + '/system-config/mail', { headers: { Authorization: 'Bearer ' + token } });
       if (!response.ok) return;
       const data = await response.json();
-      setMailConfig((prev) => ({ ...prev, serviceEmail: data.serviceEmail || '', smtpHost: data.smtpHost || '', smtpPort: data.smtpPort || 587, smtpPassword: '' }));
+      setMailConfig((prev) => ({ ...prev, serviceEmail: data.serviceEmail || '', smtpHost: data.smtpHost || '', smtpPort: data.smtpPort || 587, smtpPassword: '', tenantId: data.tenantId || '', clientId: data.clientId || '', clientSecret: '', serviceUsername: data.serviceUsername || '' }));
     } catch (error) {
       console.error('Failed to load mail config:', error);
     }
@@ -1251,18 +1255,18 @@ export default function Admin() {
           <Card>
             <CardHeader>
               <CardTitle>Communication Center</CardTitle>
-              <CardDescription>Master-only SMTP, Notification Rules, and Template Editor</CardDescription>
+              <CardDescription>Master-only Microsoft Graph API integration, Notification Rules, and Template Editor</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <Tabs defaultValue="smtp" className="w-full">
                 <TabsList>
-                  <TabsTrigger value="smtp">SMTP Server Settings</TabsTrigger>
+                  <TabsTrigger value="smtp">Microsoft Graph API Integration</TabsTrigger>
                   <TabsTrigger value="rules">Notification Rules</TabsTrigger>
                   <TabsTrigger value="templates">Template Editor</TabsTrigger>
                 </TabsList>
                 <TabsContent value="smtp" className="space-y-3">
                   <div className="border rounded p-3 space-y-2 text-sm">
-                    <p className="font-medium">Service Mailbox (URI-free Device Code Flow)</p>
+                    <p className="font-medium">Service Mailbox (URI-free Device Code Flow) + ROPC Graph Credentials</p>
                     <p className="text-xs text-muted-foreground">
                       Status: {mailboxAuthStatus.hasGraphRefreshToken ? '✅ Connected' : '❌ Not connected'}
                       {mailboxAuthStatus.graphTokenUpdatedAt ? ` • updated ${new Date(mailboxAuthStatus.graphTokenUpdatedAt).toLocaleString()}` : ''}
@@ -1283,11 +1287,13 @@ export default function Admin() {
                       </div>
                     )}
                   </div>
-                  <Input placeholder="Service Email" value={mailConfig.serviceEmail} onChange={(e) => setMailConfig((p) => ({ ...p, serviceEmail: e.target.value }))} />
-                  <Input placeholder="SMTP Host" value={mailConfig.smtpHost} onChange={(e) => setMailConfig((p) => ({ ...p, smtpHost: e.target.value }))} />
-                  <Input type="number" placeholder="SMTP Port" value={mailConfig.smtpPort} onChange={(e) => setMailConfig((p) => ({ ...p, smtpPort: Number(e.target.value) || 587 }))} />
-                  <Input type="password" placeholder="App Password" value={mailConfig.smtpPassword || ''} onChange={(e) => setMailConfig((p) => ({ ...p, smtpPassword: e.target.value }))} />
-                  <Button onClick={saveMailConfig}>Save SMTP Configuration</Button>
+                  <Input placeholder="Tenant ID" value={mailConfig.tenantId || ''} onChange={(e) => setMailConfig((p) => ({ ...p, tenantId: e.target.value }))} />
+                  <Input placeholder="Client ID" value={mailConfig.clientId || ''} onChange={(e) => setMailConfig((p) => ({ ...p, clientId: e.target.value }))} />
+                  <Input type="password" placeholder="Client Secret" value={mailConfig.clientSecret || ''} onChange={(e) => setMailConfig((p) => ({ ...p, clientSecret: e.target.value }))} />
+                  <Input placeholder="Service Username (tender-notify@...)" value={mailConfig.serviceUsername || ''} onChange={(e) => setMailConfig((p) => ({ ...p, serviceUsername: e.target.value }))} />
+                  <Input placeholder="Service Email (optional display/from)" value={mailConfig.serviceEmail} onChange={(e) => setMailConfig((p) => ({ ...p, serviceEmail: e.target.value }))} />
+                  <Input type="password" placeholder="Service Account Password" value={mailConfig.smtpPassword || ''} onChange={(e) => setMailConfig((p) => ({ ...p, smtpPassword: e.target.value }))} />
+                  <Button onClick={saveMailConfig}>Save Microsoft Graph API Integration</Button>
                 </TabsContent>
                 <TabsContent value="rules" className="space-y-3">
                   <Input placeholder="Email Subject" value={newRule.emailSubject} onChange={(e) => setNewRule((p) => ({ ...p, emailSubject: e.target.value }))} />

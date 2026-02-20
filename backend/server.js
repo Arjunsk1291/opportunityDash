@@ -10,18 +10,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
-// FIXED: Combined the duplicate imports below into one single statement
-import { 
-  resolveShareLink, 
-  getWorksheets, 
-  getWorksheetRangeValues, 
-  bootstrapDelegatedToken, 
-  protectRefreshToken, 
-  buildDelegatedConsentUrl, 
-  startDeviceCodeFlow, 
-  exchangeDeviceCodeForToken, 
-  mailboxDelegatedScopesString 
-} from './services/graphExcelService.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, startDeviceCodeFlow, exchangeDeviceCodeForToken, mailboxDelegatedScopesString } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 import SystemConfig from './models/SystemConfig.js';
 import NotificationRule from './models/NotificationRule.js';
@@ -793,18 +782,22 @@ app.get('/api/system-config/mail', verifyToken, async (req, res) => {
 app.put('/api/system-config/mail', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can update mail config' });
-    const { serviceEmail, smtpHost, smtpPort, smtpPassword } = req.body || {};
+    const { serviceEmail, smtpHost, smtpPort, smtpPassword, tenantId, clientId, clientSecret, serviceUsername } = req.body || {};
     const config = await getSystemConfig();
 
     if (serviceEmail !== undefined) config.serviceEmail = String(serviceEmail || '').trim().toLowerCase();
     if (smtpHost !== undefined) config.smtpHost = String(smtpHost || '').trim();
     if (smtpPort !== undefined) config.smtpPort = Number(smtpPort) || 587;
     if (smtpPassword) config.encryptedPassword = encryptSecret(smtpPassword);
+    if (tenantId !== undefined) config.tenantId = String(tenantId || '').trim();
+    if (clientId !== undefined) config.clientId = String(clientId || '').trim();
+    if (clientSecret !== undefined) config.clientSecret = String(clientSecret || '').trim();
+    if (serviceUsername !== undefined) config.serviceUsername = String(serviceUsername || '').trim().toLowerCase();
 
     config.updatedBy = req.user.email;
     await config.save();
 
-    res.json({ success: true, config: { serviceEmail: config.serviceEmail, smtpHost: config.smtpHost, smtpPort: config.smtpPort, hasPassword: !!config.encryptedPassword } });
+    res.json({ success: true, config: { serviceEmail: config.serviceEmail, smtpHost: config.smtpHost, smtpPort: config.smtpPort, hasPassword: !!config.encryptedPassword, tenantId: config.tenantId, clientId: config.clientId, clientSecret: config.clientSecret ? '********' : '', serviceUsername: config.serviceUsername } });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
