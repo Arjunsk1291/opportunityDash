@@ -9,14 +9,6 @@ function applyTemplate(input, tender) {
     refNo: tender.opportunityRefNo || 'N/A',
     groupClassification: tender.groupClassification || 'N/A',
     clientName: tender.clientName || 'N/A',
-    tenderType: tender.opportunityClassification || 'N/A',
-    internalLead: tender.internalLead || 'N/A',
-    country: tender.country || 'N/A',
-    probability: tender.probability ?? 'N/A',
-    avenirStatus: tender.avenirStatus || 'N/A',
-    tenderResult: tender.tenderResult || 'N/A',
-    submissionDate: tender.tenderSubmittedDate || tender.tenderPlannedSubmissionDate || 'N/A',
-    rfpReceivedDate: tender.dateTenderReceived || tender.rawGraphData?.rfpReceivedDisplay || 'N/A',
   };
 
   return String(input || '').replace(/{{\s*(\w+)\s*}}/g, (_, key) => {
@@ -47,7 +39,7 @@ export async function notifySvpsForNewTenders(tenders) {
         if (!recipients.length) continue;
 
         const subject = applyTemplate(rule.emailSubject, tender);
-        const html = `<div style="font-weight:700;">${applyTemplate(rule.emailBody, tender)}</div>`;
+        const html = applyTemplate(rule.emailBody, tender);
 
         for (const recipient of recipients) {
           try {

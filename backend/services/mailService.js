@@ -17,7 +17,7 @@ export async function getMailRuntimeConfig() {
   const encryptedPassword = getConfigValue(config?.encryptedPassword);
 
   if (!tenantId || !clientId || !clientSecret || !serviceUsername || !encryptedPassword) {
-    throw new Error('Microsoft Graph API integration is incomplete. tenantId/clientId/clientSecret/serviceUsername/password are required in Communication Center.');
+    throw new Error('Microsoft Graph API integration is incomplete. Configure tenant/client/service credentials in Communication Center.');
   }
 
   return {
@@ -37,7 +37,7 @@ export async function acquireTokenByUsernamePassword(runtime) {
     grant_type: 'password',
     username: runtime.serviceUsername,
     password: runtime.servicePassword,
-    scope: 'https://graph.microsoft.com/.default',
+    scope: 'Mail.Send User.Read offline_access',
   });
 
   const response = await fetch(tokenUrl, {

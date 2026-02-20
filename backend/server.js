@@ -813,36 +813,6 @@ app.get('/api/notification-rules', verifyToken, async (req, res) => {
   }
 });
 
-
-app.get('/api/notification-rules/preview', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can preview notification routing' });
-
-    const triggerEvent = String(req.query?.triggerEvent || 'NEW_TENDER_SYNCED');
-    const groupClassification = String(req.query?.groupClassification || '').toUpperCase();
-
-    const rules = await NotificationRule.find({ triggerEvent, recipientRole: 'SVP', isActive: true }).lean();
-    const previews = [];
-
-    for (const rule of rules) {
-      const query = { role: 'SVP', status: 'approved' };
-      if (rule.useGroupMatching && groupClassification) query.assignedGroup = groupClassification;
-      const recipients = await AuthorizedUser.find(query).lean();
-      previews.push({
-        ruleId: String(rule._id),
-        triggerEvent: rule.triggerEvent,
-        useGroupMatching: !!rule.useGroupMatching,
-        groupClassification: groupClassification || null,
-        recipients: recipients.map((r) => ({ email: r.email, assignedGroup: r.assignedGroup || null })),
-      });
-    }
-
-    res.json({ success: true, preview: previews });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 app.post('/api/notification-rules', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can create notification rules' });
