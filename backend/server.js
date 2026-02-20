@@ -31,7 +31,10 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('✅ MongoDB connected'))
-  .then(() => { initializeBootSync(); })
+  .then(async () => {
+    await initializeBootSync();
+    await scheduleGraphAutoSync();
+  })
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
 const mapIdField = (doc) => {
@@ -73,6 +76,44 @@ const syncFromConfiguredGraph = async () => {
 
   return inserted.length;
 };
+
+let graphAutoSyncTimer = null;
+let graphAutoSyncRunning = false;
+
+const scheduleGraphAutoSync = async () => {
+  try {
+    const config = await getGraphConfig();
+    const intervalMinutes = Math.max(1, Number(config.syncIntervalMinutes) || 10);
+
+    if (graphAutoSyncTimer) {
+      clearInterval(graphAutoSyncTimer);
+      graphAutoSyncTimer = null;
+    }
+
+    graphAutoSyncTimer = setInterval(async () => {
+      if (graphAutoSyncRunning) return;
+      graphAutoSyncRunning = true;
+      try {
+        const liveConfig = await getGraphConfig();
+        if (!liveConfig.driveId || !liveConfig.fileId || !liveConfig.worksheetName) {
+          console.log('ℹ️ AUTO-SYNC skipped: Graph config incomplete.');
+          return;
+        }
+        const syncedCount = await syncFromConfiguredGraph();
+        console.log(`✅ AUTO-SYNC completed (${syncedCount} records)`);
+      } catch (error) {
+        console.error('❌ AUTO-SYNC failed:', error.message);
+      } finally {
+        graphAutoSyncRunning = false;
+      }
+    }, intervalMinutes * 60 * 1000);
+
+    console.log(`⏱️ Graph auto-sync scheduler active: every ${intervalMinutes} minute(s).`);
+  } catch (error) {
+    console.error('Failed to schedule graph auto-sync:', error.message);
+  }
+};
+
 
 
 const getUsernameFromRequest = (req) => {
@@ -504,6 +545,7 @@ app.put('/api/graph/config', verifyToken, async (req, res) => {
 
     config.updatedBy = req.user.email;
     await config.save();
+    await scheduleGraphAutoSync();
 
     res.json({ success: true, config: mapIdField(config.toObject()) });
   } catch (error) {
