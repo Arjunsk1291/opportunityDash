@@ -155,7 +155,7 @@ export default function Admin() {
       loadMailboxAuthStatus();
       loadNotificationPreview('GTS');
     }
-  }, [isMaster, token]);
+  }, [isMaster, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadUsers = async () => {
     if (!token) return;
