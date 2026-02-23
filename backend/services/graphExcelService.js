@@ -5,6 +5,7 @@ const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const requiredEnv = ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET'];
 const DELEGATED_SCOPES = ['Files.Read.Selected', 'Sites.Selected', 'User.Read', 'Mail.Send', 'offline_access'];
 
+// --- UTILS ---
 function envValue(name, fallback = '') {
   const value = process.env[name];
   return typeof value === 'string' ? value.trim() : fallback;
@@ -24,7 +25,7 @@ function validateEnv() {
   if (missing.length) throw new Error(`Missing Graph env vars: ${missing.join(', ')}`);
 }
 
-// Encryption Logic
+// --- CRYPTO ---
 function encryptionKey() {
   const keySeed = envValue('GRAPH_TOKEN_ENCRYPTION_KEY') || graphClientSecret();
   return crypto.createHash('sha256').update(String(keySeed)).digest();
@@ -49,95 +50,7 @@ export function unprotectRefreshToken(payload) {
   return decrypted.toString('utf8');
 }
 
-function delegatedScopesString() {
-  return DELEGATED_SCOPES.join(' ');
-}
-
-
-function delegatedConsentScopesString() {
-  return [...DELEGATED_SCOPES, 'Mail.Send'].join(' ');
-}
-
-export function mailboxDelegatedScopesString() {
-  return delegatedConsentScopesString();
-}
-
-export function buildDelegatedConsentUrl({ loginHint } = {}) {
-  validateEnv();
-  const params = new URLSearchParams({
-    client_id: envValue('GRAPH_CLIENT_ID'),
-    response_type: 'code',
-    redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
-    scope: delegatedConsentScopesString(),
-    prompt: 'consent',
-  });
-
-  if (loginHint) {
-    params.set('login_hint', String(loginHint).trim().toLowerCase());
-  }
-
-  return `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/authorize?${params.toString()}`;
-}
-
-function logTokenDebug() {
-  if (!debugEnabled()) return;
-
-  console.log('[graph-token-debug] GRAPH_CLIENT_SECRET:', maskValue(envValue('GRAPH_CLIENT_SECRET')));
-  console.log('[graph-token-debug] CLIENT_SECRET:', maskValue(envValue('CLIENT_SECRET')));
-  console.log('[graph-token-debug] AZURE_CLIENT_SECRET:', maskValue(envValue('AZURE_CLIENT_SECRET')));
-  console.log('[graph-token-debug] Final secret used:', maskValue(graphClientSecret()));
-  console.log('[graph-token-debug] GRAPH_TENANT_ID:', maskValue(envValue('GRAPH_TENANT_ID')));
-  console.log('[graph-token-debug] GRAPH_CLIENT_ID:', maskValue(envValue('GRAPH_CLIENT_ID')));
-}
-
-function logTokenRequestDetails(params, body) {
-  if (!debugEnabled()) return;
-
-  console.log('[graph-token-debug] postToken params:', {
-    grant_type: params?.grant_type || '',
-    hasDeviceCode: !!params?.device_code,
-    hasClientSecret: !!graphClientSecret(),
-  });
-
-  const entries = {};
-  for (const [key, value] of body.entries()) {
-    if (key === 'client_secret') {
-      entries[key] = maskValue(value);
-    } else if (key === 'device_code') {
-      entries[key] = `${String(value).slice(0, 20)}...`;
-    } else {
-      entries[key] = value;
-    }
-  }
-  console.log('[graph-token-debug] postToken final body:', entries);
-}
-
-function buildTokenErrorMessage(responseStatus, data) {
-  const description = data?.error_description || data?.error || `Token acquisition failed (${responseStatus})`;
-  const code = data?.error || '';
-  const trace = data?.trace_id || '';
-  const correlation = data?.correlation_id || '';
-
-  const parts = [description];
-  if (code) parts.push(`code=${code}`);
-  if (trace) parts.push(`trace_id=${trace}`);
-  if (correlation) parts.push(`correlation_id=${correlation}`);
-  return parts.join(' | ');
-}
-
-
-export function getGraphTokenDebugSnapshot() {
-  return {
-    GRAPH_CLIENT_SECRET: maskValue(envValue('GRAPH_CLIENT_SECRET')),
-    CLIENT_SECRET: maskValue(envValue('CLIENT_SECRET')),
-    AZURE_CLIENT_SECRET: maskValue(envValue('AZURE_CLIENT_SECRET')),
-    RESOLVED_SECRET: maskValue(graphClientSecret()),
-    RESOLVED_SECRET_IS_GUID: isGuid(graphClientSecret()),
-    GRAPH_TENANT_ID: maskValue(envValue('GRAPH_TENANT_ID')),
-    GRAPH_CLIENT_ID: maskValue(envValue('GRAPH_CLIENT_ID')),
-  };
-}
-
+// --- CORE OAUTH ---
 async function postToken(params) {
   validateEnv();
   const tokenUrl = `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/token`;
@@ -158,15 +71,18 @@ async function postToken(params) {
   return data;
 }
 
-// EXPORTED FUNCTIONS
-export function mailboxDelegatedScopesString() { return DELEGATED_SCOPES.join(' '); }
+// --- EXPORTS: AUTH ---
+export function mailboxDelegatedScopesString() { 
+  return DELEGATED_SCOPES.join(' '); 
+}
 
-export async function startDeviceCodeFlow(options = {}) {
-  validateEnv();
-  const deviceCodeUrl = `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/devicecode`;
-  const body = new URLSearchParams({
+export function buildDelegatedConsentUrl({ loginHint } = {}) {
+  const params = new URLSearchParams({
     client_id: envValue('GRAPH_CLIENT_ID'),
-    scope: options.scopes || delegatedScopesString(),
+    response_type: 'code',
+    redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
+    scope: DELEGATED_SCOPES.join(' '),
+    prompt: 'consent',
   });
   if (loginHint) params.set('login_hint', loginHint);
   return `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/authorize?${params.toString()}`;
@@ -176,20 +92,18 @@ export async function startDeviceCodeFlow(options = {}) {
   const response = await fetch(`https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/devicecode`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: envValue('GRAPH_CLIENT_ID'), scope: options.scopes || DELEGATED_SCOPES.join(' ') }),
+    body: new URLSearchParams({ 
+      client_id: envValue('GRAPH_CLIENT_ID'), 
+      scope: options.scopes || DELEGATED_SCOPES.join(' ') 
+    }),
   });
   const data = await response.json();
   return { deviceCode: data.device_code, userCode: data.user_code, verificationUri: data.verification_uri };
 }
 
 export async function exchangeDeviceCodeForToken(deviceCode, options = {}) {
-  if (!deviceCode) {
-    throw new Error('deviceCode is required');
-  }
-
   const token = await postToken({
     grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-    scope: options.scopes || delegatedScopesString(),
     device_code: deviceCode,
   });
   return { accessToken: token.access_token, refreshToken: token.refresh_token || '' };
@@ -210,15 +124,22 @@ export async function getAccessTokenWithConfig(config) {
   if (encrypted) {
     try {
       const rt = unprotectRefreshToken(encrypted);
-      const res = await postToken({ grant_type: 'refresh_token', refresh_token: rt, scope: DELEGATED_SCOPES.join(' ') });
+      const res = await postToken({ 
+        grant_type: 'refresh_token', 
+        refresh_token: rt, 
+        scope: DELEGATED_SCOPES.join(' ') 
+      });
       return { accessToken: res.access_token, refreshToken: res.refresh_token || rt };
-    } catch (e) { /* fallback to app token */ }
+    } catch (e) { /* fallback */ }
   }
-  const appRes = await postToken({ grant_type: 'client_credentials', scope: 'https://graph.microsoft.com/.default' });
+  const appRes = await postToken({ 
+    grant_type: 'client_credentials', 
+    scope: 'https://graph.microsoft.com/.default' 
+  });
   return { accessToken: appRes.access_token };
 }
 
-// Excel Resolvers
+// --- EXPORTS: EXCEL ---
 export async function resolveShareLink(shareLink, config) {
   const { accessToken } = await getAccessTokenWithConfig(config);
   const shareToken = 'u!' + Buffer.from(shareLink).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -244,7 +165,6 @@ export async function getWorksheetRangeValues({ driveId, fileId, worksheetName, 
   return data.values || [];
 }
 
-// THE MISSING ALIAS
 export async function getWorksheetRows(params) {
   return getWorksheetRangeValues(params);
 }
