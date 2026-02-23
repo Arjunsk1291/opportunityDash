@@ -75,6 +75,32 @@ function delegatedScopesString() {
   return DELEGATED_SCOPES.join(' ');
 }
 
+
+function delegatedConsentScopesString() {
+  return [...DELEGATED_SCOPES, 'Mail.Send'].join(' ');
+}
+
+export function mailboxDelegatedScopesString() {
+  return delegatedConsentScopesString();
+}
+
+export function buildDelegatedConsentUrl({ loginHint } = {}) {
+  validateEnv();
+  const params = new URLSearchParams({
+    client_id: envValue('GRAPH_CLIENT_ID'),
+    response_type: 'code',
+    redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
+    scope: delegatedConsentScopesString(),
+    prompt: 'consent',
+  });
+
+  if (loginHint) {
+    params.set('login_hint', String(loginHint).trim().toLowerCase());
+  }
+
+  return `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/authorize?${params.toString()}`;
+}
+
 function logTokenDebug() {
   if (!debugEnabled()) return;
 
@@ -177,12 +203,12 @@ async function acquireAppToken() {
   return token.access_token;
 }
 
-export async function startDeviceCodeFlow() {
+export async function startDeviceCodeFlow(options = {}) {
   validateEnv();
   const deviceCodeUrl = `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/devicecode`;
   const body = new URLSearchParams({
     client_id: envValue('GRAPH_CLIENT_ID'),
-    scope: delegatedScopesString(),
+    scope: options.scopes || delegatedScopesString(),
   });
 
   const response = await fetch(deviceCodeUrl, {
@@ -207,14 +233,14 @@ export async function startDeviceCodeFlow() {
   };
 }
 
-export async function exchangeDeviceCodeForToken(deviceCode) {
+export async function exchangeDeviceCodeForToken(deviceCode, options = {}) {
   if (!deviceCode) {
     throw new Error('deviceCode is required');
   }
 
   const token = await postToken({
     grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-    scope: delegatedScopesString(),
+    scope: options.scopes || delegatedScopesString(),
     device_code: deviceCode,
   });
 
