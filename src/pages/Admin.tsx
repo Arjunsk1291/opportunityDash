@@ -708,7 +708,7 @@ export default function Admin() {
       const response = await fetch(API_URL + '/system-config/mail', {
         method: 'PUT',
         headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify(mailConfig),
+        body: JSON.stringify({ ...mailConfig, servicePassword: mailConfig.smtpPassword || "" }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to save mail config');
@@ -1284,100 +1284,106 @@ export default function Admin() {
               <CardDescription>Master-only Microsoft Graph API integration, Notification Rules, and Template Editor</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <Tabs defaultValue="smtp" className="w-full">
+              <Tabs defaultValue="graph" className="w-full">
                 <TabsList>
-                  <TabsTrigger value="smtp">Microsoft Graph API Integration</TabsTrigger>
+                  <TabsTrigger value="graph">Microsoft Graph Integration</TabsTrigger>
                   <TabsTrigger value="rules">Notification Rules</TabsTrigger>
                   <TabsTrigger value="templates">Template Editor</TabsTrigger>
                 </TabsList>
-                <TabsContent value="smtp" className="space-y-3">
-                  <div className="border rounded p-3 space-y-2 text-sm">
-                    <p className="font-medium">Service Mailbox (URI-free Device Code Flow) + ROPC Graph Credentials</p>
-                    <p className="text-xs text-muted-foreground">
-                      Status: {mailboxAuthStatus.hasGraphRefreshToken ? '✅ Connected' : '❌ Not connected'}
-                      {mailboxAuthStatus.graphTokenUpdatedAt ? ` • updated ${new Date(mailboxAuthStatus.graphTokenUpdatedAt).toLocaleString()}` : ''}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" variant="secondary" onClick={initiateMailboxAuth}>Connect Service Account</Button>
-                      <Button type="button" variant="outline" onClick={finalizeMailboxAuth} disabled={!mailboxAuthFlow}>I have entered the code</Button>
-                    </div>
-                    {mailboxAuthFlow && (
-                      <div className="rounded border p-3 text-xs space-y-1 bg-muted/30">
-                        <p>1) Go to: <strong>{mailboxAuthFlow.verificationUri}</strong></p>
-                        <p>2) Enter code: <strong className="font-mono text-base">{mailboxAuthFlow.userCode}</strong></p>
-                        {mailboxAuthFlow.verificationUriComplete && (
-                          <Button type="button" size="sm" variant="outline" onClick={() => window.open(mailboxAuthFlow.verificationUriComplete, '_blank', 'noopener,noreferrer')}>
-                            Open verification page
-                          </Button>
-                        )}
-                      </div>
-                    )}
+
+                <TabsContent value="graph" className="space-y-4 pt-4">
+                  <div className="rounded border p-3 text-xs text-muted-foreground bg-muted/20">
+                    <p className="font-semibold text-foreground mb-1">Confidential Client Authentication (ROPC)</p>
+                    <p>This system uses a Client Secret + Service Account credentials to send notifications without user intervention.</p>
                   </div>
-                  <div className="rounded border p-3 text-xs text-muted-foreground">
-                    Fill these fields from your Azure App Registration + service mailbox:
-                    <ul className="list-disc list-inside mt-1">
-                      <li>Tenant ID: Directory (tenant) ID</li>
-                      <li>Client ID: Application (client) ID</li>
-                      <li>Client Secret: Secret VALUE (not Secret ID)</li>
-                      <li>Service Username: tender-notify@avenirengineering.com</li>
-                      <li>Service Account Password: mailbox password (stored encrypted)</li>
-                    </ul>
-                  </div>
+
                   {(mailConfig.envManagedConfidential?.tenantId || mailConfig.envManagedConfidential?.clientId || mailConfig.envManagedConfidential?.clientSecret) && (
-                    <div className="rounded border p-2 text-xs text-muted-foreground">
-                      Confidential client fields are <strong>Managed by System (.env)</strong> and take precedence over UI values.
-                    </div>
+                    <Alert className="bg-blue-50/50 border-blue-200">
+                      <Database className="h-4 w-4 text-blue-600" />
+                      <AlertDescription className="text-blue-700 text-xs">
+                        Azure App credentials (ID & Secret) are <strong>Managed by System (.env)</strong>.
+                      </AlertDescription>
+                    </Alert>
                   )}
-                  <Input placeholder="Tenant ID" value={mailConfig.tenantId || ''} disabled={!!mailConfig.envManagedConfidential?.tenantId} onChange={(e) => setMailConfig((p) => ({ ...p, tenantId: e.target.value }))} />
-                  <Input placeholder="Client ID" value={mailConfig.clientId || ''} disabled={!!mailConfig.envManagedConfidential?.clientId} onChange={(e) => setMailConfig((p) => ({ ...p, clientId: e.target.value }))} />
-                  <Input type="password" placeholder="Client Secret" value={mailConfig.clientSecret || ''} disabled={!!mailConfig.envManagedConfidential?.clientSecret} onChange={(e) => setMailConfig((p) => ({ ...p, clientSecret: e.target.value }))} />
-                  <Input placeholder="Service Username (tender-notify@...)" value={mailConfig.serviceUsername || ''} onChange={(e) => setMailConfig((p) => ({ ...p, serviceUsername: e.target.value }))} />
-                  <Input placeholder="Service Email (optional display/from)" value={mailConfig.serviceEmail} onChange={(e) => setMailConfig((p) => ({ ...p, serviceEmail: e.target.value }))} />
-                  <Input type="password" placeholder="Service Account Password" value={mailConfig.smtpPassword || ''} onChange={(e) => setMailConfig((p) => ({ ...p, smtpPassword: e.target.value }))} />
-                  <Button onClick={saveMailConfig}>Save Microsoft Graph API Integration</Button>
+
+                  <div className="space-y-3">
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium">Tenant ID</label>
+                      <Input
+                        placeholder="Azure Tenant ID"
+                        value={mailConfig.tenantId || ''}
+                        disabled={!!mailConfig.envManagedConfidential?.tenantId}
+                        onChange={(e) => setMailConfig((p) => ({ ...p, tenantId: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium">Client ID</label>
+                      <Input
+                        placeholder="Application Client ID"
+                        value={mailConfig.clientId || ''}
+                        disabled={!!mailConfig.envManagedConfidential?.clientId}
+                        onChange={(e) => setMailConfig((p) => ({ ...p, clientId: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium">Client Secret</label>
+                      <Input
+                        type="password"
+                        placeholder="Client Secret Value"
+                        value={mailConfig.clientSecret || ''}
+                        disabled={!!mailConfig.envManagedConfidential?.clientSecret}
+                        onChange={(e) => setMailConfig((p) => ({ ...p, clientSecret: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium text-blue-600">Service Account (Username)</label>
+                      <Input
+                        placeholder="tender-notify@avenirengineering.com"
+                        value={mailConfig.serviceUsername || ''}
+                        onChange={(e) => setMailConfig((p) => ({ ...p, serviceUsername: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium text-blue-600">Service Account Password</label>
+                      <Input
+                        type="password"
+                        placeholder="Account Password"
+                        value={mailConfig.smtpPassword || ''}
+                        onChange={(e) => setMailConfig((p) => ({ ...p, smtpPassword: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <Button className="w-full" onClick={saveMailConfig}>Save & Update Integration</Button>
                 </TabsContent>
-                <TabsContent value="rules" className="space-y-3">
-                  <div className="rounded border p-3 text-xs text-muted-foreground">
-                    <p className="font-semibold text-foreground mb-1">Notification Rule Guide (easy setup)</p>
-                    <ol className="list-decimal list-inside space-y-1">
-                      <li><strong>Trigger:</strong> NEW_TENDER_SYNCED = email after Graph sync inserts tenders.</li>
-                      <li><strong>Recipient Role:</strong> SVP users only.</li>
-                      <li><strong>Group Matching:</strong> ON = only SVPs whose assignedGroup matches tender.groupClassification.</li>
-                      <li><strong>Email Subject/Body:</strong> Use placeholders below. Final email content is sent in bold for visibility.</li>
-                    </ol>
-                  </div>
-                  <Input placeholder="Email Subject" value={newRule.emailSubject} onChange={(e) => setNewRule((p) => ({ ...p, emailSubject: e.target.value }))} />
-                  <Textarea placeholder="Email HTML Body" value={newRule.emailBody} onChange={(e) => setNewRule((p) => ({ ...p, emailBody: e.target.value }))} />
-                  <div className="flex gap-2">
-                    <Button onClick={createNotificationRule}>Create Rule</Button>
-                    <Input className="max-w-[130px]" placeholder="Group (GTS)" value={previewGroup} onChange={(e) => setPreviewGroup(e.target.value.toUpperCase())} />
-                    <Button variant="outline" onClick={() => loadNotificationPreview(previewGroup)}>Preview Who Gets Email</Button>
-                  </div>
-                  <div className="space-y-2">
-                    {notificationPreview.map((item) => (
-                      <div key={item.ruleId} className="border rounded p-3 text-xs">
-                        <p className="font-semibold">Trigger: {item.triggerEvent} • Group: {item.groupClassification || 'Any'} • Matching: {item.useGroupMatching ? 'On' : 'Off'}</p>
-                        <p className="text-muted-foreground mt-1">Recipients: {item.recipients.length ? item.recipients.map((r) => `${r.email}${r.assignedGroup ? ` (${r.assignedGroup})` : ''}`).join(', ') : 'No recipients matched'}</p>
-                      </div>
-                    ))}
+
+                <TabsContent value="rules" className="space-y-3 pt-4">
+                  <div className="space-y-4">
                     {notificationRules.map((rule) => (
-                      <div key={rule.id || rule._id} className="border rounded p-3 flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">{rule.emailSubject}</p>
-                          <p className="text-xs text-muted-foreground">{rule.triggerEvent} • {rule.useGroupMatching ? 'Group Matching On' : 'Group Matching Off'}</p>
-                        </div>
-                        <Button variant="destructive" size="sm" onClick={() => deleteNotificationRule(rule.id || rule._id)}>Delete</Button>
-                      </div>
+                      <Card key={rule._id || rule.id}>
+                        <CardContent className="p-4">
+                          <p className="text-sm font-medium">{rule.emailSubject}</p>
+                          <p className="text-xs text-muted-foreground">Trigger: {rule.triggerEvent}</p>
+                        </CardContent>
+                      </Card>
                     ))}
                   </div>
                 </TabsContent>
-                <TabsContent value="templates" className="space-y-3">
-                  <div className="rounded border p-3 text-xs text-muted-foreground">
-                    <p className="font-semibold text-foreground">Available placeholders</p>
-                    <p>{'{{tenderName}}'}, {'{{value}}'}, {'{{refNo}}'}, {'{{groupClassification}}'}, {'{{clientName}}'}, {'{{tenderType}}'}, {'{{internalLead}}'}, {'{{country}}'}, {'{{probability}}'}, {'{{avenirStatus}}'}, {'{{tenderResult}}'}, {'{{submissionDate}}'}, {'{{rfpReceivedDate}}'}</p>
-                    <p className="mt-1">Tip: keep HTML simple and readable. System wraps final content in bold for high visibility.</p>
+
+                <TabsContent value="templates" className="space-y-3 pt-4">
+                  <div className="space-y-3">
+                    <label className="text-sm font-medium">Email HTML Template</label>
+                    <Textarea
+                      className="min-h-[300px] font-mono text-xs"
+                      value={newRule.emailBody}
+                      onChange={(e) => setNewRule((p) => ({ ...p, emailBody: e.target.value }))}
+                    />
+                    <p className="text-[10px] text-muted-foreground">Supported: {'{{tenderName}}, {{refNo}}, {{value}}'}</p>
                   </div>
-                  <Textarea value={newRule.emailBody} onChange={(e) => setNewRule((p) => ({ ...p, emailBody: e.target.value }))} className="min-h-[220px]" />
                 </TabsContent>
               </Tabs>
             </CardContent>

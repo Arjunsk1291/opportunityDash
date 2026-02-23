@@ -814,6 +814,8 @@ app.get('/api/system-config/mail', verifyToken, async (req, res) => {
     const payload = mapIdField(config.toObject());
     payload.encryptedPassword = payload.encryptedPassword ? '********' : '';
     payload.hasGraphRefreshToken = !!payload.graphRefreshTokenEnc;
+    payload.hasMailRefreshToken = !!payload.mailRefreshTokenEnc;
+    payload.mailTokenExpiresAt = payload.mailTokenExpiresAt || null;
     payload.graphRefreshTokenEnc = payload.graphRefreshTokenEnc ? '********' : '';
     payload.envManagedConfidential = {
       tenantId: !!process.env.GRAPH_TENANT_ID,
@@ -829,13 +831,14 @@ app.get('/api/system-config/mail', verifyToken, async (req, res) => {
 app.put('/api/system-config/mail', verifyToken, async (req, res) => {
   try {
     if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can update mail config' });
-    const { serviceEmail, smtpHost, smtpPort, smtpPassword, tenantId, clientId, clientSecret, serviceUsername } = req.body || {};
+    const { serviceEmail, smtpHost, smtpPort, smtpPassword, servicePassword, tenantId, clientId, clientSecret, serviceUsername } = req.body || {};
     const config = await getSystemConfig();
 
     if (serviceEmail !== undefined) config.serviceEmail = String(serviceEmail || '').trim().toLowerCase();
     if (smtpHost !== undefined) config.smtpHost = String(smtpHost || '').trim();
     if (smtpPort !== undefined) config.smtpPort = Number(smtpPort) || 587;
-    if (smtpPassword) config.encryptedPassword = encryptSecret(smtpPassword);
+    const resolvedServicePassword = servicePassword || smtpPassword;
+    if (resolvedServicePassword) config.encryptedPassword = encryptSecret(resolvedServicePassword);
     if (!process.env.GRAPH_TENANT_ID && tenantId !== undefined) config.tenantId = String(tenantId || '').trim();
     if (!(process.env.AZURE_CLIENT_ID || process.env.GRAPH_CLIENT_ID) && clientId !== undefined) config.clientId = String(clientId || '').trim();
     if (!(process.env.CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET || process.env.GRAPH_CLIENT_SECRET) && clientSecret !== undefined) config.clientSecret = String(clientSecret || '').trim();
