@@ -34,17 +34,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const DEFAULT_MASTER_USERNAME = (import.meta.env.VITE_DEFAULT_MASTER_USERNAME || 'arjun.s@avenirengineering.com').toLowerCase();
 
-
-interface AuthorizedUserResponse {
-  id?: string;
-  _id?: string;
-  email: string;
-  displayName?: string;
-  role: UserRole;
-  status: UserStatus;
-  assignedGroup?: string | null;
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
