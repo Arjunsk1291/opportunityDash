@@ -10,17 +10,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
-import { 
-  resolveShareLink, 
-  getWorksheets, 
-  getWorksheetRangeValues, 
-  bootstrapDelegatedToken, 
-  protectRefreshToken, 
-  buildDelegatedConsentUrl, 
-  startDeviceCodeFlow, 
-  exchangeDeviceCodeForToken, 
-  mailboxDelegatedScopesString 
-} from './services/graphExcelService.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, startDeviceCodeFlow, exchangeDeviceCodeForToken, mailboxDelegatedScopesString } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 import SystemConfig from './models/SystemConfig.js';
 import NotificationRule from './models/NotificationRule.js';
@@ -34,6 +24,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
+console.log('Debug flags:', { MAIL_DEBUG: String(process.env.MAIL_DEBUG || '').toLowerCase() === 'true', NOTIFICATION_DEBUG: String(process.env.NOTIFICATION_DEBUG || '').toLowerCase() === 'true', GRAPH_TOKEN_DEBUG: String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true' });
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));

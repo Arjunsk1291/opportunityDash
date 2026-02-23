@@ -49,7 +49,95 @@ export function unprotectRefreshToken(payload) {
   return decrypted.toString('utf8');
 }
 
-// Unified Token Requester (Confidential Client Flow)
+function delegatedScopesString() {
+  return DELEGATED_SCOPES.join(' ');
+}
+
+
+function delegatedConsentScopesString() {
+  return [...DELEGATED_SCOPES, 'Mail.Send'].join(' ');
+}
+
+export function mailboxDelegatedScopesString() {
+  return delegatedConsentScopesString();
+}
+
+export function buildDelegatedConsentUrl({ loginHint } = {}) {
+  validateEnv();
+  const params = new URLSearchParams({
+    client_id: envValue('GRAPH_CLIENT_ID'),
+    response_type: 'code',
+    redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
+    scope: delegatedConsentScopesString(),
+    prompt: 'consent',
+  });
+
+  if (loginHint) {
+    params.set('login_hint', String(loginHint).trim().toLowerCase());
+  }
+
+  return `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/authorize?${params.toString()}`;
+}
+
+function logTokenDebug() {
+  if (!debugEnabled()) return;
+
+  console.log('[graph-token-debug] GRAPH_CLIENT_SECRET:', maskValue(envValue('GRAPH_CLIENT_SECRET')));
+  console.log('[graph-token-debug] CLIENT_SECRET:', maskValue(envValue('CLIENT_SECRET')));
+  console.log('[graph-token-debug] AZURE_CLIENT_SECRET:', maskValue(envValue('AZURE_CLIENT_SECRET')));
+  console.log('[graph-token-debug] Final secret used:', maskValue(graphClientSecret()));
+  console.log('[graph-token-debug] GRAPH_TENANT_ID:', maskValue(envValue('GRAPH_TENANT_ID')));
+  console.log('[graph-token-debug] GRAPH_CLIENT_ID:', maskValue(envValue('GRAPH_CLIENT_ID')));
+}
+
+function logTokenRequestDetails(params, body) {
+  if (!debugEnabled()) return;
+
+  console.log('[graph-token-debug] postToken params:', {
+    grant_type: params?.grant_type || '',
+    hasDeviceCode: !!params?.device_code,
+    hasClientSecret: !!graphClientSecret(),
+  });
+
+  const entries = {};
+  for (const [key, value] of body.entries()) {
+    if (key === 'client_secret') {
+      entries[key] = maskValue(value);
+    } else if (key === 'device_code') {
+      entries[key] = `${String(value).slice(0, 20)}...`;
+    } else {
+      entries[key] = value;
+    }
+  }
+  console.log('[graph-token-debug] postToken final body:', entries);
+}
+
+function buildTokenErrorMessage(responseStatus, data) {
+  const description = data?.error_description || data?.error || `Token acquisition failed (${responseStatus})`;
+  const code = data?.error || '';
+  const trace = data?.trace_id || '';
+  const correlation = data?.correlation_id || '';
+
+  const parts = [description];
+  if (code) parts.push(`code=${code}`);
+  if (trace) parts.push(`trace_id=${trace}`);
+  if (correlation) parts.push(`correlation_id=${correlation}`);
+  return parts.join(' | ');
+}
+
+
+export function getGraphTokenDebugSnapshot() {
+  return {
+    GRAPH_CLIENT_SECRET: maskValue(envValue('GRAPH_CLIENT_SECRET')),
+    CLIENT_SECRET: maskValue(envValue('CLIENT_SECRET')),
+    AZURE_CLIENT_SECRET: maskValue(envValue('AZURE_CLIENT_SECRET')),
+    RESOLVED_SECRET: maskValue(graphClientSecret()),
+    RESOLVED_SECRET_IS_GUID: isGuid(graphClientSecret()),
+    GRAPH_TENANT_ID: maskValue(envValue('GRAPH_TENANT_ID')),
+    GRAPH_CLIENT_ID: maskValue(envValue('GRAPH_CLIENT_ID')),
+  };
+}
+
 async function postToken(params) {
   validateEnv();
   const tokenUrl = `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/token`;
@@ -73,13 +161,12 @@ async function postToken(params) {
 // EXPORTED FUNCTIONS
 export function mailboxDelegatedScopesString() { return DELEGATED_SCOPES.join(' '); }
 
-export function buildDelegatedConsentUrl({ loginHint } = {}) {
-  const params = new URLSearchParams({
+export async function startDeviceCodeFlow(options = {}) {
+  validateEnv();
+  const deviceCodeUrl = `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/devicecode`;
+  const body = new URLSearchParams({
     client_id: envValue('GRAPH_CLIENT_ID'),
-    response_type: 'code',
-    redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
-    scope: DELEGATED_SCOPES.join(' '),
-    prompt: 'consent',
+    scope: options.scopes || delegatedScopesString(),
   });
   if (loginHint) params.set('login_hint', loginHint);
   return `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/authorize?${params.toString()}`;
@@ -96,8 +183,13 @@ export async function startDeviceCodeFlow(options = {}) {
 }
 
 export async function exchangeDeviceCodeForToken(deviceCode, options = {}) {
+  if (!deviceCode) {
+    throw new Error('deviceCode is required');
+  }
+
   const token = await postToken({
     grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+    scope: options.scopes || delegatedScopesString(),
     device_code: deviceCode,
   });
   return { accessToken: token.access_token, refreshToken: token.refresh_token || '' };
