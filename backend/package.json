@@ -7,8 +7,6 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
-    "@azure/msal-browser": "^4.28.1",
-    "@azure/msal-react": "^3.0.25",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.18.2",
