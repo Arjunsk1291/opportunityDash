@@ -48,7 +48,6 @@ export async function notifySvpsForNewTenders(tenders) {
 
         const subject = applyTemplate(rule.emailSubject, tender);
         const html = `<div style="font-weight:700;">${applyTemplate(rule.emailBody, tender)}</div>`;
-        const html = applyTemplate(rule.emailBody, tender);
 
         for (const recipient of recipients) {
           try {
