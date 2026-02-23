@@ -3,7 +3,7 @@ services:
     name: opportunitydash
     env: node
     plan: free
-    buildCommand: npm ci && npm run build && rm -rf backend/node_modules && cd backend && npm install --no-audit --no-fund
+    buildCommand: npm ci && npm run build && node --check backend/services/graphExcelService.js && node --check backend/server.js && rm -rf backend/node_modules && cd backend && npm install --no-audit --no-fund
     startCommand: node backend/server.js
     envVars:
       - key: MONGODB_URI
