@@ -7,10 +7,19 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { AlertCircle, Loader2 } from 'lucide-react';
 
+const DEFAULT_MASTER_USERNAME = (import.meta.env.VITE_DEFAULT_MASTER_USERNAME || 'arjun.s@avenirengineering.com').toLowerCase();
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const { isAuthenticated, isLoading, loginWithUsername } = useAuth();
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(DEFAULT_MASTER_USERNAME);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,6 +29,19 @@ export default function Login() {
     }
   }, [isAuthenticated, isLoading, navigate]);
 
+  const handleMasterEntry = async () => {
+    try {
+      setIsSigningIn(true);
+      setError(null);
+      await loginWithUsername(DEFAULT_MASTER_USERNAME);
+      navigate('/');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to enter as default master user.'));
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
     try {
@@ -27,8 +49,8 @@ export default function Login() {
       setError(null);
       await loginWithUsername(username);
       navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Failed to sign in. Please try again.');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to sign in. Please try again.'));
     } finally {
       setIsSigningIn(false);
     }
@@ -75,6 +97,8 @@ export default function Login() {
               )}
             </Button>
           </form>
+
+          <Button type="button" variant="outline" onClick={handleMasterEntry} disabled={isSigningIn} className="w-full">Enter as Default Master</Button>
 
           <div className="text-center text-sm text-muted-foreground">
             <p>Only authorized users can access this application.</p>
