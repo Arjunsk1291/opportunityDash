@@ -57,7 +57,7 @@ async function postToken(params) {
   Object.entries(params || {}).forEach(([k, v]) => { if (v) body.set(k, String(v)); });
   
   body.set('client_id', envValue('GRAPH_CLIENT_ID'));
-  body.set('client_secret', graphClientSecret()); // CRITICAL: This fixes AADSTS7000218
+  body.set('client_secret', graphClientSecret());
 
   const response = await fetch(tokenUrl, {
     method: 'POST',
@@ -120,7 +120,7 @@ export async function getAccessTokenWithConfig(config) {
       const rt = unprotectRefreshToken(encrypted);
       const res = await postToken({ grant_type: 'refresh_token', refresh_token: rt, scope: DELEGATED_SCOPES.join(' ') });
       return { accessToken: res.access_token, refreshToken: res.refresh_token || rt };
-    } catch (e) { console.error("Refresh failed, falling back..."); }
+    } catch (e) { /* fallback to app token */ }
   }
   const appRes = await postToken({ grant_type: 'client_credentials', scope: 'https://graph.microsoft.com/.default' });
   return { accessToken: appRes.access_token };
@@ -132,6 +132,7 @@ export async function resolveShareLink(shareLink, config) {
   const shareToken = 'u!' + Buffer.from(shareLink).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const res = await fetch(`${GRAPH_BASE_URL}/shares/${shareToken}/driveItem`, { headers: { Authorization: `Bearer ${accessToken}` } });
   const item = await res.json();
+  if (!res.ok) throw new Error(item.error?.message || 'Link resolution failed');
   return { driveId: item.parentReference.driveId, fileId: item.id };
 }
 
@@ -149,4 +150,9 @@ export async function getWorksheetRangeValues({ driveId, fileId, worksheetName, 
   const res = await fetch(`${GRAPH_BASE_URL}/drives/${driveId}/items/${fileId}/workbook/${path}`, { headers: { Authorization: `Bearer ${accessToken}` } });
   const data = await res.json();
   return data.values || [];
+}
+
+// THE MISSING ALIAS
+export async function getWorksheetRows(params) {
+  return getWorksheetRangeValues(params);
 }
