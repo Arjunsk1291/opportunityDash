@@ -9,37 +9,46 @@ interface AtRiskWidgetProps {
 }
 
 export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
-  // Submission Near = within 7 days after RFP received
+  // Submission Near = tender submitted/planned submission date within next 7 days
+  const getSubmissionDate = (opp: Opportunity): Date | null => {
+    const raw = opp.tenderSubmittedDate || opp.tenderPlannedSubmissionDate;
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
   const isSubmissionNear = (opp: Opportunity): boolean => {
-    if (!opp.dateTenderReceived) return false;
-    
-    const received = new Date(opp.dateTenderReceived);
+    const submissionDate = getSubmissionDate(opp);
+    if (!submissionDate) return false;
+
     const today = new Date();
-    const oneWeekAfterReceived = new Date(received);
-    oneWeekAfterReceived.setDate(received.getDate() + 7);
-    
-    const diffDays = Math.ceil((oneWeekAfterReceived.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(submissionDate);
+    target.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     return diffDays >= 0 && diffDays <= 7;
   };
 
   const submissionNear = data
     .filter(o => isSubmissionNear(o))
     .sort((a, b) => {
-      const dateA = a.dateTenderReceived ? new Date(a.dateTenderReceived).getTime() : 0;
-      const dateB = b.dateTenderReceived ? new Date(b.dateTenderReceived).getTime() : 0;
+      const dateA = getSubmissionDate(a)?.getTime() || 0;
+      const dateB = getSubmissionDate(b)?.getTime() || 0;
       return dateA - dateB;
     })
     .slice(0, 8);
 
   const getDaysToDeadline = (opp: Opportunity): number => {
-    if (!opp.dateTenderReceived) return 0;
-    
-    const received = new Date(opp.dateTenderReceived);
-    const oneWeekAfterReceived = new Date(received);
-    oneWeekAfterReceived.setDate(received.getDate() + 7);
-    
+    const submissionDate = getSubmissionDate(opp);
+    if (!submissionDate) return 0;
+
     const today = new Date();
-    const diffDays = Math.ceil((oneWeekAfterReceived.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(submissionDate);
+    target.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     return Math.max(0, diffDays);
   };
 
