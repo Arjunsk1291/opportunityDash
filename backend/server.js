@@ -46,6 +46,39 @@ const mapIdField = (doc) => {
   };
 };
 
+const buildTroubleshootingFromMessage = (message = '') => {
+  const text = String(message || '').toLowerCase();
+  const hints = [];
+  if (text.includes('access denied') || text.includes('accessdenied')) {
+    hints.push('Graph permissions may be insufficient. Validate Files.Read.Selected/Sites.Selected/Mail.Send permissions and admin consent.');
+    hints.push('Grant resource-level site/file access for Sites.Selected/Files.Read.Selected.');
+    hints.push('Verify service mailbox user can access the target workbook and worksheet.');
+  }
+  if (text.includes('no delegated refresh token')) {
+    hints.push('Complete mailbox auth in Communication Center (Connect Service Account).');
+  }
+  if (text.includes('config is incomplete') || text.includes('missing driveid/fileid/worksheetname')) {
+    hints.push('Open Admin > Data Sync and complete Share Link, Drive ID, File ID, and Worksheet Name.');
+  }
+  return hints;
+};
+
+const toApiError = (error, fallbackCode = 'SERVER_ERROR') => {
+  const message = String(error?.message || 'Unexpected server error');
+  const troubleshooting = [
+    ...(Array.isArray(error?.details?.troubleshooting) ? error.details.troubleshooting : []),
+    ...buildTroubleshootingFromMessage(message),
+  ];
+
+  return {
+    error: message,
+    code: error?.code || error?.details?.code || fallbackCode,
+    status: error?.status || error?.details?.status || null,
+    details: error?.details || null,
+    troubleshooting: [...new Set(troubleshooting)].filter(Boolean),
+  };
+};
+
 const getGraphConfig = async () => {
   let config = await GraphSyncConfig.findOne();
   if (!config) {
@@ -60,7 +93,20 @@ const syncFromConfiguredGraph = async () => {
     throw new Error('Graph config is incomplete. Please configure Share Link / Drive / File / Worksheet in admin panel.');
   }
 
-  const tenders = await syncTendersFromGraph(config);
+  let tenders;
+  try {
+    tenders = await syncTendersFromGraph(config);
+  } catch (error) {
+    error.details = {
+      ...(error.details || {}),
+      driveId: config.driveId || '',
+      fileId: config.fileId || '',
+      worksheetName: config.worksheetName || '',
+      dataRange: config.dataRange || '',
+      syncIntervalMinutes: config.syncIntervalMinutes || 10,
+    };
+    throw error;
+  }
   const opportunities = await transformTendersToOpportunities(tenders);
 
   await SyncedOpportunity.deleteMany({});
@@ -283,7 +329,7 @@ app.get('/api/users/authorized', verifyToken, async (req, res) => {
     const users = await AuthorizedUser.find().sort({ createdAt: -1 }).lean();
     res.json(users.map(mapIdField));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(toApiError(error, 'GRAPH_RESOLVE_FAILED'));
   }
 });
 
@@ -314,7 +360,7 @@ app.post('/api/users/approve', verifyToken, async (req, res) => {
 
     res.json({ success: true, user });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(toApiError(error, 'GRAPH_WORKSHEETS_FAILED'));
   }
 });
 
@@ -345,7 +391,7 @@ app.post('/api/users/reject', verifyToken, async (req, res) => {
 
     res.json({ success: true, user });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(toApiError(error, 'GRAPH_PREVIEW_FAILED'));
   }
 });
 
@@ -577,7 +623,7 @@ app.post('/api/graph/resolve-share-link', verifyToken, async (req, res) => {
 
     res.json({ success: true, ...resolved, config: mapIdField(config.toObject()) });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(toApiError(error, 'GRAPH_RESOLVE_FAILED'));
   }
 });
 
@@ -596,7 +642,7 @@ app.post('/api/graph/worksheets', verifyToken, async (req, res) => {
     const sheets = await getWorksheets({ driveId, fileId, config });
     res.json({ success: true, sheets });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(toApiError(error, 'GRAPH_WORKSHEETS_FAILED'));
   }
 });
 
@@ -627,7 +673,7 @@ app.post('/api/graph/preview-rows', verifyToken, async (req, res) => {
       previewRows: rows.slice(0, 20),
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json(toApiError(error, 'GRAPH_PREVIEW_FAILED'));
   }
 });
 
@@ -958,7 +1004,7 @@ app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
     const count = await syncFromConfiguredGraph();
     res.json({ success: true, count, syncedCount: count });
   } catch (error) {
-    res.status(500).json({ error: 'Sync failed: ' + error.message });
+    res.status(500).json(toApiError(error, 'GRAPH_SYNC_FAILED'));
   }
 });
 
@@ -971,7 +1017,7 @@ app.post('/api/opportunities/sync-graph/auto', verifyToken, async (req, res) => 
     const count = await syncFromConfiguredGraph();
     res.json({ success: true, count, syncedCount: count });
   } catch (error) {
-    res.status(500).json({ error: 'Auto-sync failed: ' + error.message });
+    res.status(500).json(toApiError(error, 'GRAPH_AUTOSYNC_FAILED'));
   }
 });
 
@@ -984,7 +1030,7 @@ app.post('/api/opportunities/sync-sheets', verifyToken, async (req, res) => {
     const count = await syncFromConfiguredGraph();
     res.json({ success: true, count, syncedCount: count });
   } catch (error) {
-    res.status(500).json({ error: 'Sync failed: ' + error.message });
+    res.status(500).json(toApiError(error, 'GRAPH_SYNC_FAILED'));
   }
 });
 
@@ -996,7 +1042,7 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
     const count = await syncFromConfiguredGraph();
     res.json({ success: true, count, syncedCount: count });
   } catch (error) {
-    res.status(500).json({ error: 'Auto-sync failed: ' + error.message });
+    res.status(500).json(toApiError(error, 'GRAPH_AUTOSYNC_FAILED'));
   }
 });
 

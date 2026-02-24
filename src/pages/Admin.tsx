@@ -16,6 +16,21 @@ import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
+
+function parseApiErrorPayload(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== 'object') return fallback;
+  const data = payload as { error?: string; message?: string; code?: string; troubleshooting?: string[]; details?: { troubleshooting?: string[] } };
+  const base = data.message || data.error || fallback;
+  const codePart = data.code ? ` [${data.code}]` : '';
+  const troubleshooting = Array.isArray(data.troubleshooting)
+    ? data.troubleshooting
+    : Array.isArray(data.details?.troubleshooting)
+      ? data.details?.troubleshooting
+      : [];
+  const tips = troubleshooting?.length ? ` | Tips: ${troubleshooting.join(' | ')}` : '';
+  return `${base}${codePart}${tips}`;
+}
+
 interface AuthorizedUser {
   _id: string;
   email: string;
@@ -213,11 +228,10 @@ export default function Admin() {
         },
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to sync data');
-      }
-
       const result = await response.json();
+      if (!response.ok) {
+        throw new Error(parseApiErrorPayload(result, 'Failed to sync data'));
+      }
       setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Graph Excel` });
       await loadCollectionStats();
       toast.success(`Synced ${result.count} tenders from Graph Excel`);
@@ -225,7 +239,7 @@ export default function Admin() {
     } catch (error) {
       console.error('❌ Error syncing:', error);
       setMessage({ type: 'error', text: 'Failed to sync: ' + (error as Error).message });
-      toast.error('Sync failed');
+      toast.error((error as Error).message);
     } finally {
       setSyncLoading(false);
     }
@@ -408,7 +422,7 @@ export default function Admin() {
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to resolve share link');
+        throw new Error(parseApiErrorPayload(data, 'Failed to resolve share link'));
       }
 
       setGraphConfig((prev) => ({
@@ -450,7 +464,7 @@ export default function Admin() {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to preview rows');
+        throw new Error(parseApiErrorPayload(data, 'Failed to preview rows'));
       }
 
       setPreviewRows(data.previewRows || []);
