@@ -671,7 +671,7 @@ export default function Admin() {
         headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to start device code flow'));
+      if (!response.ok) throw new Error(data.error || 'Failed to start device code flow');
       setMailboxAuthFlow({
         deviceCode: data.deviceCode,
         userCode: data.userCode,
@@ -695,7 +695,7 @@ export default function Admin() {
         body: JSON.stringify({ deviceCode: mailboxAuthFlow.deviceCode, email: mailConfig.serviceEmail }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Mailbox authorization not completed yet'));
+      if (!response.ok) throw new Error(data.message || data.error || 'Mailbox authorization not completed yet');
       toast.success('Service mailbox authorized successfully.');
       setMailboxAuthFlow(null);
       await loadMailboxAuthStatus();
@@ -725,7 +725,7 @@ export default function Admin() {
         body: JSON.stringify({ ...mailConfig, servicePassword: mailConfig.smtpPassword || "" }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to save mail config'));
+      if (!response.ok) throw new Error(data.error || 'Failed to save mail config');
       setMessage({ type: 'success', text: '✅ SMTP configuration saved' });
       setMailConfig((prev) => ({ ...prev, smtpPassword: '' }));
     } catch (error) {

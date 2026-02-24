@@ -18,7 +18,7 @@ function computeSubmissionNear(opp: Partial<Opportunity>): boolean {
   today.setHours(0,0,0,0);
   target.setHours(0,0,0,0);
   const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  return diffDays >= 0 && diffDays <= 10;
+  return diffDays >= 0 && diffDays <= 7;
 }
 
 interface DataContextType {

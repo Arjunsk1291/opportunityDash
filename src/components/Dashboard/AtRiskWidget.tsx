@@ -9,7 +9,7 @@ interface AtRiskWidgetProps {
 }
 
 export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
-  // Submission Near = tender submitted/planned submission date within next 10 days
+  // Submission Near = tender submitted/planned submission date within next 7 days
   const getSubmissionDate = (opp: Opportunity): Date | null => {
     const raw = opp.tenderSubmittedDate || opp.tenderPlannedSubmissionDate;
     if (!raw) return null;
@@ -27,7 +27,7 @@ export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
     target.setHours(0, 0, 0, 0);
 
     const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return diffDays >= 0 && diffDays <= 10;
+    return diffDays >= 0 && diffDays <= 7;
   };
 
   const submissionNear = data

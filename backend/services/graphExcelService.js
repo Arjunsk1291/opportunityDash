@@ -3,38 +3,9 @@ import crypto from 'crypto';
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const requiredEnv = ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET'];
-const DELEGATED_SCOPES = ['Files.Read.Selected', 'Sites.Selected', 'User.Read', 'offline_access'];
+const DELEGATED_SCOPES = ['Files.Read.Selected', 'Sites.Selected', 'User.Read', 'Mail.Send', 'offline_access'];
 
-class GraphServiceError extends Error {
-  constructor(message, details = {}) {
-    super(message);
-    this.name = 'GraphServiceError';
-    this.code = details.code || 'GRAPH_SERVICE_ERROR';
-    this.status = details.status || null;
-    this.details = details;
-  }
-}
-
-function graphTroubleshootingHints(status, graphCode = '', graphMessage = '') {
-  const text = `${graphCode} ${graphMessage}`.toLowerCase();
-  const hints = [];
-  if (status === 401 || text.includes('invalidauthenticationtoken')) {
-    hints.push('Token is invalid/expired. Re-authenticate mailbox in Communication Center and retry.');
-  }
-  if (status === 403 || text.includes('access denied') || text.includes('accessdenied')) {
-    hints.push('Permission denied by Microsoft Graph. Verify app permissions (Files.Read.Selected/Sites.Selected/Mail.Send) and admin consent.');
-    hints.push('For Files.Read.Selected/Sites.Selected, also grant resource-level access to the specific site/drive/file.');
-    hints.push('Ensure service account has access to target SharePoint file and worksheet.');
-  }
-  if (status === 404 || text.includes('itemnotfound')) {
-    hints.push('Drive/File/Worksheet may be incorrect or moved. Re-resolve share link and refresh worksheet selection.');
-  }
-  if (!hints.length) {
-    hints.push('Enable GRAPH_TOKEN_DEBUG=true and MAIL_DEBUG=true to capture detailed token and Graph diagnostics in backend logs.');
-  }
-  return hints;
-}
-
+// --- UTILS ---
 function envValue(name, fallback = '') {
   const value = process.env[name];
   return typeof value === 'string' ? value.trim() : fallback;
@@ -44,168 +15,50 @@ function graphClientSecret() {
   return envValue('GRAPH_CLIENT_SECRET') || envValue('CLIENT_SECRET') || envValue('AZURE_CLIENT_SECRET');
 }
 
-function isGuid(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
-}
-
-function debugEnabled() {
-  return String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true';
-}
-
-function maskValue(value) {
-  if (!value) return '❌ EMPTY';
-  return `${String(value).slice(0, 10)}...`;
-}
-
 function validateEnv() {
   const values = {
     GRAPH_TENANT_ID: envValue('GRAPH_TENANT_ID'),
     GRAPH_CLIENT_ID: envValue('GRAPH_CLIENT_ID'),
     GRAPH_CLIENT_SECRET: graphClientSecret(),
   };
-
   const missing = requiredEnv.filter((name) => !values[name]);
-  if (missing.length) {
-    throw new Error(`Missing Graph env vars: ${missing.join(', ')}`);
-  }
-
-  if (isGuid(values.GRAPH_CLIENT_SECRET)) {
-    throw new Error('GRAPH_CLIENT_SECRET appears to be a Secret ID (GUID). Use the Secret VALUE from Azure App Registration.');
-  }
+  if (missing.length) throw new Error(`Missing Graph env vars: ${missing.join(', ')}`);
 }
 
+// --- CRYPTO ---
 function encryptionKey() {
   const keySeed = envValue('GRAPH_TOKEN_ENCRYPTION_KEY') || graphClientSecret();
   return crypto.createHash('sha256').update(String(keySeed)).digest();
 }
 
-function encryptText(plainText) {
-  if (!plainText) return '';
+export function protectRefreshToken(rawToken) {
+  if (!rawToken) return '';
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', encryptionKey(), iv);
-  const encrypted = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()]);
+  const encrypted = Buffer.concat([cipher.update(rawToken, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
 }
 
-function decryptText(payload) {
+export function unprotectRefreshToken(payload) {
   if (!payload) return '';
   const [ivHex, tagHex, encryptedHex] = String(payload).split(':');
   if (!ivHex || !tagHex || !encryptedHex) return '';
   const decipher = crypto.createDecipheriv('aes-256-gcm', encryptionKey(), Buffer.from(ivHex, 'hex'));
   decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
-  const decrypted = Buffer.concat([
-    decipher.update(Buffer.from(encryptedHex, 'hex')),
-    decipher.final(),
-  ]);
+  const decrypted = Buffer.concat([decipher.update(Buffer.from(encryptedHex, 'hex')), decipher.final()]);
   return decrypted.toString('utf8');
 }
 
-function delegatedScopesString() {
-  return DELEGATED_SCOPES.join(' ');
-}
-
-
-function delegatedConsentScopesString() {
-  return [...DELEGATED_SCOPES, 'Mail.Send'].join(' ');
-}
-
-export function mailboxDelegatedScopesString() {
-  return delegatedConsentScopesString();
-}
-
-export function buildDelegatedConsentUrl({ loginHint } = {}) {
-  validateEnv();
-  const params = new URLSearchParams({
-    client_id: envValue('GRAPH_CLIENT_ID'),
-    response_type: 'code',
-    redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
-    scope: delegatedConsentScopesString(),
-    prompt: 'consent',
-  });
-
-  if (loginHint) {
-    params.set('login_hint', String(loginHint).trim().toLowerCase());
-  }
-
-  return `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/authorize?${params.toString()}`;
-}
-
-function logTokenDebug() {
-  if (!debugEnabled()) return;
-
-  console.log('[graph-token-debug] GRAPH_CLIENT_SECRET:', maskValue(envValue('GRAPH_CLIENT_SECRET')));
-  console.log('[graph-token-debug] CLIENT_SECRET:', maskValue(envValue('CLIENT_SECRET')));
-  console.log('[graph-token-debug] AZURE_CLIENT_SECRET:', maskValue(envValue('AZURE_CLIENT_SECRET')));
-  console.log('[graph-token-debug] Final secret used:', maskValue(graphClientSecret()));
-  console.log('[graph-token-debug] GRAPH_TENANT_ID:', maskValue(envValue('GRAPH_TENANT_ID')));
-  console.log('[graph-token-debug] GRAPH_CLIENT_ID:', maskValue(envValue('GRAPH_CLIENT_ID')));
-}
-
-function logTokenRequestDetails(params, body) {
-  if (!debugEnabled()) return;
-
-  console.log('[graph-token-debug] postToken params:', {
-    grant_type: params?.grant_type || '',
-    hasDeviceCode: !!params?.device_code,
-    hasClientSecret: !!graphClientSecret(),
-  });
-
-  const entries = {};
-  for (const [key, value] of body.entries()) {
-    if (key === 'client_secret') {
-      entries[key] = maskValue(value);
-    } else if (key === 'device_code') {
-      entries[key] = `${String(value).slice(0, 20)}...`;
-    } else {
-      entries[key] = value;
-    }
-  }
-  console.log('[graph-token-debug] postToken final body:', entries);
-}
-
-function buildTokenErrorMessage(responseStatus, data) {
-  const description = data?.error_description || data?.error || `Token acquisition failed (${responseStatus})`;
-  const code = data?.error || '';
-  const trace = data?.trace_id || '';
-  const correlation = data?.correlation_id || '';
-
-  const parts = [description];
-  if (code) parts.push(`code=${code}`);
-  if (trace) parts.push(`trace_id=${trace}`);
-  if (correlation) parts.push(`correlation_id=${correlation}`);
-  return parts.join(' | ');
-}
-
-
-export function getGraphTokenDebugSnapshot() {
-  return {
-    GRAPH_CLIENT_SECRET: maskValue(envValue('GRAPH_CLIENT_SECRET')),
-    CLIENT_SECRET: maskValue(envValue('CLIENT_SECRET')),
-    AZURE_CLIENT_SECRET: maskValue(envValue('AZURE_CLIENT_SECRET')),
-    RESOLVED_SECRET: maskValue(graphClientSecret()),
-    RESOLVED_SECRET_IS_GUID: isGuid(graphClientSecret()),
-    GRAPH_TENANT_ID: maskValue(envValue('GRAPH_TENANT_ID')),
-    GRAPH_CLIENT_ID: maskValue(envValue('GRAPH_CLIENT_ID')),
-  };
-}
-
+// --- CORE OAUTH ---
 async function postToken(params) {
   validateEnv();
-  logTokenDebug();
-
   const tokenUrl = `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/token`;
-  const clientSecret = graphClientSecret();
-
   const body = new URLSearchParams();
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value === undefined || value === null) return;
-    body.set(key, String(value));
-  });
+  Object.entries(params || {}).forEach(([k, v]) => { if (v) body.set(k, String(v)); });
+  
   body.set('client_id', envValue('GRAPH_CLIENT_ID'));
-  body.set('client_secret', clientSecret);
-
-  logTokenRequestDetails(params, body);
+  body.set('client_secret', graphClientSecret());
 
   const response = await fetch(tokenUrl, {
     method: 'POST',
@@ -214,252 +67,104 @@ async function postToken(params) {
   });
 
   const data = await response.json();
-  if (debugEnabled()) {
-    console.log('[graph-token-debug] raw token response:', { status: response.status, data });
-  }
-
-  if (!response.ok || !data.access_token) {
-    throw new Error(buildTokenErrorMessage(response.status, data));
-  }
-
+  if (!response.ok) throw new Error(data.error_description || 'Token Error');
   return data;
 }
 
-async function acquireAppToken() {
-  const token = await postToken({
-    grant_type: 'client_credentials',
-    scope: 'https://graph.microsoft.com/.default',
+// --- EXPORTS: AUTH ---
+export function mailboxDelegatedScopesString() { 
+  return DELEGATED_SCOPES.join(' '); 
+}
+
+export function buildDelegatedConsentUrl({ loginHint } = {}) {
+  const params = new URLSearchParams({
+    client_id: envValue('GRAPH_CLIENT_ID'),
+    response_type: 'code',
+    redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
+    scope: DELEGATED_SCOPES.join(' '),
+    prompt: 'consent',
   });
-  return token.access_token;
+  if (loginHint) params.set('login_hint', loginHint);
+  return `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/authorize?${params.toString()}`;
 }
 
 export async function startDeviceCodeFlow(options = {}) {
-  validateEnv();
-  const deviceCodeUrl = `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/devicecode`;
-  const body = new URLSearchParams({
-    client_id: envValue('GRAPH_CLIENT_ID'),
-    scope: options.scopes || delegatedScopesString(),
-  });
-
-  const response = await fetch(deviceCodeUrl, {
+  const response = await fetch(`https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/devicecode`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
+    body: new URLSearchParams({ 
+      client_id: envValue('GRAPH_CLIENT_ID'), 
+      scope: options.scopes || DELEGATED_SCOPES.join(' ') 
+    }),
   });
-
   const data = await response.json();
-  if (!response.ok || !data.device_code) {
-    throw new Error(data.error_description || data.error || `Failed to start device code flow (${response.status})`);
-  }
-
-  return {
-    deviceCode: data.device_code,
-    userCode: data.user_code,
-    verificationUri: data.verification_uri,
-    verificationUriComplete: data.verification_uri_complete,
-    expiresIn: Number(data.expires_in || 900),
-    interval: Number(data.interval || 5),
-    message: data.message,
-  };
+  return { deviceCode: data.device_code, userCode: data.user_code, verificationUri: data.verification_uri };
 }
 
 export async function exchangeDeviceCodeForToken(deviceCode, options = {}) {
-  if (!deviceCode) {
-    throw new Error('deviceCode is required');
-  }
-
   const token = await postToken({
     grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-    scope: options.scopes || delegatedScopesString(),
     device_code: deviceCode,
   });
-
-  return {
-    accessToken: token.access_token,
-    refreshToken: token.refresh_token || '',
-    expiresIn: Number(token.expires_in || 3600),
-    scope: token.scope || delegatedScopesString(),
-  };
+  return { accessToken: token.access_token, refreshToken: token.refresh_token || '' };
 }
 
 export async function bootstrapDelegatedToken({ username, password }) {
-  if (!username || !password) {
-    throw new Error('username and password are required');
-  }
-
-  let token;
-  try {
-    token = await postToken({
-      grant_type: 'password',
-      scope: delegatedScopesString(),
-      username,
-      password,
-    });
-  } catch (error) {
-    const msg = String(error.message || error);
-    if (msg.includes('AADSTS50076')) {
-      throw new Error('AADSTS50076: MFA required. Use Device Code Auth in Admin panel. Ensure delegated permissions include Files.Read.Selected, Sites.Selected, User.Read.');
-    }
-    throw error;
-  }
-
-  return {
-    accessToken: token.access_token,
-    refreshToken: token.refresh_token || '',
-    expiresIn: Number(token.expires_in || 3600),
-    scope: token.scope || delegatedScopesString(),
-  };
-}
-
-function shouldAllowAppFallback() {
-  return String(process.env.GRAPH_ALLOW_APP_FALLBACK || '').toLowerCase() === 'true';
-}
-
-async function acquireTokenFromConfig(config) {
-  const encryptedRefreshToken = config?.graphRefreshTokenEnc;
-  if (encryptedRefreshToken) {
-    try {
-      const refreshToken = decryptText(encryptedRefreshToken);
-      if (refreshToken) {
-        const refreshed = await postToken({
-          grant_type: 'refresh_token',
-          scope: delegatedScopesString(),
-          refresh_token: refreshToken,
-        });
-
-        return {
-          accessToken: refreshed.access_token,
-          refreshToken: refreshed.refresh_token || refreshToken,
-          expiresIn: Number(refreshed.expires_in || 3600),
-          mode: 'delegated',
-        };
-      }
-    } catch {
-      // fall through to app token when explicitly allowed
-    }
-  }
-
-  if (!shouldAllowAppFallback()) {
-    throw new Error('No delegated refresh token configured. Complete Graph account bootstrap in Admin panel.');
-  }
-
-  const appToken = await acquireAppToken();
-  return {
-    accessToken: appToken,
-    refreshToken: null,
-    expiresIn: 3600,
-    mode: 'application',
-  };
+  const token = await postToken({
+    grant_type: 'password',
+    scope: DELEGATED_SCOPES.join(' '),
+    username,
+    password,
+  });
+  return { accessToken: token.access_token, refreshToken: token.refresh_token || '' };
 }
 
 export async function getAccessTokenWithConfig(config) {
-  const tokenResult = await acquireTokenFromConfig(config);
-  return tokenResult;
-}
-
-async function graphRequest(path, token) {
-  const response = await fetch(`${GRAPH_BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const encrypted = config?.graphRefreshTokenEnc;
+  if (encrypted) {
+    try {
+      const rt = unprotectRefreshToken(encrypted);
+      const res = await postToken({ 
+        grant_type: 'refresh_token', 
+        refresh_token: rt, 
+        scope: DELEGATED_SCOPES.join(' ') 
+      });
+      return { accessToken: res.access_token, refreshToken: res.refresh_token || rt };
+    } catch (e) { /* fallback */ }
+  }
+  const appRes = await postToken({ 
+    grant_type: 'client_credentials', 
+    scope: 'https://graph.microsoft.com/.default' 
   });
-
-  const text = await response.text();
-  let data;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { raw: text };
-  }
-
-  if (!response.ok) {
-    const statusDetail = `${response.status} ${response.statusText}`.trim();
-    const graphError = data?.error?.message || data?.error?.code || text;
-    const graphCode = data?.error?.code || 'GRAPH_REQUEST_FAILED';
-    const message = `Graph request failed (${statusDetail}): ${graphError || 'Unknown error'}`;
-    throw new GraphServiceError(message, {
-      code: graphCode,
-      status: response.status,
-      graphMessage: data?.error?.message || text || '',
-      graphCode,
-      path,
-      troubleshooting: graphTroubleshootingHints(response.status, graphCode, data?.error?.message || text || ''),
-      innerError: data?.error?.innerError || null,
-    });
-  }
-
-  return data;
+  return { accessToken: appRes.access_token };
 }
 
-function toShareToken(url) {
-  return Buffer.from(url)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
-
-function encodeSheetName(sheetName) {
-  return sheetName.replace(/'/g, "''");
-}
-
+// --- EXPORTS: EXCEL ---
 export async function resolveShareLink(shareLink, config) {
-  if (!shareLink) throw new Error('shareLink is required');
-
-  const { accessToken } = await acquireTokenFromConfig(config);
-  const shareToken = toShareToken(shareLink);
-  const item = await graphRequest(`/shares/u!${shareToken}/driveItem`, accessToken);
-
-  return {
-    driveId: item?.parentReference?.driveId || '',
-    fileId: item?.id || '',
-    fileName: item?.name || '',
-    webUrl: item?.webUrl || '',
-  };
+  const { accessToken } = await getAccessTokenWithConfig(config);
+  const shareToken = 'u!' + Buffer.from(shareLink).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const res = await fetch(`${GRAPH_BASE_URL}/shares/${shareToken}/driveItem`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const item = await res.json();
+  if (!res.ok) throw new Error(item.error?.message || 'Link resolution failed');
+  return { driveId: item.parentReference.driveId, fileId: item.id };
 }
 
 export async function getWorksheets({ driveId, fileId, config }) {
-  if (!driveId || !fileId) throw new Error('driveId and fileId are required');
-
-  const { accessToken } = await acquireTokenFromConfig(config);
-  const data = await graphRequest(`/drives/${driveId}/items/${fileId}/workbook/worksheets`, accessToken);
-  return (data.value || []).map((sheet) => ({
-    id: sheet.id,
-    name: sheet.name,
-    position: sheet.position,
-  }));
+  const { accessToken } = await getAccessTokenWithConfig(config);
+  const res = await fetch(`${GRAPH_BASE_URL}/drives/${driveId}/items/${fileId}/workbook/worksheets`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const data = await res.json();
+  return (data.value || []).map(s => ({ id: s.id, name: s.name }));
 }
 
 export async function getWorksheetRangeValues({ driveId, fileId, worksheetName, rangeAddress, config }) {
-  if (!driveId || !fileId || !worksheetName) {
-    throw new Error('driveId, fileId and worksheetName are required');
-  }
-
-  const { accessToken } = await acquireTokenFromConfig(config);
-  const sheet = encodeSheetName(worksheetName);
-
-  if (rangeAddress && rangeAddress.trim()) {
-    const range = encodeURIComponent(rangeAddress.trim());
-    const rangeData = await graphRequest(
-      `/drives/${driveId}/items/${fileId}/workbook/worksheets('${sheet}')/range(address='${range}')`,
-      accessToken,
-    );
-    return rangeData.values || [];
-  }
-
-  const usedRange = await graphRequest(
-    `/drives/${driveId}/items/${fileId}/workbook/worksheets('${sheet}')/usedRange`,
-    accessToken,
-  );
-  return usedRange.values || [];
+  const { accessToken } = await getAccessTokenWithConfig(config);
+  const sheet = worksheetName.replace(/'/g, "''");
+  const path = rangeAddress ? `worksheets('${sheet}')/range(address='${encodeURIComponent(rangeAddress)}')` : `worksheets('${sheet}')/usedRange`;
+  const res = await fetch(`${GRAPH_BASE_URL}/drives/${driveId}/items/${fileId}/workbook/${path}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const data = await res.json();
+  return data.values || [];
 }
 
-export async function getWorksheetRows({ driveId, fileId, worksheetName, rangeAddress, config }) {
-  return getWorksheetRangeValues({ driveId, fileId, worksheetName, rangeAddress, config });
-}
-
-export function protectRefreshToken(rawToken) {
-  return encryptText(rawToken);
-}
-
-export function unprotectRefreshToken(payload) {
-  return decryptText(payload);
+export async function getWorksheetRows(params) {
+  return getWorksheetRangeValues(params);
 }

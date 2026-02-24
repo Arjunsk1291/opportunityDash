@@ -212,9 +212,9 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                     <TableCell>
                       <Badge className={`text-xs font-mono ${getGroupBadge(tender.groupClassification)}`}>{tender.groupClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="font-bold text-sm text-slate-600 dark:text-slate-300 bg-slate-50/60 dark:bg-slate-900/20">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
+                    <TableCell className="font-bold text-sm">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
                     <TableCell className="font-bold text-sm">{getSubmissionDisplay(tender) || '—'}</TableCell>
-                    <TableCell className="font-medium text-slate-800 dark:text-slate-200">{tender.internalLead || 'Unassigned'}</TableCell>
+                    <TableCell>{tender.internalLead || 'Unassigned'}</TableCell>
                     <TableCell className="text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
                     <TableCell>
                       <Badge className={getStatusBadge(tender.avenirStatus)}>{tender.avenirStatus || '—'}</Badge>
