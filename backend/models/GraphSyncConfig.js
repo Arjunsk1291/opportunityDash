@@ -6,7 +6,7 @@ const graphSyncConfigSchema = new mongoose.Schema(
     driveId: { type: String, default: '' },
     fileId: { type: String, default: '' },
     worksheetName: { type: String, default: '' },
-    dataRange: { type: String, default: 'B4:Z2000' },
+    dataRange: { type: String, default: '' },
     headerRowOffset: { type: Number, default: 0 },
     syncIntervalMinutes: { type: Number, default: 10 },
     fieldMapping: { type: mongoose.Schema.Types.Mixed, default: {} },

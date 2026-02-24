@@ -1,3 +1,5 @@
+import { isSubmissionWithinDays } from '@/lib/submissionDate';
+
 export interface Opportunity {
   id: string;
   opportunityRefNo: string;
@@ -76,19 +78,6 @@ export const PROBABILITY_BY_STAGE: Record<string, number> = {
 };
 
 export function calculateSummaryStats(data: Opportunity[]) {
-  const isSubmissionNear = (submissionDate: string | null): boolean => {
-    if (!submissionDate) return false;
-
-    const target = new Date(submissionDate);
-    if (Number.isNaN(target.getTime())) return false;
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    target.setHours(0, 0, 0, 0);
-
-    const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return diffDays >= 0 && diffDays <= 7;
-  };
 
   const activeOpps = data.filter(o => 
     ['WORKING', 'SUBMITTED', 'AWARDED'].includes(o.canonicalStage)
@@ -118,7 +107,7 @@ export function calculateSummaryStats(data: Opportunity[]) {
   const ongoingCount = ongoingOpps.length;
   const ongoingValue = ongoingOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
 
-  const submissionNearOpps = data.filter(o => isSubmissionNear(o.tenderSubmittedDate || o.tenderPlannedSubmissionDate));
+  const submissionNearOpps = data.filter((o) => isSubmissionWithinDays(o, 10));
   const submissionNearCount = submissionNearOpps.length;
 
   return {
