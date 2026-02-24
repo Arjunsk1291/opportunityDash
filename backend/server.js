@@ -585,7 +585,7 @@ app.put('/api/graph/config', verifyToken, async (req, res) => {
     if (driveId !== undefined) config.driveId = String(driveId || '');
     if (fileId !== undefined) config.fileId = String(fileId || '');
     if (worksheetName !== undefined) config.worksheetName = String(worksheetName || '');
-    if (dataRange !== undefined) config.dataRange = String(dataRange || 'B4:Z2000');
+    if (dataRange !== undefined) config.dataRange = String(dataRange || '');
     if (headerRowOffset !== undefined) config.headerRowOffset = Math.max(0, Number(headerRowOffset) || 0);
     if (syncIntervalMinutes !== undefined) config.syncIntervalMinutes = Number(syncIntervalMinutes) || 10;
     if (fieldMapping !== undefined && typeof fieldMapping === 'object') config.fieldMapping = fieldMapping;
