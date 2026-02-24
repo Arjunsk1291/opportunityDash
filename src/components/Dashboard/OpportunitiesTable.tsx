@@ -112,6 +112,29 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     return variants[upperResult] || 'bg-muted/50 text-muted-foreground';
   };
 
+
+
+  const getTenderTypeBadge = (type?: string) => {
+    const key = String(type || '').toUpperCase();
+    const variants: Record<string, string> = {
+      TENDER: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800',
+      PROPOSAL: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 border border-violet-200 dark:border-violet-800',
+      PREQUALIFICATION: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800',
+    };
+    return variants[key] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700';
+  };
+
+  const getGroupBadge = (group?: string) => {
+    const key = String(group || '').toUpperCase();
+    const variants: Record<string, string> = {
+      GTS: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800',
+      GES: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800',
+      GDS: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-300 border border-fuchsia-200 dark:border-fuchsia-800',
+      GTN: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300 border border-orange-200 dark:border-orange-800',
+    };
+    return variants[key] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700';
+  };
+
   const canSVPApprove = (tender: Opportunity) => {
     if (isMaster) return true;
     if (!isSVP || !user?.assignedGroup) return false;
@@ -148,22 +171,22 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       <CardContent className="p-0">
         <div className="max-h-[400px] overflow-auto scrollbar-thin">
           <Table>
-            <TableHeader className="sticky top-0 bg-card z-10">
+            <TableHeader>
               <TableRow>
-                <TableHead className="w-24">Ref No.</TableHead>
-                <TableHead className="min-w-[200px]">Tender Name</TableHead>
-                <TableHead>Tender Type</TableHead>
-                <TableHead>Client</TableHead>
-                <TableHead>Group</TableHead>
-                <TableHead className="font-bold">RFP Received</TableHead>
-                <TableHead className="font-bold">Submission</TableHead>
-                <TableHead>Lead</TableHead>
-                <TableHead className="text-right">Value</TableHead>
-                <TableHead>AVENIR STATUS</TableHead>
-                <TableHead className="max-w-[150px]">Remarks</TableHead>
-                <TableHead>RESULT</TableHead>
-                <TableHead className="w-[220px]">Approval</TableHead>
-                <TableHead className="w-16">Info</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur w-24">Ref No.</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur min-w-[200px]">Tender Name</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">Tender Type</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">Client</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">Group</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur font-bold">RFP Received</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur font-bold">Submission</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">Lead</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur text-right">Value</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">AVENIR STATUS</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur max-w-[150px]">Remarks</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">RESULT</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur w-[220px]">Approval</TableHead>
+                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur w-16">Info</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -176,18 +199,18 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => onSelectOpportunity?.(tender)}
                   >
-                    <TableCell className="font-mono text-xs">{tender.opportunityRefNo || '—'}</TableCell>
+                    <TableCell className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">{tender.opportunityRefNo || '—'}</TableCell>
                     <TableCell className="max-w-[250px]">
                       <div className="truncate" title={tender.tenderName || ''}>
                         {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="text-xs">{tender.opportunityClassification || '—'}</Badge>
+                      <Badge className={`text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="max-w-[120px] truncate">{tender.clientName || '—'}</TableCell>
+                    <TableCell className="max-w-[120px] truncate font-semibold text-foreground">{tender.clientName || '—'}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="text-xs font-mono">{tender.groupClassification || '—'}</Badge>
+                      <Badge className={`text-xs font-mono ${getGroupBadge(tender.groupClassification)}`}>{tender.groupClassification || '—'}</Badge>
                     </TableCell>
                     <TableCell className="font-bold text-sm">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
                     <TableCell className="font-bold text-sm">{getSubmissionDisplay(tender) || '—'}</TableCell>

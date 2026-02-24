@@ -220,7 +220,10 @@ export function getClientData(data: Opportunity[]) {
       clientStats[o.clientName] = { count: 0, value: 0 };
     }
     clientStats[o.clientName].count++;
-    clientStats[o.clientName].value += o.opportunityValue;
+    const result = String(o.tenderResult || o.avenirStatus || "").toUpperCase();
+    if (result === "SUBMITTED") {
+      clientStats[o.clientName].value += o.opportunityValue;
+    }
   });
   
   return Object.entries(clientStats)
@@ -231,7 +234,7 @@ export function getClientData(data: Opportunity[]) {
 
 export function calculateDataHealth(data: Opportunity[]) {
   const mandatoryFields = ['internalLead', 'opportunityValue', 'tenderPlannedSubmissionDate'];
-  let totalFields = data.length * mandatoryFields.length;
+  const totalFields = data.length * mandatoryFields.length;
   let completedFields = 0;
   const missingRows: Array<{ id: string; refNo: string; missingFields: string[] }> = [];
   
