@@ -16,10 +16,25 @@ import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
+
+function parseApiErrorPayload(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== 'object') return fallback;
+  const data = payload as { error?: string; message?: string; code?: string; troubleshooting?: string[]; details?: { troubleshooting?: string[] } };
+  const base = data.message || data.error || fallback;
+  const codePart = data.code ? ` [${data.code}]` : '';
+  const troubleshooting = Array.isArray(data.troubleshooting)
+    ? data.troubleshooting
+    : Array.isArray(data.details?.troubleshooting)
+      ? data.details?.troubleshooting
+      : [];
+  const tips = troubleshooting?.length ? ` | Tips: ${troubleshooting.join(' | ')}` : '';
+  return `${base}${codePart}${tips}`;
+}
+
 interface AuthorizedUser {
   _id: string;
   email: string;
-  role: 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'Basic';
+  role: 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'Basic' | 'MASTER' | 'PROPOSAL_HEAD';
   assignedGroup?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   lastLogin?: Date;
@@ -47,6 +62,47 @@ interface GraphConfig {
   fieldMapping?: Record<string, string | string[]>;
   lastResolvedAt?: string;
   lastSyncAt?: string;
+}
+
+
+interface MailConfig {
+  serviceEmail: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpPassword?: string;
+  tenantId?: string;
+  clientId?: string;
+  clientSecret?: string;
+  serviceUsername?: string;
+  envManagedConfidential?: { tenantId: boolean; clientId: boolean; clientSecret: boolean };
+}
+
+interface NotificationPreviewItem {
+  ruleId: string;
+  triggerEvent: string;
+  useGroupMatching: boolean;
+  groupClassification: string | null;
+  recipients: Array<{ email: string; assignedGroup: string | null }>;
+}
+
+interface NotificationRule {
+  id?: string;
+  _id?: string;
+  triggerEvent: 'NEW_TENDER_SYNCED';
+  recipientRole: 'SVP';
+  useGroupMatching: boolean;
+  emailSubject: string;
+  emailBody: string;
+  isActive?: boolean;
+}
+
+interface MailboxAuthFlow {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete?: string;
+  expiresIn?: number;
+  message?: string;
 }
 
 interface GraphAuthStatus {
@@ -86,6 +142,21 @@ export default function Admin() {
   });
   const [bootstrapUsername, setBootstrapUsername] = useState('');
   const [bootstrapPassword, setBootstrapPassword] = useState('');
+  const [consentUrl, setConsentUrl] = useState('');
+  const [mailConfig, setMailConfig] = useState<MailConfig>({ serviceEmail: '', smtpHost: '', smtpPort: 587, smtpPassword: '' });
+  const [mailboxAuthFlow, setMailboxAuthFlow] = useState<MailboxAuthFlow | null>(null);
+  const [mailboxAuthStatus, setMailboxAuthStatus] = useState<{ hasGraphRefreshToken: boolean; graphTokenUpdatedAt?: string | null; lastUpdatedBy?: string | null }>({ hasGraphRefreshToken: false });
+  const [notificationRules, setNotificationRules] = useState<NotificationRule[]>([]);
+  const [notificationPreview, setNotificationPreview] = useState<NotificationPreviewItem[]>([]);
+  const [previewGroup, setPreviewGroup] = useState('GTS');
+  const [newRule, setNewRule] = useState<NotificationRule>({
+    triggerEvent: 'NEW_TENDER_SYNCED',
+    recipientRole: 'SVP',
+    useGroupMatching: true,
+    emailSubject: 'New Tender Synced: {{tenderName}}',
+    emailBody: '<p>A new tender {{tenderName}} has been synced. Ref: {{refNo}}</p>',
+    isActive: true,
+  });
 
   useEffect(() => {
     if (isMaster) {
@@ -93,8 +164,13 @@ export default function Admin() {
       loadCollectionStats();
       loadGraphConfig();
       loadGraphAuthStatus();
+      fetchConsentUrl();
+      loadMailConfig();
+      loadNotificationRules();
+      loadMailboxAuthStatus();
+      loadNotificationPreview('GTS');
     }
-  }, [isMaster, token]);
+  }, [isMaster, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadUsers = async () => {
     if (!token) return;
@@ -152,11 +228,10 @@ export default function Admin() {
         },
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to sync data');
-      }
-
       const result = await response.json();
+      if (!response.ok) {
+        throw new Error(parseApiErrorPayload(result, 'Failed to sync data'));
+      }
       setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Graph Excel` });
       await loadCollectionStats();
       toast.success(`Synced ${result.count} tenders from Graph Excel`);
@@ -164,7 +239,7 @@ export default function Admin() {
     } catch (error) {
       console.error('❌ Error syncing:', error);
       setMessage({ type: 'error', text: 'Failed to sync: ' + (error as Error).message });
-      toast.error('Sync failed');
+      toast.error((error as Error).message);
     } finally {
       setSyncLoading(false);
     }
@@ -194,6 +269,27 @@ export default function Admin() {
     }
   };
 
+
+  const fetchConsentUrl = async (loginHint?: string) => {
+    if (!token) return;
+    try {
+      const query = loginHint ? `?loginHint=${encodeURIComponent(loginHint)}` : '';
+      const response = await fetch(API_URL + '/graph/auth/consent-url' + query, {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to fetch consent URL');
+      setConsentUrl(data.consentUrl || '');
+      return data.consentUrl || '';
+    } catch (error) {
+      console.error('Failed to load consent URL:', error);
+      return '';
+    }
+  };
+
   const bootstrapGraphAuth = async () => {
     if (!token || !bootstrapUsername || !bootstrapPassword) {
       toast.error('Username and password are required');
@@ -216,6 +312,10 @@ export default function Admin() {
         if (data.error === 'MFA_REQUIRED') throw new Error('MFA is enabled on this account. Use a non-MFA service account.');
         if (data.error === 'INVALID_CREDENTIALS') throw new Error('Invalid username or password.');
         if (data.error === 'USER_NOT_FOUND') throw new Error('User not found in this tenant.');
+        if (data.error === 'CONSENT_REQUIRED') {
+          setConsentUrl(data.consentUrl || '');
+          throw new Error('Consent required for this account. Open the consent URL, accept once, then retry Connect Excel.');
+        }
         throw new Error(data.message || data.error || 'Failed to bootstrap graph auth');
       }
 
@@ -322,7 +422,7 @@ export default function Admin() {
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to resolve share link');
+        throw new Error(parseApiErrorPayload(data, 'Failed to resolve share link'));
       }
 
       setGraphConfig((prev) => ({
@@ -364,7 +464,7 @@ export default function Admin() {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to preview rows');
+        throw new Error(parseApiErrorPayload(data, 'Failed to preview rows'));
       }
 
       setPreviewRows(data.previewRows || []);
@@ -465,7 +565,7 @@ export default function Admin() {
     }
   };
 
-  const changeUserRole = async (email: string, newRole: string) => {
+  const changeUserRole = async (email: string, newRole: string, assignedGroup?: string | null) => {
     if (!token) return;
     setChangingRole(email);
     try {
@@ -475,7 +575,7 @@ export default function Admin() {
           'Authorization': 'Bearer ' + token,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, newRole }),
+        body: JSON.stringify({ email, newRole, assignedGroup: newRole === 'SVP' ? assignedGroup : null }),
       });
 
       if (!response.ok) {
@@ -542,6 +642,151 @@ export default function Admin() {
     }
   };
 
+
+
+  const loadMailboxAuthStatus = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/admin/mailbox/status', { headers: { Authorization: 'Bearer ' + token } });
+      if (!response.ok) return;
+      const data = await response.json();
+      setMailboxAuthStatus({
+        hasGraphRefreshToken: !!data.hasGraphRefreshToken,
+        graphTokenUpdatedAt: data.graphTokenUpdatedAt || null,
+        lastUpdatedBy: data.lastUpdatedBy || null,
+      });
+      if (data.serviceEmail) {
+        setMailConfig((prev) => ({ ...prev, serviceEmail: data.serviceEmail }));
+      }
+    } catch (error) {
+      console.error('Failed to load mailbox auth status:', error);
+    }
+  };
+
+  const initiateMailboxAuth = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/admin/mailbox/initiate', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to start device code flow'));
+      setMailboxAuthFlow({
+        deviceCode: data.deviceCode,
+        userCode: data.userCode,
+        verificationUri: data.verificationUri,
+        verificationUriComplete: data.verificationUriComplete,
+        expiresIn: data.expiresIn,
+        message: data.message,
+      });
+      toast.success('Device code generated. Complete verification on Microsoft page.');
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  };
+
+  const finalizeMailboxAuth = async () => {
+    if (!token || !mailboxAuthFlow?.deviceCode) return;
+    try {
+      const response = await fetch(API_URL + '/admin/mailbox/finalize', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceCode: mailboxAuthFlow.deviceCode, email: mailConfig.serviceEmail }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Mailbox authorization not completed yet'));
+      toast.success('Service mailbox authorized successfully.');
+      setMailboxAuthFlow(null);
+      await loadMailboxAuthStatus();
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  };
+
+  const loadMailConfig = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/system-config/mail', { headers: { Authorization: 'Bearer ' + token } });
+      if (!response.ok) return;
+      const data = await response.json();
+      setMailConfig((prev) => ({ ...prev, serviceEmail: data.serviceEmail || '', smtpHost: data.smtpHost || '', smtpPort: data.smtpPort || 587, smtpPassword: '', tenantId: data.tenantId || '', clientId: data.clientId || '', clientSecret: '', serviceUsername: data.serviceUsername || '', envManagedConfidential: data.envManagedConfidential || { tenantId: false, clientId: false, clientSecret: false } }));
+    } catch (error) {
+      console.error('Failed to load mail config:', error);
+    }
+  };
+
+  const saveMailConfig = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/system-config/mail', {
+        method: 'PUT',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...mailConfig, servicePassword: mailConfig.smtpPassword || "" }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to save mail config'));
+      setMessage({ type: 'success', text: '✅ SMTP configuration saved' });
+      setMailConfig((prev) => ({ ...prev, smtpPassword: '' }));
+    } catch (error) {
+      setMessage({ type: 'error', text: '❌ Failed to save SMTP config: ' + (error as Error).message });
+    }
+  };
+
+  const loadNotificationRules = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/notification-rules', { headers: { Authorization: 'Bearer ' + token } });
+      if (!response.ok) return;
+      const data = await response.json();
+      setNotificationRules(data || []);
+    } catch (error) {
+      console.error('Failed to load notification rules:', error);
+    }
+  };
+
+  const loadNotificationPreview = async (groupClassification?: string) => {
+    if (!token) return;
+    try {
+      const group = (groupClassification || previewGroup || '').toUpperCase();
+      const query = new URLSearchParams({ triggerEvent: 'NEW_TENDER_SYNCED', groupClassification: group }).toString();
+      const response = await fetch(API_URL + '/notification-rules/preview?' + query, { headers: { Authorization: 'Bearer ' + token } });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to preview routing');
+      setNotificationPreview(data.preview || []);
+    } catch (error) {
+      setMessage({ type: 'error', text: '❌ Failed to preview notification routing: ' + (error as Error).message });
+    }
+  };
+
+  const createNotificationRule = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/notification-rules', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRule),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to create rule');
+      setMessage({ type: 'success', text: '✅ Notification rule created' });
+      await loadNotificationRules();
+    } catch (error) {
+      setMessage({ type: 'error', text: '❌ Failed to create rule: ' + (error as Error).message });
+    }
+  };
+
+  const deleteNotificationRule = async (id?: string) => {
+    if (!token || !id) return;
+    try {
+      const response = await fetch(API_URL + '/notification-rules/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+      if (!response.ok) throw new Error('Failed to delete rule');
+      await loadNotificationRules();
+    } catch (error) {
+      setMessage({ type: 'error', text: '❌ Failed to delete rule: ' + (error as Error).message });
+    }
+  };
+
   if (!isMaster) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -574,6 +819,7 @@ export default function Admin() {
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="users">User Management</TabsTrigger>
           <TabsTrigger value="data-sync">Data Sync</TabsTrigger>
+          <TabsTrigger value="communication">Communication Center</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general">
@@ -683,7 +929,15 @@ export default function Admin() {
                         <TableCell>
                           <Select
                             value={u.role}
-                            onValueChange={(newRole) => changeUserRole(u.email, newRole)}
+                            onValueChange={(newRole) => {
+                              if (newRole === 'SVP') {
+                                const selectedGroup = window.prompt('Enter assigned group for SVP (GES/GDS/GTS)', (u.assignedGroup || 'GES') as string);
+                                if (!selectedGroup) return;
+                                changeUserRole(u.email, newRole, selectedGroup.toUpperCase());
+                                return;
+                              }
+                              changeUserRole(u.email, newRole);
+                            }}
                             disabled={changingRole === u.email}
                           >
                             <SelectTrigger className="w-24 h-8">
@@ -831,6 +1085,32 @@ export default function Admin() {
                     <div className="md:col-span-2 rounded border p-3 text-xs text-muted-foreground">
                       Use one-time delegated bootstrap with your Microsoft account credentials. If this account has MFA enforced,
                       use a non-MFA service account for bootstrap.
+                    </div>
+                    <div className="md:col-span-2 rounded border p-3 text-xs text-muted-foreground space-y-2">
+                      <p>If you get <strong>AADSTS65001</strong>, grant one-time consent for the service account, then retry bootstrap.</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={async () => {
+                            const url = consentUrl || await fetchConsentUrl(bootstrapUsername);
+                            if (url) window.open(url, '_blank', 'noopener,noreferrer');
+                          }}
+                          disabled={configSaving}
+                        >
+                          Open Consent URL
+                        </Button>
+                        {consentUrl && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => navigator.clipboard.writeText(consentUrl)}
+                            disabled={configSaving}
+                          >
+                            Copy Consent URL
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Microsoft Username</p>
@@ -1010,6 +1290,120 @@ export default function Admin() {
             </Card>
           </div>
         </TabsContent>
+
+        <TabsContent value="communication">
+          <Card>
+            <CardHeader>
+              <CardTitle>Communication Center</CardTitle>
+              <CardDescription>Master-only Microsoft Graph API integration, Notification Rules, and Template Editor</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <Tabs defaultValue="graph" className="w-full">
+                <TabsList>
+                  <TabsTrigger value="graph">Microsoft Graph Integration</TabsTrigger>
+                  <TabsTrigger value="rules">Notification Rules</TabsTrigger>
+                  <TabsTrigger value="templates">Template Editor</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="graph" className="space-y-4 pt-4">
+                  <div className="rounded border p-3 text-xs text-muted-foreground bg-muted/20">
+                    <p className="font-semibold text-foreground mb-1">Confidential Client Authentication (ROPC)</p>
+                    <p>This system uses a Client Secret + Service Account credentials to send notifications without user intervention.</p>
+                  </div>
+
+                  {(mailConfig.envManagedConfidential?.tenantId || mailConfig.envManagedConfidential?.clientId || mailConfig.envManagedConfidential?.clientSecret) && (
+                    <Alert className="bg-blue-50/50 border-blue-200">
+                      <Database className="h-4 w-4 text-blue-600" />
+                      <AlertDescription className="text-blue-700 text-xs">
+                        Azure App credentials (ID & Secret) are <strong>Managed by System (.env)</strong>.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  <div className="space-y-3">
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium">Tenant ID</label>
+                      <Input
+                        placeholder="Azure Tenant ID"
+                        value={mailConfig.tenantId || ''}
+                        disabled={!!mailConfig.envManagedConfidential?.tenantId}
+                        onChange={(e) => setMailConfig((p) => ({ ...p, tenantId: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium">Client ID</label>
+                      <Input
+                        placeholder="Application Client ID"
+                        value={mailConfig.clientId || ''}
+                        disabled={!!mailConfig.envManagedConfidential?.clientId}
+                        onChange={(e) => setMailConfig((p) => ({ ...p, clientId: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium">Client Secret</label>
+                      <Input
+                        type="password"
+                        placeholder="Client Secret Value"
+                        value={mailConfig.clientSecret || ''}
+                        disabled={!!mailConfig.envManagedConfidential?.clientSecret}
+                        onChange={(e) => setMailConfig((p) => ({ ...p, clientSecret: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium text-blue-600">Service Account (Username)</label>
+                      <Input
+                        placeholder="tender-notify@avenirengineering.com"
+                        value={mailConfig.serviceUsername || ''}
+                        onChange={(e) => setMailConfig((p) => ({ ...p, serviceUsername: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium text-blue-600">Service Account Password</label>
+                      <Input
+                        type="password"
+                        placeholder="Account Password"
+                        value={mailConfig.smtpPassword || ''}
+                        onChange={(e) => setMailConfig((p) => ({ ...p, smtpPassword: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <Button className="w-full" onClick={saveMailConfig}>Save & Update Integration</Button>
+                </TabsContent>
+
+                <TabsContent value="rules" className="space-y-3 pt-4">
+                  <div className="space-y-4">
+                    {notificationRules.map((rule) => (
+                      <Card key={rule._id || rule.id}>
+                        <CardContent className="p-4">
+                          <p className="text-sm font-medium">{rule.emailSubject}</p>
+                          <p className="text-xs text-muted-foreground">Trigger: {rule.triggerEvent}</p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="templates" className="space-y-3 pt-4">
+                  <div className="space-y-3">
+                    <label className="text-sm font-medium">Email HTML Template</label>
+                    <Textarea
+                      className="min-h-[300px] font-mono text-xs"
+                      value={newRule.emailBody}
+                      onChange={(e) => setNewRule((p) => ({ ...p, emailBody: e.target.value }))}
+                    />
+                    <p className="text-[10px] text-muted-foreground">Supported: {'{{tenderName}}, {{refNo}}, {{value}}'}</p>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
       </Tabs>
     </div>
   );
