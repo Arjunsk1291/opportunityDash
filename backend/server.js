@@ -797,7 +797,7 @@ app.post('/api/admin/mailbox/initiate', verifyToken, async (req, res) => {
     const flowData = await startDeviceCodeFlow({ scopes: mailboxDelegatedScopesString() });
     res.json({ success: true, ...flowData });
   } catch (error) {
-    res.status(500).json(toApiError(error, 'MAILBOX_INITIATE_FAILED'));
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -833,7 +833,7 @@ app.post('/api/admin/mailbox/finalize', verifyToken, async (req, res) => {
     if (msg.includes('AADSTS65001')) {
       return res.status(400).json({ error: 'CONSENT_REQUIRED', message: 'Consent required for this account. Complete consent on verification site and retry.' });
     }
-    res.status(500).json(toApiError(error, 'MAILBOX_FINALIZE_FAILED'));
+    res.status(500).json({ error: msg });
   }
 });
 
@@ -850,7 +850,7 @@ app.get('/api/admin/mailbox/status', verifyToken, async (req, res) => {
       lastUpdatedBy: config.lastUpdatedBy || null,
     });
   } catch (error) {
-    res.status(500).json(toApiError(error, 'MAILBOX_STATUS_FAILED'));
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -871,7 +871,7 @@ app.get('/api/system-config/mail', verifyToken, async (req, res) => {
     };
     res.json(payload);
   } catch (error) {
-    res.status(500).json(toApiError(error, 'MAIL_CONFIG_LOAD_FAILED'));
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -896,7 +896,7 @@ app.put('/api/system-config/mail', verifyToken, async (req, res) => {
 
     res.json({ success: true, config: { serviceEmail: config.serviceEmail, smtpHost: config.smtpHost, smtpPort: config.smtpPort, hasPassword: !!config.encryptedPassword, tenantId: config.tenantId, clientId: config.clientId, clientSecret: config.clientSecret ? '********' : '', serviceUsername: config.serviceUsername } });
   } catch (error) {
-    res.status(500).json(toApiError(error, 'MAIL_CONFIG_SAVE_FAILED'));
+    res.status(500).json({ error: error.message });
   }
 });
 
