@@ -5,6 +5,36 @@ const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const requiredEnv = ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET'];
 const DELEGATED_SCOPES = ['Files.Read.Selected', 'Sites.Selected', 'User.Read', 'offline_access'];
 
+class GraphServiceError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = 'GraphServiceError';
+    this.code = details.code || 'GRAPH_SERVICE_ERROR';
+    this.status = details.status || null;
+    this.details = details;
+  }
+}
+
+function graphTroubleshootingHints(status, graphCode = '', graphMessage = '') {
+  const text = `${graphCode} ${graphMessage}`.toLowerCase();
+  const hints = [];
+  if (status === 401 || text.includes('invalidauthenticationtoken')) {
+    hints.push('Token is invalid/expired. Re-authenticate mailbox in Communication Center and retry.');
+  }
+  if (status === 403 || text.includes('access denied') || text.includes('accessdenied')) {
+    hints.push('Permission denied by Microsoft Graph. Verify app permissions (Files.Read.Selected/Sites.Selected/Mail.Send) and admin consent.');
+    hints.push('For Files.Read.Selected/Sites.Selected, also grant resource-level access to the specific site/drive/file.');
+    hints.push('Ensure service account has access to target SharePoint file and worksheet.');
+  }
+  if (status === 404 || text.includes('itemnotfound')) {
+    hints.push('Drive/File/Worksheet may be incorrect or moved. Re-resolve share link and refresh worksheet selection.');
+  }
+  if (!hints.length) {
+    hints.push('Enable GRAPH_TOKEN_DEBUG=true and MAIL_DEBUG=true to capture detailed token and Graph diagnostics in backend logs.');
+  }
+  return hints;
+}
+
 function envValue(name, fallback = '') {
   const value = process.env[name];
   return typeof value === 'string' ? value.trim() : fallback;
@@ -73,6 +103,32 @@ function decryptText(payload) {
 
 function delegatedScopesString() {
   return DELEGATED_SCOPES.join(' ');
+}
+
+
+function delegatedConsentScopesString() {
+  return [...DELEGATED_SCOPES, 'Mail.Send'].join(' ');
+}
+
+export function mailboxDelegatedScopesString() {
+  return delegatedConsentScopesString();
+}
+
+export function buildDelegatedConsentUrl({ loginHint } = {}) {
+  validateEnv();
+  const params = new URLSearchParams({
+    client_id: envValue('GRAPH_CLIENT_ID'),
+    response_type: 'code',
+    redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
+    scope: delegatedConsentScopesString(),
+    prompt: 'consent',
+  });
+
+  if (loginHint) {
+    params.set('login_hint', String(loginHint).trim().toLowerCase());
+  }
+
+  return `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/authorize?${params.toString()}`;
 }
 
 function logTokenDebug() {
@@ -177,12 +233,12 @@ async function acquireAppToken() {
   return token.access_token;
 }
 
-export async function startDeviceCodeFlow() {
+export async function startDeviceCodeFlow(options = {}) {
   validateEnv();
   const deviceCodeUrl = `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/devicecode`;
   const body = new URLSearchParams({
     client_id: envValue('GRAPH_CLIENT_ID'),
-    scope: delegatedScopesString(),
+    scope: options.scopes || delegatedScopesString(),
   });
 
   const response = await fetch(deviceCodeUrl, {
@@ -207,14 +263,14 @@ export async function startDeviceCodeFlow() {
   };
 }
 
-export async function exchangeDeviceCodeForToken(deviceCode) {
+export async function exchangeDeviceCodeForToken(deviceCode, options = {}) {
   if (!deviceCode) {
     throw new Error('deviceCode is required');
   }
 
   const token = await postToken({
     grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-    scope: delegatedScopesString(),
+    scope: options.scopes || delegatedScopesString(),
     device_code: deviceCode,
   });
 
@@ -317,7 +373,17 @@ async function graphRequest(path, token) {
   if (!response.ok) {
     const statusDetail = `${response.status} ${response.statusText}`.trim();
     const graphError = data?.error?.message || data?.error?.code || text;
-    throw new Error(`Graph request failed (${statusDetail}): ${graphError || 'Unknown error'}`);
+    const graphCode = data?.error?.code || 'GRAPH_REQUEST_FAILED';
+    const message = `Graph request failed (${statusDetail}): ${graphError || 'Unknown error'}`;
+    throw new GraphServiceError(message, {
+      code: graphCode,
+      status: response.status,
+      graphMessage: data?.error?.message || text || '',
+      graphCode,
+      path,
+      troubleshooting: graphTroubleshootingHints(response.status, graphCode, data?.error?.message || text || ''),
+      innerError: data?.error?.innerError || null,
+    });
   }
 
   return data;

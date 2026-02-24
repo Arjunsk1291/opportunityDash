@@ -9,37 +9,46 @@ interface AtRiskWidgetProps {
 }
 
 export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
-  // Submission Near = within 7 days after RFP received
+  // Submission Near = tender submitted/planned submission date within next 10 days
+  const getSubmissionDate = (opp: Opportunity): Date | null => {
+    const raw = opp.tenderSubmittedDate || opp.tenderPlannedSubmissionDate;
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
   const isSubmissionNear = (opp: Opportunity): boolean => {
-    if (!opp.dateTenderReceived) return false;
-    
-    const received = new Date(opp.dateTenderReceived);
+    const submissionDate = getSubmissionDate(opp);
+    if (!submissionDate) return false;
+
     const today = new Date();
-    const oneWeekAfterReceived = new Date(received);
-    oneWeekAfterReceived.setDate(received.getDate() + 7);
-    
-    const diffDays = Math.ceil((oneWeekAfterReceived.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return diffDays >= 0 && diffDays <= 7;
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(submissionDate);
+    target.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 10;
   };
 
   const submissionNear = data
     .filter(o => isSubmissionNear(o))
     .sort((a, b) => {
-      const dateA = a.dateTenderReceived ? new Date(a.dateTenderReceived).getTime() : 0;
-      const dateB = b.dateTenderReceived ? new Date(b.dateTenderReceived).getTime() : 0;
+      const dateA = getSubmissionDate(a)?.getTime() || 0;
+      const dateB = getSubmissionDate(b)?.getTime() || 0;
       return dateA - dateB;
     })
     .slice(0, 8);
 
   const getDaysToDeadline = (opp: Opportunity): number => {
-    if (!opp.dateTenderReceived) return 0;
-    
-    const received = new Date(opp.dateTenderReceived);
-    const oneWeekAfterReceived = new Date(received);
-    oneWeekAfterReceived.setDate(received.getDate() + 7);
-    
+    const submissionDate = getSubmissionDate(opp);
+    if (!submissionDate) return 0;
+
     const today = new Date();
-    const diffDays = Math.ceil((oneWeekAfterReceived.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(submissionDate);
+    target.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     return Math.max(0, diffDays);
   };
 
@@ -48,13 +57,13 @@ export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
       <CardHeader className="pb-2">
         <CardTitle className="text-lg flex items-center gap-2">
           <Clock className="h-5 w-5 text-pending" />
-          Submission Within a Week
+          Submission in Next 10 Days
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-2 max-h-[280px] overflow-auto scrollbar-thin">
           {submissionNear.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">No tenders due within 7 days</p>
+            <p className="text-sm text-muted-foreground text-center py-4">No tenders due within 10 days</p>
           ) : (
             submissionNear.map((item) => {
               const daysLeft = getDaysToDeadline(item);
