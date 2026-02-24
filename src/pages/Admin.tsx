@@ -126,7 +126,7 @@ export default function Admin() {
     driveId: '',
     fileId: '',
     worksheetName: '',
-    dataRange: 'B4:Z2000',
+    dataRange: '',
     headerRowOffset: 0,
     syncIntervalMinutes: 10,
     fieldMapping: {},
@@ -371,7 +371,7 @@ export default function Admin() {
         driveId: data.driveId || '',
         fileId: data.fileId || '',
         worksheetName: data.worksheetName || '',
-        dataRange: data.dataRange || 'B4:Z2000',
+        dataRange: data.dataRange || '',
         headerRowOffset: Number(data.headerRowOffset || 0),
         syncIntervalMinutes: data.syncIntervalMinutes || 10,
         fieldMapping: data.fieldMapping || {},
@@ -1171,7 +1171,7 @@ export default function Admin() {
                       </Select>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Data Range (e.g. B4:Z2000)</p>
+                      <p className="text-xs text-muted-foreground">Data Range (optional, leave blank for full used range)</p>
                       <Input
                         value={graphConfig.dataRange}
                         onChange={(e) => setGraphConfig((prev) => ({ ...prev, dataRange: e.target.value }))}
