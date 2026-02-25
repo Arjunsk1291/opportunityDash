@@ -104,13 +104,6 @@ export default function Admin() {
   const [consentUrl, setConsentUrl] = useState('');
   const [telecastRecipientEmail, setTelecastRecipientEmail] = useState('');
   const [telecastSending, setTelecastSending] = useState(false);
-  const [telecastAuthStatus, setTelecastAuthStatus] = useState<GraphAuthStatus>({
-    authMode: 'application',
-    accountUsername: '',
-    hasRefreshToken: false,
-  });
-  const [telecastUsername, setTelecastUsername] = useState('');
-  const [telecastPassword, setTelecastPassword] = useState('');
   const [activeTab, setActiveTab] = useState('general');
 
   useEffect(() => {
@@ -120,7 +113,6 @@ export default function Admin() {
       loadGraphConfig();
       loadGraphAuthStatus();
       fetchConsentUrl();
-      loadTelecastAuthStatus();
     }
   }, [canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -597,90 +589,6 @@ export default function Admin() {
     }
   };
 
-
-
-  const loadTelecastAuthStatus = async () => {
-    if (!token) return;
-    try {
-      const response = await fetch(API_URL + '/telecast/auth/status', {
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!response.ok) return;
-      const data = await response.json();
-      setTelecastAuthStatus({
-        authMode: data.authMode || 'application',
-        accountUsername: data.accountUsername || '',
-        hasRefreshToken: !!data.hasRefreshToken,
-        tokenUpdatedAt: data.tokenUpdatedAt || null,
-      });
-      if (data.accountUsername) {
-        setTelecastUsername(data.accountUsername);
-      }
-    } catch (error) {
-      console.error('Failed to load telecast auth status:', error);
-    }
-  };
-
-  const bootstrapTelecastAuth = async () => {
-    if (!token || !telecastUsername || !telecastPassword) {
-      toast.error('Telecast username and password are required');
-      return;
-    }
-
-    setConfigSaving(true);
-    try {
-      const response = await fetch(API_URL + '/telecast/auth/bootstrap', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username: telecastUsername, password: telecastPassword }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        if (data.error === 'CONSENT_REQUIRED') {
-          const consent = data.consentUrl || await fetchConsentUrl(telecastUsername);
-          if (consent) window.open(consent, '_blank', 'noopener,noreferrer');
-          throw new Error(data.message || 'Consent required for Telecast account. Open consent URL and retry.');
-        }
-        throw new Error(data.message || data.error || 'Failed to connect Telecast account');
-      }
-      setTelecastPassword('');
-      toast.success('Telecast account connected successfully.');
-      await loadTelecastAuthStatus();
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setConfigSaving(false);
-    }
-  };
-
-  const clearTelecastAuth = async () => {
-    if (!token) return;
-    setConfigSaving(true);
-    try {
-      const response = await fetch(API_URL + '/telecast/auth/clear', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to clear Telecast account');
-      setTelecastPassword('');
-      toast.success('Telecast account disconnected.');
-      await loadTelecastAuthStatus();
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setConfigSaving(false);
-    }
-  };
 
   const sendTelecastTestMail = async () => {
     if (!token) return;
@@ -1225,36 +1133,14 @@ export default function Admin() {
                 <Send className="h-5 w-5" />
                 Telecast
               </CardTitle>
-              <CardDescription>Configure a separate Microsoft account for Telecast mail (independent from Data Sync), then send a test email.</CardDescription>
+              <CardDescription>Send a Microsoft Graph test email using the connected delegated account.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-2 text-sm">
                 <span>Status:</span>
-                <Badge className={telecastAuthStatus.hasRefreshToken ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}>
-                  {telecastAuthStatus.hasRefreshToken ? 'Connected' : 'Not Connected'}
+                <Badge className={graphAuthStatus.hasRefreshToken ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}>
+                  {graphAuthStatus.hasRefreshToken ? 'Connected' : 'Not Connected'}
                 </Badge>
-              </div>
-
-
-              <div className="rounded border p-3 text-xs text-muted-foreground">
-                Account: <strong>{telecastAuthStatus.accountUsername || 'Not connected'}</strong>
-                {telecastAuthStatus.tokenUpdatedAt ? ` • token updated ${new Date(telecastAuthStatus.tokenUpdatedAt).toLocaleString()}` : ''}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Telecast Microsoft Username</p>
-                  <Input value={telecastUsername} onChange={(e) => setTelecastUsername(e.target.value)} placeholder="telecast@company.com" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">Telecast Microsoft Password</p>
-                  <Input type="password" value={telecastPassword} onChange={(e) => setTelecastPassword(e.target.value)} placeholder="••••••••" />
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={bootstrapTelecastAuth} disabled={configSaving || !telecastUsername || !telecastPassword}>Connect Telecast Account</Button>
-                <Button variant="outline" onClick={clearTelecastAuth} disabled={configSaving}>Clear Telecast Account</Button>
               </div>
 
               <div className="space-y-2">
@@ -1267,7 +1153,7 @@ export default function Admin() {
                 />
               </div>
 
-              <Button onClick={sendTelecastTestMail} disabled={telecastSending || !telecastAuthStatus.hasRefreshToken} className="gap-2">
+              <Button onClick={sendTelecastTestMail} disabled={telecastSending || !graphAuthStatus.hasRefreshToken} className="gap-2">
                 <Send className={`h-4 w-4 ${telecastSending ? 'animate-pulse' : ''}`} />
                 {telecastSending ? 'Sending...' : 'Send Test Mail'}
               </Button>
