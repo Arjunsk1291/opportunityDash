@@ -102,6 +102,9 @@ export default function Admin() {
   const [bootstrapUsername, setBootstrapUsername] = useState('');
   const [bootstrapPassword, setBootstrapPassword] = useState('');
   const [consentUrl, setConsentUrl] = useState('');
+  const [telecastRecipientEmail, setTelecastRecipientEmail] = useState('');
+  const [telecastSending, setTelecastSending] = useState(false);
+  const [activeTab, setActiveTab] = useState('general');
 
   useEffect(() => {
     if (canAccessPanel) {
@@ -577,7 +580,35 @@ export default function Admin() {
     }
   };
 
-  if (!isMaster) {
+
+  const sendTelecastTestMail = async () => {
+    if (!token) return;
+    if (!telecastRecipientEmail.trim()) {
+      toast.error('Recipient Email is required');
+      return;
+    }
+
+    setTelecastSending(true);
+    try {
+      const response = await fetch(API_URL + '/telecast/test-mail', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ recipientEmail: telecastRecipientEmail.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to send test mail');
+      toast.success(data.message || 'Test mail sent');
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setTelecastSending(false);
+    }
+  };
+
+  if (!canAccessPanel) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Alert className="max-w-md" variant="destructive">
@@ -593,9 +624,15 @@ export default function Admin() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Admin Panel</h1>
-        <p className="text-muted-foreground mt-2">System administration and control</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold">Admin Panel</h1>
+          <p className="text-muted-foreground mt-2">System administration and control</p>
+        </div>
+        <Button type="button" variant="secondary" className="gap-2" onClick={() => setActiveTab('telecast')}>
+          <Send className="h-4 w-4" />
+          Open Telecast
+        </Button>
       </div>
 
       {message && (
@@ -604,11 +641,12 @@ export default function Admin() {
         </Alert>
       )}
 
-      <Tabs defaultValue="general" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="flex flex-wrap h-auto">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="users">User Management</TabsTrigger>
           <TabsTrigger value="data-sync">Data Sync</TabsTrigger>
+          <TabsTrigger value="telecast" className="font-semibold">📣 Telecast</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general">
@@ -1075,6 +1113,42 @@ export default function Admin() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+
+        <TabsContent value="telecast">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Send className="h-5 w-5" />
+                Telecast
+              </CardTitle>
+              <CardDescription>Send a Microsoft Graph test email using the connected delegated account.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-2 text-sm">
+                <span>Status:</span>
+                <Badge className={graphAuthStatus.hasRefreshToken ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}>
+                  {graphAuthStatus.hasRefreshToken ? 'Connected' : 'Not Connected'}
+                </Badge>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Recipient Email</p>
+                <Input
+                  type="email"
+                  placeholder="name@company.com"
+                  value={telecastRecipientEmail}
+                  onChange={(e) => setTelecastRecipientEmail(e.target.value)}
+                />
+              </div>
+
+              <Button onClick={sendTelecastTestMail} disabled={telecastSending || !graphAuthStatus.hasRefreshToken} className="gap-2">
+                <Send className={`h-4 w-4 ${telecastSending ? 'animate-pulse' : ''}`} />
+                {telecastSending ? 'Sending...' : 'Send Test Mail'}
+              </Button>
+            </CardContent>
+          </Card>
         </TabsContent>
 
       </Tabs>
