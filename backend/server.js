@@ -10,7 +10,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
-import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig } from './services/graphExcelService.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 import SystemConfig from './models/SystemConfig.js';
 import { encryptSecret } from './services/cryptoService.js';
@@ -769,55 +769,6 @@ const getSystemConfig = async () => {
   if (!config) config = await SystemConfig.create({});
   return config;
 };
-
-
-app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can send test mail' });
-    }
-
-    const recipientEmail = String(req.body?.recipientEmail || '').trim();
-    if (!recipientEmail) {
-      return res.status(400).json({ error: 'recipientEmail is required' });
-    }
-
-    const config = await getGraphConfig();
-    if (!config.graphRefreshTokenEnc) {
-      return res.status(400).json({ error: 'Microsoft account not connected. Connect Graph account first.' });
-    }
-
-    const { accessToken } = await getAccessTokenWithConfig(config);
-    const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: {
-          subject: 'Hello from Dashboard',
-          body: {
-            contentType: 'Text',
-            content: 'Hello from Dashboard',
-          },
-          toRecipients: [{ emailAddress: { address: recipientEmail } }],
-        },
-        saveToSentItems: true,
-      }),
-    });
-
-    if (!graphResponse.ok) {
-      const payload = await graphResponse.json().catch(() => ({}));
-      const message = payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`;
-      return res.status(500).json({ error: message });
-    }
-
-    res.json({ success: true, message: `Test mail sent to ${recipientEmail}` });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to send test mail' });
-  }
-});
 
 app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
   try {
