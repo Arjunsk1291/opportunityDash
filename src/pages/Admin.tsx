@@ -347,6 +347,15 @@ export default function Admin() {
     }
   };
 
+
+  const loadSheetsFromIds = async () => {
+    if (!graphConfig.driveId || !graphConfig.fileId) {
+      toast.error('Drive ID and File ID are required');
+      return;
+    }
+    await loadWorksheets(graphConfig.driveId, graphConfig.fileId);
+  };
+
   const resolveShareLink = async () => {
     if (!token || !graphConfig.shareLink) return;
     setConfigSaving(true);
@@ -979,6 +988,7 @@ export default function Admin() {
                       <p className="text-xs text-muted-foreground">File ID</p>
                       <Input value={graphConfig.fileId} onChange={(e) => setGraphConfig((prev) => ({ ...prev, fileId: e.target.value }))} />
                     </div>
+                      <p className="text-[11px] text-muted-foreground md:col-span-2">If Resolve fails for personal OneDrive shares, paste Drive ID and File ID from Python diagnostic tool and click "Load Sheets from IDs".</p>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Worksheet</p>
                       <Select
@@ -1027,8 +1037,8 @@ export default function Admin() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="secondary" onClick={() => loadWorksheets(graphConfig.driveId, graphConfig.fileId)} disabled={!graphConfig.driveId || !graphConfig.fileId}>
-                      Refresh Sheets
+                    <Button variant="secondary" onClick={loadSheetsFromIds} disabled={!graphConfig.driveId || !graphConfig.fileId}>
+                      Load Sheets from IDs
                     </Button>
                     <Button variant="outline" onClick={previewHeaderRows} disabled={!graphConfig.driveId || !graphConfig.fileId || !graphConfig.worksheetName || configSaving}>
                       Preview Rows

@@ -315,7 +315,7 @@ app.get('/api/users/authorized', verifyToken, async (req, res) => {
     const users = await AuthorizedUser.find().sort({ createdAt: -1 }).lean();
     res.json(users.map(mapIdField));
   } catch (error) {
-    res.status(500).json(toApiError(error, 'GRAPH_RESOLVE_FAILED'));
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -609,6 +609,13 @@ app.post('/api/graph/resolve-share-link', verifyToken, async (req, res) => {
 
     res.json({ success: true, ...resolved, config: mapIdField(config.toObject()) });
   } catch (error) {
+    error.details = {
+      ...(error.details || {}),
+      troubleshooting: [
+        ...((error.details && Array.isArray(error.details.troubleshooting)) ? error.details.troubleshooting : []),
+        'Microsoft blocks resolution for personal OneDrives. Please paste Drive ID and File ID manually from the Python diagnostic tool.',
+      ],
+    };
     res.status(500).json(toApiError(error, 'GRAPH_RESOLVE_FAILED'));
   }
 });
