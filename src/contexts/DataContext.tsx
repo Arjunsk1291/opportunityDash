@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { Opportunity } from '@/data/opportunityData';
+import { isSubmissionWithinDays } from '@/lib/submissionDate';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -10,15 +11,13 @@ type OpportunityApiRecord = Partial<Opportunity> & {
 };
 
 function computeSubmissionNear(opp: Partial<Opportunity>): boolean {
-  const raw = opp?.tenderSubmittedDate || opp?.tenderPlannedSubmissionDate;
-  if (!raw) return false;
-  const target = new Date(raw);
-  if (Number.isNaN(target.getTime())) return false;
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  target.setHours(0,0,0,0);
-  const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  return diffDays >= 0 && diffDays <= 7;
+  return isSubmissionWithinDays(
+    {
+      tenderSubmittedDate: opp?.tenderSubmittedDate || null,
+      tenderPlannedSubmissionDate: opp?.tenderPlannedSubmissionDate || null,
+    },
+    10,
+  );
 }
 
 interface DataContextType {

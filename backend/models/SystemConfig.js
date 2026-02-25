@@ -10,6 +10,11 @@ const systemConfigSchema = new mongoose.Schema(
     clientId: { type: String, default: '' },
     clientSecret: { type: String, default: '' },
     serviceUsername: { type: String, default: '' },
+
+    telecastGraphAuthMode: { type: String, enum: ['application', 'delegated'], default: 'application' },
+    telecastGraphAccountUsername: { type: String, default: '' },
+    telecastGraphRefreshTokenEnc: { type: String, default: '' },
+    telecastGraphTokenUpdatedAt: { type: Date, default: null },
     graphRefreshTokenEnc: { type: String, default: '' },
     mailAccessTokenEnc: { type: String, default: '' },
     mailRefreshTokenEnc: { type: String, default: '' },
