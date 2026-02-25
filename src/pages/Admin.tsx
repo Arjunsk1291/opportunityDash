@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Lock, Users, Trash2, CheckCircle, XCircle, Clock, RefreshCw, Download, Database } from 'lucide-react';
+import { AlertCircle, Lock, Users, Trash2, CheckCircle, XCircle, Clock, RefreshCw, Download, Database, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -15,7 +15,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
-
 
 function parseApiErrorPayload(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== 'object') return fallback;
@@ -64,47 +63,6 @@ interface GraphConfig {
   lastSyncAt?: string;
 }
 
-
-interface MailConfig {
-  serviceEmail: string;
-  smtpHost: string;
-  smtpPort: number;
-  smtpPassword?: string;
-  tenantId?: string;
-  clientId?: string;
-  clientSecret?: string;
-  serviceUsername?: string;
-  envManagedConfidential?: { tenantId: boolean; clientId: boolean; clientSecret: boolean };
-}
-
-interface NotificationPreviewItem {
-  ruleId: string;
-  triggerEvent: string;
-  useGroupMatching: boolean;
-  groupClassification: string | null;
-  recipients: Array<{ email: string; assignedGroup: string | null }>;
-}
-
-interface NotificationRule {
-  id?: string;
-  _id?: string;
-  triggerEvent: 'NEW_TENDER_SYNCED';
-  recipientRole: 'SVP';
-  useGroupMatching: boolean;
-  emailSubject: string;
-  emailBody: string;
-  isActive?: boolean;
-}
-
-interface MailboxAuthFlow {
-  deviceCode: string;
-  userCode: string;
-  verificationUri: string;
-  verificationUriComplete?: string;
-  expiresIn?: number;
-  message?: string;
-}
-
 interface GraphAuthStatus {
   authMode: 'application' | 'delegated';
   accountUsername: string;
@@ -126,7 +84,7 @@ export default function Admin() {
     driveId: '',
     fileId: '',
     worksheetName: '',
-    dataRange: 'B4:Z2000',
+    dataRange: '',
     headerRowOffset: 0,
     syncIntervalMinutes: 10,
     fieldMapping: {},
@@ -143,20 +101,8 @@ export default function Admin() {
   const [bootstrapUsername, setBootstrapUsername] = useState('');
   const [bootstrapPassword, setBootstrapPassword] = useState('');
   const [consentUrl, setConsentUrl] = useState('');
-  const [mailConfig, setMailConfig] = useState<MailConfig>({ serviceEmail: '', smtpHost: '', smtpPort: 587, smtpPassword: '' });
-  const [mailboxAuthFlow, setMailboxAuthFlow] = useState<MailboxAuthFlow | null>(null);
-  const [mailboxAuthStatus, setMailboxAuthStatus] = useState<{ hasGraphRefreshToken: boolean; graphTokenUpdatedAt?: string | null; lastUpdatedBy?: string | null }>({ hasGraphRefreshToken: false });
-  const [notificationRules, setNotificationRules] = useState<NotificationRule[]>([]);
-  const [notificationPreview, setNotificationPreview] = useState<NotificationPreviewItem[]>([]);
-  const [previewGroup, setPreviewGroup] = useState('GTS');
-  const [newRule, setNewRule] = useState<NotificationRule>({
-    triggerEvent: 'NEW_TENDER_SYNCED',
-    recipientRole: 'SVP',
-    useGroupMatching: true,
-    emailSubject: 'New Tender Synced: {{tenderName}}',
-    emailBody: '<p>A new tender {{tenderName}} has been synced. Ref: {{refNo}}</p>',
-    isActive: true,
-  });
+  const [telecastRecipientEmail, setTelecastRecipientEmail] = useState('');
+  const [telecastSending, setTelecastSending] = useState(false);
 
   useEffect(() => {
     if (isMaster) {
@@ -165,10 +111,6 @@ export default function Admin() {
       loadGraphConfig();
       loadGraphAuthStatus();
       fetchConsentUrl();
-      loadMailConfig();
-      loadNotificationRules();
-      loadMailboxAuthStatus();
-      loadNotificationPreview('GTS');
     }
   }, [isMaster, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -245,8 +187,6 @@ export default function Admin() {
     }
   };
 
-
-
   const loadGraphAuthStatus = async () => {
     if (!token) return;
     try {
@@ -268,7 +208,6 @@ export default function Admin() {
       console.error('Failed to load graph auth status:', error);
     }
   };
-
 
   const fetchConsentUrl = async (loginHint?: string) => {
     if (!token) return;
@@ -353,8 +292,6 @@ export default function Admin() {
     }
   };
 
-
-
   const loadGraphConfig = async () => {
     if (!token) return;
     try {
@@ -371,7 +308,7 @@ export default function Admin() {
         driveId: data.driveId || '',
         fileId: data.fileId || '',
         worksheetName: data.worksheetName || '',
-        dataRange: data.dataRange || 'B4:Z2000',
+        dataRange: data.dataRange || '',
         headerRowOffset: Number(data.headerRowOffset || 0),
         syncIntervalMinutes: data.syncIntervalMinutes || 10,
         fieldMapping: data.fieldMapping || {},
@@ -438,7 +375,6 @@ export default function Admin() {
       setConfigSaving(false);
     }
   };
-
 
   const previewHeaderRows = async () => {
     if (!token || !graphConfig.driveId || !graphConfig.fileId || !graphConfig.worksheetName) {
@@ -643,147 +579,30 @@ export default function Admin() {
   };
 
 
-
-  const loadMailboxAuthStatus = async () => {
+  const sendTelecastTestMail = async () => {
     if (!token) return;
-    try {
-      const response = await fetch(API_URL + '/admin/mailbox/status', { headers: { Authorization: 'Bearer ' + token } });
-      if (!response.ok) return;
-      const data = await response.json();
-      setMailboxAuthStatus({
-        hasGraphRefreshToken: !!data.hasGraphRefreshToken,
-        graphTokenUpdatedAt: data.graphTokenUpdatedAt || null,
-        lastUpdatedBy: data.lastUpdatedBy || null,
-      });
-      if (data.serviceEmail) {
-        setMailConfig((prev) => ({ ...prev, serviceEmail: data.serviceEmail }));
-      }
-    } catch (error) {
-      console.error('Failed to load mailbox auth status:', error);
+    if (!telecastRecipientEmail.trim()) {
+      toast.error('Recipient Email is required');
+      return;
     }
-  };
 
-  const initiateMailboxAuth = async () => {
-    if (!token) return;
+    setTelecastSending(true);
     try {
-      const response = await fetch(API_URL + '/admin/mailbox/initiate', {
+      const response = await fetch(API_URL + '/telecast/test-mail', {
         method: 'POST',
-        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ recipientEmail: telecastRecipientEmail.trim() }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to start device code flow');
-      setMailboxAuthFlow({
-        deviceCode: data.deviceCode,
-        userCode: data.userCode,
-        verificationUri: data.verificationUri,
-        verificationUriComplete: data.verificationUriComplete,
-        expiresIn: data.expiresIn,
-        message: data.message,
-      });
-      toast.success('Device code generated. Complete verification on Microsoft page.');
+      if (!response.ok) throw new Error(data.error || 'Failed to send test mail');
+      toast.success(data.message || 'Test mail sent');
     } catch (error) {
       toast.error((error as Error).message);
-    }
-  };
-
-  const finalizeMailboxAuth = async () => {
-    if (!token || !mailboxAuthFlow?.deviceCode) return;
-    try {
-      const response = await fetch(API_URL + '/admin/mailbox/finalize', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceCode: mailboxAuthFlow.deviceCode, email: mailConfig.serviceEmail }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || data.error || 'Mailbox authorization not completed yet');
-      toast.success('Service mailbox authorized successfully.');
-      setMailboxAuthFlow(null);
-      await loadMailboxAuthStatus();
-    } catch (error) {
-      toast.error((error as Error).message);
-    }
-  };
-
-  const loadMailConfig = async () => {
-    if (!token) return;
-    try {
-      const response = await fetch(API_URL + '/system-config/mail', { headers: { Authorization: 'Bearer ' + token } });
-      if (!response.ok) return;
-      const data = await response.json();
-      setMailConfig((prev) => ({ ...prev, serviceEmail: data.serviceEmail || '', smtpHost: data.smtpHost || '', smtpPort: data.smtpPort || 587, smtpPassword: '', tenantId: data.tenantId || '', clientId: data.clientId || '', clientSecret: '', serviceUsername: data.serviceUsername || '', envManagedConfidential: data.envManagedConfidential || { tenantId: false, clientId: false, clientSecret: false } }));
-    } catch (error) {
-      console.error('Failed to load mail config:', error);
-    }
-  };
-
-  const saveMailConfig = async () => {
-    if (!token) return;
-    try {
-      const response = await fetch(API_URL + '/system-config/mail', {
-        method: 'PUT',
-        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...mailConfig, servicePassword: mailConfig.smtpPassword || "" }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to save mail config');
-      setMessage({ type: 'success', text: '✅ SMTP configuration saved' });
-      setMailConfig((prev) => ({ ...prev, smtpPassword: '' }));
-    } catch (error) {
-      setMessage({ type: 'error', text: '❌ Failed to save SMTP config: ' + (error as Error).message });
-    }
-  };
-
-  const loadNotificationRules = async () => {
-    if (!token) return;
-    try {
-      const response = await fetch(API_URL + '/notification-rules', { headers: { Authorization: 'Bearer ' + token } });
-      if (!response.ok) return;
-      const data = await response.json();
-      setNotificationRules(data || []);
-    } catch (error) {
-      console.error('Failed to load notification rules:', error);
-    }
-  };
-
-  const loadNotificationPreview = async (groupClassification?: string) => {
-    if (!token) return;
-    try {
-      const group = (groupClassification || previewGroup || '').toUpperCase();
-      const query = new URLSearchParams({ triggerEvent: 'NEW_TENDER_SYNCED', groupClassification: group }).toString();
-      const response = await fetch(API_URL + '/notification-rules/preview?' + query, { headers: { Authorization: 'Bearer ' + token } });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to preview routing');
-      setNotificationPreview(data.preview || []);
-    } catch (error) {
-      setMessage({ type: 'error', text: '❌ Failed to preview notification routing: ' + (error as Error).message });
-    }
-  };
-
-  const createNotificationRule = async () => {
-    if (!token) return;
-    try {
-      const response = await fetch(API_URL + '/notification-rules', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRule),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to create rule');
-      setMessage({ type: 'success', text: '✅ Notification rule created' });
-      await loadNotificationRules();
-    } catch (error) {
-      setMessage({ type: 'error', text: '❌ Failed to create rule: ' + (error as Error).message });
-    }
-  };
-
-  const deleteNotificationRule = async (id?: string) => {
-    if (!token || !id) return;
-    try {
-      const response = await fetch(API_URL + '/notification-rules/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
-      if (!response.ok) throw new Error('Failed to delete rule');
-      await loadNotificationRules();
-    } catch (error) {
-      setMessage({ type: 'error', text: '❌ Failed to delete rule: ' + (error as Error).message });
+    } finally {
+      setTelecastSending(false);
     }
   };
 
@@ -819,7 +638,7 @@ export default function Admin() {
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="users">User Management</TabsTrigger>
           <TabsTrigger value="data-sync">Data Sync</TabsTrigger>
-          <TabsTrigger value="communication">Communication Center</TabsTrigger>
+          <TabsTrigger value="telecast">Telecast</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general">
@@ -1073,7 +892,6 @@ export default function Admin() {
               </CardHeader>
               <CardContent className="space-y-6">
 
-
                 <div className="border rounded-lg p-4 space-y-4">
                   <h3 className="font-semibold">Graph Account Bootstrap (one-time)</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1171,7 +989,7 @@ export default function Admin() {
                       </Select>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Data Range (e.g. B4:Z2000)</p>
+                      <p className="text-xs text-muted-foreground">Data Range (optional, leave blank for full used range)</p>
                       <Input
                         value={graphConfig.dataRange}
                         onChange={(e) => setGraphConfig((prev) => ({ ...prev, dataRange: e.target.value }))}
@@ -1212,8 +1030,6 @@ export default function Admin() {
                     </Button>
                   </div>
                 </div>
-
-
 
                 {previewRows.length > 0 && (
                   <div className="border rounded-lg p-4 space-y-3">
@@ -1291,115 +1107,38 @@ export default function Admin() {
           </div>
         </TabsContent>
 
-        <TabsContent value="communication">
+
+        <TabsContent value="telecast">
           <Card>
             <CardHeader>
-              <CardTitle>Communication Center</CardTitle>
-              <CardDescription>Master-only Microsoft Graph API integration, Notification Rules, and Template Editor</CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                <Send className="h-5 w-5" />
+                Telecast
+              </CardTitle>
+              <CardDescription>Send a Microsoft Graph test email using the connected delegated account.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <Tabs defaultValue="graph" className="w-full">
-                <TabsList>
-                  <TabsTrigger value="graph">Microsoft Graph Integration</TabsTrigger>
-                  <TabsTrigger value="rules">Notification Rules</TabsTrigger>
-                  <TabsTrigger value="templates">Template Editor</TabsTrigger>
-                </TabsList>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-2 text-sm">
+                <span>Status:</span>
+                <Badge className={graphAuthStatus.hasRefreshToken ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}>
+                  {graphAuthStatus.hasRefreshToken ? 'Connected' : 'Not Connected'}
+                </Badge>
+              </div>
 
-                <TabsContent value="graph" className="space-y-4 pt-4">
-                  <div className="rounded border p-3 text-xs text-muted-foreground bg-muted/20">
-                    <p className="font-semibold text-foreground mb-1">Confidential Client Authentication (ROPC)</p>
-                    <p>This system uses a Client Secret + Service Account credentials to send notifications without user intervention.</p>
-                  </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Recipient Email</p>
+                <Input
+                  type="email"
+                  placeholder="name@company.com"
+                  value={telecastRecipientEmail}
+                  onChange={(e) => setTelecastRecipientEmail(e.target.value)}
+                />
+              </div>
 
-                  {(mailConfig.envManagedConfidential?.tenantId || mailConfig.envManagedConfidential?.clientId || mailConfig.envManagedConfidential?.clientSecret) && (
-                    <Alert className="bg-blue-50/50 border-blue-200">
-                      <Database className="h-4 w-4 text-blue-600" />
-                      <AlertDescription className="text-blue-700 text-xs">
-                        Azure App credentials (ID & Secret) are <strong>Managed by System (.env)</strong>.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  <div className="space-y-3">
-                    <div className="grid gap-2">
-                      <label className="text-xs font-medium">Tenant ID</label>
-                      <Input
-                        placeholder="Azure Tenant ID"
-                        value={mailConfig.tenantId || ''}
-                        disabled={!!mailConfig.envManagedConfidential?.tenantId}
-                        onChange={(e) => setMailConfig((p) => ({ ...p, tenantId: e.target.value }))}
-                      />
-                    </div>
-
-                    <div className="grid gap-2">
-                      <label className="text-xs font-medium">Client ID</label>
-                      <Input
-                        placeholder="Application Client ID"
-                        value={mailConfig.clientId || ''}
-                        disabled={!!mailConfig.envManagedConfidential?.clientId}
-                        onChange={(e) => setMailConfig((p) => ({ ...p, clientId: e.target.value }))}
-                      />
-                    </div>
-
-                    <div className="grid gap-2">
-                      <label className="text-xs font-medium">Client Secret</label>
-                      <Input
-                        type="password"
-                        placeholder="Client Secret Value"
-                        value={mailConfig.clientSecret || ''}
-                        disabled={!!mailConfig.envManagedConfidential?.clientSecret}
-                        onChange={(e) => setMailConfig((p) => ({ ...p, clientSecret: e.target.value }))}
-                      />
-                    </div>
-
-                    <div className="grid gap-2">
-                      <label className="text-xs font-medium text-blue-600">Service Account (Username)</label>
-                      <Input
-                        placeholder="tender-notify@avenirengineering.com"
-                        value={mailConfig.serviceUsername || ''}
-                        onChange={(e) => setMailConfig((p) => ({ ...p, serviceUsername: e.target.value }))}
-                      />
-                    </div>
-
-                    <div className="grid gap-2">
-                      <label className="text-xs font-medium text-blue-600">Service Account Password</label>
-                      <Input
-                        type="password"
-                        placeholder="Account Password"
-                        value={mailConfig.smtpPassword || ''}
-                        onChange={(e) => setMailConfig((p) => ({ ...p, smtpPassword: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <Button className="w-full" onClick={saveMailConfig}>Save & Update Integration</Button>
-                </TabsContent>
-
-                <TabsContent value="rules" className="space-y-3 pt-4">
-                  <div className="space-y-4">
-                    {notificationRules.map((rule) => (
-                      <Card key={rule._id || rule.id}>
-                        <CardContent className="p-4">
-                          <p className="text-sm font-medium">{rule.emailSubject}</p>
-                          <p className="text-xs text-muted-foreground">Trigger: {rule.triggerEvent}</p>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="templates" className="space-y-3 pt-4">
-                  <div className="space-y-3">
-                    <label className="text-sm font-medium">Email HTML Template</label>
-                    <Textarea
-                      className="min-h-[300px] font-mono text-xs"
-                      value={newRule.emailBody}
-                      onChange={(e) => setNewRule((p) => ({ ...p, emailBody: e.target.value }))}
-                    />
-                    <p className="text-[10px] text-muted-foreground">Supported: {'{{tenderName}}, {{refNo}}, {{value}}'}</p>
-                  </div>
-                </TabsContent>
-              </Tabs>
+              <Button onClick={sendTelecastTestMail} disabled={telecastSending || !graphAuthStatus.hasRefreshToken} className="gap-2">
+                <Send className={`h-4 w-4 ${telecastSending ? 'animate-pulse' : ''}`} />
+                {telecastSending ? 'Sending...' : 'Send Test Mail'}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
