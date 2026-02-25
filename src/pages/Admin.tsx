@@ -72,6 +72,7 @@ interface GraphAuthStatus {
 
 export default function Admin() {
   const { user, isMaster, token } = useAuth();
+  const canAccessPanel = isMaster || user?.role === 'Admin';
   const navigate = useNavigate();
   const [users, setUsers] = useState<AuthorizedUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -103,14 +104,14 @@ export default function Admin() {
   const [consentUrl, setConsentUrl] = useState('');
 
   useEffect(() => {
-    if (isMaster) {
+    if (canAccessPanel) {
       loadUsers();
       loadCollectionStats();
       loadGraphConfig();
       loadGraphAuthStatus();
       fetchConsentUrl();
     }
-  }, [isMaster, token]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadUsers = async () => {
     if (!token) return;
@@ -583,7 +584,7 @@ export default function Admin() {
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
             <strong>Access Denied</strong>
-            <p className="text-sm mt-2">Only Master users can access this panel.</p>
+            <p className="text-sm mt-2">Only Master/Admin users can access this panel.</p>
           </AlertDescription>
         </Alert>
       </div>
@@ -593,7 +594,7 @@ export default function Admin() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Master Panel</h1>
+        <h1 className="text-3xl font-bold">Admin Panel</h1>
         <p className="text-muted-foreground mt-2">System administration and control</p>
       </div>
 
@@ -604,7 +605,7 @@ export default function Admin() {
       )}
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList>
+        <TabsList className="flex flex-wrap h-auto">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="users">User Management</TabsTrigger>
           <TabsTrigger value="data-sync">Data Sync</TabsTrigger>
