@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Clock, AlertTriangle } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
+import { getEffectiveSubmissionDate, getSubmissionDaysLeft, isSubmissionWithinDays } from '@/lib/submissionDate';
 
 interface AtRiskWidgetProps {
   data: Opportunity[];
@@ -9,48 +10,19 @@ interface AtRiskWidgetProps {
 }
 
 export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
-  // Submission Near = tender submitted/planned submission date within next 7 days
-  const getSubmissionDate = (opp: Opportunity): Date | null => {
-    const raw = opp.tenderSubmittedDate || opp.tenderPlannedSubmissionDate;
-    if (!raw) return null;
-    const parsed = new Date(raw);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  };
-
-  const isSubmissionNear = (opp: Opportunity): boolean => {
-    const submissionDate = getSubmissionDate(opp);
-    if (!submissionDate) return false;
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const target = new Date(submissionDate);
-    target.setHours(0, 0, 0, 0);
-
-    const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return diffDays >= 0 && diffDays <= 7;
-  };
+  // Submission Near = effective submission date (submitted/planned) within next 10 days
+  const isSubmissionNear = (opp: Opportunity): boolean => isSubmissionWithinDays(opp, 10);
 
   const submissionNear = data
     .filter(o => isSubmissionNear(o))
     .sort((a, b) => {
-      const dateA = getSubmissionDate(a)?.getTime() || 0;
-      const dateB = getSubmissionDate(b)?.getTime() || 0;
+      const dateA = getEffectiveSubmissionDate(a)?.getTime() || 0;
+      const dateB = getEffectiveSubmissionDate(b)?.getTime() || 0;
       return dateA - dateB;
     })
     .slice(0, 8);
 
-  const getDaysToDeadline = (opp: Opportunity): number => {
-    const submissionDate = getSubmissionDate(opp);
-    if (!submissionDate) return 0;
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const target = new Date(submissionDate);
-    target.setHours(0, 0, 0, 0);
-
-    const diffDays = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return Math.max(0, diffDays);
-  };
+  const getDaysToDeadline = (opp: Opportunity): number => getSubmissionDaysLeft(opp);
 
   return (
     <Card>

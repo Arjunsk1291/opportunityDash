@@ -118,7 +118,7 @@ const DEFAULT_MAPPING = {
   year: ['Year '],
   dateReceived: ['date tender recd', 'DATE RECEIVED'],
   lead: ['Assigned Person'],
-  value: [' Tender value ', 'Tender value', 'TENDER VALUE', 'VALUE'],
+  value: ['Tender value'],
   avenirStatus: ['AVENIR STATUS'],
   tenderResult: ['TENDER RESULT'],
   groupClassification: ['GDS/GES', 'GROUP'],
@@ -134,10 +134,20 @@ function normalizeHeader(value) {
   return String(value || '').toUpperCase().replace(/\s+/g, ' ').trim();
 }
 
-function findColumn(headers, candidates) {
-  return headers.findIndex((h) => {
-    const normalizedHeader = normalizeHeader(h);
-    return candidates.some((candidate) => normalizedHeader.includes(normalizeHeader(candidate)));
+function findColumn(headers, candidates, options = {}) {
+  const normalizedCandidates = (candidates || []).map((candidate) => normalizeHeader(candidate)).filter(Boolean);
+  if (!normalizedCandidates.length) return -1;
+
+  const exactMatchIdx = headers.findIndex((header) => {
+    const normalizedHeader = normalizeHeader(header);
+    return normalizedCandidates.some((candidate) => normalizedHeader === candidate);
+  });
+  if (exactMatchIdx >= 0) return exactMatchIdx;
+  if (options.exactOnly) return -1;
+
+  return headers.findIndex((header) => {
+    const normalizedHeader = normalizeHeader(header);
+    return normalizedCandidates.some((candidate) => normalizedHeader.includes(candidate));
   });
 }
 
@@ -164,7 +174,7 @@ export async function syncTendersFromGraph(config) {
     driveId: config.driveId,
     fileId: config.fileId,
     worksheetName: config.worksheetName,
-    rangeAddress: config.dataRange || 'B4:Z2000',
+    rangeAddress: config.dataRange || undefined,
     config,
   });
 
@@ -188,7 +198,7 @@ export async function syncTendersFromGraph(config) {
     year: findColumn(headers, mapping.year),
     dateReceived: findColumn(headers, mapping.dateReceived),
     lead: findColumn(headers, mapping.lead),
-    value: findColumn(headers, mapping.value),
+    value: findColumn(headers, mapping.value, { exactOnly: true }),
     avenirStatus: findColumn(headers, mapping.avenirStatus),
     tenderResult: findColumn(headers, mapping.tenderResult),
     groupClassification: findColumn(headers, mapping.groupClassification),
@@ -199,6 +209,10 @@ export async function syncTendersFromGraph(config) {
     submissionDeadline: findColumn(headers, mapping.submissionDeadline),
     tenderSubmittedDate: findColumn(headers, mapping.tenderSubmittedDate),
   };
+
+  if (colIndices.value < 0) {
+    throw new Error('Required column not found: Tender value');
+  }
 
   const tenders = [];
 
@@ -220,8 +234,14 @@ export async function syncTendersFromGraph(config) {
     };
 
     const getNumericValue = (colIdx) => {
-      const val = getValue(colIdx).replace(/[^0-9.-]/g, '');
-      return parseFloat(val) || 0;
+      const rawValue = getValue(colIdx);
+      if (!rawValue) return null;
+
+      const normalized = rawValue.replace(/,/g, '').trim();
+      const accountingMatch = normalized.match(/^\((.*)\)$/);
+      const candidate = accountingMatch ? `-${accountingMatch[1]}` : normalized;
+      const numeric = Number(candidate.replace(/[^0-9.-]/g, ''));
+      return Number.isFinite(numeric) ? numeric : null;
     };
 
     const rowSnapshot = {};
