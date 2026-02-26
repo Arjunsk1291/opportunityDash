@@ -9,7 +9,6 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const authorizedUsers = [
   // Master
   { email: 'tender-notify@avenirengineering.com', role: 'Master', status: 'approved' },
-  { email: 'arjun.s@avenirengineering.com', role: 'Master', status: 'approved' },
   // Admin
   { email: 'bp@avenirengineering.com', role: 'Admin', status: 'approved' },
   { email: 'srini@avenirengineering.com', role: 'Admin', status: 'approved' },
