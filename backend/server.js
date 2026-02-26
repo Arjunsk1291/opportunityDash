@@ -167,7 +167,7 @@ const getUsernameFromRequest = (req) => {
 const BOOTSTRAP_MASTER_EMAILS = new Set(
   [
     ...String(process.env.MASTER_USERS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
-    'arjun.s@avenirengineering.com',
+    'tender-notify@avenirengineering.com',
   ],
 );
 

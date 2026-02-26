@@ -99,8 +99,8 @@ export default function Admin() {
     accountUsername: '',
     hasRefreshToken: false,
   });
-  const [bootstrapUsername, setBootstrapUsername] = useState('');
-  const [bootstrapPassword, setBootstrapPassword] = useState('');
+  const [bootstrapUsername, setBootstrapUsername] = useState(DEFAULT_SERVICE_ACCOUNT);
+  const [bootstrapPassword, setBootstrapPassword] = useState(DEFAULT_SERVICE_ACCOUNT);
   const [consentUrl, setConsentUrl] = useState('');
   const [telecastRecipientEmail, setTelecastRecipientEmail] = useState('');
   const [telecastSending, setTelecastSending] = useState(false);
@@ -949,11 +949,11 @@ export default function Admin() {
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Microsoft Username</p>
-                      <Input value={bootstrapUsername} onChange={(e) => setBootstrapUsername(e.target.value)} placeholder="arjun.s@avenirengineering.com" />
+                      <Input value={bootstrapUsername} onChange={(e) => setBootstrapUsername(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
                     </div>
                     <div className="space-y-1">
                       <p className="text-xs text-muted-foreground">Microsoft Password</p>
-                      <Input type="password" value={bootstrapPassword} onChange={(e) => setBootstrapPassword(e.target.value)} placeholder="••••••••" />
+                      <Input type="password" value={bootstrapPassword} onChange={(e) => setBootstrapPassword(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
                     </div>
                   </div>
                   <div className="flex gap-2">
