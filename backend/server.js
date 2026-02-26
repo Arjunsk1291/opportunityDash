@@ -778,95 +778,6 @@ const getSystemConfig = async () => {
 };
 
 
-
-app.get('/api/telecast/auth/status', verifyToken, async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can view telecast auth status' });
-    }
-
-    const config = await getSystemConfig();
-    res.json({
-      success: true,
-      authMode: config.telecastGraphAuthMode || 'application',
-      accountUsername: config.telecastGraphAccountUsername || '',
-      hasRefreshToken: !!config.telecastGraphRefreshTokenEnc,
-      tokenUpdatedAt: config.telecastGraphTokenUpdatedAt || null,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/telecast/auth/bootstrap', verifyToken, async (req, res) => {
-  const username = req.body?.username || '';
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can bootstrap telecast auth' });
-    }
-
-    const { password } = req.body || {};
-    if (!username || !password) {
-      return res.status(400).json({ error: 'username and password are required' });
-    }
-
-    const tokenResult = await bootstrapDelegatedToken({ username, password });
-    if (!tokenResult.refreshToken) {
-      return res.status(500).json({ error: 'No refresh token returned. Check Azure delegated permissions and token settings.' });
-    }
-
-    const config = await getSystemConfig();
-    config.telecastGraphAuthMode = 'delegated';
-    config.telecastGraphAccountUsername = String(username).toLowerCase();
-    config.telecastGraphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
-    config.telecastGraphTokenUpdatedAt = new Date();
-    config.updatedBy = req.user.email;
-    await config.save();
-
-    res.json({ success: true, message: 'Telecast account connected and token stored securely.' });
-  } catch (error) {
-    const msg = String(error.message || error);
-    if (msg.includes('AADSTS50076') || msg.toLowerCase().includes('mfa')) {
-      return res.status(400).json({ error: 'MFA_REQUIRED', message: 'MFA is enabled. Use a non-MFA service account for telecast bootstrap.' });
-    }
-    if (msg.includes('AADSTS50126')) {
-      return res.status(400).json({ error: 'INVALID_CREDENTIALS', message: 'Invalid username or password.' });
-    }
-    if (msg.includes('AADSTS50034')) {
-      return res.status(400).json({ error: 'USER_NOT_FOUND', message: 'User not found in this tenant.' });
-    }
-    if (msg.includes('AADSTS65001')) {
-      const consentUrl = buildDelegatedConsentUrl({ loginHint: username });
-      return res.status(400).json({
-        error: 'CONSENT_REQUIRED',
-        message: 'This telecast account has not granted consent yet. Open consent URL and accept once, then retry.',
-        consentUrl,
-      });
-    }
-    res.status(500).json({ error: msg });
-  }
-});
-
-app.post('/api/telecast/auth/clear', verifyToken, async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can clear telecast auth' });
-    }
-
-    const config = await getSystemConfig();
-    config.telecastGraphAuthMode = 'application';
-    config.telecastGraphAccountUsername = '';
-    config.telecastGraphRefreshTokenEnc = '';
-    config.telecastGraphTokenUpdatedAt = null;
-    config.updatedBy = req.user.email;
-    await config.save();
-
-    res.json({ success: true, message: 'Telecast delegated token cleared.' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
   try {
     if (!['Master', 'Admin'].includes(req.user.role)) {
@@ -878,12 +789,12 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'recipientEmail is required' });
     }
 
-    const config = await getSystemConfig();
-    if (!config.telecastGraphRefreshTokenEnc) {
-      return res.status(400).json({ error: 'Telecast account not connected. Connect Telecast Graph account first.' });
+    const config = await getGraphConfig();
+    if (!config.graphRefreshTokenEnc) {
+      return res.status(400).json({ error: 'Microsoft account not connected. Connect Graph account first.' });
     }
 
-    const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc: config.telecastGraphRefreshTokenEnc });
+    const { accessToken } = await getAccessTokenWithConfig(config);
     const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
       method: 'POST',
       headers: {
