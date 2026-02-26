@@ -142,11 +142,45 @@ export async function getAccessTokenWithConfig(config) {
 // --- EXPORTS: EXCEL ---
 export async function resolveShareLink(shareLink, config) {
   const { accessToken } = await getAccessTokenWithConfig(config);
-  const shareToken = 'u!' + Buffer.from(shareLink).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const res = await fetch(`${GRAPH_BASE_URL}/shares/${shareToken}/driveItem`, { headers: { Authorization: `Bearer ${accessToken}` } });
-  const item = await res.json();
-  if (!res.ok) throw new Error(item.error?.message || 'Link resolution failed');
-  return { driveId: item.parentReference.driveId, fileId: item.id };
+
+  const rawLink = String(shareLink || '').trim();
+  const decodedLink = (() => {
+    try {
+      return decodeURIComponent(rawLink);
+    } catch {
+      return rawLink;
+    }
+  })();
+
+  const variants = new Set([
+    rawLink,
+    decodedLink,
+    rawLink.split('?')[0],
+    decodedLink.split('?')[0],
+    rawLink.replace('/:x:/r/', '/:x:/'),
+    decodedLink.replace('/:x:/r/', '/:x:/'),
+  ].filter(Boolean));
+
+  let lastError = null;
+
+  for (const linkVariant of variants) {
+    const shareToken = 'u!' + Buffer.from(linkVariant).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const res = await fetch(`${GRAPH_BASE_URL}/shares/${shareToken}/driveItem`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Prefer: 'redeemSharingLinkIfNecessary',
+      },
+    });
+
+    const item = await res.json();
+    if (res.ok && item?.parentReference?.driveId && item?.id) {
+      return { driveId: item.parentReference.driveId, fileId: item.id };
+    }
+
+    lastError = item?.error?.message || `Link resolution failed (${res.status})`;
+  }
+
+  throw new Error(lastError || 'Link resolution failed');
 }
 
 export async function getWorksheets({ driveId, fileId, config }) {

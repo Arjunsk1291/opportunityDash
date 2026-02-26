@@ -32,7 +32,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_URL = import.meta.env.VITE_API_URL || '/api';
-const DEFAULT_MASTER_USERNAME = (import.meta.env.VITE_DEFAULT_MASTER_USERNAME || 'arjun.s@avenirengineering.com').toLowerCase();
+const DEFAULT_MASTER_USERNAME = (import.meta.env.VITE_DEFAULT_MASTER_USERNAME || 'tender-notify@avenirengineering.com').toLowerCase();
 
 
 interface AuthorizedUserResponse {
