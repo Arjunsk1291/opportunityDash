@@ -10,12 +10,10 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
-import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, startDeviceCodeFlow, exchangeDeviceCodeForToken, mailboxDelegatedScopesString } from './services/graphExcelService.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 import SystemConfig from './models/SystemConfig.js';
-import NotificationRule from './models/NotificationRule.js';
 import { encryptSecret } from './services/cryptoService.js';
-import { notifySvpsForNewTenders } from './services/notificationService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,9 +51,6 @@ const buildTroubleshootingFromMessage = (message = '') => {
     hints.push('Graph permissions may be insufficient. Validate Files.Read.Selected/Sites.Selected/Mail.Send permissions and admin consent.');
     hints.push('Grant resource-level site/file access for Sites.Selected/Files.Read.Selected.');
     hints.push('Verify service mailbox user can access the target workbook and worksheet.');
-  }
-  if (text.includes('no delegated refresh token')) {
-    hints.push('Complete mailbox auth in Communication Center (Connect Service Account).');
   }
   if (text.includes('config is incomplete') || text.includes('missing driveid/fileid/worksheetname')) {
     hints.push('Open Admin > Data Sync and complete Share Link, Drive ID, File ID, and Worksheet Name.');
@@ -112,12 +107,6 @@ const syncFromConfiguredGraph = async () => {
   await SyncedOpportunity.deleteMany({});
   const inserted = await SyncedOpportunity.insertMany(opportunities);
 
-  try {
-    await notifySvpsForNewTenders(tenders);
-  } catch (error) {
-    console.error('Notification dispatch failed (sync continues):', error.message);
-  }
-
   config.lastSyncAt = new Date();
   await config.save();
 
@@ -161,8 +150,6 @@ const scheduleGraphAutoSync = async () => {
   }
 };
 
-
-
 const getUsernameFromRequest = (req) => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -177,11 +164,10 @@ const getUsernameFromRequest = (req) => {
   return null;
 };
 
-
 const BOOTSTRAP_MASTER_EMAILS = new Set(
   [
     ...String(process.env.MASTER_USERS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
-    'arjun.s@avenirengineering.com',
+    'tender-notify@avenirengineering.com',
   ],
 );
 
@@ -329,7 +315,7 @@ app.get('/api/users/authorized', verifyToken, async (req, res) => {
     const users = await AuthorizedUser.find().sort({ createdAt: -1 }).lean();
     res.json(users.map(mapIdField));
   } catch (error) {
-    res.status(500).json(toApiError(error, 'GRAPH_RESOLVE_FAILED'));
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -585,7 +571,7 @@ app.put('/api/graph/config', verifyToken, async (req, res) => {
     if (driveId !== undefined) config.driveId = String(driveId || '');
     if (fileId !== undefined) config.fileId = String(fileId || '');
     if (worksheetName !== undefined) config.worksheetName = String(worksheetName || '');
-    if (dataRange !== undefined) config.dataRange = String(dataRange || 'B4:Z2000');
+    if (dataRange !== undefined) config.dataRange = String(dataRange || '');
     if (headerRowOffset !== undefined) config.headerRowOffset = Math.max(0, Number(headerRowOffset) || 0);
     if (syncIntervalMinutes !== undefined) config.syncIntervalMinutes = Number(syncIntervalMinutes) || 10;
     if (fieldMapping !== undefined && typeof fieldMapping === 'object') config.fieldMapping = fieldMapping;
@@ -623,6 +609,13 @@ app.post('/api/graph/resolve-share-link', verifyToken, async (req, res) => {
 
     res.json({ success: true, ...resolved, config: mapIdField(config.toObject()) });
   } catch (error) {
+    error.details = {
+      ...(error.details || {}),
+      troubleshooting: [
+        ...((error.details && Array.isArray(error.details.troubleshooting)) ? error.details.troubleshooting : []),
+        'Microsoft blocks resolution for personal OneDrives. Please paste Drive ID and File ID manually from the Python diagnostic tool.',
+      ],
+    };
     res.status(500).json(toApiError(error, 'GRAPH_RESOLVE_FAILED'));
   }
 });
@@ -645,7 +638,6 @@ app.post('/api/graph/worksheets', verifyToken, async (req, res) => {
     res.status(500).json(toApiError(error, 'GRAPH_WORKSHEETS_FAILED'));
   }
 });
-
 
 app.post('/api/graph/preview-rows', verifyToken, async (req, res) => {
   try {
@@ -676,9 +668,6 @@ app.post('/api/graph/preview-rows', verifyToken, async (req, res) => {
     res.status(500).json(toApiError(error, 'GRAPH_PREVIEW_FAILED'));
   }
 });
-
-
-
 
 app.get('/api/graph/auth/consent-url', verifyToken, async (req, res) => {
   try {
@@ -782,7 +771,6 @@ app.post('/api/graph/auth/clear', verifyToken, async (req, res) => {
   }
 });
 
-
 const getSystemConfig = async () => {
   let config = await SystemConfig.findOne();
   if (!config) config = await SystemConfig.create({});
@@ -790,208 +778,140 @@ const getSystemConfig = async () => {
 };
 
 
-app.post('/api/admin/mailbox/initiate', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can initiate mailbox auth' });
 
-    const flowData = await startDeviceCodeFlow({ scopes: mailboxDelegatedScopesString() });
-    res.json({ success: true, ...flowData });
+app.get('/api/telecast/auth/status', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can view telecast auth status' });
+    }
+
+    const config = await getSystemConfig();
+    res.json({
+      success: true,
+      authMode: config.telecastGraphAuthMode || 'application',
+      accountUsername: config.telecastGraphAccountUsername || '',
+      hasRefreshToken: !!config.telecastGraphRefreshTokenEnc,
+      tokenUpdatedAt: config.telecastGraphTokenUpdatedAt || null,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/admin/mailbox/finalize', verifyToken, async (req, res) => {
+app.post('/api/telecast/auth/bootstrap', verifyToken, async (req, res) => {
+  const username = req.body?.username || '';
   try {
-    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can finalize mailbox auth' });
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can bootstrap telecast auth' });
+    }
 
-    const { deviceCode, email } = req.body || {};
-    if (!deviceCode) return res.status(400).json({ error: 'deviceCode is required' });
+    const { password } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ error: 'username and password are required' });
+    }
 
-    const tokens = await exchangeDeviceCodeForToken(deviceCode, { scopes: mailboxDelegatedScopesString() });
-    if (!tokens.refreshToken) {
-      return res.status(500).json({ error: 'No refresh token returned. Please re-run device code flow.' });
+    const tokenResult = await bootstrapDelegatedToken({ username, password });
+    if (!tokenResult.refreshToken) {
+      return res.status(500).json({ error: 'No refresh token returned. Check Azure delegated permissions and token settings.' });
     }
 
     const config = await getSystemConfig();
-    if (email !== undefined) config.serviceEmail = String(email || '').trim().toLowerCase();
-    config.graphRefreshTokenEnc = protectRefreshToken(tokens.refreshToken);
-    config.graphTokenUpdatedAt = new Date();
-    config.lastUpdatedBy = req.user.email;
+    config.telecastGraphAuthMode = 'delegated';
+    config.telecastGraphAccountUsername = String(username).toLowerCase();
+    config.telecastGraphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
+    config.telecastGraphTokenUpdatedAt = new Date();
     config.updatedBy = req.user.email;
     await config.save();
 
-    res.json({ success: true, message: 'Service mailbox authenticated successfully.' });
+    res.json({ success: true, message: 'Telecast account connected and token stored securely.' });
   } catch (error) {
     const msg = String(error.message || error);
-    if (msg.includes('authorization_pending')) {
-      return res.status(400).json({ error: 'AUTHORIZATION_PENDING', message: 'Authorization is still pending. Complete verification and retry.' });
+    if (msg.includes('AADSTS50076') || msg.toLowerCase().includes('mfa')) {
+      return res.status(400).json({ error: 'MFA_REQUIRED', message: 'MFA is enabled. Use a non-MFA service account for telecast bootstrap.' });
     }
-    if (msg.includes('expired_token') || msg.includes('code_expired')) {
-      return res.status(400).json({ error: 'DEVICE_CODE_EXPIRED', message: 'Device code expired. Start a new authorization flow.' });
+    if (msg.includes('AADSTS50126')) {
+      return res.status(400).json({ error: 'INVALID_CREDENTIALS', message: 'Invalid username or password.' });
+    }
+    if (msg.includes('AADSTS50034')) {
+      return res.status(400).json({ error: 'USER_NOT_FOUND', message: 'User not found in this tenant.' });
     }
     if (msg.includes('AADSTS65001')) {
-      return res.status(400).json({ error: 'CONSENT_REQUIRED', message: 'Consent required for this account. Complete consent on verification site and retry.' });
+      const consentUrl = buildDelegatedConsentUrl({ loginHint: username });
+      return res.status(400).json({
+        error: 'CONSENT_REQUIRED',
+        message: 'This telecast account has not granted consent yet. Open consent URL and accept once, then retry.',
+        consentUrl,
+      });
     }
     res.status(500).json({ error: msg });
   }
 });
 
-app.get('/api/admin/mailbox/status', verifyToken, async (req, res) => {
+app.post('/api/telecast/auth/clear', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can view mailbox auth status' });
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can clear telecast auth' });
+    }
 
     const config = await getSystemConfig();
-    res.json({
-      success: true,
-      serviceEmail: config.serviceEmail || '',
-      hasGraphRefreshToken: !!config.graphRefreshTokenEnc,
-      graphTokenUpdatedAt: config.graphTokenUpdatedAt || null,
-      lastUpdatedBy: config.lastUpdatedBy || null,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/system-config/mail', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can view mail config' });
-    const config = await getSystemConfig();
-    const payload = mapIdField(config.toObject());
-    payload.encryptedPassword = payload.encryptedPassword ? '********' : '';
-    payload.hasGraphRefreshToken = !!payload.graphRefreshTokenEnc;
-    payload.hasMailRefreshToken = !!payload.mailRefreshTokenEnc;
-    payload.mailTokenExpiresAt = payload.mailTokenExpiresAt || null;
-    payload.graphRefreshTokenEnc = payload.graphRefreshTokenEnc ? '********' : '';
-    payload.envManagedConfidential = {
-      tenantId: !!process.env.GRAPH_TENANT_ID,
-      clientId: !!(process.env.AZURE_CLIENT_ID || process.env.GRAPH_CLIENT_ID),
-      clientSecret: !!(process.env.CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET || process.env.GRAPH_CLIENT_SECRET),
-    };
-    res.json(payload);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.put('/api/system-config/mail', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can update mail config' });
-    const { serviceEmail, smtpHost, smtpPort, smtpPassword, servicePassword, tenantId, clientId, clientSecret, serviceUsername } = req.body || {};
-    const config = await getSystemConfig();
-
-    if (serviceEmail !== undefined) config.serviceEmail = String(serviceEmail || '').trim().toLowerCase();
-    if (smtpHost !== undefined) config.smtpHost = String(smtpHost || '').trim();
-    if (smtpPort !== undefined) config.smtpPort = Number(smtpPort) || 587;
-    const resolvedServicePassword = servicePassword || smtpPassword;
-    if (resolvedServicePassword) config.encryptedPassword = encryptSecret(resolvedServicePassword);
-    if (!process.env.GRAPH_TENANT_ID && tenantId !== undefined) config.tenantId = String(tenantId || '').trim();
-    if (!(process.env.AZURE_CLIENT_ID || process.env.GRAPH_CLIENT_ID) && clientId !== undefined) config.clientId = String(clientId || '').trim();
-    if (!(process.env.CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET || process.env.GRAPH_CLIENT_SECRET) && clientSecret !== undefined) config.clientSecret = String(clientSecret || '').trim();
-    if (serviceUsername !== undefined) config.serviceUsername = String(serviceUsername || '').trim().toLowerCase();
-
+    config.telecastGraphAuthMode = 'application';
+    config.telecastGraphAccountUsername = '';
+    config.telecastGraphRefreshTokenEnc = '';
+    config.telecastGraphTokenUpdatedAt = null;
     config.updatedBy = req.user.email;
     await config.save();
 
-    res.json({ success: true, config: { serviceEmail: config.serviceEmail, smtpHost: config.smtpHost, smtpPort: config.smtpPort, hasPassword: !!config.encryptedPassword, tenantId: config.tenantId, clientId: config.clientId, clientSecret: config.clientSecret ? '********' : '', serviceUsername: config.serviceUsername } });
+    res.json({ success: true, message: 'Telecast delegated token cleared.' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/notification-rules', verifyToken, async (req, res) => {
+app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can view notification rules' });
-    const rules = await NotificationRule.find().sort({ createdAt: -1 }).lean();
-    res.json(rules.map(mapIdField));
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-
-app.get('/api/notification-rules/preview', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can preview notification routing' });
-
-    const triggerEvent = String(req.query?.triggerEvent || 'NEW_TENDER_SYNCED');
-    const groupClassification = String(req.query?.groupClassification || '').toUpperCase();
-
-    const rules = await NotificationRule.find({ triggerEvent, recipientRole: 'SVP', isActive: true }).lean();
-    const previews = [];
-
-    for (const rule of rules) {
-      const query = { role: 'SVP', status: 'approved' };
-      if (rule.useGroupMatching && groupClassification) query.assignedGroup = groupClassification;
-      const recipients = await AuthorizedUser.find(query).lean();
-      previews.push({
-        ruleId: String(rule._id),
-        triggerEvent: rule.triggerEvent,
-        useGroupMatching: !!rule.useGroupMatching,
-        groupClassification: groupClassification || null,
-        recipients: recipients.map((r) => ({ email: r.email, assignedGroup: r.assignedGroup || null })),
-      });
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can send test mail' });
     }
 
-    res.json({ success: true, preview: previews });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+    const recipientEmail = String(req.body?.recipientEmail || '').trim();
+    if (!recipientEmail) {
+      return res.status(400).json({ error: 'recipientEmail is required' });
+    }
 
-app.post('/api/notification-rules', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can create notification rules' });
-    const payload = req.body || {};
-    const created = await NotificationRule.create({
-      triggerEvent: payload.triggerEvent || 'NEW_TENDER_SYNCED',
-      recipientRole: 'SVP',
-      useGroupMatching: payload.useGroupMatching !== false,
-      emailSubject: payload.emailSubject || 'New Tender Synced: {{tenderName}}',
-      emailBody: payload.emailBody || '<p>New tender {{tenderName}}</p>',
-      isActive: payload.isActive !== false,
-      createdBy: req.user.email,
-      updatedBy: req.user.email,
+    const config = await getSystemConfig();
+    if (!config.telecastGraphRefreshTokenEnc) {
+      return res.status(400).json({ error: 'Telecast account not connected. Connect Telecast Graph account first.' });
+    }
+
+    const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc: config.telecastGraphRefreshTokenEnc });
+    const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: {
+          subject: 'Hello from Dashboard',
+          body: {
+            contentType: 'Text',
+            content: 'Hello from Dashboard',
+          },
+          toRecipients: [{ emailAddress: { address: recipientEmail } }],
+        },
+        saveToSentItems: true,
+      }),
     });
-    res.json({ success: true, rule: mapIdField(created.toObject()) });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
-app.put('/api/notification-rules/:id', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can update notification rules' });
-    const { id } = req.params;
-    const payload = req.body || {};
-    const update = {
-      triggerEvent: payload.triggerEvent,
-      recipientRole: 'SVP',
-      useGroupMatching: payload.useGroupMatching,
-      emailSubject: payload.emailSubject,
-      emailBody: payload.emailBody,
-      isActive: payload.isActive,
-      updatedBy: req.user.email,
-    };
-    Object.keys(update).forEach((k) => update[k] === undefined && delete update[k]);
+    if (!graphResponse.ok) {
+      const payload = await graphResponse.json().catch(() => ({}));
+      const message = payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`;
+      return res.status(500).json({ error: message });
+    }
 
-    const rule = await NotificationRule.findByIdAndUpdate(id, update, { new: true });
-    if (!rule) return res.status(404).json({ error: 'Rule not found' });
-    res.json({ success: true, rule: mapIdField(rule.toObject()) });
+    res.json({ success: true, message: `Test mail sent to ${recipientEmail}` });
   } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.delete('/api/notification-rules/:id', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') return res.status(403).json({ error: 'Only Master users can delete notification rules' });
-    const result = await NotificationRule.findByIdAndDelete(req.params.id);
-    if (!result) return res.status(404).json({ error: 'Rule not found' });
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message || 'Failed to send test mail' });
   }
 });
 

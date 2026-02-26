@@ -1,9 +1,7 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import aedSymbol from '@/assets/aed-symbol.png';
 
 export type Currency = 'USD' | 'AED';
-
-const USD_TO_AED_RATE = 3.67;
 
 interface CurrencyContextType {
   currency: Currency;
@@ -16,7 +14,6 @@ interface CurrencyContextType {
 const CurrencyContext = createContext<CurrencyContextType | undefined>(undefined);
 
 export function CurrencyProvider({ children }: { children: ReactNode }) {
-  // ✅ FIXED: Default currency is now AED (was USD)
   const [currency, setCurrencyState] = useState<Currency>(() => {
     const saved = localStorage.getItem('currency');
     return (saved === 'AED' || saved === 'USD') ? saved : 'AED';
@@ -28,11 +25,9 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const convertValue = useCallback((value: number): number => {
-    if (currency === 'AED') {
-      return value * USD_TO_AED_RATE;
-    }
-    return value;
-  }, [currency]);
+    // Keep values exactly as extracted from Excel; no FX conversion.
+    return Number.isFinite(value) ? value : 0;
+  }, []);
 
   const formatCurrency = useCallback((value: number): string => {
     const convertedValue = convertValue(value);
