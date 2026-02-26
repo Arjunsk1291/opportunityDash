@@ -54,19 +54,22 @@ const getDateRangeFromPreset = (preset: DatePreset): { from: Date | undefined; t
   switch (preset) {
     case "thisMonth":
       return { from: startOfMonth(now), to: endOfMonth(now) };
-    case "lastMonth":
+    case "lastMonth": {
       const lastMonth = subMonths(now, 1);
       return { from: startOfMonth(lastMonth), to: endOfMonth(lastMonth) };
+    }
     case "thisQuarter":
       return { from: startOfQuarter(now), to: endOfQuarter(now) };
-    case "lastQuarter":
+    case "lastQuarter": {
       const lastQuarter = subQuarters(now, 1);
       return { from: startOfQuarter(lastQuarter), to: endOfQuarter(lastQuarter) };
+    }
     case "thisYear":
       return { from: startOfYear(now), to: endOfYear(now) };
-    case "lastYear":
+    case "lastYear": {
       const lastYear = subYears(now, 1);
       return { from: startOfYear(lastYear), to: endOfYear(lastYear) };
+    }
     case "all":
     default:
       return { from: undefined, to: undefined };
