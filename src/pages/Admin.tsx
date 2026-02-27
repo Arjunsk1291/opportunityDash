@@ -152,7 +152,7 @@ export default function Admin() {
   const [savedTemplateBody, setSavedTemplateBody] = useState('A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
   const [telecastKeywords, setTelecastKeywords] = useState<string[]>([]);
   const [telecastWeeklyStats, setTelecastWeeklyStats] = useState<WeeklyTelecastStat[]>([]);
-  const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string>>({ GES: '', GDS: '', GTS: '' });
+  const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string[]>>({ GES: [], GDS: [], GTS: [] });
   const [newAuthorizedUser, setNewAuthorizedUser] = useState<{ email: string; displayName: string; role: UserRole; assignedGroup: string; status: 'approved' | 'pending' }>({
     email: '',
     displayName: '',
@@ -318,9 +318,9 @@ export default function Admin() {
       setSavedTemplateBody(loadedBody);
       setTelecastKeywords(Array.isArray(data.keywords) ? data.keywords : []);
       setTelecastGroupRecipients({
-        GES: (data.groupRecipients?.GES || []).join(', '),
-        GDS: (data.groupRecipients?.GDS || []).join(', '),
-        GTS: (data.groupRecipients?.GTS || []).join(', '),
+        GES: Array.isArray(data.groupRecipients?.GES) ? data.groupRecipients.GES : [],
+        GDS: Array.isArray(data.groupRecipients?.GDS) ? data.groupRecipients.GDS : [],
+        GTS: Array.isArray(data.groupRecipients?.GTS) ? data.groupRecipients.GTS : [],
       });
       setTelecastWeeklyStats(Array.isArray(data.weeklyStats) ? data.weeklyStats : []);
     } catch (error) {
@@ -805,6 +805,25 @@ export default function Admin() {
     } finally {
       setConfigSaving(false);
     }
+  };
+
+
+  const approvedUsers = users.filter((u) => u.status === 'approved');
+
+  const usersForGroup = (group: 'GES' | 'GDS' | 'GTS') =>
+    approvedUsers.filter((u) => {
+      const assigned = String(u.assignedGroup || '').toUpperCase();
+      if (assigned) return assigned === group;
+      return true;
+    });
+
+  const toggleGroupRecipient = (group: 'GES' | 'GDS' | 'GTS', email: string, checked: boolean) => {
+    setTelecastGroupRecipients((prev) => {
+      const current = new Set(prev[group] || []);
+      if (checked) current.add(email.toLowerCase());
+      else current.delete(email.toLowerCase());
+      return { ...prev, [group]: Array.from(current) };
+    });
   };
 
   const cleanupLogs = async () => {
@@ -1638,9 +1657,33 @@ export default function Admin() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {(['GES', 'GDS', 'GTS'] as const).map((group) => (
-                    <div key={group} className="space-y-1">
+                    <div key={group} className="space-y-2 border rounded-md p-3">
                       <p className="text-sm font-medium">Recipients ({group})</p>
-                      <Textarea rows={4} value={telecastGroupRecipients[group]} onChange={(e) => setTelecastGroupRecipients((prev) => ({ ...prev, [group]: e.target.value }))} placeholder="a@company.com, b@company.com" />
+                      {usersForGroup(group).length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No approved users available for selection.</p>
+                      ) : (
+                        <div className="space-y-2 max-h-56 overflow-auto">
+                          {usersForGroup(group).map((u) => {
+                            const checked = (telecastGroupRecipients[group] || []).includes(String(u.email || '').toLowerCase());
+                            return (
+                              <label key={`${group}-${u.email}`} className="flex items-start gap-2 text-xs">
+                                <input
+                                  type="checkbox"
+                                  className="mt-0.5"
+                                  checked={checked}
+                                  onChange={(e) => toggleGroupRecipient(group, u.email, e.target.checked)}
+                                  disabled={!isMaster}
+                                />
+                                <span>
+                                  <span className="font-medium">{u.displayName || u.email}</span>
+                                  <span className="block text-muted-foreground">{u.email}</span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <p className="text-[11px] text-muted-foreground">Selected: {(telecastGroupRecipients[group] || []).length}</p>
                     </div>
                   ))}
                 </div>
