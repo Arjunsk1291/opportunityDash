@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { DataProvider } from "@/contexts/DataContext";
 import { CurrencyProvider } from "@/contexts/CurrencyContext";
@@ -20,7 +20,14 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const queryClient = new QueryClient();
 
-// ✅ Component to handle pending users
+function AppLayout() {
+  return (
+    <Layout>
+      <Outlet />
+    </Layout>
+  );
+}
+
 function AppRoutes() {
   const { isLoading, isPending, isAuthenticated } = useAuth();
 
@@ -39,46 +46,40 @@ function AppRoutes() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        
-        {/* ✅ Show pending page if user is pending */}
-        {isPending && isAuthenticated && (
-          <Route path="/pending" element={<PendingApproval />} />
-        )}
-        {isPending && isAuthenticated && (
-          <Route path="/*" element={<Navigate to="/pending" replace />} />
-        )}
-        
-        {/* Normal routes if approved */}
-        {!isPending && (
+
+        {isPending && isAuthenticated ? (
+          <>
+            <Route path="/pending" element={<PendingApproval />} />
+            <Route path="*" element={<Navigate to="/pending" replace />} />
+          </>
+        ) : (
           <Route
-            path="/*"
+            path="/"
             element={
               <ProtectedRoute>
-                <Layout>
-                  <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/opportunities" element={<Opportunities />} />
-                    <Route path="/clients" element={<Clients />} />
-                    <Route path="/analytics" element={<Analytics />} />
-                    <Route path="/master" element={<Admin />} />
-                    
-                    <Route path="/status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />
-                    <Route path="/status/in-progress" element={<Opportunities statusFilter="In Progress" />} />
-                    <Route path="/status/submitted" element={<Opportunities statusFilter="Submitted" />} />
-                    <Route path="/status/awarded" element={<Opportunities statusFilter="Awarded" />} />
-                    <Route path="/status/lost" element={<Opportunities statusFilter="Lost/Regretted" />} />
-                    <Route path="/status/on-hold" element={<Opportunities statusFilter="On Hold/Paused" />} />
-                    
-                    <Route path="/my-pipeline" element={<Opportunities />} />
-                    <Route path="/team" element={<Analytics />} />
-                    <Route path="/at-risk" element={<Opportunities />} />
-                    
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
-                </Layout>
+                <AppLayout />
               </ProtectedRoute>
             }
-          />
+          >
+            <Route index element={<Dashboard />} />
+            <Route path="opportunities" element={<Opportunities />} />
+            <Route path="clients" element={<Clients />} />
+            <Route path="analytics" element={<Analytics />} />
+            <Route path="master" element={<Admin />} />
+
+            <Route path="status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />
+            <Route path="status/in-progress" element={<Opportunities statusFilter="In Progress" />} />
+            <Route path="status/submitted" element={<Opportunities statusFilter="Submitted" />} />
+            <Route path="status/awarded" element={<Opportunities statusFilter="Awarded" />} />
+            <Route path="status/lost" element={<Opportunities statusFilter="Lost/Regretted" />} />
+            <Route path="status/on-hold" element={<Opportunities statusFilter="On Hold/Paused" />} />
+
+            <Route path="my-pipeline" element={<Opportunities />} />
+            <Route path="team" element={<Analytics />} />
+            <Route path="at-risk" element={<Opportunities />} />
+
+            <Route path="*" element={<NotFound />} />
+          </Route>
         )}
       </Routes>
     </BrowserRouter>
@@ -87,18 +88,18 @@ function AppRoutes() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <CurrencyProvider>
-          <DataProvider>
-            <ApprovalProvider>
-              <TooltipProvider>
-                <Toaster />
-                <AppRoutes />
-              </TooltipProvider>
-            </ApprovalProvider>
-          </DataProvider>
-        </CurrencyProvider>
-      </AuthProvider>
+    <AuthProvider>
+      <CurrencyProvider>
+        <DataProvider>
+          <ApprovalProvider>
+            <TooltipProvider>
+              <Toaster />
+              <AppRoutes />
+            </TooltipProvider>
+          </ApprovalProvider>
+        </DataProvider>
+      </CurrencyProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 
