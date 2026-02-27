@@ -122,6 +122,140 @@ const buildRowSignature = (opportunity) => {
   return parts.map((part) => String(part).trim().toUpperCase()).join('||');
 };
 
+
+
+const TELECAST_TEMPLATE_KEYWORDS = [
+  '{{TENDER_NO}}', '{{TENDER_NAME}}', '{{CLIENT}}', '{{GROUP}}', '{{TENDER_TYPE}}', '{{DATE_TENDER_RECD}}', '{{YEAR}}', '{{LEAD}}', '{{VALUE}}', '{{OPPORTUNITY_ID}}', '{{COMMENTS}}',
+];
+
+const normalizeEmailList = (value) => {
+  if (!value) return [];
+  const parts = Array.isArray(value) ? value : String(value).split(/[\n,;]+/g);
+  return [...new Set(parts.map((v) => String(v || '').trim().toLowerCase()).filter(Boolean))];
+};
+
+const getGroupFromOpportunity = (opportunity) => {
+  const raw = String(opportunity?.groupClassification || opportunity?.rawGraphData?.rowSnapshot?.['GDS/GES'] || '').toUpperCase().trim();
+  if (raw.includes('GES')) return 'GES';
+  if (raw.includes('GDS')) return 'GDS';
+  if (raw.includes('GTS')) return 'GTS';
+  return 'UNKNOWN';
+};
+
+const getTemplateValues = (opportunity) => {
+  const row = opportunity?.rawGraphData?.rowSnapshot || {};
+  const tenderNo = opportunity?.opportunityRefNo || row['TENDER NO'] || '';
+  const tenderName = opportunity?.tenderName || row['TENDER NAME'] || '';
+  const client = opportunity?.clientName || row.CLIENT || '';
+  const group = getGroupFromOpportunity(opportunity);
+  const tenderType = opportunity?.opportunityClassification || row['TENDER TYPE'] || '';
+  const dateTenderRecd = opportunity?.dateTenderReceived || row['DATE TENDER RECD'] || '';
+  const year = row.YEAR || opportunity?.rawGraphData?.year || '';
+  const lead = opportunity?.internalLead || row.LEAD || '';
+  const value = opportunity?.opportunityValue ?? row['TENDER VALUE'] ?? '';
+  const comments = opportunity?.comments || row.COMMENTS || '';
+
+  return {
+    TENDER_NO: String(tenderNo || ''),
+    TENDER_NAME: String(tenderName || ''),
+    CLIENT: String(client || ''),
+    GROUP: String(group || ''),
+    TENDER_TYPE: String(tenderType || ''),
+    DATE_TENDER_RECD: String(dateTenderRecd || ''),
+    YEAR: String(year || ''),
+    LEAD: String(lead || ''),
+    VALUE: String(value || ''),
+    OPPORTUNITY_ID: String(opportunity?.id || ''),
+    COMMENTS: String(comments || ''),
+  };
+};
+
+const renderTemplate = (template = '', values = {}) => {
+  let output = String(template || '');
+  Object.entries(values).forEach(([key, value]) => {
+    const token = `{{${key}}}`;
+    output = output.split(token).join(String(value ?? ''));
+  });
+  return output;
+};
+
+const getWeekWindow = (date = new Date()) => {
+  const d = new Date(date);
+  const day = d.getUTCDay();
+  const diffToMonday = (day + 6) % 7;
+  const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - diffToMonday));
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 6);
+  const weekKey = `${start.getUTCFullYear()}-W${Math.ceil((((start - new Date(Date.UTC(start.getUTCFullYear(),0,1))) / 86400000) + 1) / 7)}`;
+  return { weekKey, startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) };
+};
+
+const pushWeeklyTelecastStats = (config, newRows = []) => {
+  const { weekKey, startDate, endDate } = getWeekWindow(new Date());
+  const byGroup = newRows.reduce((acc, row) => {
+    const g = getGroupFromOpportunity(row);
+    acc[g] = (acc[g] || 0) + 1;
+    return acc;
+  }, {});
+
+  const history = Array.isArray(config.telecastWeeklyStats) ? [...config.telecastWeeklyStats] : [];
+  const idx = history.findIndex((item) => item?.weekKey === weekKey);
+  if (idx >= 0) {
+    history[idx].newRowsCount = Number(history[idx].newRowsCount || 0) + newRows.length;
+    history[idx].byGroup = { ...(history[idx].byGroup || {}), ...Object.fromEntries(Object.entries(byGroup).map(([k,v]) => [k, Number(v) + Number(history[idx].byGroup?.[k] || 0)])) };
+    history[idx].updatedAt = new Date();
+  } else {
+    history.push({ weekKey, startDate, endDate, newRowsCount: newRows.length, byGroup, updatedAt: new Date() });
+  }
+  config.telecastWeeklyStats = history.slice(-12);
+};
+
+const sendTelecastForNewRows = async ({ systemConfig, newRows = [] }) => {
+  if (!newRows.length) return { sent: 0, skipped: 'no_new_rows' };
+  if (!systemConfig?.telecastGraphRefreshTokenEnc) return { sent: 0, skipped: 'telecast_not_connected' };
+
+  const groupRecipients = {
+    GES: normalizeEmailList(systemConfig?.telecastGroupRecipients?.GES || []),
+    GDS: normalizeEmailList(systemConfig?.telecastGroupRecipients?.GDS || []),
+    GTS: normalizeEmailList(systemConfig?.telecastGroupRecipients?.GTS || []),
+  };
+
+  const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc: systemConfig.telecastGraphRefreshTokenEnc });
+  const subjectTemplate = systemConfig.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
+  const bodyTemplate = systemConfig.telecastTemplateBody || 'New row detected for {{TENDER_NO}}';
+  let sent = 0;
+
+  for (const row of newRows) {
+    const group = getGroupFromOpportunity(row);
+    const recipients = groupRecipients[group] || [];
+    if (!recipients.length) continue;
+
+    const values = getTemplateValues(row);
+    const subject = renderTemplate(subjectTemplate, values);
+    const content = renderTemplate(bodyTemplate, values);
+
+    const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: { contentType: 'Text', content },
+          toRecipients: recipients.map((email) => ({ emailAddress: { address: email } })),
+        },
+        saveToSentItems: true,
+      }),
+    });
+
+    if (graphResponse.ok) sent += 1;
+  }
+
+  return { sent, skipped: null };
+};
+
 const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const config = await getGraphConfig();
   if (!config.driveId || !config.fileId || !config.worksheetName) {
@@ -153,6 +287,22 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
 
   const uniqueCurrentSignatures = [...new Set(eligibleSignatures)];
   const newRowSignatures = uniqueCurrentSignatures.filter((signature) => !previousSignatures.has(signature));
+  const signatureToOpportunity = new Map(
+    opportunities
+      .filter(hasRequiredRowValues)
+      .map((item) => [buildRowSignature(item), item])
+      .filter(([sig]) => Boolean(sig))
+  );
+  const newRows = newRowSignatures.map((sig) => signatureToOpportunity.get(sig)).filter(Boolean);
+
+  const telecastCandidateSignatures = newRows.map((row) => buildRowSignature(row)).filter(Boolean);
+  const telecastAlignment = {
+    detectionCount: newRowSignatures.length,
+    telecastCandidateCount: telecastCandidateSignatures.length,
+    missingCandidates: newRowSignatures.filter((sig) => !telecastCandidateSignatures.includes(sig)),
+    extraneousCandidates: telecastCandidateSignatures.filter((sig) => !newRowSignatures.includes(sig)),
+  };
+  const isAligned = telecastAlignment.missingCandidates.length === 0 && telecastAlignment.extraneousCandidates.length === 0;
 
   await SyncedOpportunity.deleteMany({});
   const inserted = await SyncedOpportunity.insertMany(opportunities);
@@ -165,7 +315,18 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   systemConfig.notificationLastCheckedAt = now;
   systemConfig.notificationLastNewRowsCount = newRowSignatures.length;
   systemConfig.notificationLastNewRows = newRowSignatures.slice(0, 50);
+  systemConfig.telecastKeywordHelp = TELECAST_TEMPLATE_KEYWORDS;
+  pushWeeklyTelecastStats(systemConfig, newRows);
   systemConfig.updatedBy = source;
+
+  let telecastDispatch = { sent: 0, skipped: 'not_attempted' };
+  try {
+    telecastDispatch = await sendTelecastForNewRows({ systemConfig, newRows });
+  } catch (telecastError) {
+    console.error('[telecast.dispatch.error]', telecastError?.message || telecastError);
+    telecastDispatch = { sent: 0, skipped: 'error' };
+  }
+
   await systemConfig.save();
 
   console.log('[sync.new-row-detection]', JSON.stringify({
@@ -173,6 +334,11 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     checkedAt: now.toISOString(),
     eligibleRows: uniqueCurrentSignatures.length,
     newRows: newRowSignatures.length,
+    telecastSent: telecastDispatch.sent,
+    telecastSkipped: telecastDispatch.skipped,
+    alignmentOk: isAligned,
+    alignmentMissing: telecastAlignment.missingCandidates.length,
+    alignmentExtraneous: telecastAlignment.extraneousCandidates.length,
   }));
 
   return {
@@ -180,6 +346,25 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     newRowsCount: newRowSignatures.length,
     newRowSignatures: newRowSignatures.slice(0, 50),
     eligibleRows: uniqueCurrentSignatures.length,
+    telecastSent: telecastDispatch.sent,
+    telecastSkipped: telecastDispatch.skipped,
+    rowDetectionAlignment: {
+      ok: isAligned,
+      detectionCount: telecastAlignment.detectionCount,
+      telecastCandidateCount: telecastAlignment.telecastCandidateCount,
+      missingCandidates: telecastAlignment.missingCandidates.slice(0, 20),
+      extraneousCandidates: telecastAlignment.extraneousCandidates.slice(0, 20),
+    },
+    newRowsPreview: newRows.slice(0, 50).map((row) => ({
+      signature: buildRowSignature(row),
+      tenderNo: row?.opportunityRefNo || '',
+      tenderName: row?.tenderName || '',
+      client: row?.clientName || '',
+      group: getGroupFromOpportunity(row),
+      type: row?.opportunityClassification || '',
+      dateTenderReceived: row?.dateTenderReceived || '',
+      value: row?.opportunityValue ?? null,
+    })),
   };
 };
 
@@ -447,6 +632,52 @@ app.get('/api/users/authorized', verifyToken, async (req, res) => {
 
     const users = await AuthorizedUser.find().sort({ createdAt: -1 }).lean();
     res.json(users.map(mapIdField));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+app.post('/api/users/add', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can add users' });
+    }
+
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const displayName = String(req.body?.displayName || '').trim();
+    const role = String(req.body?.role || 'Basic');
+    const assignedGroupRaw = req.body?.assignedGroup ? String(req.body?.assignedGroup).toUpperCase().trim() : null;
+    const status = String(req.body?.status || 'approved');
+
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
+    if (!validRoles.includes(role)) return res.status(400).json({ error: 'Invalid role' });
+
+    if (role === 'SVP' && !assignedGroupRaw) {
+      return res.status(400).json({ error: 'assignedGroup is required for SVP users' });
+    }
+
+    if (assignedGroupRaw && !['GES', 'GDS', 'GTS'].includes(assignedGroupRaw)) {
+      return res.status(400).json({ error: 'assignedGroup must be one of GES, GDS, GTS' });
+    }
+
+    const user = await AuthorizedUser.findOneAndUpdate(
+      { email },
+      {
+        email,
+        displayName: displayName || email,
+        role,
+        assignedGroup: role === 'SVP' ? assignedGroupRaw : null,
+        status: ['approved', 'pending', 'rejected'].includes(status) ? status : 'approved',
+        approvedBy: req.user.email,
+        approvedAt: new Date(),
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+
+    res.json({ success: true, user: mapIdField(user.toObject ? user.toObject() : user) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -904,12 +1135,118 @@ app.post('/api/graph/auth/clear', verifyToken, async (req, res) => {
   }
 });
 
+const PAGE_KEYS = ['dashboard', 'opportunities', 'clients', 'analytics', 'master'];
+const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
+const DEFAULT_PAGE_ROLE_ACCESS = {
+  dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  master: ['Master', 'Admin'],
+};
+
+const sanitizePageRoleAccess = (input = {}) => {
+  const normalized = {};
+  for (const page of PAGE_KEYS) {
+    const list = Array.isArray(input?.[page]) ? input[page] : DEFAULT_PAGE_ROLE_ACCESS[page];
+    normalized[page] = [...new Set(list.filter((role) => ROLE_KEYS.includes(role)))];
+    if (!normalized[page].length) normalized[page] = [...DEFAULT_PAGE_ROLE_ACCESS[page]];
+  }
+  return normalized;
+};
+
 const getSystemConfig = async () => {
   let config = await SystemConfig.findOne();
   if (!config) config = await SystemConfig.create({});
   return config;
 };
 
+
+app.get('/api/navigation/permissions', verifyToken, async (req, res) => {
+  try {
+    const config = await getSystemConfig();
+    const permissions = sanitizePageRoleAccess(config.pageRoleAccess || {});
+    if (!config.pageRoleAccess || Object.keys(config.pageRoleAccess).length === 0) {
+      config.pageRoleAccess = permissions;
+      await config.save();
+    }
+    res.json({ success: true, permissions });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can update page permissions' });
+    }
+
+    const permissions = sanitizePageRoleAccess(req.body?.permissions || {});
+    const config = await getSystemConfig();
+    config.pageRoleAccess = permissions;
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, permissions });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+app.get('/api/telecast/config', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can view telecast config' });
+    }
+    const config = await getSystemConfig();
+    const groupRecipients = {
+      GES: normalizeEmailList(config?.telecastGroupRecipients?.GES || []),
+      GDS: normalizeEmailList(config?.telecastGroupRecipients?.GDS || []),
+      GTS: normalizeEmailList(config?.telecastGroupRecipients?.GTS || []),
+    };
+    res.json({
+      success: true,
+      templateSubject: config.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}',
+      templateBody: config.telecastTemplateBody || '',
+      groupRecipients,
+      keywords: TELECAST_TEMPLATE_KEYWORDS,
+      weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/telecast/config', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can update telecast config' });
+    }
+
+    const templateSubject = String(req.body?.templateSubject || '').trim();
+    const templateBody = String(req.body?.templateBody || '').trim();
+    const groupRecipientsInput = req.body?.groupRecipients || {};
+    const groupRecipients = {
+      GES: normalizeEmailList(groupRecipientsInput.GES || []),
+      GDS: normalizeEmailList(groupRecipientsInput.GDS || []),
+      GTS: normalizeEmailList(groupRecipientsInput.GTS || []),
+    };
+
+    const config = await getSystemConfig();
+    config.telecastTemplateSubject = templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
+    config.telecastTemplateBody = templateBody || 'New row detected for {{TENDER_NO}}';
+    config.telecastGroupRecipients = groupRecipients;
+    config.telecastKeywordHelp = TELECAST_TEMPLATE_KEYWORDS;
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, templateSubject: config.telecastTemplateSubject, templateBody: config.telecastTemplateBody, groupRecipients, keywords: TELECAST_TEMPLATE_KEYWORDS });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.get('/api/telecast/auth/status', verifyToken, async (req, res) => {
   try {
@@ -1012,6 +1349,7 @@ app.get('/api/notifications/status', verifyToken, async (req, res) => {
       lastNewRowsCount: Number(config.notificationLastNewRowsCount || 0),
       lastNewRows: Array.isArray(config.notificationLastNewRows) ? config.notificationLastNewRows : [],
       trackedRows: Array.isArray(config.notificationRowSignatures) ? config.notificationRowSignatures.length : 0,
+      weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
