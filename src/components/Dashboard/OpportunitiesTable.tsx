@@ -169,24 +169,24 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="max-h-[400px] overflow-auto scrollbar-thin">
-          <Table>
-            <TableHeader>
+        <div className="relative max-h-[400px] overflow-y-auto overflow-x-auto scrollbar-thin">
+          <Table className="border-separate border-spacing-0">
+            <TableHeader className="sticky top-0 z-30 bg-background">
               <TableRow>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur w-24">Ref No.</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur min-w-[200px]">Tender Name</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">Tender Type</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">Client</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">Group</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur font-bold">RFP Received</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur font-bold">Submission</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">Lead</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur text-right">Value</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">AVENIR STATUS</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur max-w-[150px]">Remarks</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">RESULT</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur w-[220px]">Approval</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur w-16">Info</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background w-24">Ref No.</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background min-w-[200px]">Tender Name</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">Tender Type</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">Client</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">Group</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background font-bold">RFP Received</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background font-bold">Submission</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">Lead</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background text-right">Value</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">AVENIR STATUS</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background max-w-[150px]">Remarks</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">RESULT</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background w-[220px]">Approval</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background w-16">Info</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
