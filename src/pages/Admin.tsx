@@ -16,6 +16,8 @@ import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
+const DEFAULT_SERVICE_ACCOUNT = (import.meta.env.VITE_DEFAULT_SERVICE_ACCOUNT || import.meta.env.VITE_DEFAULT_MASTER_USERNAME || 'tender-notify@avenirengineering.com').toLowerCase();
+
 function parseApiErrorPayload(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== 'object') return fallback;
   const data = payload as { error?: string; message?: string; code?: string; troubleshooting?: string[]; details?: { troubleshooting?: string[] } };

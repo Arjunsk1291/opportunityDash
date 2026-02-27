@@ -28,13 +28,23 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+console.log('[mongo.connect.start]', JSON.stringify({ uriConfigured: Boolean(MONGODB_URI), timestamp: new Date().toISOString() }));
 mongoose.connect(MONGODB_URI)
-  .then(() => console.log('✅ MongoDB connected'))
+  .then(() => {
+    console.log('[mongo.connect.success]', JSON.stringify({ timestamp: new Date().toISOString() }));
+  })
   .then(async () => {
     await initializeBootSync();
     await scheduleGraphAutoSync();
   })
-  .catch(err => console.error('❌ MongoDB connection error:', err));
+  .catch(err => {
+    console.error('[mongo.connect.failure]', JSON.stringify({
+      timestamp: new Date().toISOString(),
+      name: err?.name || 'Error',
+      message: err?.message || String(err),
+      stack: err?.stack || null,
+    }));
+  });
 
 const mapIdField = (doc) => {
   if (!doc) return doc;
@@ -212,16 +222,33 @@ const verifyToken = async (req, res, next) => {
 };
 
 app.post('/api/auth/verify-token', async (req, res) => {
+  const requestMeta = {
+    endpoint: '/api/auth/verify-token',
+    method: req.method,
+    ip: req.ip,
+    requestId: req.headers['x-request-id'] || null,
+    timestamp: new Date().toISOString(),
+  };
+
   try {
     const rawUsername = req.body?.username || req.body?.token;
     const username = rawUsername?.toString().trim().toLowerCase();
     if (!username) {
+      console.warn('[auth.verify-token.invalid-request]', JSON.stringify({
+        ...requestMeta,
+        reason: 'missing_username',
+      }));
       return res.status(400).json({ error: 'Username is required' });
     }
 
     let user = await AuthorizedUser.findOne({ email: username });
 
     if (!user) {
+      console.warn('[auth.verify-token.user-not-found]', JSON.stringify({
+        ...requestMeta,
+        username,
+      }));
+
       const bootstrapMaster = isBootstrapMaster(username);
       user = new AuthorizedUser({
         email: username,
@@ -247,6 +274,10 @@ app.post('/api/auth/verify-token', async (req, res) => {
     }
 
     if (user.status === 'rejected') {
+      console.warn('[auth.verify-token.user-rejected]', JSON.stringify({
+        ...requestMeta,
+        username,
+      }));
       return res.status(403).json({ error: 'User access rejected', status: 'rejected' });
     }
 
@@ -268,7 +299,13 @@ app.post('/api/auth/verify-token', async (req, res) => {
       message: user.status === 'pending' ? 'User pending approval. Master will review your request.' : 'Login successful',
     });
   } catch (error) {
-    console.error('Auth verification error:', error.message);
+    console.error('[auth.verify-token.failure]', JSON.stringify({
+      ...requestMeta,
+      username: req.body?.username || req.body?.token || null,
+      name: error?.name || 'Error',
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+    }));
     res.status(500).json({ error: error.message });
   }
 });
