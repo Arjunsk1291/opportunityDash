@@ -28,13 +28,24 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+console.log('[mongo.connect.start]', JSON.stringify({ uriConfigured: Boolean(MONGODB_URI), timestamp: new Date().toISOString() }));
 mongoose.connect(MONGODB_URI)
-  .then(() => console.log('✅ MongoDB connected'))
+  .then(() => {
+    console.log('[mongo.connect.success]', JSON.stringify({ timestamp: new Date().toISOString() }));
+  })
   .then(async () => {
     await initializeBootSync();
     await scheduleGraphAutoSync();
+    scheduleDailyNotificationCheck();
   })
-  .catch(err => console.error('❌ MongoDB connection error:', err));
+  .catch(err => {
+    console.error('[mongo.connect.failure]', JSON.stringify({
+      timestamp: new Date().toISOString(),
+      name: err?.name || 'Error',
+      message: err?.message || String(err),
+      stack: err?.stack || null,
+    }));
+  });
 
 const mapIdField = (doc) => {
   if (!doc) return doc;
@@ -82,7 +93,36 @@ const getGraphConfig = async () => {
   return config;
 };
 
-const syncFromConfiguredGraph = async () => {
+const REQUIRED_NEW_ROW_COLUMNS = ['YEAR', 'TENDER NO', 'TENDER NAME', 'CLIENT', 'GDS/GES', 'TENDER TYPE', 'DATE TENDER RECD'];
+
+const normalizeColumnKey = (value = '') => String(value || '').toUpperCase().replace(/\s+/g, ' ').trim();
+
+const hasRequiredRowValues = (opportunity) => {
+  const snapshot = opportunity?.rawGraphData?.rowSnapshot;
+  if (!snapshot || typeof snapshot !== 'object') return false;
+
+  const normalizedEntries = Object.entries(snapshot).reduce((acc, [key, value]) => {
+    acc[normalizeColumnKey(key)] = String(value || '').trim();
+    return acc;
+  }, {});
+
+  return REQUIRED_NEW_ROW_COLUMNS.every((col) => Boolean(normalizedEntries[col]));
+};
+
+const buildRowSignature = (opportunity) => {
+  const parts = [
+    opportunity?.opportunityRefNo || '',
+    opportunity?.tenderName || '',
+    opportunity?.clientName || '',
+    opportunity?.groupClassification || '',
+    opportunity?.opportunityClassification || '',
+    opportunity?.dateTenderReceived || '',
+  ];
+
+  return parts.map((part) => String(part).trim().toUpperCase()).join('||');
+};
+
+const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const config = await getGraphConfig();
   if (!config.driveId || !config.fileId || !config.worksheetName) {
     throw new Error('Graph config is incomplete. Please configure Share Link / Drive / File / Worksheet in admin panel.');
@@ -104,13 +144,43 @@ const syncFromConfiguredGraph = async () => {
   }
   const opportunities = await transformTendersToOpportunities(tenders);
 
+  const systemConfig = await getSystemConfig();
+  const previousSignatures = new Set(systemConfig.notificationRowSignatures || []);
+  const eligibleSignatures = opportunities
+    .filter(hasRequiredRowValues)
+    .map(buildRowSignature)
+    .filter(Boolean);
+
+  const uniqueCurrentSignatures = [...new Set(eligibleSignatures)];
+  const newRowSignatures = uniqueCurrentSignatures.filter((signature) => !previousSignatures.has(signature));
+
   await SyncedOpportunity.deleteMany({});
   const inserted = await SyncedOpportunity.insertMany(opportunities);
 
-  config.lastSyncAt = new Date();
+  const now = new Date();
+  config.lastSyncAt = now;
   await config.save();
 
-  return inserted.length;
+  systemConfig.notificationRowSignatures = uniqueCurrentSignatures;
+  systemConfig.notificationLastCheckedAt = now;
+  systemConfig.notificationLastNewRowsCount = newRowSignatures.length;
+  systemConfig.notificationLastNewRows = newRowSignatures.slice(0, 50);
+  systemConfig.updatedBy = source;
+  await systemConfig.save();
+
+  console.log('[sync.new-row-detection]', JSON.stringify({
+    source,
+    checkedAt: now.toISOString(),
+    eligibleRows: uniqueCurrentSignatures.length,
+    newRows: newRowSignatures.length,
+  }));
+
+  return {
+    insertedCount: inserted.length,
+    newRowsCount: newRowSignatures.length,
+    newRowSignatures: newRowSignatures.slice(0, 50),
+    eligibleRows: uniqueCurrentSignatures.length,
+  };
 };
 
 let graphAutoSyncTimer = null;
@@ -135,8 +205,8 @@ const scheduleGraphAutoSync = async () => {
           console.log('ℹ️ AUTO-SYNC skipped: Graph config incomplete.');
           return;
         }
-        const syncedCount = await syncFromConfiguredGraph();
-        console.log(`✅ AUTO-SYNC completed (${syncedCount} records)`);
+        const syncResult = await syncFromConfiguredGraph({ source: 'auto_interval' });
+        console.log(`✅ AUTO-SYNC completed (${syncResult.insertedCount} records, ${syncResult.newRowsCount} new rows)`);
       } catch (error) {
         console.error('❌ AUTO-SYNC failed:', error.message);
       } finally {
@@ -148,6 +218,42 @@ const scheduleGraphAutoSync = async () => {
   } catch (error) {
     console.error('Failed to schedule graph auto-sync:', error.message);
   }
+};
+
+let dailyNotificationTimer = null;
+let lastDailyNotificationRunKey = '';
+
+const scheduleDailyNotificationCheck = () => {
+  if (dailyNotificationTimer) {
+    clearInterval(dailyNotificationTimer);
+    dailyNotificationTimer = null;
+  }
+
+  dailyNotificationTimer = setInterval(async () => {
+    const now = new Date();
+    const runKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    if (now.getHours() !== 17 || now.getMinutes() !== 0 || lastDailyNotificationRunKey === runKey) {
+      return;
+    }
+
+    try {
+      const syncResult = await syncFromConfiguredGraph({ source: 'daily_5pm_notification' });
+      lastDailyNotificationRunKey = runKey;
+      console.log('[notification.daily-check.success]', JSON.stringify({
+        runKey,
+        insertedCount: syncResult.insertedCount,
+        newRowsCount: syncResult.newRowsCount,
+      }));
+    } catch (error) {
+      console.error('[notification.daily-check.failure]', JSON.stringify({
+        runKey,
+        message: error?.message || String(error),
+      }));
+    }
+  }, 60 * 1000);
+
+  console.log('⏰ Daily notification check scheduler active (17:00 server time).');
 };
 
 const getUsernameFromRequest = (req) => {
@@ -212,16 +318,33 @@ const verifyToken = async (req, res, next) => {
 };
 
 app.post('/api/auth/verify-token', async (req, res) => {
+  const requestMeta = {
+    endpoint: '/api/auth/verify-token',
+    method: req.method,
+    ip: req.ip,
+    requestId: req.headers['x-request-id'] || null,
+    timestamp: new Date().toISOString(),
+  };
+
   try {
     const rawUsername = req.body?.username || req.body?.token;
     const username = rawUsername?.toString().trim().toLowerCase();
     if (!username) {
+      console.warn('[auth.verify-token.invalid-request]', JSON.stringify({
+        ...requestMeta,
+        reason: 'missing_username',
+      }));
       return res.status(400).json({ error: 'Username is required' });
     }
 
     let user = await AuthorizedUser.findOne({ email: username });
 
     if (!user) {
+      console.warn('[auth.verify-token.user-not-found]', JSON.stringify({
+        ...requestMeta,
+        username,
+      }));
+
       const bootstrapMaster = isBootstrapMaster(username);
       user = new AuthorizedUser({
         email: username,
@@ -247,6 +370,10 @@ app.post('/api/auth/verify-token', async (req, res) => {
     }
 
     if (user.status === 'rejected') {
+      console.warn('[auth.verify-token.user-rejected]', JSON.stringify({
+        ...requestMeta,
+        username,
+      }));
       return res.status(403).json({ error: 'User access rejected', status: 'rejected' });
     }
 
@@ -268,7 +395,13 @@ app.post('/api/auth/verify-token', async (req, res) => {
       message: user.status === 'pending' ? 'User pending approval. Master will review your request.' : 'Login successful',
     });
   } catch (error) {
-    console.error('Auth verification error:', error.message);
+    console.error('[auth.verify-token.failure]', JSON.stringify({
+      ...requestMeta,
+      username: req.body?.username || req.body?.token || null,
+      name: error?.name || 'Error',
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+    }));
     res.status(500).json({ error: error.message });
   }
 });
@@ -778,6 +911,133 @@ const getSystemConfig = async () => {
 };
 
 
+app.get('/api/telecast/auth/status', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can view telecast auth status' });
+    }
+
+    const config = await getSystemConfig();
+    res.json({
+      success: true,
+      authMode: config.telecastGraphAuthMode || 'application',
+      accountUsername: config.telecastGraphAccountUsername || '',
+      hasRefreshToken: !!config.telecastGraphRefreshTokenEnc,
+      tokenUpdatedAt: config.telecastGraphTokenUpdatedAt || null,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/telecast/auth/bootstrap', verifyToken, async (req, res) => {
+  const username = req.body?.username || '';
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can bootstrap telecast auth' });
+    }
+
+    const { password } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ error: 'username and password are required' });
+    }
+
+    const tokenResult = await bootstrapDelegatedToken({ username, password });
+    if (!tokenResult.refreshToken) {
+      return res.status(500).json({ error: 'No refresh token returned. Check Azure app delegated permissions and token settings.' });
+    }
+
+    const config = await getSystemConfig();
+    config.telecastGraphAuthMode = 'delegated';
+    config.telecastGraphAccountUsername = String(username).toLowerCase();
+    config.telecastGraphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
+    config.telecastGraphTokenUpdatedAt = new Date();
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, message: 'Telecast auth connected successfully.', mode: 'delegated' });
+  } catch (error) {
+    const msg = String(error.message || error);
+    if (msg.includes('AADSTS50076') || msg.toLowerCase().includes('mfa')) {
+      return res.status(400).json({ error: 'MFA_REQUIRED', message: 'MFA is enabled. Use a non-MFA service account for telecast bootstrap.' });
+    }
+    if (msg.includes('AADSTS50126')) {
+      return res.status(400).json({ error: 'INVALID_CREDENTIALS', message: 'Invalid username or password.' });
+    }
+    if (msg.includes('AADSTS50034')) {
+      return res.status(400).json({ error: 'USER_NOT_FOUND', message: 'User not found in this tenant.' });
+    }
+    if (msg.includes('AADSTS65001')) {
+      const consentUrl = buildDelegatedConsentUrl({ loginHint: username });
+      return res.status(400).json({
+        error: 'CONSENT_REQUIRED',
+        message: 'This account has not granted consent to the app yet. Open consent URL and accept once, then retry telecast connect.',
+        consentUrl,
+      });
+    }
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.post('/api/telecast/auth/clear', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can clear telecast auth' });
+    }
+
+    const config = await getSystemConfig();
+    config.telecastGraphAuthMode = 'application';
+    config.telecastGraphAccountUsername = '';
+    config.telecastGraphRefreshTokenEnc = '';
+    config.telecastGraphTokenUpdatedAt = null;
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, message: 'Telecast delegated token cleared.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/notifications/status', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can view notification status' });
+    }
+
+    const config = await getSystemConfig();
+    res.json({
+      success: true,
+      lastCheckedAt: config.notificationLastCheckedAt || null,
+      lastNewRowsCount: Number(config.notificationLastNewRowsCount || 0),
+      lastNewRows: Array.isArray(config.notificationLastNewRows) ? config.notificationLastNewRows : [],
+      trackedRows: Array.isArray(config.notificationRowSignatures) ? config.notificationRowSignatures.length : 0,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/notifications/force-refresh', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can force notification refresh' });
+    }
+
+    const syncResult = await syncFromConfiguredGraph({ source: `force_refresh:${req.user.email}` });
+    res.json({
+      success: true,
+      message: `Force refresh complete. ${syncResult.newRowsCount} new rows detected.`,
+      insertedCount: syncResult.insertedCount,
+      newRowsCount: syncResult.newRowsCount,
+      newRowSignatures: syncResult.newRowSignatures,
+      eligibleRows: syncResult.eligibleRows,
+    });
+  } catch (error) {
+    res.status(500).json(toApiError(error, 'NOTIFICATION_FORCE_REFRESH_FAILED'));
+  }
+});
+
 app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
   try {
     if (!['Master', 'Admin'].includes(req.user.role)) {
@@ -789,12 +1049,12 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'recipientEmail is required' });
     }
 
-    const config = await getGraphConfig();
-    if (!config.graphRefreshTokenEnc) {
-      return res.status(400).json({ error: 'Microsoft account not connected. Connect Graph account first.' });
+    const config = await getSystemConfig();
+    if (!config.telecastGraphRefreshTokenEnc) {
+      return res.status(400).json({ error: 'Telecast account not connected. Configure Telecast auth first.' });
     }
 
-    const { accessToken } = await getAccessTokenWithConfig(config);
+    const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc: config.telecastGraphRefreshTokenEnc });
     const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
       method: 'POST',
       headers: {
@@ -832,8 +1092,8 @@ app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can sync data' });
     }
 
-    const count = await syncFromConfiguredGraph();
-    res.json({ success: true, count, syncedCount: count });
+    const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
+    res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
   } catch (error) {
     res.status(500).json(toApiError(error, 'GRAPH_SYNC_FAILED'));
   }
@@ -845,8 +1105,8 @@ app.post('/api/opportunities/sync-graph/auto', verifyToken, async (req, res) => 
       return res.status(403).json({ error: 'Only Master/Admin can sync data' });
     }
 
-    const count = await syncFromConfiguredGraph();
-    res.json({ success: true, count, syncedCount: count });
+    const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
+    res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
   } catch (error) {
     res.status(500).json(toApiError(error, 'GRAPH_AUTOSYNC_FAILED'));
   }
@@ -858,8 +1118,8 @@ app.post('/api/opportunities/sync-sheets', verifyToken, async (req, res) => {
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can sync data' });
     }
-    const count = await syncFromConfiguredGraph();
-    res.json({ success: true, count, syncedCount: count });
+    const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
+    res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
   } catch (error) {
     res.status(500).json(toApiError(error, 'GRAPH_SYNC_FAILED'));
   }
@@ -870,8 +1130,8 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can sync data' });
     }
-    const count = await syncFromConfiguredGraph();
-    res.json({ success: true, count, syncedCount: count });
+    const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
+    res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
   } catch (error) {
     res.status(500).json(toApiError(error, 'GRAPH_AUTOSYNC_FAILED'));
   }

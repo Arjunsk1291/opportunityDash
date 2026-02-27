@@ -11,14 +11,10 @@ interface ApprovalStatsWidgetProps {
 export function ApprovalStatsWidget({ data }: ApprovalStatsWidgetProps) {
   const { getApprovalStatus } = useApproval();
 
-  // ✅ UPDATED: Count from filteredData using approval context
-  const approvedCount = data.filter(opp => 
-    getApprovalStatus(opp.opportunityRefNo) === 'fully_approved'
-  ).length;
-
-  const pendingCount = data.filter(opp => 
-    getApprovalStatus(opp.opportunityRefNo) === 'pending'
-  ).length;
+  const approvedCount = data.filter((opp) => getApprovalStatus(opp.opportunityRefNo) === 'fully_approved').length;
+  const proposalHeadApprovedCount = data.filter((opp) => getApprovalStatus(opp.opportunityRefNo) === 'proposal_head_approved').length;
+  const pendingCount = data.filter((opp) => getApprovalStatus(opp.opportunityRefNo) === 'pending').length;
+  const missingRefNoCount = data.filter((opp) => !opp.opportunityRefNo || !opp.opportunityRefNo.trim()).length;
 
   return (
     <Card>
@@ -32,9 +28,16 @@ export function ApprovalStatsWidget({ data }: ApprovalStatsWidgetProps) {
         <div className="flex items-center justify-between p-3 bg-success/10 rounded-lg">
           <div className="flex items-center gap-2">
             <CheckCircle className="h-4 w-4 text-success" />
-            <span className="text-sm">Approved</span>
+            <span className="text-sm">Fully Approved</span>
           </div>
           <Badge className="bg-success/20 text-success">{approvedCount}</Badge>
+        </div>
+        <div className="flex items-center justify-between p-3 bg-info/10 rounded-lg">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-info" />
+            <span className="text-sm">Proposal Head Approved</span>
+          </div>
+          <Badge className="bg-info/20 text-info">{proposalHeadApprovedCount}</Badge>
         </div>
         <div className="flex items-center justify-between p-3 bg-warning/10 rounded-lg">
           <div className="flex items-center gap-2">
@@ -43,8 +46,9 @@ export function ApprovalStatsWidget({ data }: ApprovalStatsWidgetProps) {
           </div>
           <Badge className="bg-warning/20 text-warning">{pendingCount}</Badge>
         </div>
-        <div className="text-xs text-muted-foreground mt-2">
-          Total: {approvedCount + pendingCount} tenders tracked
+        <div className="text-xs text-muted-foreground mt-2 space-y-1">
+          <div>Total tracked in card: {approvedCount + proposalHeadApprovedCount + pendingCount}</div>
+          <div>Debug: rows with missing Tender No (opportunityRefNo): {missingRefNoCount}</div>
         </div>
       </CardContent>
     </Card>
