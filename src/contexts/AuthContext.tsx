@@ -22,6 +22,7 @@ interface AuthContextType {
   isSVP: boolean;
   isLoading: boolean;
   isPending: boolean;
+  authError: string | null;
   logout: () => void;
   token: string | null;
   loginWithUsername: (username: string) => Promise<void>;
@@ -50,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, setIsPending] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
 
   const authHeaders = useCallback(
@@ -73,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     setUser(nextUser);
     setIsPending(nextUser.status === 'pending');
+    setAuthError(null);
   }, [authHeaders, token]);
 
   useEffect(() => {
@@ -88,6 +91,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
         if (!response.ok) {
+          setAuthError('Auth service unavailable');
+          console.error('Auth startup verify-token failed', {
+            endpoint: API_URL + '/auth/verify-token',
+            status: response.status,
+            statusText: response.statusText,
+            username: candidateUsername,
+          });
           if (savedUsername) {
             sessionStorage.removeItem('username_token');
           }
@@ -105,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(nextUser);
         setToken(candidateUsername);
         setIsPending(nextUser.status === 'pending');
+        setAuthError(null);
         sessionStorage.setItem('username_token', candidateUsername);
 
         if (nextUser.status === 'approved') {
@@ -117,7 +128,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         }
       } catch (error) {
-        console.error('Auth check error:', error);
+        setAuthError('Auth service unavailable');
+        console.error('Auth startup verify-token request crashed', {
+          endpoint: API_URL + '/auth/verify-token',
+          error,
+        });
       } finally {
         setIsLoading(false);
       }
@@ -131,6 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setAllUsers([]);
     setIsPending(false);
+    setAuthError(null);
     sessionStorage.removeItem('username_token');
   }, []);
 
@@ -144,6 +160,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const data = await response.json();
     if (!response.ok) {
+      console.error('Manual login verify-token failed', {
+        endpoint: API_URL + '/auth/verify-token',
+        status: response.status,
+        statusText: response.statusText,
+        username: normalizedUsername,
+      });
       throw new Error(data.error || 'Login failed');
     }
 
@@ -157,6 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setUser(nextUser);
     setToken(normalizedUsername);
+    setAuthError(null);
     sessionStorage.setItem('username_token', normalizedUsername);
 
     if (nextUser.status === 'pending') {
@@ -240,6 +263,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isSVP,
         isLoading,
         isPending,
+        authError,
         logout,
         token,
         loginWithUsername,
@@ -248,6 +272,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         refreshCurrentUser,
       }}
     >
+      {authError && (
+        <div
+          role="alert"
+          style={{
+            margin: '12px',
+            padding: '12px 16px',
+            borderRadius: '8px',
+            border: '1px solid #f5c2c7',
+            backgroundColor: '#f8d7da',
+            color: '#842029',
+            fontWeight: 600,
+          }}
+        >
+          Auth service unavailable
+        </div>
+      )}
       {children}
     </AuthContext.Provider>
   );
