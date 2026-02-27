@@ -294,6 +294,18 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
       .filter(([sig]) => Boolean(sig))
   );
   const newRows = newRowSignatures.map((sig) => signatureToOpportunity.get(sig)).filter(Boolean);
+<<<<<<< codex/detect-new-row-changes-and-freeze-header-vc3nnh
+
+  const telecastCandidateSignatures = newRows.map((row) => buildRowSignature(row)).filter(Boolean);
+  const telecastAlignment = {
+    detectionCount: newRowSignatures.length,
+    telecastCandidateCount: telecastCandidateSignatures.length,
+    missingCandidates: newRowSignatures.filter((sig) => !telecastCandidateSignatures.includes(sig)),
+    extraneousCandidates: telecastCandidateSignatures.filter((sig) => !newRowSignatures.includes(sig)),
+  };
+  const isAligned = telecastAlignment.missingCandidates.length === 0 && telecastAlignment.extraneousCandidates.length === 0;
+=======
+>>>>>>> main
 
   await SyncedOpportunity.deleteMany({});
   const inserted = await SyncedOpportunity.insertMany(opportunities);
@@ -327,6 +339,12 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     newRows: newRowSignatures.length,
     telecastSent: telecastDispatch.sent,
     telecastSkipped: telecastDispatch.skipped,
+<<<<<<< codex/detect-new-row-changes-and-freeze-header-vc3nnh
+    alignmentOk: isAligned,
+    alignmentMissing: telecastAlignment.missingCandidates.length,
+    alignmentExtraneous: telecastAlignment.extraneousCandidates.length,
+=======
+>>>>>>> main
   }));
 
   return {
@@ -336,6 +354,16 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     eligibleRows: uniqueCurrentSignatures.length,
     telecastSent: telecastDispatch.sent,
     telecastSkipped: telecastDispatch.skipped,
+<<<<<<< codex/detect-new-row-changes-and-freeze-header-vc3nnh
+    rowDetectionAlignment: {
+      ok: isAligned,
+      detectionCount: telecastAlignment.detectionCount,
+      telecastCandidateCount: telecastAlignment.telecastCandidateCount,
+      missingCandidates: telecastAlignment.missingCandidates.slice(0, 20),
+      extraneousCandidates: telecastAlignment.extraneousCandidates.slice(0, 20),
+    },
+=======
+>>>>>>> main
     newRowsPreview: newRows.slice(0, 50).map((row) => ({
       signature: buildRowSignature(row),
       tenderNo: row?.opportunityRefNo || '',
