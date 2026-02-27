@@ -72,6 +72,19 @@ interface GraphAuthStatus {
   tokenUpdatedAt?: string | null;
 }
 
+interface TelecastAuthStatus {
+  authMode: 'application' | 'delegated';
+  accountUsername: string;
+  hasRefreshToken: boolean;
+  tokenUpdatedAt?: string | null;
+}
+
+interface NotificationSyncStatus {
+  lastCheckedAt?: string | null;
+  lastNewRowsCount: number;
+  trackedRows: number;
+}
+
 export default function Admin() {
   const { user, isMaster, token } = useAuth();
   const canAccessPanel = isMaster || user?.role === 'Admin';
@@ -101,10 +114,22 @@ export default function Admin() {
     accountUsername: '',
     hasRefreshToken: false,
   });
+  const [telecastAuthStatus, setTelecastAuthStatus] = useState<TelecastAuthStatus>({
+    authMode: 'application',
+    accountUsername: '',
+    hasRefreshToken: false,
+  });
+  const [notificationSyncStatus, setNotificationSyncStatus] = useState<NotificationSyncStatus>({
+    lastCheckedAt: null,
+    lastNewRowsCount: 0,
+    trackedRows: 0,
+  });
   const [bootstrapUsername, setBootstrapUsername] = useState(DEFAULT_SERVICE_ACCOUNT);
   const [bootstrapPassword, setBootstrapPassword] = useState(DEFAULT_SERVICE_ACCOUNT);
   const [consentUrl, setConsentUrl] = useState('');
   const [telecastRecipientEmail, setTelecastRecipientEmail] = useState('');
+  const [telecastUsername, setTelecastUsername] = useState(DEFAULT_SERVICE_ACCOUNT);
+  const [telecastPassword, setTelecastPassword] = useState('');
   const [telecastSending, setTelecastSending] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
 
@@ -114,6 +139,8 @@ export default function Admin() {
       loadCollectionStats();
       loadGraphConfig();
       loadGraphAuthStatus();
+      loadTelecastAuthStatus();
+      loadNotificationStatus();
       fetchConsentUrl();
     }
   }, [canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -178,9 +205,10 @@ export default function Admin() {
       if (!response.ok) {
         throw new Error(parseApiErrorPayload(result, 'Failed to sync data'));
       }
-      setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Graph Excel` });
+      setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Graph Excel (${result.newRowsCount || 0} new rows)` });
       await loadCollectionStats();
-      toast.success(`Synced ${result.count} tenders from Graph Excel`);
+      await loadNotificationStatus();
+      toast.success(`Synced ${result.count} tenders from Graph Excel (${result.newRowsCount || 0} new rows)`);
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
       console.error('❌ Error syncing:', error);
@@ -210,6 +238,74 @@ export default function Admin() {
       });
     } catch (error) {
       console.error('Failed to load graph auth status:', error);
+    }
+  };
+
+  const loadTelecastAuthStatus = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/telecast/auth/status', {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setTelecastAuthStatus({
+        authMode: data.authMode || 'application',
+        accountUsername: data.accountUsername || '',
+        hasRefreshToken: !!data.hasRefreshToken,
+        tokenUpdatedAt: data.tokenUpdatedAt || null,
+      });
+    } catch (error) {
+      console.error('Failed to load telecast auth status:', error);
+    }
+  };
+
+  const loadNotificationStatus = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/notifications/status', {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setNotificationSyncStatus({
+        lastCheckedAt: data.lastCheckedAt || null,
+        lastNewRowsCount: Number(data.lastNewRowsCount || 0),
+        trackedRows: Number(data.trackedRows || 0),
+      });
+    } catch (error) {
+      console.error('Failed to load notification status:', error);
+    }
+  };
+
+  const forceRefreshNotificationSync = async () => {
+    if (!token) return;
+    setSyncLoading(true);
+    try {
+      const response = await fetch(API_URL + '/notifications/force-refresh', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to force refresh notifications'));
+
+      toast.success(data.message || `Force refresh complete. ${data.newRowsCount || 0} new rows detected.`);
+      await loadNotificationStatus();
+      await loadCollectionStats();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setSyncLoading(false);
     }
   };
 
@@ -591,6 +687,60 @@ export default function Admin() {
     }
   };
 
+
+  const bootstrapTelecastAuth = async () => {
+    if (!token || !telecastUsername || !telecastPassword) {
+      toast.error('Telecast username and password are required');
+      return;
+    }
+
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/telecast/auth/bootstrap', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username: telecastUsername, password: telecastPassword }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || 'Failed to connect telecast auth');
+
+      setTelecastPassword('');
+      toast.success(data.message || 'Telecast account connected');
+      await loadTelecastAuthStatus();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const clearTelecastAuth = async () => {
+    if (!token) return;
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/telecast/auth/clear', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || 'Failed to clear telecast auth');
+
+      toast.success(data.message || 'Telecast auth cleared');
+      await loadTelecastAuthStatus();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
 
   const sendTelecastTestMail = async () => {
     if (!token) return;
@@ -1108,19 +1258,34 @@ export default function Admin() {
                   </div>
                 </div>
 
-                <div className="border-t pt-6">
-                  <Button 
-                    onClick={syncFromGraphExcel}
-                    disabled={syncLoading}
-                    size="lg"
-                    className="w-full gap-2"
-                  >
-                    <Download className={`h-4 w-4 ${syncLoading ? 'animate-spin' : ''}`} />
-                    {syncLoading ? 'Syncing...' : 'Sync from Graph Excel'}
-                  </Button>
+                <div className="border-t pt-6 space-y-3">
+                  <div className="grid gap-2">
+                    <Button 
+                      onClick={syncFromGraphExcel}
+                      disabled={syncLoading}
+                      size="lg"
+                      className="w-full gap-2"
+                    >
+                      <Download className={`h-4 w-4 ${syncLoading ? 'animate-spin' : ''}`} />
+                      {syncLoading ? 'Syncing...' : 'Sync from Graph Excel'}
+                    </Button>
+                    <Button
+                      onClick={forceRefreshNotificationSync}
+                      disabled={syncLoading}
+                      variant="secondary"
+                      className="w-full"
+                    >
+                      Force Refresh New-Row Detection
+                    </Button>
+                  </div>
                   <p className="text-xs text-muted-foreground mt-2">
                     Pulls latest tender data from your configured Microsoft Graph Excel and syncs to database
                   </p>
+                  <div className="rounded border p-3 text-xs text-muted-foreground">
+                    Notification tracker: last checked {notificationSyncStatus.lastCheckedAt ? new Date(notificationSyncStatus.lastCheckedAt).toLocaleString() : 'never'}
+                    {' '}• last new rows {notificationSyncStatus.lastNewRowsCount} • tracked rows {notificationSyncStatus.trackedRows}.
+                    Scheduled check runs daily at 5:00 PM server time.
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -1135,14 +1300,35 @@ export default function Admin() {
                 <Send className="h-5 w-5" />
                 Telecast
               </CardTitle>
-              <CardDescription>Send a Microsoft Graph test email using the connected delegated account.</CardDescription>
+              <CardDescription>Telecast mail is isolated from Data Sync credentials. Connect a dedicated telecast account below.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-2 text-sm">
                 <span>Status:</span>
-                <Badge className={graphAuthStatus.hasRefreshToken ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}>
-                  {graphAuthStatus.hasRefreshToken ? 'Connected' : 'Not Connected'}
+                <Badge className={telecastAuthStatus.hasRefreshToken ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}>
+                  {telecastAuthStatus.hasRefreshToken ? 'Connected' : 'Not Connected'}
                 </Badge>
+                {telecastAuthStatus.accountUsername && <span className="text-xs text-muted-foreground">({telecastAuthStatus.accountUsername})</span>}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Telecast Account Username</p>
+                  <Input value={telecastUsername} onChange={(e) => setTelecastUsername(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Telecast Account Password</p>
+                  <Input type="password" value={telecastPassword} onChange={(e) => setTelecastPassword(e.target.value)} placeholder="Enter telecast account password" />
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={bootstrapTelecastAuth} disabled={configSaving || !telecastUsername || !telecastPassword}>
+                  Connect Telecast Account
+                </Button>
+                <Button variant="outline" onClick={clearTelecastAuth} disabled={configSaving}>
+                  Clear Telecast Token
+                </Button>
               </div>
 
               <div className="space-y-2">
@@ -1155,7 +1341,7 @@ export default function Admin() {
                 />
               </div>
 
-              <Button onClick={sendTelecastTestMail} disabled={telecastSending || !graphAuthStatus.hasRefreshToken} className="gap-2">
+              <Button onClick={sendTelecastTestMail} disabled={telecastSending || !telecastAuthStatus.hasRefreshToken} className="gap-2">
                 <Send className={`h-4 w-4 ${telecastSending ? 'animate-pulse' : ''}`} />
                 {telecastSending ? 'Sending...' : 'Send Test Mail'}
               </Button>
