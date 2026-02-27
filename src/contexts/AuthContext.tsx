@@ -285,11 +285,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             fontWeight: 600,
           }}
         >
-          <div>Auth service unavailable</div>
-          <div style={{ fontSize: '12px', fontWeight: 400, marginTop: '4px' }}>
-            Debug: login token is stored in sessionStorage for this browser session only.
-            If startup verification fails, saved login may be cleared and sign-in will be required again.
-          </div>
+          Auth service unavailable
         </div>
       )}
       {children}
