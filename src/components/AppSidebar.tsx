@@ -1,26 +1,5 @@
-import { useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
-import {
-  LayoutDashboard,
-  FileText,
-  Users,
-  Building2,
-  BarChart3,
-  Shield,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  CheckCircle,
-  Send,
-  Award,
-  XCircle,
-  Pause,
-  Settings,
-  FileSpreadsheet,
-  AlertTriangle,
-  CloudUpload,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import { NavLink, useLocation } from 'react-router-dom';
+import { BarChart3 } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -33,34 +12,23 @@ import {
   SidebarHeader,
   SidebarFooter,
   useSidebar,
-} from "@/components/ui/sidebar";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { Badge } from "@/components/ui/badge";
-
-const mainNavItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Opportunities", url: "/opportunities", icon: FileText },
-  { title: "Clients", url: "/clients", icon: Building2 },
-  { title: "Analytics", url: "/analytics", icon: BarChart3 },
-];
-
-const adminNavItems = [
-  { title: "Master Panel", url: "/master", icon: Shield },
-];
+} from '@/components/ui/sidebar';
+import { useAuth } from '@/contexts/AuthContext';
+import { NAV_ITEMS } from '@/config/navigation';
 
 export function AppSidebar() {
   const location = useLocation();
   const { state } = useSidebar();
-  const collapsed = state === "collapsed";
+  const { canAccessPage } = useAuth();
+  const collapsed = state === 'collapsed';
 
   const isActive = (path: string) => {
-    if (path === "/") return location.pathname === "/";
+    if (path === '/') return location.pathname === '/';
     return location.pathname.startsWith(path);
   };
+
+  const visibleMainItems = NAV_ITEMS.filter((item) => item.pageKey !== 'master' && canAccessPage(item.pageKey));
+  const visibleAdminItems = NAV_ITEMS.filter((item) => item.pageKey === 'master' && canAccessPage(item.pageKey));
 
   return (
     <Sidebar collapsible="icon">
@@ -79,12 +47,11 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="scrollbar-thin">
-        {/* Main Navigation */}
         <SidebarGroup>
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainNavItems.map((item) => (
+              {visibleMainItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)}>
                     <NavLink to={item.url}>
@@ -98,29 +65,25 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Admin Section */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Administration</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {adminNavItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                    <NavLink to={item.url}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                      {item.title === "Admin Panel" && (
-                        <Badge variant="outline" className="ml-auto text-[10px] px-1.5">
-                          Protected
-                        </Badge>
-                      )}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {visibleAdminItems.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Administration</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {visibleAdminItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                      <NavLink to={item.url}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-4">

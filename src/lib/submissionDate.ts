@@ -11,7 +11,7 @@ function parseFlexibleDate(raw?: string | null): Date | null {
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
-  const dayFirst = value.match(/^(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?$/);
+  const dayFirst = value.match(/^(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2,4}))?$/);
   if (dayFirst) {
     const day = Number(dayFirst[1]);
     const month = Number(dayFirst[2]) - 1;
