@@ -20,7 +20,6 @@ export default function UserRolesPanel() {
         return <FileCheck className="h-4 w-4 text-info" />;
       case 'SVP':
         return <Briefcase className="h-4 w-4 text-warning" />;
-      case 'Basic':
       default:
         return <User className="h-4 w-4 text-muted-foreground" />;
     }
@@ -33,9 +32,7 @@ export default function UserRolesPanel() {
           <Users className="h-5 w-5 text-primary" />
           User Roles Management
         </CardTitle>
-        <CardDescription>
-          Assign roles including Proposal Head (step 1) and SVP per group (step 2).
-        </CardDescription>
+        <CardDescription>When assigning SVP, select the group (GES/GDS/GTS).</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
@@ -54,7 +51,7 @@ export default function UserRolesPanel() {
                   <>
                     <Select
                       value={u.role}
-                      onValueChange={(value: UserRole) => updateUserRole(u.id || u.email, value, value === 'SVP' ? u.assignedGroup || undefined : undefined)}
+                      onValueChange={(value: UserRole) => updateUserRole(u.id || u.email, value, value === 'SVP' ? (u.assignedGroup || 'GES') : undefined)}
                     >
                       <SelectTrigger className="w-[150px] h-8 text-xs">
                         <SelectValue />
@@ -67,11 +64,8 @@ export default function UserRolesPanel() {
                       </SelectContent>
                     </Select>
                     {u.role === 'SVP' && (
-                      <Select
-                        value={u.assignedGroup || ''}
-                        onValueChange={(group) => updateUserRole(u.id || u.email, 'SVP', group)}
-                      >
-                        <SelectTrigger className="w-[90px] h-8 text-xs">
+                      <Select value={u.assignedGroup || 'GES'} onValueChange={(group) => updateUserRole(u.id || u.email, 'SVP', group)}>
+                        <SelectTrigger className="w-[95px] h-8 text-xs">
                           <SelectValue placeholder="Group" />
                         </SelectTrigger>
                         <SelectContent>
