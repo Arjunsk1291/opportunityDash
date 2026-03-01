@@ -24,6 +24,45 @@ const systemConfigSchema = new mongoose.Schema(
     notificationLastCheckedAt: { type: Date, default: null },
     notificationLastNewRowsCount: { type: Number, default: 0 },
     notificationLastNewRows: { type: [String], default: [] },
+    telecastTemplateSubject: { type: String, default: 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}' },
+    telecastTemplateBody: { type: String, default: 'A new tender row was detected.\nRef: {{TENDER_NO}}\nTender: {{TENDER_NAME}}\nClient: {{CLIENT}}\nGroup: {{GROUP}}\nType: {{TENDER_TYPE}}\nDate Received: {{DATE_TENDER_RECD}}\nValue: {{VALUE}}' },
+    telecastGroupRecipients: {
+      type: Object,
+      default: {
+        GES: [],
+        GDS: [],
+        GTS: [],
+      },
+    },
+    telecastKeywordHelp: { type: [String], default: [] },
+    telecastSavedTemplates: {
+      type: [
+        {
+          id: { type: String, required: true },
+          name: { type: String, required: true },
+          subject: { type: String, default: '' },
+          body: { type: String, default: '' },
+          createdAt: { type: Date, default: Date.now },
+          updatedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
+    telecastActiveTemplateId: { type: String, default: '' },
+    telecastWeeklyStats: {
+      type: [
+        {
+          weekKey: { type: String },
+          startDate: { type: String },
+          endDate: { type: String },
+          newRowsCount: { type: Number, default: 0 },
+          byGroup: { type: Object, default: {} },
+          updatedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
+    pageRoleAccess: { type: Object, default: {} },
     lastUpdatedBy: { type: String, default: null },
     updatedBy: { type: String, default: null },
   },
