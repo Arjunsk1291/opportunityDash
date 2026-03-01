@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
 import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
