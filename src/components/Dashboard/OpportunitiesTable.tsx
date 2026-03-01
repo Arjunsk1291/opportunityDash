@@ -5,14 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertTriangle, Search, CheckCircle, Clock, RotateCcw, RefreshCw, MessageSquare, ArrowRight, ArrowUpDown } from 'lucide-react';
+import { AlertTriangle, Search, RotateCcw, RefreshCw, MessageSquare, ArrowUpDown } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useApproval } from '@/contexts/ApprovalContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Separator } from '@/components/ui/separator';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -215,8 +214,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                 <TableHead className="sticky top-0 z-40 bg-background">AVENIR STATUS</TableHead>
                 <TableHead className="sticky top-0 z-40 bg-background max-w-[150px]">Remarks</TableHead>
                 <TableHead className="sticky top-0 z-40 bg-background">RESULT</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background w-[220px]">Approval</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background w-16">Info</TableHead>
+                <TableHead className="sticky top-0 right-16 z-50 bg-background w-[240px] shadow-[-1px_0_0_hsl(var(--border))]">Approval</TableHead>
+                <TableHead className="sticky top-0 right-0 z-50 bg-background w-16">Info</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -269,7 +268,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                         <Badge className={getTenderResultBadge(tender.tenderResult)}>{tender.tenderResult}</Badge>
                       ) : '—'}
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="sticky right-16 z-20 bg-background/95 backdrop-blur-sm shadow-[-1px_0_0_hsl(var(--border))]" onClick={(e) => e.stopPropagation()}>
                       <ApprovalCell
                         approvalStatus={approvalStatus}
                         approvalState={approvalState}
@@ -281,7 +280,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
                         onRevert={() => revertApproval(tender.opportunityRefNo)}
                       />
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="sticky right-0 z-20 bg-background/95 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-1">
                         {tender.comments && (
                           <Popover>
@@ -322,7 +321,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
 
 interface ApprovalCellProps {
   approvalStatus: string;
-  approvalState: { proposalHeadApproved: boolean; proposalHeadBy?: string | null; svpApproved: boolean; svpBy?: string | null };
+  approvalState: { status?: string; proposalHeadApproved: boolean; proposalHeadBy?: string | null; svpApproved: boolean; svpBy?: string | null };
   isProposalHead: boolean;
   canSVPApprove: boolean;
   isMaster: boolean;
@@ -331,64 +330,42 @@ interface ApprovalCellProps {
   onRevert: () => void;
 }
 
-function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster, onApproveProposalHead, onApproveSVP, onRevert }: ApprovalCellProps) {
-  if (approvalStatus === 'fully_approved') {
-    return (
-      <div className="flex items-center gap-1">
-        <Badge className="bg-success/20 text-success gap-1 text-xs">
-          <CheckCircle className="h-3 w-3" />
-          Fully Approved
-        </Badge>
-        {isMaster && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onRevert}>
-                <RotateCcw className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Revert to Pending (Master only)</TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-    );
-  }
-
-  if (approvalStatus === 'proposal_head_approved') {
-    return (
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-1">
-          <Badge className="bg-info/20 text-info gap-1 text-xs">
-            <CheckCircle className="h-3 w-3" />
-            PH ✓
-          </Badge>
-          <ArrowRight className="h-3 w-3 text-muted-foreground" />
-          {canSVPApprove ? (
-            <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={onApproveSVP}>SVP Approve</Button>
-          ) : (
-            <Badge variant="secondary" className="gap-1 text-xs">
-              <Clock className="h-3 w-3" />
-              Awaiting SVP
-            </Badge>
-          )}
-        </div>
-        {isMaster && (
-          <Button variant="ghost" size="sm" className="h-5 text-xs text-muted-foreground" onClick={onRevert}>
-            <RotateCcw className="h-3 w-3 mr-1" /> Revert
-          </Button>
-        )}
-      </div>
-    );
-  }
+function ApprovalCell({ approvalStatus, approvalState, isProposalHead, canSVPApprove, isMaster, onApproveProposalHead, onApproveSVP, onRevert }: ApprovalCellProps) {
+  const proposalHeadDone = approvalState.proposalHeadApproved || approvalStatus === 'proposal_head_approved' || approvalStatus === 'fully_approved';
+  const svpDone = approvalState.svpApproved || approvalStatus === 'fully_approved';
 
   return (
-    <div className="flex items-center gap-1">
-      {isProposalHead ? (
-        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={onApproveProposalHead}>PH Approve</Button>
-      ) : (
-        <Badge variant="secondary" className="gap-1 text-xs">
-          <Clock className="h-3 w-3" />
-          Pending PH
+    <div className="space-y-1.5 min-w-[220px]">
+      <div className="flex items-center gap-1.5">
+        <Badge className={`text-[10px] h-5 ${proposalHeadDone ? 'bg-info/20 text-info' : 'bg-muted text-muted-foreground'}`}>
+          PH {proposalHeadDone ? '✓' : '…'}
         </Badge>
+        {proposalHeadDone ? (
+          <span className="text-[10px] text-muted-foreground truncate">{approvalState.proposalHeadBy || 'Approved'}</span>
+        ) : isProposalHead ? (
+          <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={onApproveProposalHead}>PH Approve</Button>
+        ) : (
+          <span className="text-[10px] text-muted-foreground">Pending PH</span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <Badge className={`text-[10px] h-5 ${svpDone ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'}`}>
+          SVP {svpDone ? '✓' : '…'}
+        </Badge>
+        {svpDone ? (
+          <span className="text-[10px] text-muted-foreground truncate">{approvalState.svpBy || 'Approved'}</span>
+        ) : canSVPApprove && proposalHeadDone ? (
+          <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={onApproveSVP}>SVP Approve</Button>
+        ) : (
+          <span className="text-[10px] text-muted-foreground">{proposalHeadDone ? 'Awaiting SVP' : 'After PH approval'}</span>
+        )}
+      </div>
+
+      {isMaster && (approvalStatus !== 'pending' || proposalHeadDone || svpDone) && (
+        <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1 text-muted-foreground" onClick={onRevert}>
+          <RotateCcw className="h-3 w-3 mr-1" /> Revert
+        </Button>
       )}
     </div>
   );

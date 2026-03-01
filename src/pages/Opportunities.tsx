@@ -7,14 +7,27 @@ import { Badge } from '@/components/ui/badge';
 import { Opportunity } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { useApproval } from '@/contexts/ApprovalContext';
 
 interface OpportunitiesProps {
   statusFilter?: string;
 }
 
+function formatApprovalStatus(status: string): string {
+  switch (status) {
+    case 'fully_approved':
+      return 'Fully Approved';
+    case 'proposal_head_approved':
+      return 'Proposal Head Approved';
+    default:
+      return 'Pending';
+  }
+}
+
 const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const { opportunities } = useData();
   const { formatCurrency } = useCurrency();
+  const { getApprovalStatus } = useApproval();
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [filters, setFilters] = useState<FilterState>(() => ({
     ...defaultFilters,
@@ -46,6 +59,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
     { label: 'Avenir Status', value: selectedOpp.avenirStatus || '—' },
     { label: 'Remarks/Reason', value: selectedOpp.remarksReason || '—' },
     { label: 'Tender Result', value: selectedOpp.tenderResult || '—' },
+    { label: 'Approval', value: formatApprovalStatus(getApprovalStatus(selectedOpp.opportunityRefNo)) },
     { label: 'Comments', value: selectedOpp.comments || '—' },
   ] : [];
 
