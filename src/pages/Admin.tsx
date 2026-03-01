@@ -13,8 +13,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { useState, useEffect } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
+import { Checkbox } from '@/components/ui/checkbox';
+import { DEFAULT_PAGE_ROLE_ACCESS, PAGE_LABELS, PageKey } from '@/config/navigation';
+import { UserRole } from '@/contexts/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+
+const ROLE_OPTIONS: UserRole[] = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
+const GROUP_OPTIONS = ['GES', 'GDS', 'GTS'] as const;
 
 const DEFAULT_SERVICE_ACCOUNT = (import.meta.env.VITE_DEFAULT_SERVICE_ACCOUNT || import.meta.env.VITE_DEFAULT_MASTER_USERNAME || 'tender-notify@avenirengineering.com').toLowerCase();
 
@@ -79,14 +85,32 @@ interface TelecastAuthStatus {
   tokenUpdatedAt?: string | null;
 }
 
+interface TelecastTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface WeeklyTelecastStat {
+  weekKey: string;
+  startDate: string;
+  endDate: string;
+  newRowsCount: number;
+  byGroup?: Record<string, number>;
+}
+
 interface NotificationSyncStatus {
   lastCheckedAt?: string | null;
   lastNewRowsCount: number;
   trackedRows: number;
+  weeklyStats?: WeeklyTelecastStat[];
 }
 
 export default function Admin() {
-  const { user, isMaster, token } = useAuth();
+  const { user, isMaster, token, pagePermissions, updatePagePermissions } = useAuth();
   const canAccessPanel = isMaster || user?.role === 'Admin';
   const navigate = useNavigate();
   const [users, setUsers] = useState<AuthorizedUser[]>([]);
@@ -131,7 +155,25 @@ export default function Admin() {
   const [telecastUsername, setTelecastUsername] = useState(DEFAULT_SERVICE_ACCOUNT);
   const [telecastPassword, setTelecastPassword] = useState('');
   const [telecastSending, setTelecastSending] = useState(false);
+  const [telecastTemplateSubject, setTelecastTemplateSubject] = useState('New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
+  const [telecastTemplateBody, setTelecastTemplateBody] = useState('A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
+  const [savedTemplateSubject, setSavedTemplateSubject] = useState('New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
+  const [savedTemplateBody, setSavedTemplateBody] = useState('A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
+  const [telecastKeywords, setTelecastKeywords] = useState<string[]>([]);
+  const [telecastWeeklyStats, setTelecastWeeklyStats] = useState<WeeklyTelecastStat[]>([]);
+  const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string[]>>({ GES: [], GDS: [], GTS: [] });
+  const [telecastSavedTemplates, setTelecastSavedTemplates] = useState<TelecastTemplate[]>([]);
+  const [telecastActiveTemplateId, setTelecastActiveTemplateId] = useState('');
+  const [newTemplateName, setNewTemplateName] = useState('');
+  const [newAuthorizedUser, setNewAuthorizedUser] = useState<{ email: string; displayName: string; role: UserRole; assignedGroup: string; status: 'approved' | 'pending' }>({
+    email: '',
+    displayName: '',
+    role: 'Basic',
+    assignedGroup: 'GES',
+    status: 'approved',
+  });
   const [activeTab, setActiveTab] = useState('general');
+  const [draftPagePermissions, setDraftPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
 
   useEffect(() => {
     if (canAccessPanel) {
@@ -140,10 +182,15 @@ export default function Admin() {
       loadGraphConfig();
       loadGraphAuthStatus();
       loadTelecastAuthStatus();
+      loadTelecastConfig();
       loadNotificationStatus();
       fetchConsentUrl();
     }
   }, [canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setDraftPagePermissions((pagePermissions || DEFAULT_PAGE_ROLE_ACCESS) as Record<PageKey, UserRole[]>);
+  }, [pagePermissions]);
 
   const loadUsers = async () => {
     if (!token) return;
@@ -263,6 +310,38 @@ export default function Admin() {
     }
   };
 
+
+  const loadTelecastConfig = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/telecast/config', {
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const loadedSubject = data.templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
+      const loadedBody = data.templateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.';
+      setTelecastTemplateSubject(loadedSubject);
+      setTelecastTemplateBody(loadedBody);
+      setSavedTemplateSubject(loadedSubject);
+      setSavedTemplateBody(loadedBody);
+      setTelecastKeywords(Array.isArray(data.keywords) ? data.keywords : []);
+      setTelecastGroupRecipients({
+        GES: Array.isArray(data.groupRecipients?.GES) ? data.groupRecipients.GES : [],
+        GDS: Array.isArray(data.groupRecipients?.GDS) ? data.groupRecipients.GDS : [],
+        GTS: Array.isArray(data.groupRecipients?.GTS) ? data.groupRecipients.GTS : [],
+      });
+      setTelecastWeeklyStats(Array.isArray(data.weeklyStats) ? data.weeklyStats : []);
+      setTelecastSavedTemplates(Array.isArray(data.savedTemplates) ? data.savedTemplates : []);
+      setTelecastActiveTemplateId(String(data.activeTemplateId || ''));
+    } catch (error) {
+      console.error('Failed to load telecast config:', error);
+    }
+  };
+
   const loadNotificationStatus = async () => {
     if (!token) return;
     try {
@@ -278,7 +357,9 @@ export default function Admin() {
         lastCheckedAt: data.lastCheckedAt || null,
         lastNewRowsCount: Number(data.lastNewRowsCount || 0),
         trackedRows: Number(data.trackedRows || 0),
+        weeklyStats: Array.isArray(data.weeklyStats) ? data.weeklyStats : [],
       });
+      if (Array.isArray(data.weeklyStats)) setTelecastWeeklyStats(data.weeklyStats);
     } catch (error) {
       console.error('Failed to load notification status:', error);
     }
@@ -638,6 +719,26 @@ export default function Admin() {
     }
   };
 
+  const togglePagePermission = (pageKey: PageKey, role: UserRole, checked: boolean) => {
+    setDraftPagePermissions((prev) => {
+      const current = new Set(prev[pageKey] || []);
+      if (checked) current.add(role);
+      else current.delete(role);
+      const nextRoles = Array.from(current) as UserRole[];
+      return { ...prev, [pageKey]: nextRoles.length ? nextRoles : prev[pageKey] };
+    });
+  };
+
+  const savePagePermissions = async () => {
+    try {
+      await updatePagePermissions(draftPagePermissions);
+      setMessage({ type: 'success', text: '✅ Page visibility permissions updated' });
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error) {
+      setMessage({ type: 'error', text: '❌ Failed to save page permissions: ' + (error as Error).message });
+    }
+  };
+
   const removeUser = async (email: string) => {
     if (!token || !confirm('Are you sure you want to remove ' + email + '?')) return;
     try {
@@ -661,6 +762,164 @@ export default function Admin() {
       console.error('❌ Error removing user:', error);
       setMessage({ type: 'error', text: '❌ Failed to remove user: ' + (error as Error).message });
     }
+  };
+
+
+  const addAuthorizedUser = async () => {
+    if (!token) return;
+    if (!newAuthorizedUser.email.trim()) {
+      toast.error('Email is required');
+      return;
+    }
+    try {
+      const response = await fetch(API_URL + '/users/add', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newAuthorizedUser),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to add user');
+      toast.success('Authorized user added/updated');
+      setNewAuthorizedUser({ email: '', displayName: '', role: 'Basic', assignedGroup: 'GES', status: 'approved' });
+      await loadUsers();
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  };
+
+
+  const saveCurrentAsTemplate = async () => {
+    if (!token) return;
+    const name = newTemplateName.trim();
+    if (!name) {
+      toast.error('Template name is required');
+      return;
+    }
+
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/telecast/templates/save', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name, subject: telecastTemplateSubject, body: telecastTemplateBody }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to save template');
+      setTelecastSavedTemplates(Array.isArray(data.savedTemplates) ? data.savedTemplates : []);
+      setTelecastActiveTemplateId(String(data.activeTemplateId || ''));
+      setNewTemplateName('');
+      toast.success('Template saved for reuse');
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const applySavedTemplate = async (templateId: string) => {
+    if (!token) return;
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/telecast/templates/apply', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ templateId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to apply template');
+      setTelecastTemplateSubject(String(data.templateSubject || ''));
+      setTelecastTemplateBody(String(data.templateBody || ''));
+      setSavedTemplateSubject(String(data.templateSubject || ''));
+      setSavedTemplateBody(String(data.templateBody || ''));
+      setTelecastActiveTemplateId(String(data.activeTemplateId || templateId));
+      toast.success('Template applied');
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const deleteSavedTemplate = async (templateId: string) => {
+    if (!token) return;
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/telecast/templates/' + encodeURIComponent(templateId), {
+        method: 'DELETE',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to delete template');
+      setTelecastSavedTemplates(Array.isArray(data.savedTemplates) ? data.savedTemplates : []);
+      setTelecastActiveTemplateId(String(data.activeTemplateId || ''));
+      toast.success('Template deleted');
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const saveTelecastConfig = async () => {
+    if (!token) return;
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/telecast/config', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          templateSubject: telecastTemplateSubject,
+          templateBody: telecastTemplateBody,
+          groupRecipients: {
+            GES: telecastGroupRecipients.GES,
+            GDS: telecastGroupRecipients.GDS,
+            GTS: telecastGroupRecipients.GTS,
+          },
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to save telecast config');
+      toast.success('Telecast template and recipients saved');
+      await loadTelecastConfig();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+
+  const approvedUsers = users.filter((u) => u.status === 'approved');
+
+  const usersForGroup = (group: 'GES' | 'GDS' | 'GTS') =>
+    approvedUsers.filter((u) => {
+      const assigned = String(u.assignedGroup || '').toUpperCase();
+      if (assigned) return assigned === group;
+      return true;
+    });
+
+  const toggleGroupRecipient = (group: 'GES' | 'GDS' | 'GTS', email: string, checked: boolean) => {
+    setTelecastGroupRecipients((prev) => {
+      const current = new Set(prev[group] || []);
+      if (checked) current.add(email.toLowerCase());
+      else current.delete(email.toLowerCase());
+      return { ...prev, [group]: Array.from(current) };
+    });
   };
 
   const cleanupLogs = async () => {
@@ -803,7 +1062,7 @@ export default function Admin() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="flex flex-wrap h-auto">
+        <TabsList className="w-full flex flex-wrap h-auto justify-start gap-1">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="users">User Management</TabsTrigger>
           <TabsTrigger value="data-sync">Data Sync</TabsTrigger>
@@ -857,6 +1116,105 @@ export default function Admin() {
         </TabsContent>
 
         <TabsContent value="users">
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Sidebar Page Visibility by Role</CardTitle>
+              <CardDescription>Choose which roles can view each page in the sidebar and access its route.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 pr-3">Page</th>
+                      {ROLE_OPTIONS.map((role) => (
+                        <th key={role} className="text-center py-2 px-3">{role}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(Object.keys(PAGE_LABELS) as PageKey[]).map((pageKey) => (
+                      <tr key={pageKey} className="border-b">
+                        <td className="py-2 pr-3 font-medium">{PAGE_LABELS[pageKey]}</td>
+                        {ROLE_OPTIONS.map((role) => (
+                          <td key={role} className="text-center py-2 px-3">
+                            <Checkbox
+                              checked={(draftPagePermissions[pageKey] || []).includes(role)}
+                              onCheckedChange={(checked) => togglePagePermission(pageKey, role, Boolean(checked))}
+                              disabled={!isMaster}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {isMaster && (
+                <div className="mt-4">
+                  <Button onClick={savePagePermissions}>Save Page Permissions</Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Add Authorized User</CardTitle>
+              <CardDescription>Create or update an authorized user directly from User Management.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Email</p>
+                <Input value={newAuthorizedUser.email} onChange={(e) => setNewAuthorizedUser((prev) => ({ ...prev, email: e.target.value }))} placeholder="name@company.com" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Display Name</p>
+                <Input value={newAuthorizedUser.displayName} onChange={(e) => setNewAuthorizedUser((prev) => ({ ...prev, displayName: e.target.value }))} placeholder="Full name" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Role</p>
+                <Select value={newAuthorizedUser.role} onValueChange={(value: UserRole) => setNewAuthorizedUser((prev) => ({ ...prev, role: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Master">Master</SelectItem>
+                    <SelectItem value="Admin">Admin</SelectItem>
+                    <SelectItem value="ProposalHead">Proposal Head</SelectItem>
+                    <SelectItem value="SVP">SVP</SelectItem>
+                    <SelectItem value="Basic">Basic</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Status</p>
+                <Select value={newAuthorizedUser.status} onValueChange={(value: 'approved' | 'pending') => setNewAuthorizedUser((prev) => ({ ...prev, status: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {newAuthorizedUser.role === 'SVP' && (
+                <div className="space-y-1 md:col-span-2">
+                  <p className="text-sm font-medium">SVP Group</p>
+                  <Select value={newAuthorizedUser.assignedGroup} onValueChange={(value) => setNewAuthorizedUser((prev) => ({ ...prev, assignedGroup: value }))}>
+                    <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {GROUP_OPTIONS.map((group) => (
+                        <SelectItem key={group} value={group}>{group}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="md:col-span-2">
+                <Button onClick={addAuthorizedUser}>Add / Update Authorized User</Button>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -919,16 +1277,14 @@ export default function Admin() {
                             value={u.role}
                             onValueChange={(newRole) => {
                               if (newRole === 'SVP') {
-                                const selectedGroup = window.prompt('Enter assigned group for SVP (GES/GDS/GTS)', (u.assignedGroup || 'GES') as string);
-                                if (!selectedGroup) return;
-                                changeUserRole(u.email, newRole, selectedGroup.toUpperCase());
+                                changeUserRole(u.email, newRole, (u.assignedGroup || 'GES').toUpperCase());
                                 return;
                               }
                               changeUserRole(u.email, newRole);
                             }}
                             disabled={changingRole === u.email}
                           >
-                            <SelectTrigger className="w-24 h-8">
+                            <SelectTrigger className="w-[140px] h-8">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -939,6 +1295,22 @@ export default function Admin() {
                               <SelectItem value="Basic">Basic</SelectItem>
                             </SelectContent>
                           </Select>
+                          {u.role === 'SVP' && (
+                            <Select
+                              value={(u.assignedGroup || 'GES').toUpperCase()}
+                              onValueChange={(group) => changeUserRole(u.email, 'SVP', group)}
+                              disabled={changingRole === u.email}
+                            >
+                              <SelectTrigger className="w-[100px] h-8 mt-2">
+                                <SelectValue placeholder="Group" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {GROUP_OPTIONS.map((group) => (
+                                  <SelectItem key={group} value={group}>{group}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -1291,62 +1663,168 @@ export default function Admin() {
             </Card>
           </div>
         </TabsContent>
-
-
         <TabsContent value="telecast">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Send className="h-5 w-5" />
-                Telecast
-              </CardTitle>
-              <CardDescription>Telecast mail is isolated from Data Sync credentials. Connect a dedicated telecast account below.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-2 text-sm">
-                <span>Status:</span>
-                <Badge className={telecastAuthStatus.hasRefreshToken ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}>
-                  {telecastAuthStatus.hasRefreshToken ? 'Connected' : 'Not Connected'}
-                </Badge>
-                {telecastAuthStatus.accountUsername && <span className="text-xs text-muted-foreground">({telecastAuthStatus.accountUsername})</span>}
-              </div>
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Send className="h-5 w-5" />
+                  Telecast
+                </CardTitle>
+                <CardDescription>Configure telecast account and automated new-row notifications.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <span>Status:</span>
+                  <Badge className={telecastAuthStatus.hasRefreshToken ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}>
+                    {telecastAuthStatus.hasRefreshToken ? 'Connected' : 'Not Connected'}
+                  </Badge>
+                  {telecastAuthStatus.accountUsername && <span className="text-xs text-muted-foreground">({telecastAuthStatus.accountUsername})</span>}
+                </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Telecast Account Username</p>
+                    <Input value={telecastUsername} onChange={(e) => setTelecastUsername(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Telecast Account Password</p>
+                    <Input type="password" value={telecastPassword} onChange={(e) => setTelecastPassword(e.target.value)} placeholder="Enter telecast account password" />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={bootstrapTelecastAuth} disabled={configSaving || !telecastUsername || !telecastPassword}>Connect Telecast Account</Button>
+                  <Button variant="outline" onClick={clearTelecastAuth} disabled={configSaving}>Clear Telecast Token</Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Weekly New-Row Tracker</CardTitle>
+                <CardDescription>Tracks newly detected rows per week and per group.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {telecastWeeklyStats.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No weekly data yet.</p>
+                  ) : telecastWeeklyStats.slice().reverse().map((week) => (
+                    <div key={week.weekKey} className="border rounded p-3 text-sm">
+                      <div className="font-medium">{week.weekKey} ({week.startDate} to {week.endDate})</div>
+                      <div className="text-muted-foreground">New rows: {week.newRowsCount}</div>
+                      <div className="text-xs text-muted-foreground">GES: {week.byGroup?.GES || 0} • GDS: {week.byGroup?.GDS || 0} • GTS: {week.byGroup?.GTS || 0}</div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Existing Saved Template Preview</CardTitle>
+                <CardDescription>This is the currently active template used for telecast sends.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Saved Subject</p>
+                  <div className="rounded border bg-muted/30 p-2 text-sm font-medium">{savedTemplateSubject}</div>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Saved Body</p>
+                  <pre className="rounded border bg-muted/30 p-2 text-xs whitespace-pre-wrap">{savedTemplateBody}</pre>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Template & Recipients for New Rows</CardTitle>
+                <CardDescription>Use keywords in template and map recipients by group. New-row emails are sent to the recipients of the detected row group.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+
+                <div className="space-y-3 rounded border p-3">
+                  <p className="text-sm font-semibold">Reusable Templates</p>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Input placeholder="Template name" value={newTemplateName} onChange={(e) => setNewTemplateName(e.target.value)} className="w-full" />
+                    <Button type="button" variant="secondary" onClick={saveCurrentAsTemplate} disabled={configSaving} className="w-full sm:w-auto">Save Current</Button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {telecastSavedTemplates.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No saved templates yet.</p>
+                    ) : telecastSavedTemplates.map((tpl) => (
+                      <div key={tpl.id} className={`rounded border p-2 ${telecastActiveTemplateId === tpl.id ? 'border-primary bg-primary/5' : ''}`}>
+                        <p className="text-sm font-medium">{tpl.name}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">{tpl.subject}</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Button type="button" size="sm" variant="outline" onClick={() => applySavedTemplate(tpl.id)} disabled={configSaving}>Use</Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => deleteSavedTemplate(tpl.id)} disabled={configSaving}>Delete</Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">Telecast Account Username</p>
-                  <Input value={telecastUsername} onChange={(e) => setTelecastUsername(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
+                  <p className="text-sm font-medium">Subject Template</p>
+                  <Input value={telecastTemplateSubject} onChange={(e) => setTelecastTemplateSubject(e.target.value)} />
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">Telecast Account Password</p>
-                  <Input type="password" value={telecastPassword} onChange={(e) => setTelecastPassword(e.target.value)} placeholder="Enter telecast account password" />
+                  <p className="text-sm font-medium">Body Template</p>
+                  <Textarea rows={8} value={telecastTemplateBody} onChange={(e) => setTelecastTemplateBody(e.target.value)} />
                 </div>
-              </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {(['GES', 'GDS', 'GTS'] as const).map((group) => (
+                    <div key={group} className="space-y-2 border rounded-md p-3">
+                      <p className="text-sm font-medium">Recipients ({group})</p>
+                      {usersForGroup(group).length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No approved users available for selection.</p>
+                      ) : (
+                        <div className="space-y-2 max-h-56 overflow-auto">
+                          {usersForGroup(group).map((u) => {
+                            const checked = (telecastGroupRecipients[group] || []).includes(String(u.email || '').toLowerCase());
+                            return (
+                              <button
+                                key={`${group}-${u.email}`}
+                                type="button"
+                                onClick={() => toggleGroupRecipient(group, u.email, !checked)}
+                                disabled={!isMaster}
+                                className={`w-full text-left rounded border p-2 transition ${checked ? 'bg-primary/10 border-primary' : 'bg-background hover:bg-muted/40'}`}
+                              >
+                                <span className="block text-xs font-medium">{u.displayName || u.email}</span>
+                                <span className="block text-[11px] text-muted-foreground">{u.email}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <p className="text-[11px] text-muted-foreground">Selected: {(telecastGroupRecipients[group] || []).length}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="rounded border p-3 text-xs">
+                  <p className="font-semibold mb-1">Supported keywords (exact):</p>
+                  <p>{(telecastKeywords.length ? telecastKeywords : ['{{TENDER_NO}}','{{TENDER_NAME}}','{{CLIENT}}','{{GROUP}}','{{TENDER_TYPE}}','{{DATE_TENDER_RECD}}','{{YEAR}}','{{LEAD}}','{{VALUE}}','{{OPPORTUNITY_ID}}','{{COMMENTS}}']).join(', ')}</p>
+                </div>
+                <Button onClick={saveTelecastConfig} disabled={configSaving} className="w-full sm:w-auto">Save Template & Recipients</Button>
+              </CardContent>
+            </Card>
 
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={bootstrapTelecastAuth} disabled={configSaving || !telecastUsername || !telecastPassword}>
-                  Connect Telecast Account
-                </Button>
-                <Button variant="outline" onClick={clearTelecastAuth} disabled={configSaving}>
-                  Clear Telecast Token
-                </Button>
-              </div>
-
-              <div className="space-y-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Send Test Mail</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
                 <p className="text-sm font-medium">Recipient Email</p>
-                <Input
-                  type="email"
-                  placeholder="name@company.com"
-                  value={telecastRecipientEmail}
-                  onChange={(e) => setTelecastRecipientEmail(e.target.value)}
-                />
-              </div>
-
-              <Button onClick={sendTelecastTestMail} disabled={telecastSending || !telecastAuthStatus.hasRefreshToken} className="gap-2">
-                <Send className={`h-4 w-4 ${telecastSending ? 'animate-pulse' : ''}`} />
-                {telecastSending ? 'Sending...' : 'Send Test Mail'}
-              </Button>
-            </CardContent>
-          </Card>
+                <Input type="email" placeholder="name@company.com" value={telecastRecipientEmail} onChange={(e) => setTelecastRecipientEmail(e.target.value)} />
+                <Button onClick={sendTelecastTestMail} disabled={telecastSending || !telecastAuthStatus.hasRefreshToken} className="gap-2">
+                  <Send className={`h-4 w-4 ${telecastSending ? 'animate-pulse' : ''}`} />
+                  {telecastSending ? 'Sending...' : 'Send Test Mail'}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
       </Tabs>
