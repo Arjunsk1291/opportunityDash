@@ -606,8 +606,8 @@ app.get('/api/auth/user', verifyToken, async (req, res) => {
 
 app.get('/api/users/authorized', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can view this' });
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin users can view this' });
     }
 
     const users = await AuthorizedUser.find().sort({ createdAt: -1 }).lean();
