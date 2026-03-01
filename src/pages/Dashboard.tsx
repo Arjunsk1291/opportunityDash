@@ -157,7 +157,7 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 md:space-y-8">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-4">
           <div>

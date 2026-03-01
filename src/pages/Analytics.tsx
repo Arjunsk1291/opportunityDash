@@ -89,47 +89,47 @@ const Analytics = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 md:space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Analytics</h1>
+        <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">Analytics</h1>
         <p className="text-muted-foreground">Pipeline performance and insights</p>
       </div>
 
       {/* Summary Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2 sm:gap-3 md:gap-4 lg:gap-6">
         <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{stats.totalActive}</p>
+          <CardContent className="pt-3 sm:pt-4 md:pt-5 text-center">
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold">{stats.totalActive}</p>
             <p className="text-xs text-muted-foreground">Active Opps</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4 text-center">
+          <CardContent className="pt-3 sm:pt-4 md:pt-5 text-center">
             <p className="text-2xl font-bold text-success">{stats.wonCount}</p>
             <p className="text-xs text-muted-foreground">Won</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4 text-center">
+          <CardContent className="pt-3 sm:pt-4 md:pt-5 text-center">
             <p className="text-2xl font-bold text-destructive">{stats.lostCount}</p>
             <p className="text-xs text-muted-foreground">Lost</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4 text-center">
+          <CardContent className="pt-3 sm:pt-4 md:pt-5 text-center">
             <p className="text-2xl font-bold text-warning">{stats.atRiskCount}</p>
             <p className="text-xs text-muted-foreground">At Risk</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{formatCurrencyAED(stats.totalPipelineValue)}</p>
+          <CardContent className="pt-3 sm:pt-4 md:pt-5 text-center">
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold">{formatCurrencyAED(stats.totalPipelineValue)}</p>
             <p className="text-xs text-muted-foreground">Pipeline Value</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{formatCurrencyAED(stats.weightedPipeline)}</p>
+          <CardContent className="pt-3 sm:pt-4 md:pt-5 text-center">
+            <p className="text-xl sm:text-2xl lg:text-3xl font-bold">{formatCurrencyAED(stats.weightedPipeline)}</p>
             <p className="text-xs text-muted-foreground">Weighted Value</p>
           </CardContent>
         </Card>
@@ -146,7 +146,7 @@ const Analytics = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
+            <div className="h-[220px] sm:h-[260px] md:h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -179,7 +179,7 @@ const Analytics = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
+            <div className="h-[220px] sm:h-[260px] md:h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={groupData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -205,7 +205,7 @@ const Analytics = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
+            <div className="h-[220px] sm:h-[260px] md:h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={monthlyTrend}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -237,7 +237,7 @@ const Analytics = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-[300px]">
+          <div className="h-[220px] sm:h-[260px] md:h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={clientData.slice(0, 10)} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
