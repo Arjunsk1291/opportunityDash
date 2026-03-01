@@ -1579,7 +1579,7 @@ export default function Admin() {
                   {telecastAuthStatus.accountUsername && <span className="text-xs text-muted-foreground">({telecastAuthStatus.accountUsername})</span>}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-2 sm:gap-3 md:gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-1 sm:space-y-2">
                     <p className="text-xs sm:text-sm md:text-base font-medium">Telecast Account Username</p>
                     <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" value={telecastUsername} onChange={(e) => setTelecastUsername(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
