@@ -32,15 +32,15 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="border-b border-sidebar-border p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <BarChart3 className="h-4 w-4" />
+      <SidebarHeader className="border-b border-sidebar-border p-2 sm:p-3 md:p-4">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex h-8 w-8 sm:h-9 sm:w-9 md:h-10 md:w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground shrink-0">
+            <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
           </div>
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="text-sm font-semibold">Tender Manager</span>
-              <span className="text-xs text-muted-foreground">Tender Tracking</span>
+              <span className="text-sm sm:text-base font-semibold truncate">Tender Manager</span>
+              <span className="text-xs sm:text-sm text-muted-foreground truncate">Tender Tracking</span>
             </div>
           )}
         </div>
@@ -55,8 +55,8 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)}>
                     <NavLink to={item.url}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <item.icon className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
+                      <span className="text-xs sm:text-sm md:text-base truncate" title={item.title}>{item.title}</span>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -74,8 +74,8 @@ export function AppSidebar() {
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild isActive={isActive(item.url)}>
                       <NavLink to={item.url}>
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
+                        <item.icon className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
+                        <span className="text-xs sm:text-sm md:text-base truncate" title={item.title}>{item.title}</span>
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -86,9 +86,9 @@ export function AppSidebar() {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-4">
+      <SidebarFooter className="border-t border-sidebar-border p-2 sm:p-3 md:p-4">
         {!collapsed && (
-          <div className="text-xs text-muted-foreground">
+          <div className="text-xs sm:text-sm text-muted-foreground truncate">
             <p>Last sync: {new Date().toLocaleString()}</p>
           </div>
         )}
