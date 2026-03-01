@@ -10,12 +10,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DEFAULT_PAGE_ROLE_ACCESS, PAGE_LABELS, PageKey } from '@/config/navigation';
 import { UserRole } from '@/contexts/AuthContext';
+import { RecipientBlockSelector } from '@/components/Admin/RecipientBlockSelector';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -150,7 +151,7 @@ export default function Admin() {
   const [telecastTemplateBody, setTelecastTemplateBody] = useState('A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
   const [telecastKeywords, setTelecastKeywords] = useState<string[]>([]);
   const [telecastWeeklyStats, setTelecastWeeklyStats] = useState<WeeklyTelecastStat[]>([]);
-  const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string>>({ GES: '', GDS: '', GTS: '' });
+  const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string[]>>({ GES: [], GDS: [], GTS: [] });
   const [newAuthorizedUser, setNewAuthorizedUser] = useState<{ email: string; displayName: string; role: UserRole; assignedGroup: string; status: 'approved' | 'pending' }>({
     email: '',
     displayName: '',
@@ -177,6 +178,23 @@ export default function Admin() {
   useEffect(() => {
     setDraftPagePermissions((pagePermissions || DEFAULT_PAGE_ROLE_ACCESS) as Record<PageKey, UserRole[]>);
   }, [pagePermissions]);
+
+  const telecastRecipientUsers = useMemo(
+    () => users.filter((candidate) => candidate.status === 'approved').map((candidate) => ({
+      id: candidate._id,
+      email: candidate.email,
+      displayName: candidate.email,
+      role: candidate.role,
+      assignedGroup: candidate.assignedGroup,
+    })),
+    [users],
+  );
+
+  const normalizeRecipientList = (value: unknown): string[] => {
+    if (!value) return [];
+    const list = Array.isArray(value) ? value : String(value).split(/[\n,;]+/g);
+    return [...new Set(list.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean))];
+  };
 
   const loadUsers = async () => {
     if (!token) return;
@@ -312,9 +330,9 @@ export default function Admin() {
       setTelecastTemplateBody(data.templateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
       setTelecastKeywords(Array.isArray(data.keywords) ? data.keywords : []);
       setTelecastGroupRecipients({
-        GES: (data.groupRecipients?.GES || []).join(', '),
-        GDS: (data.groupRecipients?.GDS || []).join(', '),
-        GTS: (data.groupRecipients?.GTS || []).join(', '),
+        GES: normalizeRecipientList(data.groupRecipients?.GES),
+        GDS: normalizeRecipientList(data.groupRecipients?.GDS),
+        GTS: normalizeRecipientList(data.groupRecipients?.GTS),
       });
       setTelecastWeeklyStats(Array.isArray(data.weeklyStats) ? data.weeklyStats : []);
     } catch (error) {
@@ -784,9 +802,9 @@ export default function Admin() {
           templateSubject: telecastTemplateSubject,
           templateBody: telecastTemplateBody,
           groupRecipients: {
-            GES: telecastGroupRecipients.GES,
-            GDS: telecastGroupRecipients.GDS,
-            GTS: telecastGroupRecipients.GTS,
+            GES: normalizeRecipientList(telecastGroupRecipients.GES),
+            GDS: normalizeRecipientList(telecastGroupRecipients.GDS),
+            GTS: normalizeRecipientList(telecastGroupRecipients.GTS),
           },
         }),
       });
@@ -1616,8 +1634,13 @@ export default function Admin() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {(['GES', 'GDS', 'GTS'] as const).map((group) => (
                     <div key={group} className="space-y-1">
-                      <p className="text-sm font-medium">Recipients ({group})</p>
-                      <Textarea rows={4} value={telecastGroupRecipients[group]} onChange={(e) => setTelecastGroupRecipients((prev) => ({ ...prev, [group]: e.target.value }))} placeholder="a@company.com, b@company.com" />
+                      <RecipientBlockSelector
+                        group={group}
+                        selectedEmails={telecastGroupRecipients[group]}
+                        onSelectionChange={(emails) => setTelecastGroupRecipients((prev) => ({ ...prev, [group]: emails }))}
+                        allUsers={telecastRecipientUsers}
+                        disabled={configSaving}
+                      />
                     </div>
                   ))}
                 </div>
