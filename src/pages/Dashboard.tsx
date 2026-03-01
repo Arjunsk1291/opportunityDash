@@ -199,27 +199,20 @@ const Dashboard = () => {
       </div>
 
       <Dialog open={!!selectedOpp} onOpenChange={() => setSelectedOpp(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden border-none bg-background/95 backdrop-blur">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           {selectedOpp && (
             <>
-              <DialogHeader className="space-y-0">
-                <div className="bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 px-4 sm:px-6 py-4 sm:py-5 text-white">
-                  <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-3">
-                    <div className="min-w-0">
-                      <DialogTitle className="text-left text-lg sm:text-xl md:text-2xl font-semibold truncate">
-                        {selectedOpp.opportunityRefNo || 'Opportunity Details'}
-                      </DialogTitle>
-                      <p className="text-xs sm:text-sm text-white/90 truncate mt-1" title={selectedOpp.tenderName || ''}>{selectedOpp.tenderName || '—'}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge className="bg-white/20 text-white border-white/30">Table Fields</Badge>
-                      <Badge className="bg-black/20 text-white border-white/30">Simplified View</Badge>
-                    </div>
-                  </div>
+              <DialogHeader className="space-y-2">
+                <DialogTitle className="text-left text-lg sm:text-xl md:text-2xl">
+                  {selectedOpp.opportunityRefNo || 'Opportunity Details'}
+                </DialogTitle>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">Table Details</Badge>
+                  <Badge variant="outline">Only table fields</Badge>
                 </div>
               </DialogHeader>
 
-              <div className="p-3 sm:p-4 md:p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-2 sm:gap-3 md:gap-4 bg-slate-50 dark:bg-slate-950/40">
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-2 sm:gap-3 md:gap-4">
                 {[
                   { label: 'Reference No', value: selectedOpp.opportunityRefNo || '—' },
                   { label: 'Tender Name', value: selectedOpp.tenderName || '—' },
@@ -235,9 +228,9 @@ const Dashboard = () => {
                   { label: 'Tender Result', value: selectedOpp.tenderResult || '—' },
                   { label: 'Comments', value: selectedOpp.comments || '—' },
                 ].map((item) => (
-                  <div key={item.label} className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/80 p-2 sm:p-3 md:p-4 space-y-1 shadow-sm">
-                    <p className="text-[11px] sm:text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
-                    <p className="text-xs sm:text-sm md:text-base font-semibold text-slate-800 dark:text-slate-100 break-words">{item.value}</p>
+                  <div key={item.label} className="rounded border p-2 sm:p-3 md:p-4 space-y-1">
+                    <p className="text-xs sm:text-sm text-muted-foreground">{item.label}</p>
+                    <p className="text-xs sm:text-sm md:text-base font-medium break-words">{item.value}</p>
                   </div>
                 ))}
               </div>
