@@ -27,9 +27,9 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
 
   return (
     <div className="flex flex-col h-full gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         <div>
-          <h1 className="text-2xl font-bold">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">
             {statusFilter ? `${statusFilter} Tenders` : 'All Tenders'}
           </h1>
           <p className="text-muted-foreground">
