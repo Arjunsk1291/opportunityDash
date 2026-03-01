@@ -28,15 +28,15 @@ export function Layout({ children }: LayoutProps) {
         <AppSidebar />
         <SidebarInset className="flex-1">
           {/* Header */}
-          <header className="sticky top-0 z-50 flex h-14 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4">
+          <header className="sticky top-0 z-50 flex min-h-14 items-center gap-2 sm:gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-2 sm:px-4 py-2">
             <SidebarTrigger />
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5 text-primary" />
-                <span className="font-semibold">Opportunity Dashboard</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <BarChart3 className="h-5 w-5 text-primary shrink-0" />
+                <span className="font-semibold truncate">Opportunity Dashboard</span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <span className="text-sm text-muted-foreground hidden md:inline">
                 Last updated: {new Date().toLocaleDateString()}
               </span>
@@ -45,7 +45,7 @@ export function Layout({ children }: LayoutProps) {
               {/* User Menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2">
+                  <Button variant="outline" size="sm" className="gap-1 sm:gap-2 px-2 sm:px-3">
                     <User className="h-4 w-4" />
                     <span className="hidden md:inline">{user?.displayName}</span>
                     {isAdmin && <Badge variant="secondary" className="text-xs">Admin</Badge>}
@@ -73,7 +73,7 @@ export function Layout({ children }: LayoutProps) {
           </header>
 
           {/* Main Content */}
-          <main className="flex-1 p-6">
+          <main className="flex-1 p-3 sm:p-4 lg:p-6">
             {children}
           </main>
         </SidebarInset>

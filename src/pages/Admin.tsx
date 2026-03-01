@@ -941,7 +941,7 @@ export default function Admin() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="flex flex-wrap h-auto">
+        <TabsList className="w-full flex flex-wrap h-auto justify-start gap-1">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="users">User Management</TabsTrigger>
           <TabsTrigger value="data-sync">Data Sync</TabsTrigger>
