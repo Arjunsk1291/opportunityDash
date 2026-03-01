@@ -21,11 +21,24 @@ import {
 } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { useApproval } from '@/contexts/ApprovalContext';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
+
+function formatApprovalStatus(status: string): string {
+  switch (status) {
+    case 'fully_approved':
+      return 'Fully Approved';
+    case 'proposal_head_approved':
+      return 'Proposal Head Approved';
+    default:
+      return 'Pending';
+  }
+}
 
 const Dashboard = () => {
   const { opportunities, isLoading, error, lastSyncTime } = useData();
   const { formatCurrency } = useCurrency();
+  const { getApprovalStatus } = useApproval();
   const { isAutoRefreshActive, lastAutoRefreshTime, autoRefreshStatus, startAutoRefresh, stopAutoRefresh } = useAutoRefresh();
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
@@ -226,6 +239,7 @@ const Dashboard = () => {
                   { label: 'Avenir Status', value: selectedOpp.avenirStatus || '—' },
                   { label: 'Remarks/Reason', value: selectedOpp.remarksReason || '—' },
                   { label: 'Tender Result', value: selectedOpp.tenderResult || '—' },
+                  { label: 'Approval', value: formatApprovalStatus(getApprovalStatus(selectedOpp.opportunityRefNo)) },
                   { label: 'Comments', value: selectedOpp.comments || '—' },
                 ].map((item) => (
                   <div key={item.label} className="rounded border p-2 sm:p-3 md:p-4 space-y-1">
