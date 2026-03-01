@@ -28,8 +28,8 @@ export function RecipientBlockSelector({ group, selectedEmails, onSelectionChang
   const [manualEmail, setManualEmail] = useState('');
 
   const availableUsers = useMemo(
-    () => allUsers.filter((user) => String(user.role || '').toUpperCase() === 'SVP' && String(user.assignedGroup || '').toUpperCase() === group),
-    [allUsers, group],
+    () => allUsers.filter((user) => Boolean(String(user.email || '').trim())),
+    [allUsers],
   );
 
   const filteredUsers = useMemo(
@@ -88,8 +88,8 @@ export function RecipientBlockSelector({ group, selectedEmails, onSelectionChang
       {showUserPicker && (
         <Card className="border-dashed">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Select {group} SVP Users</CardTitle>
-            <CardDescription className="text-xs">Choose users from {group} group to add as recipients</CardDescription>
+            <CardTitle className="text-sm">Select Users for {group} Notifications</CardTitle>
+            <CardDescription className="text-xs">Search and add any authorized user as a recipient</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="relative">
@@ -100,7 +100,7 @@ export function RecipientBlockSelector({ group, selectedEmails, onSelectionChang
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {filteredUsers.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
-                  {availableUsers.length === 0 ? `No SVP users assigned to ${group} group` : 'No users match your search'}
+                  {availableUsers.length === 0 ? 'No users available' : 'No users match your search'}
                 </p>
               ) : (
                 filteredUsers.map((user) => (
