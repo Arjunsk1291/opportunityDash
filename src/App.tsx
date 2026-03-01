@@ -17,6 +17,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { PageKey } from "@/config/navigation";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,15 @@ function AppLayout() {
       <Outlet />
     </Layout>
   );
+}
+
+
+function PageAccessRoute({ pageKey, children }: { pageKey: PageKey; children: React.ReactNode }) {
+  const { canAccessPage } = useAuth();
+  if (!canAccessPage(pageKey)) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
 }
 
 function AppRoutes() {
@@ -61,11 +71,11 @@ function AppRoutes() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Dashboard />} />
-            <Route path="opportunities" element={<Opportunities />} />
-            <Route path="clients" element={<Clients />} />
-            <Route path="analytics" element={<Analytics />} />
-            <Route path="master" element={<Admin />} />
+            <Route index element={<PageAccessRoute pageKey="dashboard"><Dashboard /></PageAccessRoute>} />
+            <Route path="opportunities" element={<PageAccessRoute pageKey="opportunities"><Opportunities /></PageAccessRoute>} />
+            <Route path="clients" element={<PageAccessRoute pageKey="clients"><Clients /></PageAccessRoute>} />
+            <Route path="analytics" element={<PageAccessRoute pageKey="analytics"><Analytics /></PageAccessRoute>} />
+            <Route path="master" element={<PageAccessRoute pageKey="master"><Admin /></PageAccessRoute>} />
 
             <Route path="status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />
             <Route path="status/in-progress" element={<Opportunities statusFilter="In Progress" />} />
