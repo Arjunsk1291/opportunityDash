@@ -10,12 +10,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DEFAULT_PAGE_ROLE_ACCESS, PAGE_LABELS, PageKey } from '@/config/navigation';
 import { UserRole } from '@/contexts/AuthContext';
+import { RecipientBlockSelector } from '@/components/Admin/RecipientBlockSelector';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -150,7 +151,7 @@ export default function Admin() {
   const [telecastTemplateBody, setTelecastTemplateBody] = useState('A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
   const [telecastKeywords, setTelecastKeywords] = useState<string[]>([]);
   const [telecastWeeklyStats, setTelecastWeeklyStats] = useState<WeeklyTelecastStat[]>([]);
-  const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string>>({ GES: '', GDS: '', GTS: '' });
+  const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string[]>>({ GES: [], GDS: [], GTS: [] });
   const [newAuthorizedUser, setNewAuthorizedUser] = useState<{ email: string; displayName: string; role: UserRole; assignedGroup: string; status: 'approved' | 'pending' }>({
     email: '',
     displayName: '',
@@ -177,6 +178,23 @@ export default function Admin() {
   useEffect(() => {
     setDraftPagePermissions((pagePermissions || DEFAULT_PAGE_ROLE_ACCESS) as Record<PageKey, UserRole[]>);
   }, [pagePermissions]);
+
+  const telecastRecipientUsers = useMemo(
+    () => users.filter((candidate) => candidate.status === 'approved').map((candidate) => ({
+      id: candidate._id,
+      email: candidate.email,
+      displayName: candidate.email,
+      role: candidate.role,
+      assignedGroup: candidate.assignedGroup,
+    })),
+    [users],
+  );
+
+  const normalizeRecipientList = (value: unknown): string[] => {
+    if (!value) return [];
+    const list = Array.isArray(value) ? value : String(value).split(/[\n,;]+/g);
+    return [...new Set(list.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean))];
+  };
 
   const loadUsers = async () => {
     if (!token) return;
@@ -312,9 +330,9 @@ export default function Admin() {
       setTelecastTemplateBody(data.templateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
       setTelecastKeywords(Array.isArray(data.keywords) ? data.keywords : []);
       setTelecastGroupRecipients({
-        GES: (data.groupRecipients?.GES || []).join(', '),
-        GDS: (data.groupRecipients?.GDS || []).join(', '),
-        GTS: (data.groupRecipients?.GTS || []).join(', '),
+        GES: normalizeRecipientList(data.groupRecipients?.GES),
+        GDS: normalizeRecipientList(data.groupRecipients?.GDS),
+        GTS: normalizeRecipientList(data.groupRecipients?.GTS),
       });
       setTelecastWeeklyStats(Array.isArray(data.weeklyStats) ? data.weeklyStats : []);
     } catch (error) {
@@ -784,9 +802,9 @@ export default function Admin() {
           templateSubject: telecastTemplateSubject,
           templateBody: telecastTemplateBody,
           groupRecipients: {
-            GES: telecastGroupRecipients.GES,
-            GDS: telecastGroupRecipients.GDS,
-            GTS: telecastGroupRecipients.GTS,
+            GES: normalizeRecipientList(telecastGroupRecipients.GES),
+            GDS: normalizeRecipientList(telecastGroupRecipients.GDS),
+            GTS: normalizeRecipientList(telecastGroupRecipients.GTS),
           },
         }),
       });
@@ -922,13 +940,13 @@ export default function Admin() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 md:space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold">Admin Panel</h1>
           <p className="text-muted-foreground mt-2">System administration and control</p>
         </div>
-        <Button type="button" variant="secondary" className="gap-2" onClick={() => setActiveTab('telecast')}>
+        <Button type="button" variant="secondary" className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" onClick={() => setActiveTab('telecast')}>
           <Send className="h-4 w-4" />
           Open Telecast
         </Button>
@@ -957,7 +975,7 @@ export default function Admin() {
                   Current User
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 sm:space-y-4 md:space-y-6">
                 <div>
                   <p className="text-sm text-muted-foreground">Email</p>
                   <p className="font-mono text-sm">{user?.email}</p>
@@ -1043,7 +1061,7 @@ export default function Admin() {
               <CardTitle>Add Authorized User</CardTitle>
               <CardDescription>Create or update an authorized user directly from User Management.</CardDescription>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-2 sm:gap-3 md:gap-4">
               <div className="space-y-1">
                 <p className="text-sm font-medium">Email</p>
                 <Input value={newAuthorizedUser.email} onChange={(e) => setNewAuthorizedUser((prev) => ({ ...prev, email: e.target.value }))} placeholder="name@company.com" />
@@ -1101,7 +1119,7 @@ export default function Admin() {
                   <Users className="h-5 w-5" />
                   <CardTitle>Authorized Users ({users.length})</CardTitle>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -1297,7 +1315,7 @@ export default function Admin() {
         </TabsContent>
 
         <TabsContent value="data-sync">
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6 md:space-y-8">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -1314,7 +1332,7 @@ export default function Admin() {
 
                 <div className="border rounded-lg p-4 space-y-4">
                   <h3 className="font-semibold">Graph Account Bootstrap (one-time)</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-2 sm:gap-3 md:gap-4">
                     <div className="md:col-span-2 rounded border p-3 text-xs text-muted-foreground">
                       Status: <strong>{graphAuthStatus.hasRefreshToken ? '✅ Excel Connected (Delegated Auth)' : '❌ Not Connected'}</strong>{' '}
                       {graphAuthStatus.accountUsername ? `(${graphAuthStatus.accountUsername})` : ''}
@@ -1552,8 +1570,8 @@ export default function Admin() {
                 </CardTitle>
                 <CardDescription>Configure telecast account and automated new-row notifications.</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center gap-2 text-sm">
+              <CardContent className="space-y-3 sm:space-y-4 md:space-y-6">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm md:text-base">
                   <span>Status:</span>
                   <Badge className={telecastAuthStatus.hasRefreshToken ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}>
                     {telecastAuthStatus.hasRefreshToken ? 'Connected' : 'Not Connected'}
@@ -1562,19 +1580,19 @@ export default function Admin() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">Telecast Account Username</p>
-                    <Input value={telecastUsername} onChange={(e) => setTelecastUsername(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
+                  <div className="space-y-1 sm:space-y-2">
+                    <p className="text-xs sm:text-sm md:text-base font-medium">Telecast Account Username</p>
+                    <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" value={telecastUsername} onChange={(e) => setTelecastUsername(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">Telecast Account Password</p>
-                    <Input type="password" value={telecastPassword} onChange={(e) => setTelecastPassword(e.target.value)} placeholder="Enter telecast account password" />
+                  <div className="space-y-1 sm:space-y-2">
+                    <p className="text-xs sm:text-sm md:text-base font-medium">Telecast Account Password</p>
+                    <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" type="password" value={telecastPassword} onChange={(e) => setTelecastPassword(e.target.value)} placeholder="Enter telecast account password" />
                   </div>
                 </div>
 
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={bootstrapTelecastAuth} disabled={configSaving || !telecastUsername || !telecastPassword}>Connect Telecast Account</Button>
-                  <Button variant="outline" onClick={clearTelecastAuth} disabled={configSaving}>Clear Telecast Token</Button>
+                <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
+                  <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={bootstrapTelecastAuth} disabled={configSaving || !telecastUsername || !telecastPassword}>Connect Telecast Account</Button>
+                  <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={clearTelecastAuth} disabled={configSaving}>Clear Telecast Token</Button>
                 </div>
               </CardContent>
             </Card>
@@ -1585,11 +1603,11 @@ export default function Admin() {
                 <CardDescription>Tracks newly detected rows per week and per group.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
+                <div className="space-y-2 sm:space-y-3">
                   {telecastWeeklyStats.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No weekly data yet.</p>
                   ) : telecastWeeklyStats.slice().reverse().map((week) => (
-                    <div key={week.weekKey} className="border rounded p-3 text-sm">
+                    <div key={week.weekKey} className="border rounded p-2 sm:p-3 md:p-4 text-xs sm:text-sm md:text-base">
                       <div className="font-medium">{week.weekKey} ({week.startDate} to {week.endDate})</div>
                       <div className="text-muted-foreground">New rows: {week.newRowsCount}</div>
                       <div className="text-xs text-muted-foreground">GES: {week.byGroup?.GES || 0} • GDS: {week.byGroup?.GDS || 0} • GTS: {week.byGroup?.GTS || 0}</div>
@@ -1607,17 +1625,22 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="space-y-1">
                   <p className="text-sm font-medium">Subject Template</p>
-                  <Input value={telecastTemplateSubject} onChange={(e) => setTelecastTemplateSubject(e.target.value)} />
+                  <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" value={telecastTemplateSubject} onChange={(e) => setTelecastTemplateSubject(e.target.value)} />
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-medium">Body Template</p>
-                  <Textarea rows={8} value={telecastTemplateBody} onChange={(e) => setTelecastTemplateBody(e.target.value)} />
+                  <Textarea rows={8} className="text-xs sm:text-sm md:text-base" value={telecastTemplateBody} onChange={(e) => setTelecastTemplateBody(e.target.value)} />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-2 sm:gap-3 md:gap-4">
                   {(['GES', 'GDS', 'GTS'] as const).map((group) => (
                     <div key={group} className="space-y-1">
-                      <p className="text-sm font-medium">Recipients ({group})</p>
-                      <Textarea rows={4} value={telecastGroupRecipients[group]} onChange={(e) => setTelecastGroupRecipients((prev) => ({ ...prev, [group]: e.target.value }))} placeholder="a@company.com, b@company.com" />
+                      <RecipientBlockSelector
+                        group={group}
+                        selectedEmails={telecastGroupRecipients[group]}
+                        onSelectionChange={(emails) => setTelecastGroupRecipients((prev) => ({ ...prev, [group]: emails }))}
+                        allUsers={telecastRecipientUsers}
+                        disabled={configSaving}
+                      />
                     </div>
                   ))}
                 </div>
@@ -1625,7 +1648,7 @@ export default function Admin() {
                   <p className="font-semibold mb-1">Supported keywords (exact):</p>
                   <p>{(telecastKeywords.length ? telecastKeywords : ['{{TENDER_NO}}','{{TENDER_NAME}}','{{CLIENT}}','{{GROUP}}','{{TENDER_TYPE}}','{{DATE_TENDER_RECD}}','{{YEAR}}','{{LEAD}}','{{VALUE}}','{{OPPORTUNITY_ID}}','{{COMMENTS}}']).join(', ')}</p>
                 </div>
-                <Button onClick={saveTelecastConfig} disabled={configSaving}>Save Template & Recipients</Button>
+                <Button onClick={saveTelecastConfig} disabled={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">Save Template & Recipients</Button>
               </CardContent>
             </Card>
 
@@ -1633,11 +1656,11 @@ export default function Admin() {
               <CardHeader>
                 <CardTitle>Send Test Mail</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
-                <p className="text-sm font-medium">Recipient Email</p>
-                <Input type="email" placeholder="name@company.com" value={telecastRecipientEmail} onChange={(e) => setTelecastRecipientEmail(e.target.value)} />
-                <Button onClick={sendTelecastTestMail} disabled={telecastSending || !telecastAuthStatus.hasRefreshToken} className="gap-2">
-                  <Send className={`h-4 w-4 ${telecastSending ? 'animate-pulse' : ''}`} />
+              <CardContent className="space-y-2 sm:space-y-3 md:space-y-4">
+                <p className="text-xs sm:text-sm md:text-base font-medium">Recipient Email</p>
+                <Input type="email" className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" placeholder="name@company.com" value={telecastRecipientEmail} onChange={(e) => setTelecastRecipientEmail(e.target.value)} />
+                <Button onClick={sendTelecastTestMail} disabled={telecastSending || !telecastAuthStatus.hasRefreshToken} className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
+                  <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${telecastSending ? 'animate-pulse' : ''}`} />
                   {telecastSending ? 'Sending...' : 'Send Test Mail'}
                 </Button>
               </CardContent>
