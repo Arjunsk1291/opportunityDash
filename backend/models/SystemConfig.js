@@ -35,20 +35,6 @@ const systemConfigSchema = new mongoose.Schema(
       },
     },
     telecastKeywordHelp: { type: [String], default: [] },
-    telecastSavedTemplates: {
-      type: [
-        {
-          id: { type: String, required: true },
-          name: { type: String, required: true },
-          subject: { type: String, default: '' },
-          body: { type: String, default: '' },
-          createdAt: { type: Date, default: Date.now },
-          updatedAt: { type: Date, default: Date.now },
-        },
-      ],
-      default: [],
-    },
-    telecastActiveTemplateId: { type: String, default: '' },
     telecastWeeklyStats: {
       type: [
         {

@@ -123,8 +123,6 @@ const buildRowSignature = (opportunity) => {
   return parts.map((part) => String(part).trim().toUpperCase()).join('||');
 };
 
-
-
 const TELECAST_TEMPLATE_KEYWORDS = [
   '{{TENDER_NO}}', '{{TENDER_NAME}}', '{{CLIENT}}', '{{GROUP}}', '{{TENDER_TYPE}}', '{{DATE_TENDER_RECD}}', '{{YEAR}}', '{{LEAD}}', '{{VALUE}}', '{{OPPORTUNITY_ID}}', '{{COMMENTS}}',
 ];
@@ -296,15 +294,6 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   );
   const newRows = newRowSignatures.map((sig) => signatureToOpportunity.get(sig)).filter(Boolean);
 
-  const telecastCandidateSignatures = newRows.map((row) => buildRowSignature(row)).filter(Boolean);
-  const telecastAlignment = {
-    detectionCount: newRowSignatures.length,
-    telecastCandidateCount: telecastCandidateSignatures.length,
-    missingCandidates: newRowSignatures.filter((sig) => !telecastCandidateSignatures.includes(sig)),
-    extraneousCandidates: telecastCandidateSignatures.filter((sig) => !newRowSignatures.includes(sig)),
-  };
-  const isAligned = telecastAlignment.missingCandidates.length === 0 && telecastAlignment.extraneousCandidates.length === 0;
-
   await SyncedOpportunity.deleteMany({});
   const inserted = await SyncedOpportunity.insertMany(opportunities);
 
@@ -337,9 +326,6 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     newRows: newRowSignatures.length,
     telecastSent: telecastDispatch.sent,
     telecastSkipped: telecastDispatch.skipped,
-    alignmentOk: isAligned,
-    alignmentMissing: telecastAlignment.missingCandidates.length,
-    alignmentExtraneous: telecastAlignment.extraneousCandidates.length,
   }));
 
   return {
@@ -349,13 +335,6 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     eligibleRows: uniqueCurrentSignatures.length,
     telecastSent: telecastDispatch.sent,
     telecastSkipped: telecastDispatch.skipped,
-    rowDetectionAlignment: {
-      ok: isAligned,
-      detectionCount: telecastAlignment.detectionCount,
-      telecastCandidateCount: telecastAlignment.telecastCandidateCount,
-      missingCandidates: telecastAlignment.missingCandidates.slice(0, 20),
-      extraneousCandidates: telecastAlignment.extraneousCandidates.slice(0, 20),
-    },
     newRowsPreview: newRows.slice(0, 50).map((row) => ({
       signature: buildRowSignature(row),
       tenderNo: row?.opportunityRefNo || '',
@@ -459,7 +438,7 @@ const getUsernameFromRequest = (req) => {
 const BOOTSTRAP_MASTER_EMAILS = new Set(
   [
     ...String(process.env.MASTER_USERS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
-    'tender-notify@avenirengineering.com',
+    'arjun.s@avenirengineering.com',
   ],
 );
 
@@ -1214,8 +1193,6 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
       groupRecipients,
       keywords: TELECAST_TEMPLATE_KEYWORDS,
       weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
-      savedTemplates: Array.isArray(config.telecastSavedTemplates) ? config.telecastSavedTemplates : [],
-      activeTemplateId: config.telecastActiveTemplateId || '',
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1246,106 +1223,6 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     await config.save();
 
     res.json({ success: true, templateSubject: config.telecastTemplateSubject, templateBody: config.telecastTemplateBody, groupRecipients, keywords: TELECAST_TEMPLATE_KEYWORDS });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-
-app.post('/api/telecast/templates/save', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can save telecast templates' });
-    }
-
-    const name = String(req.body?.name || '').trim();
-    const subject = String(req.body?.subject || '').trim();
-    const body = String(req.body?.body || '').trim();
-
-    if (!name) return res.status(400).json({ error: 'Template name is required' });
-
-    const config = await getSystemConfig();
-    const templates = Array.isArray(config.telecastSavedTemplates) ? [...config.telecastSavedTemplates] : [];
-
-    const existingIndex = templates.findIndex((t) => String(t?.name || '').toLowerCase() === name.toLowerCase());
-    const now = new Date();
-    if (existingIndex >= 0) {
-      templates[existingIndex] = {
-        ...templates[existingIndex],
-        name,
-        subject: subject || config.telecastTemplateSubject || '',
-        body: body || config.telecastTemplateBody || '',
-        updatedAt: now,
-      };
-      config.telecastActiveTemplateId = templates[existingIndex].id;
-    } else {
-      const next = {
-        id: randomUUID(),
-        name,
-        subject: subject || config.telecastTemplateSubject || '',
-        body: body || config.telecastTemplateBody || '',
-        createdAt: now,
-        updatedAt: now,
-      };
-      templates.push(next);
-      config.telecastActiveTemplateId = next.id;
-    }
-
-    config.telecastSavedTemplates = templates.slice(-50);
-    config.updatedBy = req.user.email;
-    await config.save();
-
-    res.json({ success: true, savedTemplates: config.telecastSavedTemplates, activeTemplateId: config.telecastActiveTemplateId });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/telecast/templates/apply', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can apply telecast templates' });
-    }
-
-    const templateId = String(req.body?.templateId || '').trim();
-    if (!templateId) return res.status(400).json({ error: 'templateId is required' });
-
-    const config = await getSystemConfig();
-    const templates = Array.isArray(config.telecastSavedTemplates) ? config.telecastSavedTemplates : [];
-    const template = templates.find((t) => String(t?.id || '') === templateId);
-    if (!template) return res.status(404).json({ error: 'Template not found' });
-
-    config.telecastTemplateSubject = String(template.subject || '');
-    config.telecastTemplateBody = String(template.body || '');
-    config.telecastActiveTemplateId = templateId;
-    config.updatedBy = req.user.email;
-    await config.save();
-
-    res.json({ success: true, templateSubject: config.telecastTemplateSubject, templateBody: config.telecastTemplateBody, activeTemplateId: config.telecastActiveTemplateId });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.delete('/api/telecast/templates/:templateId', verifyToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can delete telecast templates' });
-    }
-
-    const templateId = String(req.params?.templateId || '').trim();
-    if (!templateId) return res.status(400).json({ error: 'templateId is required' });
-
-    const config = await getSystemConfig();
-    const templates = Array.isArray(config.telecastSavedTemplates) ? config.telecastSavedTemplates : [];
-    config.telecastSavedTemplates = templates.filter((t) => String(t?.id || '') !== templateId);
-    if (String(config.telecastActiveTemplateId || '') === templateId) {
-      config.telecastActiveTemplateId = '';
-    }
-    config.updatedBy = req.user.email;
-    await config.save();
-
-    res.json({ success: true, savedTemplates: config.telecastSavedTemplates, activeTemplateId: config.telecastActiveTemplateId || '' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1453,8 +1330,6 @@ app.get('/api/notifications/status', verifyToken, async (req, res) => {
       lastNewRows: Array.isArray(config.notificationLastNewRows) ? config.notificationLastNewRows : [],
       trackedRows: Array.isArray(config.notificationRowSignatures) ? config.notificationRowSignatures.length : 0,
       weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
-      savedTemplates: Array.isArray(config.telecastSavedTemplates) ? config.telecastSavedTemplates : [],
-      activeTemplateId: config.telecastActiveTemplateId || '',
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
