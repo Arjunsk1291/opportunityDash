@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertTriangle, Search, CheckCircle, Clock, RotateCcw, RefreshCw, MessageSquare, ArrowRight } from 'lucide-react';
+import { AlertTriangle, Search, CheckCircle, Clock, RotateCcw, RefreshCw, MessageSquare, ArrowRight, ArrowUpDown } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useApproval } from '@/contexts/ApprovalContext';
@@ -24,6 +24,7 @@ const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / 
 export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
   const { formatCurrency } = useCurrency();
   const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, revertApproval, refreshApprovals } = useApproval();
   const { isProposalHead, isSVP, isMaster, user } = useAuth();
@@ -70,6 +71,18 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
     ].map((value) => String(value ?? '').toLowerCase()).join(' ');
   };
 
+
+  const getRfpSortTime = (tender: Opportunity) => {
+    const directDate = tender.dateTenderReceived ? new Date(tender.dateTenderReceived) : null;
+    if (directDate && !Number.isNaN(directDate.getTime())) return directDate.getTime();
+
+    const display = getRfpReceivedDisplay(tender);
+    const parsedDisplay = display ? new Date(display) : null;
+    if (parsedDisplay && !Number.isNaN(parsedDisplay.getTime())) return parsedDisplay.getTime();
+
+    return 0;
+  };
+
   const filteredData = data
     .filter((tender) => {
       const searchLower = search.toLowerCase();
@@ -82,9 +95,12 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
       return matchesSearch && matchesStatus;
     })
     .sort((a, b) => {
-      const aTime = new Date(a.syncedAt || a.updatedAt || a.createdAt || a.dateTenderReceived || 0).getTime();
-      const bTime = new Date(b.syncedAt || b.updatedAt || b.createdAt || b.dateTenderReceived || 0).getTime();
-      return bTime - aTime;
+      const aTime = getRfpSortTime(a);
+      const bTime = getRfpSortTime(b);
+      if (aTime === bTime) {
+        return String(a.opportunityRefNo || '').localeCompare(String(b.opportunityRefNo || ''));
+      }
+      return rfpSortOrder === 'desc' ? bTime - aTime : aTime - bTime;
     });
 
   const getStatusBadge = (status: string) => {
@@ -144,19 +160,33 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
   return (
     <Card className="flex-1">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <CardTitle className="text-lg">Tenders</CardTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 w-48 h-9" />
+              <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 w-full sm:w-48 h-9" />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-36 h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="w-[140px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 {AVENIR_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRfpSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
+                  className="h-9 px-3 gap-2"
+                >
+                  <ArrowUpDown className="h-4 w-4" />
+                  RFP {rfpSortOrder === 'desc' ? 'Desc' : 'Asc'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Toggle RFP Received sort order</TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" size="sm" onClick={handleRefresh} className="h-9 px-3">
@@ -169,24 +199,24 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="max-h-[400px] overflow-auto scrollbar-thin">
-          <Table>
-            <TableHeader>
+        <div className="relative max-h-[400px] overflow-y-auto overflow-x-auto scrollbar-thin">
+          <Table className="border-separate border-spacing-0">
+            <TableHeader className="sticky top-0 z-30 bg-background">
               <TableRow>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur w-24">Ref No.</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur min-w-[200px]">Tender Name</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">Tender Type</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">Client</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">Group</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur font-bold">RFP Received</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur font-bold">Submission</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">Lead</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur text-right">Value</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">AVENIR STATUS</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur max-w-[150px]">Remarks</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur">RESULT</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur w-[220px]">Approval</TableHead>
-                <TableHead className="sticky top-0 z-20 bg-background/95 backdrop-blur w-16">Info</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background w-24">Ref No.</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background min-w-[200px]">Tender Name</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">Tender Type</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">Client</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">Group</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background font-bold">RFP Received</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background font-bold">Submission</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">Lead</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background text-right">Value</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">AVENIR STATUS</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background max-w-[150px]">Remarks</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">RESULT</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background w-[220px]">Approval</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background w-16">Info</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -283,7 +313,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
           </Table>
         </div>
         <div className="p-3 text-xs text-muted-foreground border-t">
-          Showing latest first: {filteredData.length} of {data.length} tenders (scroll to view all)
+          Showing by RFP Received ({rfpSortOrder.toUpperCase()}): {filteredData.length} of {data.length} tenders (scroll to view all)
         </div>
       </CardContent>
     </Card>

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import { DEFAULT_PAGE_ROLE_ACCESS, PageKey } from '@/config/navigation';
 
 export type UserRole = 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'Basic';
 export type UserStatus = 'approved' | 'pending' | 'rejected';
@@ -29,6 +30,9 @@ interface AuthContextType {
   getAllUsers: () => User[];
   updateUserRole: (userId: string, newRole: UserRole, assignedGroup?: string) => Promise<void>;
   refreshCurrentUser: () => Promise<void>;
+  pagePermissions: Record<PageKey, UserRole[]>;
+  canAccessPage: (pageKey: PageKey) => boolean;
+  updatePagePermissions: (permissions: Record<PageKey, UserRole[]>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -53,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isPending, setIsPending] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [pagePermissions, setPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
 
   const authHeaders = useCallback(
     () => token ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token } : { 'Content-Type': 'application/json' },
@@ -218,6 +223,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchUsers();
   }, [fetchUsers]);
 
+  const loadPagePermissions = useCallback(async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/navigation/permissions', { headers: authHeaders() });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data?.permissions) {
+        setPagePermissions(data.permissions);
+      }
+    } catch (error) {
+      console.error('Failed to load page permissions', error);
+    }
+  }, [authHeaders, token]);
+
+  useEffect(() => {
+    loadPagePermissions();
+  }, [loadPagePermissions]);
+
+  const updatePagePermissions = useCallback(async (permissions: Record<PageKey, UserRole[]>) => {
+    if (!token || user?.role !== 'Master') {
+      throw new Error('Only Master users can update page permissions');
+    }
+
+    const response = await fetch(API_URL + '/navigation/permissions', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ permissions }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.error || 'Failed to update page permissions');
+    }
+
+    if (data?.permissions) setPagePermissions(data.permissions);
+  }, [authHeaders, token, user?.role]);
+
   const updateUserRole = useCallback(async (userId: string, newRole: UserRole, assignedGroup?: string) => {
     if (!token || user?.role !== 'Master') {
       throw new Error('Only Master users can change roles');
@@ -246,6 +288,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fetchUsers();
   }, [allUsers, authHeaders, fetchUsers, token, user?.role]);
 
+  const canAccessPage = useCallback((pageKey: PageKey) => {
+    if (!user || user.status !== 'approved') return false;
+    const allowedRoles = pagePermissions[pageKey] || [];
+    return allowedRoles.includes(user.role);
+  }, [pagePermissions, user]);
+
   const isAuthenticated = user !== null && token !== null;
   const isMaster = user?.role === 'Master' && user?.status === 'approved';
   const isAdmin = ['Admin', 'Master'].includes(user?.role || '') && user?.status === 'approved';
@@ -270,6 +318,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         getAllUsers,
         updateUserRole,
         refreshCurrentUser,
+        pagePermissions,
+        canAccessPage,
+        updatePagePermissions,
       }}
     >
       {authError && (
