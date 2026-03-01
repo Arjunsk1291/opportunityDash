@@ -85,15 +85,6 @@ interface TelecastAuthStatus {
   tokenUpdatedAt?: string | null;
 }
 
-interface TelecastTemplate {
-  id: string;
-  name: string;
-  subject: string;
-  body: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
 interface WeeklyTelecastStat {
   weekKey: string;
   startDate: string;
@@ -157,14 +148,9 @@ export default function Admin() {
   const [telecastSending, setTelecastSending] = useState(false);
   const [telecastTemplateSubject, setTelecastTemplateSubject] = useState('New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
   const [telecastTemplateBody, setTelecastTemplateBody] = useState('A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
-  const [savedTemplateSubject, setSavedTemplateSubject] = useState('New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
-  const [savedTemplateBody, setSavedTemplateBody] = useState('A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
   const [telecastKeywords, setTelecastKeywords] = useState<string[]>([]);
   const [telecastWeeklyStats, setTelecastWeeklyStats] = useState<WeeklyTelecastStat[]>([]);
-  const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string[]>>({ GES: [], GDS: [], GTS: [] });
-  const [telecastSavedTemplates, setTelecastSavedTemplates] = useState<TelecastTemplate[]>([]);
-  const [telecastActiveTemplateId, setTelecastActiveTemplateId] = useState('');
-  const [newTemplateName, setNewTemplateName] = useState('');
+  const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string>>({ GES: '', GDS: '', GTS: '' });
   const [newAuthorizedUser, setNewAuthorizedUser] = useState<{ email: string; displayName: string; role: UserRole; assignedGroup: string; status: 'approved' | 'pending' }>({
     email: '',
     displayName: '',
@@ -322,21 +308,15 @@ export default function Admin() {
       });
       if (!response.ok) return;
       const data = await response.json();
-      const loadedSubject = data.templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
-      const loadedBody = data.templateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.';
-      setTelecastTemplateSubject(loadedSubject);
-      setTelecastTemplateBody(loadedBody);
-      setSavedTemplateSubject(loadedSubject);
-      setSavedTemplateBody(loadedBody);
+      setTelecastTemplateSubject(data.templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
+      setTelecastTemplateBody(data.templateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
       setTelecastKeywords(Array.isArray(data.keywords) ? data.keywords : []);
       setTelecastGroupRecipients({
-        GES: Array.isArray(data.groupRecipients?.GES) ? data.groupRecipients.GES : [],
-        GDS: Array.isArray(data.groupRecipients?.GDS) ? data.groupRecipients.GDS : [],
-        GTS: Array.isArray(data.groupRecipients?.GTS) ? data.groupRecipients.GTS : [],
+        GES: (data.groupRecipients?.GES || []).join(', '),
+        GDS: (data.groupRecipients?.GDS || []).join(', '),
+        GTS: (data.groupRecipients?.GTS || []).join(', '),
       });
       setTelecastWeeklyStats(Array.isArray(data.weeklyStats) ? data.weeklyStats : []);
-      setTelecastSavedTemplates(Array.isArray(data.savedTemplates) ? data.savedTemplates : []);
-      setTelecastActiveTemplateId(String(data.activeTemplateId || ''));
     } catch (error) {
       console.error('Failed to load telecast config:', error);
     }
@@ -790,88 +770,6 @@ export default function Admin() {
     }
   };
 
-
-  const saveCurrentAsTemplate = async () => {
-    if (!token) return;
-    const name = newTemplateName.trim();
-    if (!name) {
-      toast.error('Template name is required');
-      return;
-    }
-
-    setConfigSaving(true);
-    try {
-      const response = await fetch(API_URL + '/telecast/templates/save', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name, subject: telecastTemplateSubject, body: telecastTemplateBody }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to save template');
-      setTelecastSavedTemplates(Array.isArray(data.savedTemplates) ? data.savedTemplates : []);
-      setTelecastActiveTemplateId(String(data.activeTemplateId || ''));
-      setNewTemplateName('');
-      toast.success('Template saved for reuse');
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setConfigSaving(false);
-    }
-  };
-
-  const applySavedTemplate = async (templateId: string) => {
-    if (!token) return;
-    setConfigSaving(true);
-    try {
-      const response = await fetch(API_URL + '/telecast/templates/apply', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ templateId }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to apply template');
-      setTelecastTemplateSubject(String(data.templateSubject || ''));
-      setTelecastTemplateBody(String(data.templateBody || ''));
-      setSavedTemplateSubject(String(data.templateSubject || ''));
-      setSavedTemplateBody(String(data.templateBody || ''));
-      setTelecastActiveTemplateId(String(data.activeTemplateId || templateId));
-      toast.success('Template applied');
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setConfigSaving(false);
-    }
-  };
-
-  const deleteSavedTemplate = async (templateId: string) => {
-    if (!token) return;
-    setConfigSaving(true);
-    try {
-      const response = await fetch(API_URL + '/telecast/templates/' + encodeURIComponent(templateId), {
-        method: 'DELETE',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to delete template');
-      setTelecastSavedTemplates(Array.isArray(data.savedTemplates) ? data.savedTemplates : []);
-      setTelecastActiveTemplateId(String(data.activeTemplateId || ''));
-      toast.success('Template deleted');
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setConfigSaving(false);
-    }
-  };
-
   const saveTelecastConfig = async () => {
     if (!token) return;
     setConfigSaving(true);
@@ -901,25 +799,6 @@ export default function Admin() {
     } finally {
       setConfigSaving(false);
     }
-  };
-
-
-  const approvedUsers = users.filter((u) => u.status === 'approved');
-
-  const usersForGroup = (group: 'GES' | 'GDS' | 'GTS') =>
-    approvedUsers.filter((u) => {
-      const assigned = String(u.assignedGroup || '').toUpperCase();
-      if (assigned) return assigned === group;
-      return true;
-    });
-
-  const toggleGroupRecipient = (group: 'GES' | 'GDS' | 'GTS', email: string, checked: boolean) => {
-    setTelecastGroupRecipients((prev) => {
-      const current = new Set(prev[group] || []);
-      if (checked) current.add(email.toLowerCase());
-      else current.delete(email.toLowerCase());
-      return { ...prev, [group]: Array.from(current) };
-    });
   };
 
   const cleanupLogs = async () => {
@@ -1722,50 +1601,10 @@ export default function Admin() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Existing Saved Template Preview</CardTitle>
-                <CardDescription>This is the currently active template used for telecast sends.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Saved Subject</p>
-                  <div className="rounded border bg-muted/30 p-2 text-sm font-medium">{savedTemplateSubject}</div>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Saved Body</p>
-                  <pre className="rounded border bg-muted/30 p-2 text-xs whitespace-pre-wrap">{savedTemplateBody}</pre>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
                 <CardTitle>Template & Recipients for New Rows</CardTitle>
                 <CardDescription>Use keywords in template and map recipients by group. New-row emails are sent to the recipients of the detected row group.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-
-                <div className="space-y-3 rounded border p-3">
-                  <p className="text-sm font-semibold">Reusable Templates</p>
-                  <div className="flex gap-2">
-                    <Input placeholder="Template name" value={newTemplateName} onChange={(e) => setNewTemplateName(e.target.value)} />
-                    <Button type="button" variant="secondary" onClick={saveCurrentAsTemplate} disabled={configSaving}>Save Current</Button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {telecastSavedTemplates.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">No saved templates yet.</p>
-                    ) : telecastSavedTemplates.map((tpl) => (
-                      <div key={tpl.id} className={`rounded border p-2 ${telecastActiveTemplateId === tpl.id ? 'border-primary bg-primary/5' : ''}`}>
-                        <p className="text-sm font-medium">{tpl.name}</p>
-                        <p className="text-[11px] text-muted-foreground truncate">{tpl.subject}</p>
-                        <div className="mt-2 flex gap-2">
-                          <Button type="button" size="sm" variant="outline" onClick={() => applySavedTemplate(tpl.id)} disabled={configSaving}>Use</Button>
-                          <Button type="button" size="sm" variant="ghost" onClick={() => deleteSavedTemplate(tpl.id)} disabled={configSaving}>Delete</Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
                 <div className="space-y-1">
                   <p className="text-sm font-medium">Subject Template</p>
                   <Input value={telecastTemplateSubject} onChange={(e) => setTelecastTemplateSubject(e.target.value)} />
@@ -1776,30 +1615,9 @@ export default function Admin() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {(['GES', 'GDS', 'GTS'] as const).map((group) => (
-                    <div key={group} className="space-y-2 border rounded-md p-3">
+                    <div key={group} className="space-y-1">
                       <p className="text-sm font-medium">Recipients ({group})</p>
-                      {usersForGroup(group).length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No approved users available for selection.</p>
-                      ) : (
-                        <div className="space-y-2 max-h-56 overflow-auto">
-                          {usersForGroup(group).map((u) => {
-                            const checked = (telecastGroupRecipients[group] || []).includes(String(u.email || '').toLowerCase());
-                            return (
-                              <button
-                                key={`${group}-${u.email}`}
-                                type="button"
-                                onClick={() => toggleGroupRecipient(group, u.email, !checked)}
-                                disabled={!isMaster}
-                                className={`w-full text-left rounded border p-2 transition ${checked ? 'bg-primary/10 border-primary' : 'bg-background hover:bg-muted/40'}`}
-                              >
-                                <span className="block text-xs font-medium">{u.displayName || u.email}</span>
-                                <span className="block text-[11px] text-muted-foreground">{u.email}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                      <p className="text-[11px] text-muted-foreground">Selected: {(telecastGroupRecipients[group] || []).length}</p>
+                      <Textarea rows={4} value={telecastGroupRecipients[group]} onChange={(e) => setTelecastGroupRecipients((prev) => ({ ...prev, [group]: e.target.value }))} placeholder="a@company.com, b@company.com" />
                     </div>
                   ))}
                 </div>
