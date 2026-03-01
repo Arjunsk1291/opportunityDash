@@ -4,8 +4,6 @@ import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/co
 import { ExportButton } from '@/components/Dashboard/ExportButton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Info } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
@@ -25,11 +23,37 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
 
+  const getRfpReceivedDisplay = (tender: Opportunity) => {
+    return tender.dateTenderReceived
+      || (typeof tender.rawGraphData?.rfpReceivedDisplay === 'string' ? tender.rawGraphData.rfpReceivedDisplay : '')
+      || '—';
+  };
+
+  const getSubmissionDisplay = (tender: Opportunity) => {
+    return tender.tenderSubmittedDate || tender.tenderPlannedSubmissionDate || '—';
+  };
+
+  const popupFields = selectedOpp ? [
+    { label: 'Reference No', value: selectedOpp.opportunityRefNo || '—' },
+    { label: 'Tender Name', value: selectedOpp.tenderName || '—' },
+    { label: 'Tender Type', value: selectedOpp.opportunityClassification || '—' },
+    { label: 'Client', value: selectedOpp.clientName || '—' },
+    { label: 'Group', value: selectedOpp.groupClassification || '—' },
+    { label: 'RFP Received', value: getRfpReceivedDisplay(selectedOpp) },
+    { label: 'Submission Date', value: getSubmissionDisplay(selectedOpp) },
+    { label: 'Lead', value: selectedOpp.internalLead || 'Unassigned' },
+    { label: 'Opportunity Value', value: selectedOpp.opportunityValue > 0 ? formatCurrency(selectedOpp.opportunityValue) : '—' },
+    { label: 'Avenir Status', value: selectedOpp.avenirStatus || '—' },
+    { label: 'Remarks/Reason', value: selectedOpp.remarksReason || '—' },
+    { label: 'Tender Result', value: selectedOpp.tenderResult || '—' },
+    { label: 'Comments', value: selectedOpp.comments || '—' },
+  ] : [];
+
   return (
     <div className="flex flex-col h-full gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         <div>
-          <h1 className="text-2xl font-bold">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">
             {statusFilter ? `${statusFilter} Tenders` : 'All Tenders'}
           </h1>
           <p className="text-muted-foreground">
@@ -51,70 +75,32 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       </div>
 
       <Dialog open={!!selectedOpp} onOpenChange={() => setSelectedOpp(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden border-none bg-background/95 backdrop-blur">
           {selectedOpp && (
             <>
-              <DialogHeader>
-                <DialogTitle className="text-left text-2xl">{selectedOpp.opportunityRefNo}</DialogTitle>
-                <p className="text-sm text-muted-foreground mt-2">{selectedOpp.tenderName}</p>
-              </DialogHeader>
-              <div className="mt-6 space-y-4">
-                <div>
-                  <h3 className="font-semibold text-lg">{selectedOpp.tenderName}</h3>
-                  <p className="text-sm text-muted-foreground">{selectedOpp.clientName}</p>
-                </div>
-                
-                <div className="flex gap-2 flex-wrap">
-                  <Badge>{selectedOpp.canonicalStage}</Badge>
-                  <Badge variant="outline">{selectedOpp.groupClassification}</Badge>
-                  {selectedOpp.isAtRisk && <Badge variant="destructive">Submission Near</Badge>}
-                </div>
-
-                <Separator />
-
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Value</p>
-                    <p className="font-semibold flex items-center gap-1">
-                      {formatCurrency(selectedOpp.opportunityValue)}
-                      {selectedOpp.opportunityValue_imputed && <Info className="h-3 w-3 text-warning" />}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Probability</p>
-                    <p className="font-semibold">{selectedOpp.probability}%</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Expected Value</p>
-                    <p className="font-semibold text-success">{formatCurrency(selectedOpp.expectedValue)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Internal Lead</p>
-                    <p className="font-semibold">{selectedOpp.internalLead || 'Unassigned'}</p>
-                  </div>
-                </div>
-
-                {(selectedOpp.opportunityValue_imputed || selectedOpp.probability_imputed) && (
-                  <>
-                    <Separator />
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium flex items-center gap-1">
-                        <Info className="h-4 w-4 text-warning" />
-                        Imputation Notes
-                      </p>
-                      {selectedOpp.opportunityValue_imputed && (
-                        <p className="text-xs text-muted-foreground bg-warning/10 p-2 rounded">
-                          <strong>Value:</strong> {selectedOpp.opportunityValue_imputation_reason}
-                        </p>
-                      )}
-                      {selectedOpp.probability_imputed && (
-                        <p className="text-xs text-muted-foreground bg-warning/10 p-2 rounded">
-                          <strong>Probability:</strong> {selectedOpp.probability_imputation_reason}
-                        </p>
-                      )}
+              <DialogHeader className="space-y-0">
+                <div className="bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 px-4 sm:px-6 py-4 sm:py-5 text-white">
+                  <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-3">
+                    <div className="min-w-0">
+                      <DialogTitle className="text-left text-lg sm:text-xl md:text-2xl font-semibold truncate">
+                        {selectedOpp.opportunityRefNo || 'Opportunity Details'}
+                      </DialogTitle>
+                      <p className="text-xs sm:text-sm text-white/90 truncate mt-1" title={selectedOpp.tenderName || ''}>{selectedOpp.tenderName || '—'}</p>
                     </div>
-                  </>
-                )}
+                    <div className="flex flex-wrap gap-2">
+                      <Badge className="bg-white/20 text-white border-white/30">Table Fields</Badge>
+                      <Badge className="bg-black/20 text-white border-white/30">Simplified View</Badge>
+                    </div>
+                  </div>
+                </div>
+              </DialogHeader>
+              <div className="p-3 sm:p-4 md:p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-2 sm:gap-3 md:gap-4 bg-slate-50 dark:bg-slate-950/40">
+                {popupFields.map((item) => (
+                  <div key={item.label} className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/80 p-2 sm:p-3 md:p-4 space-y-1 shadow-sm">
+                    <p className="text-[11px] sm:text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
+                    <p className="text-xs sm:text-sm md:text-base font-semibold text-slate-800 dark:text-slate-100 break-words">{item.value}</p>
+                  </div>
+                ))}
               </div>
             </>
           )}
