@@ -222,8 +222,7 @@ export function getClientData(data: Opportunity[]) {
 }
 
 export function calculateDataHealth(data: Opportunity[]) {
-  const mandatoryFields = ['internalLead', 'opportunityValue', 'tenderPlannedSubmissionDate'];
-  const totalFields = data.length * mandatoryFields.length;
+  const totalFields = data.length * 7;
   let completedFields = 0;
   let missingFieldCount = 0;
   const missingRows: Array<{ id: string; refNo: string; missingFields: string[] }> = [];
@@ -231,15 +230,28 @@ export function calculateDataHealth(data: Opportunity[]) {
   
   data.forEach(o => {
     const missing: string[] = [];
-    
-    if (!o.internalLead) missing.push('Internal Lead');
+
+    if (!o.opportunityRefNo) missing.push('Ref No.');
     else completedFields++;
-    
-    if (o.opportunityValue === 0) missing.push('Opportunity Value');
+
+    if (!o.tenderName) missing.push('Tender Name');
     else completedFields++;
-    
+
+    if (!o.opportunityClassification) missing.push('Tender Type');
+    else completedFields++;
+
+    if (!o.clientName) missing.push('Client');
+    else completedFields++;
+
+    if (!o.groupClassification) missing.push('Group');
+    else completedFields++;
+
+    const hasRfpReceived = Boolean(o.dateTenderReceived || o.rawGraphData?.rfpReceivedDisplay);
+    if (!hasRfpReceived) missing.push('RFP Received');
+    else completedFields++;
+
     if (!o.tenderPlannedSubmissionDate) {
-      missing.push('Planned Submission Date');
+      missing.push('Submission');
     } else {
       completedFields++;
     }

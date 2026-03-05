@@ -46,7 +46,7 @@ export function DataHealthWidget({ healthScore, missingRows, imputedCount, missi
 
         {missingRows.length > 0 && (
           <div className="mt-4 pt-4 border-t space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">Records with missing data:</p>
+            <p className="text-xs font-medium text-muted-foreground">Records missing mandatory columns:</p>
             <div className="space-y-1 max-h-[150px] overflow-y-auto">
               {missingRows.slice(0, 5).map((row) => (
                 <div key={row.id} className="text-xs p-2 bg-warning/10 rounded flex items-start gap-2">
