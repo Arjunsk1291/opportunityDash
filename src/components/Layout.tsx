@@ -24,19 +24,19 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full overflow-x-hidden">
+      <div className="min-h-screen flex w-full">
         <AppSidebar />
         <SidebarInset className="flex-1">
           {/* Header */}
-          <header className="sticky top-0 z-50 flex h-12 sm:h-14 lg:h-16 items-center gap-2 sm:gap-3 md:gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-2 sm:px-3 md:px-4 lg:px-6 py-2">
+          <header className="sticky top-0 z-50 flex min-h-14 items-center gap-2 sm:gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-2 sm:px-4 py-2">
             <SidebarTrigger />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 min-w-0">
-                <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-primary shrink-0" />
-                <span className="font-semibold text-sm sm:text-base md:text-lg truncate">Opportunity Dashboard</span>
+                <BarChart3 className="h-5 w-5 text-primary shrink-0" />
+                <span className="font-semibold truncate">Opportunity Dashboard</span>
               </div>
             </div>
-            <div className="flex items-center gap-1 sm:gap-2 md:gap-3 shrink-0">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <span className="text-sm text-muted-foreground hidden md:inline">
                 Last updated: {new Date().toLocaleDateString()}
               </span>
@@ -45,8 +45,8 @@ export function Layout({ children }: LayoutProps) {
               {/* User Menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-1 sm:gap-2 px-2 sm:px-3 md:px-4 h-8 sm:h-9 md:h-10 text-xs sm:text-sm">
-                    <User className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
+                  <Button variant="outline" size="sm" className="gap-1 sm:gap-2 px-2 sm:px-3">
+                    <User className="h-4 w-4" />
                     <span className="hidden md:inline">{user?.displayName}</span>
                     {isAdmin && <Badge variant="secondary" className="text-xs">Admin</Badge>}
                   </Button>
@@ -73,7 +73,7 @@ export function Layout({ children }: LayoutProps) {
           </header>
 
           {/* Main Content */}
-          <main className="flex-1 w-full max-w-screen-2xl mx-auto p-2 sm:p-3 md:p-4 lg:p-6 xl:p-8 2xl:p-10">
+          <main className="flex-1 p-3 sm:p-4 lg:p-6">
             {children}
           </main>
         </SidebarInset>
