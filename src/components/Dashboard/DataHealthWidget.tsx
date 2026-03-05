@@ -35,7 +35,7 @@ export function DataHealthWidget({ healthScore, missingRows, imputedCount, missi
             <span className="font-mono">{completeRecords}/{totalRecords}</span>
           </div>
           <div className="flex items-center justify-between p-2 bg-muted rounded">
-            <span className="text-muted-foreground">Missing Mandatory Fields</span>
+            <span className="text-muted-foreground">Missing Fields</span>
             <span className="font-mono">{missingFieldCount}</span>
           </div>
           <div className="flex items-center justify-between p-2 bg-muted rounded">
