@@ -52,7 +52,7 @@ const SharePoint = () => {
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 md:space-y-8">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Database className="h-6 w-6 text-primary" />
@@ -66,7 +66,7 @@ const SharePoint = () => {
       {/* Connection Status Card */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+          <CardTitle className="flex items-center justify-between">
             <span className="flex items-center gap-2">
               <Settings className="h-5 w-5" />
               Connection Status
@@ -103,7 +103,7 @@ const SharePoint = () => {
           <Separator />
 
           {/* Sync Info */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-2 sm:gap-3 md:gap-4 lg:gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10">
                 <Clock className="h-5 w-5 text-primary" />
@@ -194,7 +194,7 @@ const SharePoint = () => {
               <div className="space-y-4">
                 {data.map((row, index) => (
                   <Card key={index} className="p-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-2 sm:gap-3 md:gap-4 lg:gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm font-medium text-muted-foreground">Tender No</p>
                         <p className="font-semibold">{row.tenderNo}</p>
