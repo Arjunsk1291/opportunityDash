@@ -17,7 +17,7 @@ const Settings = () => {
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 md:space-y-8">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <SettingsIcon className="h-6 w-6 text-primary" />
@@ -40,7 +40,7 @@ const Settings = () => {
               <CardTitle className="text-lg">Display Settings</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+              <div className="flex items-center justify-between">
                 <div>
                   <Label>Show Imputation Flags</Label>
                   <p className="text-sm text-muted-foreground">Display warning icons on imputed values</p>
@@ -48,7 +48,7 @@ const Settings = () => {
                 <Switch defaultChecked />
               </div>
               <Separator />
-              <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+              <div className="flex items-center justify-between">
                 <div>
                   <Label>Compact Table View</Label>
                   <p className="text-sm text-muted-foreground">Use smaller row height in tables</p>
@@ -56,7 +56,7 @@ const Settings = () => {
                 <Switch />
               </div>
               <Separator />
-              <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+              <div className="flex items-center justify-between">
                 <div>
                   <Label>Show At-Risk Highlights</Label>
                   <p className="text-sm text-muted-foreground">Highlight at-risk opportunities in red</p>
@@ -219,7 +219,7 @@ const Settings = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+              <div className="flex items-center justify-between">
                 <div>
                   <Label>At-Risk Alerts</Label>
                   <p className="text-sm text-muted-foreground">Get notified when opportunities become at-risk</p>
@@ -227,7 +227,7 @@ const Settings = () => {
                 <Switch defaultChecked />
               </div>
               <Separator />
-              <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+              <div className="flex items-center justify-between">
                 <div>
                   <Label>Deadline Reminders</Label>
                   <p className="text-sm text-muted-foreground">Remind 7 days before submission deadline</p>
@@ -235,7 +235,7 @@ const Settings = () => {
                 <Switch defaultChecked />
               </div>
               <Separator />
-              <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+              <div className="flex items-center justify-between">
                 <div>
                   <Label>Data Sync Alerts</Label>
                   <p className="text-sm text-muted-foreground">Notify on SharePoint sync completion/failures</p>
