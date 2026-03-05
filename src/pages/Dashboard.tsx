@@ -8,6 +8,7 @@ import { DataHealthWidget } from '@/components/Dashboard/DataHealthWidget';
 import { ApprovalStatsWidget } from '@/components/Dashboard/ApprovalStatsWidget';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
+import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -215,6 +216,14 @@ const Dashboard = () => {
         <DataHealthWidget {...dataHealth} />
       </div>
 
+      <OpportunityDetailDialog
+        open={!!selectedOpp}
+        opportunity={selectedOpp}
+        onOpenChange={(open) => {
+          if (!open) setSelectedOpp(null);
+        }}
+        formatCurrency={formatCurrency}
+      />
       <Dialog open={!!selectedOpp} onOpenChange={() => setSelectedOpp(null)}>
         <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden border-none bg-slate-50/95 backdrop-blur-md">
           {selectedOpp && (

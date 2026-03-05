@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
+import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -50,6 +51,14 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
       </div>
 
+      <OpportunityDetailDialog
+        open={!!selectedOpp}
+        opportunity={selectedOpp}
+        onOpenChange={(open) => {
+          if (!open) setSelectedOpp(null);
+        }}
+        formatCurrency={formatCurrency}
+      />
       <Dialog open={!!selectedOpp} onOpenChange={() => setSelectedOpp(null)}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           {selectedOpp && (
