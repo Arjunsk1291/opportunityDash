@@ -225,7 +225,9 @@ export function calculateDataHealth(data: Opportunity[]) {
   const mandatoryFields = ['internalLead', 'opportunityValue', 'tenderPlannedSubmissionDate'];
   const totalFields = data.length * mandatoryFields.length;
   let completedFields = 0;
+  let missingFieldCount = 0;
   const missingRows: Array<{ id: string; refNo: string; missingFields: string[] }> = [];
+  let imputedCount = 0;
   
   data.forEach(o => {
     const missing: string[] = [];
@@ -241,16 +243,25 @@ export function calculateDataHealth(data: Opportunity[]) {
     } else {
       completedFields++;
     }
+
+    if (o.opportunityValue_imputed) imputedCount++;
+    if (o.probability_imputed) imputedCount++;
+    if (o.tenderPlannedSubmissionDate_imputed) imputedCount++;
+    if (o.lastContactDate_imputed) imputedCount++;
     
     if (missing.length > 0) {
+      missingFieldCount += missing.length;
       missingRows.push({ id: o.id, refNo: o.opportunityRefNo, missingFields: missing });
     }
   });
   
   return {
-    healthScore: Math.round((completedFields / totalFields) * 100),
+    healthScore: totalFields > 0 ? Math.round((completedFields / totalFields) * 100) : 100,
     missingRows: missingRows.slice(0, 20),
-    imputedCount: 0,
+    missingFieldCount,
+    imputedCount,
+    totalRecords: data.length,
+    completeRecords: data.length - missingRows.length,
   };
 }
 

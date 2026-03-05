@@ -1,272 +1,147 @@
-# Opportunity Dashboard
+# Welcome to your Lovable project
 
-A full-stack tender/opportunity management dashboard with role-based access, approval workflows, Microsoft Graph Excel sync, and admin operations.
+## Project info
 
----
+**URL**: https://lovable.dev/projects/ddf52303-4dfe-45e8-83ec-257fc27fd175
 
-## Table of Contents
-- [1) What this repository contains](#1-what-this-repository-contains)
-- [2) Tech stack](#2-tech-stack)
-- [3) Project structure walkthrough](#3-project-structure-walkthrough)
-- [4) Local development setup](#4-local-development-setup)
-- [5) Environment variables](#5-environment-variables)
-- [6) Running the app](#6-running-the-app)
-- [7) Core application flows](#7-core-application-flows)
-- [8) Admin & Telecast workflow](#8-admin--telecast-workflow)
-- [9) Data sync (Microsoft Graph Excel)](#9-data-sync-microsoft-graph-excel)
-- [10) API/backend notes](#10-apibackend-notes)
-- [11) Frontend architecture notes](#11-frontend-architecture-notes)
-- [12) Common scripts](#12-common-scripts)
-- [13) Troubleshooting guide](#13-troubleshooting-guide)
-- [14) Contribution guidelines](#14-contribution-guidelines)
+## How can I edit this code?
 
----
+There are several ways of editing your application.
 
-## 1) What this repository contains
+**Use Lovable**
 
-This repo has:
-- A **React + TypeScript frontend** (Vite, Tailwind, shadcn/ui).
-- A **Node.js/Express backend** connected to MongoDB.
-- Role-based access with user authorization + approval flow.
-- Admin tools for data sync, user management, navigation permissions, logs, and notifications.
+Simply visit the [Lovable Project](https://lovable.dev/projects/ddf52303-4dfe-45e8-83ec-257fc27fd175) and start prompting.
 
-Main use-case:
-- Track opportunities/tenders from Excel/Graph source.
-- Review status, value, timelines, approvals.
-- Notify groups and stakeholders when new rows are detected.
+Changes made via Lovable will be committed automatically to this repo.
 
----
+**Use your preferred IDE**
 
-## 2) Tech stack
+If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
 
-### Frontend
-- React 18 + TypeScript
-- Vite
-- Tailwind CSS
-- shadcn/ui + Radix components
-- React Router
-- TanStack Query
+The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
 
-### Backend
-- Node.js + Express
-- MongoDB + Mongoose
-- Microsoft Graph integration for Excel sync
-- JWT auth and role/permission checks
+Follow these steps:
 
----
+```sh
+# Step 1: Clone the repository using the project's Git URL.
+git clone <YOUR_GIT_URL>
 
-## 3) Project structure walkthrough
+# Step 2: Navigate to the project directory.
+cd <YOUR_PROJECT_NAME>
 
-```text
-.
-├─ src/
-│  ├─ components/              # Reusable UI and feature components
-│  │  ├─ Admin/                # Admin panel widgets (access, sync, monitoring, telecast)
-│  │  ├─ Dashboard/            # KPI cards, filters, table, charts
-│  │  └─ ui/                   # Base UI primitives (button, dialog, table, etc.)
-│  ├─ contexts/                # App state/context providers (Auth, Data, Currency, Approval)
-│  ├─ pages/                   # Route pages (Dashboard, Opportunities, Clients, Admin, etc.)
-│  ├─ services/                # Frontend service helpers / API wrappers
-│  ├─ config/                  # Navigation and auth configuration
-│  └─ main.tsx                 # Frontend entry point
-│
-├─ backend/
-│  ├─ models/                  # Mongoose models (users, approvals, config, logs)
-│  ├─ services/                # Sync / graph / crypto / bootstrap services
-│  ├─ server.js                # Main API server and route handlers
-│  └─ package.json             # Backend dependencies/scripts
-│
-├─ public/                     # Static assets
-├─ index.html                  # HTML shell/meta
-└─ README.md
-```
+# Step 3: Install the necessary dependencies.
+npm i
 
----
-
-## 4) Local development setup
-
-### Prerequisites
-- Node.js 18+
-- npm 9+
-- MongoDB instance (local or hosted)
-
-### Install dependencies
-```bash
-npm install
-cd backend && npm install
-```
-
----
-
-## 5) Environment variables
-
-Set frontend env in root `.env` (example values):
-
-```bash
-VITE_API_URL=http://localhost:5000/api
-VITE_DEFAULT_SERVICE_ACCOUNT=tender-notify@yourdomain.com
-```
-
-Set backend env in `backend/.env`:
-
-```bash
-PORT=5000
-MONGODB_URI=mongodb://localhost:27017/opportunity-dashboard
-JWT_SECRET=replace_with_secure_secret
-
-# Microsoft Graph
-GRAPH_TENANT_ID=
-GRAPH_CLIENT_ID=
-GRAPH_CLIENT_SECRET=
-```
-
-If telecast/delegated auth is enabled in your environment, keep all credentials server-side.
-
----
-
-## 6) Running the app
-
-### Terminal 1: backend
-```bash
-cd backend
-npm run start
-```
-
-### Terminal 2: frontend
-```bash
+# Step 4: Start the development server with auto-reloading and an instant preview.
 npm run dev
 ```
 
-Frontend default: `http://localhost:5173`  
-Backend default: `http://localhost:5000`
+**Edit a file directly in GitHub**
 
----
+- Navigate to the desired file(s).
+- Click the "Edit" button (pencil icon) at the top right of the file view.
+- Make your changes and commit the changes.
 
-## 7) Core application flows
+**Use GitHub Codespaces**
 
-### Authentication and routing
-- Users authenticate and receive app role context.
-- Page visibility is role-driven (Master/Admin/ProposalHead/SVP/Basic).
+- Navigate to the main page of your repository.
+- Click on the "Code" button (green button) near the top right.
+- Select the "Codespaces" tab.
+- Click on "New codespace" to launch a new Codespace environment.
+- Edit files directly within the Codespace and commit and push your changes once you're done.
 
-### Dashboard and Opportunities
-- Dashboard aggregates KPIs and charts.
-- Opportunities page provides advanced filters + table.
-- Clicking a table row opens a focused detail modal with table-aligned fields.
+## What technologies are used for this project?
 
-### Approval flow
-- Approval context tracks proposal head and SVP approval state.
-- Opportunity table displays approval state and actions based on role permissions.
+This project is built with:
 
----
+- Vite
+- TypeScript
+- React
+- shadcn-ui
+- Tailwind CSS
 
-## 8) Admin & Telecast workflow
+## How can I deploy this project?
 
-Admin page includes:
-- Authorized user management (add/remove/change role/group).
-- Navigation permission management by role.
-- Sync controls and collection stats.
-- Telecast configuration:
-  - Template subject/body
-  - Group recipients (GES/GDS/GTS)
-  - Recipient picker with search + manual add
-  - Test mail trigger
+Simply open [Lovable](https://lovable.dev/projects/ddf52303-4dfe-45e8-83ec-257fc27fd175) and click on Share -> Publish.
 
-Telecast recipients are normalized to lowercase arrays to avoid duplicate/formatting issues.
+## Can I connect a custom domain to my Lovable project?
 
----
+Yes, you can!
 
-## 9) Data sync (Microsoft Graph Excel)
+To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
-Typical setup flow:
-1. Open Admin panel as Master/Admin.
-2. Configure share link, drive/file IDs, worksheet, range.
-3. Preview rows and verify mapping.
-4. Save config.
-5. Trigger sync.
+Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
 
-System stores sync config and periodically checks for changes/new rows.
+## Microsoft Graph Excel Sync Configuration
 
----
+Backend now supports syncing opportunities from a SharePoint/OneDrive Excel file via Microsoft Graph.
 
-## 10) API/backend notes
+### Required backend environment variables
 
-Key backend concerns in `backend/server.js`:
-- Auth middleware and role checks
-- User authorization endpoints
-- Opportunity stats/sync endpoints
-- Notification/telecast endpoints
-- System config persistence
+Set these variables in your backend environment (`backend/.env` for local, deployment secrets in production):
 
-Models under `backend/models` include:
-- `AuthorizedUser`
-- `SystemConfig`
-- `Approval` / `ApprovalLog`
-- `LoginLog`
-- `SyncedOpportunity`
+- `GRAPH_TENANT_ID`
+- `GRAPH_CLIENT_ID`
+- `GRAPH_CLIENT_SECRET`
 
----
+> Keep these values server-side only. Do not expose them in frontend code or browser storage.
 
-## 11) Frontend architecture notes
+### Admin setup flow
 
-- `src/contexts/AuthContext.tsx`: auth state, role helpers, page permissions.
-- `src/contexts/DataContext.tsx`: opportunity data lifecycle.
-- `src/components/Dashboard/OpportunitiesTable.tsx`: table UI + row selection.
-- `src/pages/Opportunities.tsx` + `src/pages/Dashboard.tsx`: detail modal rendering.
-- `src/pages/Admin.tsx`: admin operations and telecast configuration.
+1. Login as **Master** user.
+2. Open **Master Panel → Data Sync**.
+3. Paste your Excel **Share Link** and click **Resolve**.
+4. Confirm/adjust `Drive ID` and `File ID`.
+5. Click **Refresh Sheets** and choose a worksheet.
+6. Set **Data Range** (default `B4:Z2000`) if your headers/data start below row 1.
+7. Click **Preview Rows** and select the correct header row offset.
+8. Optionally provide custom field mapping JSON.
+9. Click **Save Graph Config**.
+10. Click **Sync from Graph Excel** to load data into MongoDB.
 
----
+Auto-sync uses the same Graph configuration.
 
-## 12) Common scripts
 
-From repo root:
+### One-time delegated token bootstrap (your account)
 
-```bash
-npm run dev      # Start frontend dev server
-npm run build    # Build frontend for production
-npm run lint     # Lint frontend
-npm run preview  # Preview production build
+If your tenant requires MFA (AADSTS50076), use **Device Code Auth** in **Master Panel → Data Sync**:
+
+1. Click **Start Device Auth**.
+2. Open the shown Microsoft verification URL and complete MFA.
+3. Return to Admin panel and click **Complete Device Auth**.
+4. Delegated refresh token is stored encrypted and auto-refreshed in backend.
+
+Fallback (no MFA only):
+- You can still use **Username/Password Auth** if your tenant allows ROPC and MFA is not enforced.
+
+If delegated bootstrap is not configured, backend falls back to application token (`client_credentials`).
+
+## Docker (frontend + backend + MongoDB)
+
+This repository now includes Docker support for local deployment:
+
+- `Dockerfile.frontend` (builds Vite app and serves it with Nginx)
+- `backend/Dockerfile` (runs Express backend)
+- `docker-compose.yml` (orchestrates frontend, backend, mongo)
+- `nginx.conf` (SPA fallback + `/api` reverse proxy to backend)
+
+### Run with Docker Compose
+
+```sh
+docker compose up --build
 ```
 
-Backend scripts (inside `backend/`):
+Services:
 
-```bash
-npm run start
-```
+- Frontend: `http://localhost:8080`
+- Backend API: `http://localhost:3001`
+- MongoDB: `mongodb://localhost:27017`
 
----
+### Environment notes
 
-## 13) Troubleshooting guide
+- Add Graph-related secrets (`GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`) to the `backend` service environment (or mount an env file).
+- Backend defaults to `MONGODB_URI=mongodb://mongo:27017/opportunity-dashboard` in compose.
 
-### Build passes but UI looks stale
-- Restart dev server.
-- Hard refresh browser (Ctrl/Cmd + Shift + R).
+## Repository hygiene notes
 
-### No data in dashboard
-- Verify backend is running.
-- Check MongoDB connection and seeded/synced data.
-- Trigger sync from Admin panel.
-
-### Graph sync failing
-- Confirm tenant/client credentials.
-- Re-check worksheet name and data range.
-- Ensure permissions are consented in the tenant.
-
-### Approval actions disabled
-- Confirm logged-in user role and assigned group.
-- Check page permission settings in Admin.
-
----
-
-## 14) Contribution guidelines
-
-1. Create a focused branch for each feature/fix.
-2. Keep UI changes consistent with existing Tailwind patterns.
-3. Run `npm run build` and `npm run lint` before opening PR.
-4. Include screenshots for visible frontend changes.
-5. Prefer small, reviewable commits.
-
----
-
-## License
-
-This repository is private/internal unless stated otherwise by the project owner.
+Removed obsolete backup/patch artifacts (`*.backup*`, `*.patch`, `server-patch.txt`) that were not part of runtime/build paths.
