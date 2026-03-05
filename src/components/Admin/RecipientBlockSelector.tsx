@@ -86,10 +86,10 @@ export function RecipientBlockSelector({ group, selectedEmails, onSelectionChang
       </Button>
 
       {showUserPicker && (
-        <Card className="border-dashed w-full">
-          <CardHeader className="pb-2 sm:pb-3 space-y-1 sm:space-y-2">
-            <CardTitle className="text-sm sm:text-base md:text-lg truncate" title={`Select users for ${group} notifications`}>Select Users for {group} Notifications</CardTitle>
-            <CardDescription className="text-xs sm:text-sm">Search and add any authorized user as a recipient</CardDescription>
+        <Card className="border-dashed">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">Select Users for {group} Notifications</CardTitle>
+            <CardDescription className="text-xs">Search and add any authorized user as a recipient</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 sm:space-y-3 md:space-y-4 p-3 sm:p-4 md:p-6">
             <div className="relative">
@@ -99,7 +99,7 @@ export function RecipientBlockSelector({ group, selectedEmails, onSelectionChang
 
             <div className="space-y-2 sm:space-y-3 max-h-48 sm:max-h-56 md:max-h-64 overflow-y-auto">
               {filteredUsers.length === 0 ? (
-                <p className="text-xs sm:text-sm text-muted-foreground text-center py-3 sm:py-4">
+                <p className="text-sm text-muted-foreground text-center py-4">
                   {availableUsers.length === 0 ? 'No users available' : 'No users match your search'}
                 </p>
               ) : (

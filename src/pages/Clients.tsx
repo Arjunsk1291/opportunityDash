@@ -62,20 +62,20 @@ const Clients = () => {
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 md:space-y-8">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">Clients</h1>
+        <h1 className="text-2xl font-bold">Clients</h1>
         <p className="text-muted-foreground">{clientStats.length} clients in your pipeline</p>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3 md:gap-4 lg:gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
-            <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+            <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Clients</p>
-                <p className="text-xl sm:text-2xl lg:text-3xl font-bold">{clientStats.length}</p>
+                <p className="text-2xl font-bold">{clientStats.length}</p>
               </div>
               <Building2 className="h-8 w-8 text-primary opacity-50" />
             </div>
@@ -83,10 +83,10 @@ const Clients = () => {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+            <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Opportunities</p>
-                <p className="text-xl sm:text-2xl lg:text-3xl font-bold">{totalOpps}</p>
+                <p className="text-2xl font-bold">{totalOpps}</p>
               </div>
               <FileText className="h-8 w-8 text-primary opacity-50" />
             </div>
@@ -94,10 +94,10 @@ const Clients = () => {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+            <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Pipeline Value</p>
-                <p className="text-xl sm:text-2xl lg:text-3xl font-bold">{formatCurrency(totalValue)}</p>
+                <p className="text-2xl font-bold">{formatCurrency(totalValue)}</p>
               </div>
               <DollarSign className="h-8 w-8 text-success opacity-50" />
             </div>
@@ -105,10 +105,10 @@ const Clients = () => {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+            <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Avg per Client</p>
-                <p className="text-xl sm:text-2xl lg:text-3xl font-bold">{formatCurrency(totalValue / clientStats.length)}</p>
+                <p className="text-2xl font-bold">{formatCurrency(totalValue / clientStats.length)}</p>
               </div>
               <TrendingUp className="h-8 w-8 text-warning opacity-50" />
             </div>
@@ -128,7 +128,7 @@ const Clients = () => {
       </div>
 
       {/* Client List */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-2 sm:gap-3 md:gap-4 lg:gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredClients.map((client, index) => (
           <Card key={client.name} className="hover:shadow-lg transition-shadow">
             <CardHeader className="pb-2">

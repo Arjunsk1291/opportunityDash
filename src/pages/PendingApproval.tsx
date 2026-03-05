@@ -13,7 +13,7 @@ export default function PendingApproval() {
         <CardHeader>
           <CardTitle className="text-center">Access Pending Approval</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4 sm:space-y-6 md:space-y-8">
+        <CardContent className="space-y-6">
           <div className="flex justify-center">
             <div className="relative">
               <div className="absolute inset-0 bg-warning/20 rounded-full blur-lg"></div>
