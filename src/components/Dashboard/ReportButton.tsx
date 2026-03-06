@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Opportunity, calculateFunnelData, calculateSummaryStats, getClientData } from '@/data/opportunityData';
 import { FilterState } from '@/components/Dashboard/AdvancedFilters';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+
 interface ReportButtonProps {
   data: Opportunity[];
   filters: FilterState;
@@ -449,7 +451,7 @@ export function ReportButton({ data, filters }: ReportButtonProps) {
 
   const handleExportWord = async () => {
     try {
-      const response = await fetch('/api/generate-report', {
+      const response = await fetch(`${API_BASE_URL}/generate-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data, filters }),
