@@ -27,7 +27,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
 
   return (
-    <div className="flex flex-col h-full gap-6">
+    <div className="flex flex-col h-[calc(100vh-5.5rem)] gap-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">
@@ -47,8 +47,12 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         onClearFilters={() => setFilters({ ...defaultFilters, statuses: statusFilter ? [statusFilter] : [] })}
       />
 
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
+      <div className="flex-1 min-h-0">
+        <OpportunitiesTable
+          data={filteredData}
+          onSelectOpportunity={setSelectedOpp}
+          scrollContainerClassName="relative h-full overflow-y-auto overflow-x-auto scrollbar-thin"
+        />
       </div>
 
       <OpportunityDetailDialog

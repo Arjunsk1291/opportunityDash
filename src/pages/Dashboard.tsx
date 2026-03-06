@@ -8,6 +8,7 @@ import { DataHealthWidget } from '@/components/Dashboard/DataHealthWidget';
 import { ApprovalStatsWidget } from '@/components/Dashboard/ApprovalStatsWidget';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
+import { ReportButton } from '@/components/Dashboard/ReportButton';
 import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
@@ -184,16 +185,21 @@ const Dashboard = () => {
         </div>
       </div>
       
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex-1">
-          <AdvancedFilters
-            data={opportunities}
-            filters={filters}
-            onFiltersChange={setFilters}
-            onClearFilters={() => setFilters(defaultFilters)}
-          />
+      <div className="sticky top-14 z-40 -mx-3 sm:-mx-4 lg:-mx-6 px-3 sm:px-4 lg:px-6 py-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1">
+            <AdvancedFilters
+              data={opportunities}
+              filters={filters}
+              onFiltersChange={setFilters}
+              onClearFilters={() => setFilters(defaultFilters)}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <ReportButton data={filteredData} filters={filters} />
+            <ExportButton data={filteredData} filename="tenders" />
+          </div>
         </div>
-        <ExportButton data={filteredData} filename="tenders" />
       </div>
 
       <KPICards stats={stats} onKPIClick={handleKPIClick} />

@@ -17,11 +17,12 @@ import { Separator } from '@/components/ui/separator';
 interface OpportunitiesTableProps {
   data: Opportunity[];
   onSelectOpportunity?: (opp: Opportunity) => void;
+  scrollContainerClassName?: string;
 }
 
 const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
 
-export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesTableProps) {
+export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
@@ -199,7 +200,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity }: OpportunitiesT
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className="relative max-h-[400px] overflow-y-auto overflow-x-auto scrollbar-thin">
+        <div className={scrollContainerClassName ?? "relative max-h-[400px] overflow-y-auto overflow-x-auto scrollbar-thin"}>
           <Table className="border-separate border-spacing-0">
             <TableHeader className="sticky top-0 z-30 bg-background">
               <TableRow>
