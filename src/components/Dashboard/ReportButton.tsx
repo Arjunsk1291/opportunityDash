@@ -8,11 +8,60 @@ interface ReportButtonProps {
   filters: FilterState;
 }
 
+function generatePieChart(values: number[], labels: string[], colors: string[]): string {
+  const total = values.reduce((a, b) => a + b, 0);
+  let currentAngle = 0;
+  let paths = '';
+  
+  values.forEach((value, i) => {
+    const percentage = (value / total) * 100;
+    const angle = (percentage / 100) * 360;
+    const startAngle = currentAngle;
+    const endAngle = currentAngle + angle;
+    
+    const startRad = (startAngle * Math.PI) / 180;
+    const endRad = (endAngle * Math.PI) / 180;
+    
+    const x1 = 100 + 80 * Math.cos(startRad);
+    const y1 = 100 + 80 * Math.sin(startRad);
+    const x2 = 100 + 80 * Math.cos(endRad);
+    const y2 = 100 + 80 * Math.sin(endRad);
+    
+    const largeArc = angle > 180 ? 1 : 0;
+    
+    const path = `M 100 100 L ${x1} ${y1} A 80 80 0 ${largeArc} 1 ${x2} ${y2} Z`;
+    paths += `<path d="${path}" fill="${colors[i]}" stroke="white" stroke-width="2"/>`;
+    
+    currentAngle = endAngle;
+  });
+  
+  return `<svg viewBox="0 0 200 200" style="width: 100%; height: 250px;">${paths}</svg>`;
+}
+
+function generateBarChart(labels: string[], values: number[], color: string): string {
+  const maxValue = Math.max(...values);
+  const chartHeight = 200;
+  const barWidth = Math.min(40, 200 / labels.length);
+  const spacing = Math.max(10, (200 - labels.length * barWidth) / (labels.length + 1));
+  
+  let bars = '';
+  labels.forEach((label, i) => {
+    const barHeight = (values[i] / maxValue) * chartHeight;
+    const x = spacing + i * (barWidth + spacing);
+    const y = chartHeight - barHeight;
+    
+    bars += `<rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" fill="${color}" rx="4" />`;
+    bars += `<text x="${x + barWidth / 2}" y="${chartHeight + 20}" text-anchor="middle" font-size="11" fill="#64748b">${label}</text>`;
+    bars += `<text x="${x + barWidth / 2}" y="${y - 5}" text-anchor="middle" font-size="10" font-weight="600" fill="#0f172a">${values[i]}</text>`;
+  });
+  
+  return `<svg viewBox="0 0 250 250" style="width: 100%; height: 250px;">${bars}</svg>`;
+}
+
 function toHtml(filters: FilterState, data: Opportunity[]) {
   const summary = calculateSummaryStats(data);
   const funnel = calculateFunnelData(data);
   const clients = getClientData(data);
-  const leads = getLeaderboardData(data);
   const generatedAt = new Date().toLocaleString();
 
   const safe = (value: string | number) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -31,10 +80,15 @@ function toHtml(filters: FilterState, data: Opportunity[]) {
   // Calculate additional metrics
   const totalOpportunities = data.length;
   const totalPipelineValue = data.reduce((sum, o) => sum + (o.opportunityValue || 0), 0);
-  const totalExpectedValue = data.reduce((sum, o) => sum + (o.expectedValue || 0), 0);
-  const winRate = summary.wonCount + summary.lostCount > 0 
-    ? Math.round((summary.wonCount / (summary.wonCount + summary.lostCount)) * 100)
-    : 0;
+  
+  // Status breakdown
+  const statusCounts = [summary.workingCount, summary.awardedCount, summary.lostCount, summary.regrettedCount, summary.toStartCount];
+  const statusLabels = ['Working', 'Awarded', 'Lost', 'Regretted', 'To Start'];
+  const statusColors = ['#3b82f6', '#10b981', '#ef4444', '#f59e0b', '#8b5cf6'];
+  
+  // Funnel stages
+  const funnelLabels = funnel.map(f => f.stage).slice(0, 5);
+  const funnelCounts = funnel.map(f => f.count).slice(0, 5);
 
   return `<!doctype html>
 <html>
@@ -42,83 +96,110 @@ function toHtml(filters: FilterState, data: Opportunity[]) {
 <meta charset="UTF-8" />
 <title>Sales Pipeline Report</title>
 <style>
-* { margin: 0; padding: 0; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
 body { 
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
   background: #f8fafc; 
-  color: #0f172a; 
+  color: #0f172a;
   line-height: 1.6;
 }
-.container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+.container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
 header { 
   background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
   color: white;
-  padding: 30px;
-  border-radius: 8px;
-  margin-bottom: 30px;
+  padding: 40px;
+  border-radius: 12px;
+  margin-bottom: 40px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
 }
-header h1 { font-size: 28px; margin-bottom: 5px; }
-header p { opacity: 0.8; font-size: 14px; }
-.timestamp { font-size: 12px; opacity: 0.6; margin-top: 10px; }
+header h1 { font-size: 32px; margin-bottom: 8px; font-weight: 700; }
+header p { opacity: 0.85; font-size: 15px; }
+.timestamp { font-size: 12px; opacity: 0.6; margin-top: 15px; }
 
 section { 
   background: white;
-  padding: 25px;
-  margin-bottom: 20px;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  padding: 30px;
+  margin-bottom: 25px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  border: 1px solid #e2e8f0;
 }
 h2 { 
   color: #1e293b;
-  font-size: 18px;
-  margin-bottom: 20px;
-  padding-bottom: 10px;
-  border-bottom: 2px solid #e2e8f0;
+  font-size: 20px;
+  margin-bottom: 25px;
+  padding-bottom: 12px;
+  border-bottom: 3px solid #0c63e4;
+  display: inline-block;
 }
 h3 { 
   color: #334155;
   font-size: 14px;
-  margin: 15px 0 10px;
+  margin: 20px 0 12px;
   text-transform: uppercase;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; margin-bottom: 25px; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 25px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+
 .metric-card { 
   background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 15px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 18px;
   text-align: center;
+  transition: all 0.3s ease;
 }
+.metric-card:hover { border-color: #0c63e4; box-shadow: 0 4px 12px rgba(12, 99, 228, 0.15); }
+
 .metric-label { 
   font-size: 11px;
   color: #64748b;
   text-transform: uppercase;
-  font-weight: 600;
-  margin-bottom: 8px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  letter-spacing: 0.5px;
 }
 .metric-value { 
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 800;
   color: #0f172a;
 }
 .metric-unit { 
   font-size: 12px;
   color: #94a3b8;
-  margin-top: 4px;
+  margin-top: 6px;
+}
+
+.chart-container {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+}
+.chart-title {
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 15px;
+  font-size: 13px;
+  text-transform: uppercase;
 }
 
 .filters {
   background: #f0fdf4;
   border-left: 4px solid #22c55e;
-  padding: 12px;
-  border-radius: 4px;
-  margin-bottom: 15px;
+  padding: 14px;
+  border-radius: 6px;
+  margin-bottom: 20px;
 }
 .filters p {
   font-size: 13px;
   color: #166534;
+  line-height: 1.6;
 }
 
 table { 
@@ -127,212 +208,259 @@ table {
   margin-bottom: 15px;
 }
 th { 
-  background: #f1f5f9;
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
   color: #334155;
-  padding: 12px;
+  padding: 13px;
   text-align: left;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  border-bottom: 2px solid #e2e8f0;
+  border-bottom: 2px solid #cbd5e1;
+  letter-spacing: 0.5px;
 }
 td { 
-  padding: 11px 12px;
+  padding: 12px 13px;
   border-bottom: 1px solid #e2e8f0;
   font-size: 13px;
 }
 tr:last-child td { border-bottom: none; }
 tr:nth-child(even) { background: #f8fafc; }
 
-.highlight { color: #0c63e4; font-weight: 600; }
-.positive { color: #16a34a; font-weight: 600; }
-.negative { color: #dc2626; font-weight: 600; }
-.warning { color: #ea580c; font-weight: 600; }
+.highlight { color: #0c63e4; font-weight: 700; }
+.positive { color: #16a34a; font-weight: 700; }
+.negative { color: #dc2626; font-weight: 700; }
+.warning { color: #ea580c; font-weight: 700; }
 
-.summary-text {
-  background: #eff6ff;
+.summary-box {
+  background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
   border-left: 4px solid #0c63e4;
-  padding: 12px;
-  border-radius: 4px;
+  padding: 16px;
+  border-radius: 6px;
   font-size: 13px;
-  margin: 10px 0;
-  line-height: 1.5;
+  margin: 15px 0;
+  line-height: 1.7;
+  border: 1px solid #bfdbfe;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-top: 15px;
+  font-size: 12px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
 }
 
 footer {
   text-align: center;
-  padding: 20px;
+  padding: 25px;
   color: #64748b;
   font-size: 12px;
-  border-top: 1px solid #e2e8f0;
-  margin-top: 40px;
+  border-top: 2px solid #e2e8f0;
+  margin-top: 50px;
+}
+
+.page-break { page-break-after: always; margin: 40px 0; }
+
+@media print {
+  body { background: white; }
+  section { box-shadow: none; border: 1px solid #ddd; }
+  .page-break { page-break-after: always; }
 }
 </style>
 </head>
 <body>
 <div class="container">
+  <!-- HEADER -->
   <header>
-    <h1>📊 SALES PIPELINE REPORT</h1>
-    <p>Executive Summary & Detailed Analytics</p>
-    <div class="timestamp">Generated: ${safe(generatedAt)} | Total Records: ${safe(totalOpportunities)}</div>
+    <h1>📊 SALES PIPELINE ANALYTICS REPORT</h1>
+    <p>Comprehensive Sales Intelligence & Market Insights</p>
+    <div class="timestamp">Generated: ${safe(generatedAt)} | Total Opportunities: ${safe(totalOpportunities)}</div>
   </header>
 
-  <!-- FILTERS SECTION -->
+  <!-- FILTERS -->
   <section>
-    <h2>Applied Filters</h2>
+    <h2>Report Filters</h2>
     <div class="filters">
-      <p><strong>Active Filters:</strong> ${activeFilters.length ? activeFilters.map((item) => safe(item)).join(' • ') : 'None (all data shown)'}</p>
+      <p><strong>Applied Filters:</strong> ${activeFilters.length ? activeFilters.map((item) => safe(item)).join(' • ') : 'None (all data shown)'}</p>
     </div>
   </section>
 
-  <!-- KEY METRICS SECTION -->
+  <!-- KEY METRICS -->
   <section>
-    <h2>Key Performance Indicators</h2>
+    <h2>Key Business Metrics</h2>
     <div class="grid">
       <div class="metric-card">
         <div class="metric-label">Total Opportunities</div>
         <div class="metric-value">${safe(totalOpportunities)}</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">Win Rate</div>
-        <div class="metric-value" style="color: ${winRate >= 70 ? '#16a34a' : winRate >= 50 ? '#ea580c' : '#dc2626'}">${safe(winRate)}%</div>
+        <div class="metric-label">Opportunities Won</div>
+        <div class="metric-value positive">${safe(summary.wonCount)}</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">Pipeline Value</div>
-        <div class="metric-value">$${safe(Math.round(totalPipelineValue / 1000000))}M</div>
+        <div class="metric-label">Opportunities Lost</div>
+        <div class="metric-value negative">${safe(summary.lostCount)}</div>
       </div>
       <div class="metric-card">
-        <div class="metric-label">Expected Value</div>
-        <div class="metric-value positive">$${safe(Math.round(totalExpectedValue / 1000000))}M</div>
+        <div class="metric-label">At Risk Count</div>
+        <div class="metric-value warning">${safe(summary.atRiskCount)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Active Pipeline</div>
+        <div class="metric-value highlight">${safe(summary.totalActive)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Total Pipeline Value</div>
+        <div class="metric-value">$${safe((totalPipelineValue / 1000000).toFixed(1))}M</div>
       </div>
     </div>
 
-    <div class="summary-text">
-      <strong>Summary:</strong> Currently tracking <span class="highlight">${safe(summary.totalActive)} active opportunities</span> with a <span class="highlight">${safe(totalPipelineValue.toFixed(0))}</span> total pipeline value. <span class="positive">${safe(summary.wonCount)} opportunities won</span> and <span class="negative">${safe(summary.lostCount)} lost</span> to date.
+    <div class="summary-box">
+      <strong>📈 Executive Summary:</strong> Currently tracking <span class="highlight">${safe(summary.totalActive)} active opportunities</span> with <span class="highlight">$${safe((totalPipelineValue / 1000000).toFixed(1))}M</span> in pipeline value. Successfully closed <span class="positive">${safe(summary.wonCount)} deals</span> while <span class="negative">${safe(summary.lostCount)} opportunities</span> were lost. <span class="warning">${safe(summary.atRiskCount)} opportunities</span> require immediate attention due to approaching submission deadlines.
     </div>
   </section>
 
-  <!-- STAGE BREAKDOWN SECTION -->
+  <!-- VISUAL ANALYTICS -->
   <section>
-    <h2>Sales Funnel Analysis</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Stage</th>
-          <th>Count</th>
-          <th>Pipeline Value</th>
-          <th>Conversion %</th>
-          <th>Avg Opportunity Value</th>
-        </tr>
-      </thead>
-      <tbody>
-      ${funnel.map((row) => {
-        const avgValue = row.count > 0 ? (row.value / row.count).toFixed(0) : 0;
-        return `<tr>
-          <td><strong>${safe(row.stage)}</strong></td>
-          <td>${safe(row.count)}</td>
-          <td class="highlight">$${safe((row.value / 1000000).toFixed(2))}M</td>
-          <td>${safe(row.conversionRate)}%</td>
-          <td>$${safe((avgValue / 1000000).toFixed(2))}M</td>
-        </tr>`;
-      }).join('')}
-      </tbody>
-    </table>
+    <h2>Visual Analytics Dashboard</h2>
+    <div class="grid-2">
+      <div class="chart-container">
+        <div class="chart-title">📊 Opportunity Status Distribution</div>
+        ${generatePieChart(statusCounts, statusLabels, statusColors)}
+        <div class="legend">
+          ${statusLabels.map((label, i) => `<div class="legend-item"><div class="legend-color" style="background: ${statusColors[i]}"></div>${label}: ${statusCounts[i]}</div>`).join('')}
+        </div>
+      </div>
+
+      <div class="chart-container">
+        <div class="chart-title">📈 Sales Funnel Pipeline</div>
+        ${generateBarChart(funnelLabels.map(l => l.substring(0, 8)), funnelCounts, '#3b82f6')}
+      </div>
+    </div>
   </section>
 
   <!-- STATUS BREAKDOWN -->
   <section>
     <h2>Opportunity Status Breakdown</h2>
-    <div class="grid">
+    <div class="grid-3">
       <div class="metric-card">
         <div class="metric-label">✅ Working</div>
         <div class="metric-value">${safe(summary.workingCount)}</div>
-        <div class="metric-unit">$${safe((summary.workingValue / 1000000).toFixed(1))}M</div>
+        <div class="metric-unit">Active Negotiations</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">🏆 Awarded</div>
         <div class="metric-value positive">${safe(summary.awardedCount)}</div>
-        <div class="metric-unit">$${safe((summary.awardedValue / 1000000).toFixed(1))}M</div>
+        <div class="metric-unit">Won Deals</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">❌ Lost</div>
         <div class="metric-value negative">${safe(summary.lostCount)}</div>
-        <div class="metric-unit">$${safe((summary.lostValue / 1000000).toFixed(1))}M</div>
+        <div class="metric-unit">Lost Opportunities</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">📋 Regretted</div>
         <div class="metric-value warning">${safe(summary.regrettedCount)}</div>
-        <div class="metric-unit">$${safe((summary.regrettedValue / 1000000).toFixed(1))}M</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-label">⏱️ At Risk</div>
-        <div class="metric-value negative">${safe(summary.atRiskCount)}</div>
-        <div class="metric-unit">Urgent Attention</div>
+        <div class="metric-unit">Declined Bids</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">🚀 To Start</div>
         <div class="metric-value">${safe(summary.toStartCount)}</div>
-        <div class="metric-unit">$${safe((summary.toStartValue / 1000000).toFixed(1))}M</div>
+        <div class="metric-unit">Pipeline Queue</div>
       </div>
+      <div class="metric-card">
+        <div class="metric-label">⏱️ At Risk</div>
+        <div class="metric-value negative">${safe(summary.atRiskCount)}</div>
+        <div class="metric-unit">Urgent Action</div>
+      </div>
+    </div>
+
+    <div class="summary-box" style="margin-top: 20px;">
+      <strong>💡 Insights:</strong> Your pipeline shows <span class="positive">${safe(summary.workingCount)} opportunities in active negotiation</span>. Focus on converting <span class="highlight">${safe(summary.toStartCount)} pending opportunities</span> and managing the <span class="negative">${safe(summary.atRiskCount)} at-risk deals</span> to prevent further losses.
     </div>
   </section>
 
-  <!-- TOP CLIENTS SECTION -->
+  <!-- FUNNEL ANALYSIS -->
+  <section>
+    <h2>Sales Funnel Analysis</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Pipeline Stage</th>
+          <th>Opportunities</th>
+          <th>Total Value</th>
+        </tr>
+      </thead>
+      <tbody>
+      ${funnel.map((row) => `<tr>
+        <td><strong>${safe(row.stage)}</strong></td>
+        <td>${safe(row.count)}</td>
+        <td class="highlight">$${safe((row.value / 1000000).toFixed(2))}M</td>
+      </tr>`).join('')}
+      </tbody>
+    </table>
+
+    <div class="summary-box">
+      <strong>🔍 Funnel Analysis:</strong> The funnel shows <span class="highlight">${funnel[0].count} opportunities at the initial stage</span>. Track conversion rates between stages to identify bottlenecks and optimize sales process efficiency.
+    </div>
+  </section>
+
+  <!-- TOP CLIENTS -->
   <section>
     <h2>Top 10 Clients by Pipeline Value</h2>
     <table>
       <thead>
         <tr>
-          <th>Client Name</th>
+          <th style="width: 40%;">Client Name</th>
           <th>Opportunities</th>
           <th>Submitted Value</th>
-          <th>Avg Opportunity</th>
+          <th>Ranking</th>
         </tr>
       </thead>
       <tbody>
-      ${clients.map((row) => {
-        const avgValue = row.count > 0 ? (row.value / row.count).toFixed(0) : 0;
-        return `<tr>
-          <td><strong>${safe(row.name)}</strong></td>
-          <td>${safe(row.count)}</td>
-          <td class="highlight">$${safe((row.value / 1000000).toFixed(2))}M</td>
-          <td>$${safe((avgValue / 1000000).toFixed(2))}M</td>
-        </tr>`;
-      }).join('')}
-      </tbody>
-    </table>
-  </section>
-
-  <!-- TOP LEADS SECTION -->
-  <section>
-    <h2>Sales Team Performance</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Lead Name</th>
-          <th>Total Opps</th>
-          <th>Pipeline Value</th>
-          <th>Won</th>
-          <th>Lost</th>
-          <th>Win Rate</th>
-        </tr>
-      </thead>
-      <tbody>
-      ${leads.slice(0, 15).map((row) => `<tr>
+      ${clients.map((row, i) => `<tr>
         <td><strong>${safe(row.name)}</strong></td>
         <td>${safe(row.count)}</td>
         <td class="highlight">$${safe((row.value / 1000000).toFixed(2))}M</td>
-        <td class="positive">${safe(row.won)}</td>
-        <td class="negative">${safe(row.lost)}</td>
-        <td style="color: ${row.winRate >= 70 ? '#16a34a' : row.winRate >= 50 ? '#ea580c' : '#dc2626'}"><strong>${safe(row.winRate)}%</strong></td>
+        <td>#${i + 1}</td>
       </tr>`).join('')}
       </tbody>
     </table>
+
+    <div class="summary-box">
+      <strong>🎯 Client Strategy:</strong> Your top client <span class="highlight">${safe(clients[0]?.name || 'N/A')}</span> represents significant opportunity. Develop targeted engagement strategies for top 5 clients to maximize revenue potential.
+    </div>
+  </section>
+
+  <!-- RECOMMENDATIONS -->
+  <section>
+    <h2>Strategic Recommendations</h2>
+    <div style="line-height: 1.8; font-size: 13px;">
+      <h3>Priority Actions</h3>
+      <ul style="margin-left: 20px; margin-top: 10px;">
+        <li><strong>Urgent:</strong> Address <span class="warning">${safe(summary.atRiskCount)} at-risk opportunities</span> approaching submission deadlines</li>
+        <li><strong>Growth:</strong> Convert <span class="highlight">${safe(summary.workingCount)} opportunities</span> in active negotiation to wins</li>
+        <li><strong>Analysis:</strong> Review <span class="negative">${safe(summary.lostCount)} lost deals</span> to identify improvement opportunities</li>
+        <li><strong>Expansion:</strong> Focus on top clients and expand account relationships</li>
+        <li><strong>Pipeline:</strong> Activate <span class="highlight">${safe(summary.toStartCount)} pending opportunities</span> in queue</li>
+      </ul>
+    </div>
   </section>
 
   <footer>
-    <p>This is an automated report generated from your sales pipeline system.</p>
-    <p>For questions or to request changes, please contact your sales operations team.</p>
+    <p>This report is generated automatically from your Sales Pipeline Management System.</p>
+    <p>For data accuracy and strategic questions, please contact your Sales Operations team.</p>
+    <p style="margin-top: 10px; font-size: 11px; opacity: 0.7;">© ${new Date().getFullYear()} Sales Intelligence Report</p>
   </footer>
 </div>
 </body>
@@ -346,7 +474,7 @@ export function ReportButton({ data, filters }: ReportButtonProps) {
     const link = document.createElement('a');
     const stamp = new Date().toISOString().slice(0, 10);
     link.href = url;
-    link.download = `sales-pipeline-report-${stamp}.html`;
+    link.download = `sales-analytics-report-${stamp}.html`;
     document.body.appendChild(link);
     link.click();
     link.remove();
