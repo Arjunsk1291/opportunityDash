@@ -10,9 +10,6 @@ import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/co
 import { ExportButton } from '@/components/Dashboard/ExportButton';
 import { ReportButton } from '@/components/Dashboard/ReportButton';
 import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { 
@@ -25,22 +22,6 @@ import {
 import { useData } from '@/contexts/DataContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
-
-function displayUnknown(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '—';
-  if (Array.isArray(value)) return value.map((item) => String(item)).join(', ');
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
-
-function DetailItem({ label, value }: { label: string; value: string | React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="text-sm font-medium text-slate-900 break-words">{value || '—'}</p>
-    </div>
-  );
-}
 
 const Dashboard = () => {
   const { opportunities, isLoading, error, lastSyncTime } = useData();
@@ -160,6 +141,7 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-6">
+      {/* Sync Status Bar */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-4">
           <div>
@@ -185,6 +167,7 @@ const Dashboard = () => {
         </div>
       </div>
       
+      {/* Filter & Export Bar */}
       <div className="sticky top-14 z-40 -mx-3 sm:-mx-4 lg:-mx-6 px-3 sm:px-4 lg:px-6 py-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
         <div className="flex items-center justify-between gap-4">
           <div className="flex-1">
@@ -195,14 +178,20 @@ const Dashboard = () => {
               onClearFilters={() => setFilters(defaultFilters)}
             />
           </div>
-          <ExportButton data={filteredData} filename="tenders" />
+          <div className="flex gap-2 shrink-0">
+            <ExportButton data={filteredData} filename="tenders" />
+            <ReportButton data={filteredData} filters={filters} />
+          </div>
         </div>
       </div>
 
+      {/* KPI Cards */}
       <KPICards stats={stats} onKPIClick={handleKPIClick} />
 
+      {/* Opportunities Table */}
       <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
 
+      {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
         <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
@@ -214,11 +203,13 @@ const Dashboard = () => {
         }} />
       </div>
 
+      {/* Data Health & Stats Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <ApprovalStatsWidget data={filteredData} />
         <DataHealthWidget {...dataHealth} />
       </div>
 
+      {/* Opportunity Detail Popup Dialog */}
       <OpportunityDetailDialog
         open={!!selectedOpp}
         opportunity={selectedOpp}
@@ -227,7 +218,6 @@ const Dashboard = () => {
         }}
         formatCurrency={formatCurrency}
       />
-      
     </div>
   );
 };
