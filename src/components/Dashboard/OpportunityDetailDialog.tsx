@@ -57,7 +57,7 @@ export function OpportunityDetailDialog({
             />
             <DetailRow label="Submission" value={opportunity.tenderPlannedSubmissionDate || '—'} />
             <DetailRow label="Lead" value={opportunity.internalLead || '—'} />
-            <DetailRow label="Avenir Status" value={opportunity.avenirStatus || '—'} />
+            <DetailRow label="Status" value={opportunity.avenirStatus || '—'} />
             <DetailRow label="Remarks" value={opportunity.remarksReason || '—'} />
             <DetailRow label="Result" value={opportunity.tenderResult || '—'} />
           </div>

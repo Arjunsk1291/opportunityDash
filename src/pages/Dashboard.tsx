@@ -47,64 +47,60 @@ const Dashboard = () => {
   const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
 
   const handleKPIClick = (kpiType: 'active' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => {
-    switch (kpiType) {
-      case 'active':
-        setFilters({
-          ...defaultFilters,
-          statuses: ['WORKING', 'SUBMITTED', 'AWARDED'],
-        });
-        break;
-      case 'awarded':
-        setFilters({
-          ...defaultFilters,
-          statuses: ['AWARDED'],
-        });
-        break;
-      case 'lost':
-        setFilters({
-          ...defaultFilters,
-          statuses: ['LOST'],
-        });
-        break;
-      case 'regretted':
-        setFilters({
-          ...defaultFilters,
-          statuses: ['REGRETTED'],
-        });
-        break;
-      case 'working':
-        setFilters({
-          ...defaultFilters,
-          statuses: ['WORKING'],
-        });
-        break;
-      case 'tostart':
-        setFilters({
-          ...defaultFilters,
-          statuses: ['TO START'],
-        });
-        break;
-      case 'ongoing':
-        setFilters({
-          ...defaultFilters,
-          statuses: ['ONGOING'],
-        });
-        break;
-      case 'submission':
-        setFilters({
-          ...defaultFilters,
-          showAtRisk: true,
-        });
-        break;
-    }
+    setFilters((prevFilters) => {
+      switch (kpiType) {
+        case 'active':
+          return {
+            ...prevFilters,
+            statuses: ['WORKING', 'SUBMITTED', 'AWARDED'],
+          };
+        case 'awarded':
+          return {
+            ...prevFilters,
+            statuses: ['AWARDED'],
+          };
+        case 'lost':
+          return {
+            ...prevFilters,
+            statuses: ['LOST'],
+          };
+        case 'regretted':
+          return {
+            ...prevFilters,
+            statuses: ['REGRETTED'],
+          };
+        case 'working':
+          return {
+            ...prevFilters,
+            statuses: ['WORKING'],
+          };
+        case 'tostart':
+          return {
+            ...prevFilters,
+            statuses: ['TO START'],
+          };
+        case 'ongoing':
+          return {
+            ...prevFilters,
+            statuses: ['ONGOING'],
+          };
+        case 'submission':
+          return {
+            ...prevFilters,
+            showAtRisk: true,
+          };
+        default:
+          return prevFilters;
+      }
+    });
   };
 
   const handleFunnelClick = (stage: string) => {
     console.log('🔗 Funnel clicked:', stage);
-    setFilters({
-      ...defaultFilters,
+    setFilters((prevFilters) => ({
+      ...prevFilters,
       statuses: [stage],
-    });
+    }));
   };
 
   if (isLoading) {
@@ -196,10 +192,10 @@ const Dashboard = () => {
         <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
         <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
         <ClientLeaderboard data={clientData} onClientClick={(client) => {
-          setFilters({
-            ...defaultFilters,
+          setFilters((prevFilters) => ({
+            ...prevFilters,
             clients: [client],
-          });
+          }));
         }} />
       </div>
 
