@@ -27,13 +27,6 @@ type DatePreset = "all" | "thisMonth" | "lastMonth" | "thisQuarter" | "lastQuart
 
 type DateField = "dateTenderReceived" | "tenderPlannedSubmissionDate" | "tenderSubmittedDate" | "lastContactDate";
 
-const DATE_FIELD_LABELS: Record<DateField, string> = {
-  dateTenderReceived: "RFP Received",
-  tenderPlannedSubmissionDate: "Planned Submission",
-  tenderSubmittedDate: "Submitted Date",
-  lastContactDate: "Last Activity",
-};
-
 // Map old stage values to new uppercase values from Google Sheets
 const STAGE_MAPPING: Record<string, string> = {
   'WORKING': 'WORKING',
@@ -222,7 +215,7 @@ export function AdvancedFilters({
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="gap-2">
-              Group
+              Verticals
               {filters.groups.length > 0 && (
                 <Badge variant="secondary" className="ml-1 px-1.5">
                   {filters.groups.length}
@@ -308,22 +301,6 @@ export function AdvancedFilters({
             </div>
           </PopoverContent>
         </Popover>
-
-        <Select
-          value={filters.dateField}
-          onValueChange={(v) => updateFilter("dateField", v as DateField)}
-        >
-          <SelectTrigger className="h-8 w-[140px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {(Object.keys(DATE_FIELD_LABELS) as DateField[]).map((field) => (
-              <SelectItem key={field} value={field} className="text-xs">
-                {DATE_FIELD_LABELS[field]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
 
         <Popover>
           <PopoverTrigger asChild>

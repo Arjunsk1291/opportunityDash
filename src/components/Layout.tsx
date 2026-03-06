@@ -33,7 +33,7 @@ export function Layout({ children }: LayoutProps) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 min-w-0">
                 <BarChart3 className="h-5 w-5 text-primary shrink-0" />
-                <span className="font-semibold truncate">Opportunity Dashboard</span>
+                <span className="font-semibold truncate">SALES DASHBOARD</span>
               </div>
             </div>
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
