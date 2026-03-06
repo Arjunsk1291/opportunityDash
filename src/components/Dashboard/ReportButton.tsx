@@ -1,6 +1,7 @@
-import { FileText } from 'lucide-react';
+
+import { FileText, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Opportunity, calculateFunnelData, calculateSummaryStats, getClientData, getLeaderboardData } from '@/data/opportunityData';
+import { Opportunity, calculateFunnelData, calculateSummaryStats, getClientData } from '@/data/opportunityData';
 import { FilterState } from '@/components/Dashboard/AdvancedFilters';
 
 interface ReportButtonProps {
@@ -77,16 +78,12 @@ function toHtml(filters: FilterState, data: Opportunity[]) {
     filters.showMissDeadline ? 'Miss deadline only' : '',
   ].filter(Boolean);
 
-  // Calculate additional metrics
   const totalOpportunities = data.length;
-  const totalPipelineValue = data.reduce((sum, o) => sum + (o.opportunityValue || 0), 0);
   
-  // Status breakdown
   const statusCounts = [summary.workingCount, summary.awardedCount, summary.lostCount, summary.regrettedCount, summary.toStartCount];
   const statusLabels = ['Working', 'Awarded', 'Lost', 'Regretted', 'To Start'];
   const statusColors = ['#3b82f6', '#10b981', '#ef4444', '#f59e0b', '#8b5cf6'];
   
-  // Funnel stages
   const funnelLabels = funnel.map(f => f.stage).slice(0, 5);
   const funnelCounts = funnel.map(f => f.count).slice(0, 5);
 
@@ -151,9 +148,7 @@ h3 {
   border-radius: 8px;
   padding: 18px;
   text-align: center;
-  transition: all 0.3s ease;
 }
-.metric-card:hover { border-color: #0c63e4; box-shadow: 0 4px 12px rgba(12, 99, 228, 0.15); }
 
 .metric-label { 
   font-size: 11px;
@@ -269,25 +264,20 @@ footer {
   margin-top: 50px;
 }
 
-.page-break { page-break-after: always; margin: 40px 0; }
-
 @media print {
   body { background: white; }
   section { box-shadow: none; border: 1px solid #ddd; }
-  .page-break { page-break-after: always; }
 }
 </style>
 </head>
 <body>
 <div class="container">
-  <!-- HEADER -->
   <header>
     <h1>📊 SALES PIPELINE ANALYTICS REPORT</h1>
     <p>Comprehensive Sales Intelligence & Market Insights</p>
     <div class="timestamp">Generated: ${safe(generatedAt)} | Total Opportunities: ${safe(totalOpportunities)}</div>
   </header>
 
-  <!-- FILTERS -->
   <section>
     <h2>Report Filters</h2>
     <div class="filters">
@@ -295,7 +285,6 @@ footer {
     </div>
   </section>
 
-  <!-- KEY METRICS -->
   <section>
     <h2>Key Business Metrics</h2>
     <div class="grid">
@@ -319,18 +308,13 @@ footer {
         <div class="metric-label">Active Pipeline</div>
         <div class="metric-value highlight">${safe(summary.totalActive)}</div>
       </div>
-      <div class="metric-card">
-        <div class="metric-label">Total Pipeline Value</div>
-        <div class="metric-value">$${safe((totalPipelineValue / 1000000).toFixed(1))}M</div>
-      </div>
     </div>
 
     <div class="summary-box">
-      <strong>📈 Executive Summary:</strong> Currently tracking <span class="highlight">${safe(summary.totalActive)} active opportunities</span> with <span class="highlight">$${safe((totalPipelineValue / 1000000).toFixed(1))}M</span> in pipeline value. Successfully closed <span class="positive">${safe(summary.wonCount)} deals</span> while <span class="negative">${safe(summary.lostCount)} opportunities</span> were lost. <span class="warning">${safe(summary.atRiskCount)} opportunities</span> require immediate attention due to approaching submission deadlines.
+      <strong>📈 Executive Summary:</strong> Currently tracking <span class="highlight">${safe(summary.totalActive)} active opportunities</span>. Successfully closed <span class="positive">${safe(summary.wonCount)} deals</span> while <span class="negative">${safe(summary.lostCount)} opportunities</span> were lost. <span class="warning">${safe(summary.atRiskCount)} opportunities</span> require immediate attention due to approaching submission deadlines.
     </div>
   </section>
 
-  <!-- VISUAL ANALYTICS -->
   <section>
     <h2>Visual Analytics Dashboard</h2>
     <div class="grid-2">
@@ -349,7 +333,6 @@ footer {
     </div>
   </section>
 
-  <!-- STATUS BREAKDOWN -->
   <section>
     <h2>Opportunity Status Breakdown</h2>
     <div class="grid-3">
@@ -390,7 +373,6 @@ footer {
     </div>
   </section>
 
-  <!-- FUNNEL ANALYSIS -->
   <section>
     <h2>Sales Funnel Analysis</h2>
     <table>
@@ -411,11 +393,10 @@ footer {
     </table>
 
     <div class="summary-box">
-      <strong>🔍 Funnel Analysis:</strong> The funnel shows <span class="highlight">${funnel[0].count} opportunities at the initial stage</span>. Track conversion rates between stages to identify bottlenecks and optimize sales process efficiency.
+      <strong>🔍 Funnel Analysis:</strong> The funnel shows <span class="highlight">${funnel[0].count} opportunities at the initial stage</span>. Track progression between stages to identify bottlenecks and optimize sales process efficiency.
     </div>
   </section>
 
-  <!-- TOP CLIENTS -->
   <section>
     <h2>Top 10 Clients by Pipeline Value</h2>
     <table>
@@ -442,21 +423,6 @@ footer {
     </div>
   </section>
 
-  <!-- RECOMMENDATIONS -->
-  <section>
-    <h2>Strategic Recommendations</h2>
-    <div style="line-height: 1.8; font-size: 13px;">
-      <h3>Priority Actions</h3>
-      <ul style="margin-left: 20px; margin-top: 10px;">
-        <li><strong>Urgent:</strong> Address <span class="warning">${safe(summary.atRiskCount)} at-risk opportunities</span> approaching submission deadlines</li>
-        <li><strong>Growth:</strong> Convert <span class="highlight">${safe(summary.workingCount)} opportunities</span> in active negotiation to wins</li>
-        <li><strong>Analysis:</strong> Review <span class="negative">${safe(summary.lostCount)} lost deals</span> to identify improvement opportunities</li>
-        <li><strong>Expansion:</strong> Focus on top clients and expand account relationships</li>
-        <li><strong>Pipeline:</strong> Activate <span class="highlight">${safe(summary.toStartCount)} pending opportunities</span> in queue</li>
-      </ul>
-    </div>
-  </section>
-
   <footer>
     <p>This report is generated automatically from your Sales Pipeline Management System.</p>
     <p>For data accuracy and strategic questions, please contact your Sales Operations team.</p>
@@ -468,7 +434,7 @@ footer {
 }
 
 export function ReportButton({ data, filters }: ReportButtonProps) {
-  const handleExportReport = () => {
+  const handleExportHTML = () => {
     const blob = new Blob([toHtml(filters, data)], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -481,13 +447,50 @@ export function ReportButton({ data, filters }: ReportButtonProps) {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportWord = async () => {
+    try {
+      const response = await fetch('/api/generate-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data, filters }),
+      });
+
+      if (!response.ok) throw new Error('Failed to generate Word document');
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `sales-analytics-report-${stamp}.docx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generating Word document:', error);
+      alert('Failed to generate Word document. Exporting as HTML instead.');
+      handleExportHTML();
+    }
+  };
+
   return (
-    <Button 
-      onClick={handleExportReport} 
-      className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg"
-    >
-      <FileText className="h-4 w-4" />
-      Generate Report
-    </Button>
+    <div className="flex gap-2">
+      <button
+        onClick={handleExportHTML}
+        className="inline-flex items-center justify-center gap-2 rounded-md bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-medium px-4 py-2 shadow-lg transition-all"
+      >
+        <FileText className="h-4 w-4" />
+        HTML Report
+      </button>
+
+      <button
+        onClick={handleExportWord}
+        className="inline-flex items-center justify-center gap-2 rounded-md bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white text-sm font-medium px-4 py-2 shadow-lg transition-all"
+      >
+        <Download className="h-4 w-4" />
+        Word Report
+      </button>
+    </div>
   );
 }
