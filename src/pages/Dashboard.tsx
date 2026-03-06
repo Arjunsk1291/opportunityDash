@@ -8,6 +8,7 @@ import { DataHealthWidget } from '@/components/Dashboard/DataHealthWidget';
 import { ApprovalStatsWidget } from '@/components/Dashboard/ApprovalStatsWidget';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
+import { ReportButton } from '@/components/Dashboard/ReportButton';
 import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';

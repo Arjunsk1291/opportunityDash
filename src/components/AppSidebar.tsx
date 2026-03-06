@@ -37,12 +37,6 @@ export function AppSidebar() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <BarChart3 className="h-4 w-4" />
           </div>
-          {!collapsed && (
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold">Tender Manager</span>
-              <span className="text-xs text-muted-foreground">Tender Tracking</span>
-            </div>
-          )}
         </div>
       </SidebarHeader>
 
