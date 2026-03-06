@@ -15,6 +15,19 @@ import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDele
 import { initializeBootSync } from './services/bootSyncService.js';
 import SystemConfig from './models/SystemConfig.js';
 import { encryptSecret } from './services/cryptoService.js';
+import {
+  Document,
+  Packer,
+  Paragraph,
+  Table,
+  TableRow,
+  TableCell,
+  HeadingLevel,
+  AlignmentType,
+  WidthType,
+  BorderStyle,
+  ShadingType,
+} from 'docx';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,6 +67,58 @@ const mapIdField = (doc) => {
     ...doc,
     id: doc._id?.toString() || doc._id || null,
   };
+};
+
+const calculateSummaryStats = (data = []) => {
+  const awardedCount = data.filter((item) => item.status === 'Awarded').length;
+  const lostCount = data.filter((item) => item.status === 'Lost').length;
+  const regrettedCount = data.filter((item) => item.status === 'Regretted').length;
+  const workingCount = data.filter((item) => item.status === 'Working').length;
+  const toStartCount = data.filter((item) => item.status === 'To Start').length;
+  const atRiskCount = data.filter((item) => item.atRisk).length;
+  const totalActive = workingCount + toStartCount;
+
+  return {
+    awardedCount,
+    wonCount: awardedCount,
+    lostCount,
+    regrettedCount,
+    workingCount,
+    toStartCount,
+    atRiskCount,
+    totalActive,
+  };
+};
+
+const calculateFunnelData = (data = []) => {
+  const stages = ['To Start', 'Working', 'Awarded', 'Lost', 'Regretted'];
+  return stages.map((stage) => {
+    const stageItems = data.filter((item) => item.status === stage);
+    const value = stageItems.reduce((sum, item) => sum + Number(item.submittedValue || item.opportunityValue || 0), 0);
+
+    return {
+      stage,
+      count: stageItems.length,
+      value,
+    };
+  });
+};
+
+const getClientData = (data = []) => {
+  const byClient = data.reduce((acc, item) => {
+    const name = item.clientName || 'Unknown Client';
+    if (!acc[name]) {
+      acc[name] = { name, count: 0, value: 0 };
+    }
+
+    acc[name].count += 1;
+    acc[name].value += Number(item.submittedValue || item.opportunityValue || 0);
+    return acc;
+  }, {});
+
+  return Object.values(byClient)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10);
 };
 
 const buildTroubleshootingFromMessage = (message = '') => {
@@ -177,6 +242,11 @@ const renderTemplate = (template = '', values = {}) => {
   });
   return output;
 };
+
+
+
+const border = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' };
+const borders = { top: border, bottom: border, left: border, right: border };
 
 const getWeekWindow = (date = new Date()) => {
   const d = new Date(date);
@@ -1480,6 +1550,177 @@ app.get('/api/opportunities/stats', verifyToken, async (req, res) => {
     res.json({ totalTenders, totalValue, lastSync, statusDistribution });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+
+app.post('/api/generate-report', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const data = Array.isArray(body.data) ? body.data : [];
+    const filters = body.filters || {};
+
+    const summary = calculateSummaryStats(data);
+    const funnel = calculateFunnelData(data);
+    const clients = getClientData(data);
+
+    const totalOpportunities = data.length;
+    const generatedAt = new Date().toLocaleString();
+
+    const activeFilters = [
+      filters.search ? `Search: ${filters.search}` : '',
+      Array.isArray(filters.statuses) && filters.statuses.length ? `Statuses: ${filters.statuses.join(', ')}` : '',
+      Array.isArray(filters.groups) && filters.groups.length ? `Verticals: ${filters.groups.join(', ')}` : '',
+      Array.isArray(filters.leads) && filters.leads.length ? `Leads: ${filters.leads.join(', ')}` : '',
+      Array.isArray(filters.clients) && filters.clients.length ? `Clients: ${filters.clients.join(', ')}` : '',
+      filters.datePreset && filters.datePreset !== 'all' ? `Date preset: ${filters.datePreset}` : '',
+      filters.showAtRisk ? 'At risk only' : '',
+      filters.showMissDeadline ? 'Miss deadline only' : '',
+    ].filter(Boolean);
+
+    const children = [
+      new Paragraph({
+        text: 'SALES PIPELINE ANALYTICS REPORT',
+        heading: HeadingLevel.HEADING_1,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 },
+      }),
+      new Paragraph({
+        text: 'Comprehensive Sales Intelligence & Market Insights',
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 100 },
+      }),
+      new Paragraph({
+        text: `Generated: ${generatedAt} | Total Opportunities: ${totalOpportunities}`,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 400 },
+      }),
+      new Paragraph({
+        text: 'Report Filters',
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 200, after: 150 },
+      }),
+      new Paragraph({
+        text: `Applied Filters: ${activeFilters.length ? activeFilters.join(' • ') : 'None (all data shown)'}`,
+        spacing: { after: 300 },
+      }),
+      new Paragraph({
+        text: 'Key Business Metrics',
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 200, after: 200 },
+      }),
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({
+            children: [
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Total Opportunities' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Won' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Lost' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'At Risk' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Active Pipeline' })] }),
+            ],
+          }),
+          new TableRow({
+            children: [
+              new TableCell({ borders, children: [new Paragraph({ text: String(totalOpportunities) })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: String(summary.wonCount) })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: String(summary.lostCount) })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: String(summary.atRiskCount) })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: String(summary.totalActive) })] }),
+            ],
+          }),
+        ],
+      }),
+      new Paragraph({ text: '', spacing: { after: 300 } }),
+      new Paragraph({
+        text: `Executive Summary: Currently tracking ${summary.totalActive} active opportunities. Successfully closed ${summary.wonCount} deals while ${summary.lostCount} opportunities were lost. ${summary.atRiskCount} opportunities require immediate attention due to approaching submission deadlines.`,
+        spacing: { after: 400 },
+      }),
+      new Paragraph({
+        text: 'Opportunity Status Breakdown',
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 200, after: 200 },
+      }),
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({
+            children: [
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Status' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Count' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Description' })] }),
+            ],
+          }),
+          new TableRow({ children: [new TableCell({ borders, children: [new Paragraph({ text: '✅ Working' })] }), new TableCell({ borders, children: [new Paragraph({ text: String(summary.workingCount) })] }), new TableCell({ borders, children: [new Paragraph({ text: 'Active Negotiations' })] })] }),
+          new TableRow({ children: [new TableCell({ borders, children: [new Paragraph({ text: '🏆 Awarded' })] }), new TableCell({ borders, children: [new Paragraph({ text: String(summary.awardedCount) })] }), new TableCell({ borders, children: [new Paragraph({ text: 'Won Deals' })] })] }),
+          new TableRow({ children: [new TableCell({ borders, children: [new Paragraph({ text: '❌ Lost' })] }), new TableCell({ borders, children: [new Paragraph({ text: String(summary.lostCount) })] }), new TableCell({ borders, children: [new Paragraph({ text: 'Lost Opportunities' })] })] }),
+          new TableRow({ children: [new TableCell({ borders, children: [new Paragraph({ text: '📋 Regretted' })] }), new TableCell({ borders, children: [new Paragraph({ text: String(summary.regrettedCount) })] }), new TableCell({ borders, children: [new Paragraph({ text: 'Declined Bids' })] })] }),
+          new TableRow({ children: [new TableCell({ borders, children: [new Paragraph({ text: '🚀 To Start' })] }), new TableCell({ borders, children: [new Paragraph({ text: String(summary.toStartCount) })] }), new TableCell({ borders, children: [new Paragraph({ text: 'Pipeline Queue' })] })] }),
+          new TableRow({ children: [new TableCell({ borders, children: [new Paragraph({ text: '⏱️ At Risk' })] }), new TableCell({ borders, children: [new Paragraph({ text: String(summary.atRiskCount) })] }), new TableCell({ borders, children: [new Paragraph({ text: 'Urgent Action' })] })] }),
+        ],
+      }),
+      new Paragraph({ text: '', spacing: { after: 300 } }),
+      new Paragraph({ text: 'Sales Funnel Analysis', heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 200 } }),
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({
+            children: [
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Pipeline Stage' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Opportunities' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Total Value' })] }),
+            ],
+          }),
+          ...funnel.map((row) => new TableRow({
+            children: [
+              new TableCell({ borders, children: [new Paragraph({ text: row.stage })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: String(row.count) })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: `$${(row.value / 1000000).toFixed(2)}M` })] }),
+            ],
+          })),
+        ],
+      }),
+      new Paragraph({ text: '', spacing: { after: 300 } }),
+      new Paragraph({ text: 'Top 10 Clients by Pipeline Value', heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 200 } }),
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({
+            children: [
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Client Name' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Opportunities' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Submitted Value' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Ranking' })] }),
+            ],
+          }),
+          ...clients.map((row, i) => new TableRow({
+            children: [
+              new TableCell({ borders, children: [new Paragraph({ text: row.name })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: String(row.count) })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: `$${(row.value / 1000000).toFixed(2)}M` })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: `#${i + 1}` })] }),
+            ],
+          })),
+        ],
+      }),
+      new Paragraph({ text: '', spacing: { after: 300 } }),
+      new Paragraph({
+        text: 'This report is generated automatically from your Sales Pipeline Management System.',
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 300 },
+      }),
+    ];
+
+    const doc = new Document({ sections: [{ children }] });
+    const buffer = await Packer.toBuffer(doc);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="sales-analytics-report-${new Date().toISOString().slice(0, 10)}.docx"`);
+    res.status(200).send(buffer);
+  } catch (error) {
+    console.error('Error generating report:', error);
+    res.status(500).json({ error: 'Failed to generate report' });
   }
 });
 

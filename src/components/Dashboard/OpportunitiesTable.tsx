@@ -213,7 +213,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                 <TableHead className="sticky top-0 z-40 bg-background font-bold">Submission</TableHead>
                 <TableHead className="sticky top-0 z-40 bg-background">Lead</TableHead>
                 <TableHead className="sticky top-0 z-40 bg-background text-right">Value</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background">AVENIR STATUS</TableHead>
+                <TableHead className="sticky top-0 z-40 bg-background">STATUS</TableHead>
                 <TableHead className="sticky top-0 z-40 bg-background max-w-[150px]">Remarks</TableHead>
                 <TableHead className="sticky top-0 z-40 bg-background">RESULT</TableHead>
                 <TableHead className="sticky top-0 z-40 bg-background w-[220px]">Approval</TableHead>
