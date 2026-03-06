@@ -184,16 +184,18 @@ const Dashboard = () => {
         </div>
       </div>
       
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex-1">
-          <AdvancedFilters
-            data={opportunities}
-            filters={filters}
-            onFiltersChange={setFilters}
-            onClearFilters={() => setFilters(defaultFilters)}
-          />
+      <div className="sticky top-14 z-40 -mx-3 sm:-mx-4 lg:-mx-6 px-3 sm:px-4 lg:px-6 py-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1">
+            <AdvancedFilters
+              data={opportunities}
+              filters={filters}
+              onFiltersChange={setFilters}
+              onClearFilters={() => setFilters(defaultFilters)}
+            />
+          </div>
+          <ExportButton data={filteredData} filename="tenders" />
         </div>
-        <ExportButton data={filteredData} filename="tenders" />
       </div>
 
       <KPICards stats={stats} onKPIClick={handleKPIClick} />
