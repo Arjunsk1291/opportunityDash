@@ -195,10 +195,7 @@ const Dashboard = () => {
               onClearFilters={() => setFilters(defaultFilters)}
             />
           </div>
-          <div className="flex items-center gap-2">
-            <ReportButton data={filteredData} filters={filters} />
-            <ExportButton data={filteredData} filename="tenders" />
-          </div>
+          <ExportButton data={filteredData} filename="tenders" />
         </div>
       </div>
 
