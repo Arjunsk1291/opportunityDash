@@ -23,7 +23,7 @@ interface OpportunitiesTableProps {
 
 const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
 
-export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-96' }: OpportunitiesTableProps) {
+export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-[52vh]' }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
@@ -152,22 +152,22 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   };
 
   return (
-    <Card className="flex-1 flex flex-col w-full">
-      <CardHeader className="pb-3 px-4 sm:px-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <CardTitle className="text-lg md:text-xl">Tenders</CardTitle>
-          <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-2">
+    <Card className="flex-1 flex flex-col w-full overflow-hidden">
+      <CardHeader className="pb-2 px-3 sm:px-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
+          <CardTitle className="text-base sm:text-lg md:text-xl">Tenders</CardTitle>
+          <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-1.5 sm:gap-2">
             <div className="relative w-full sm:w-auto">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search..."
-                className="pl-8 w-full sm:w-48"
+                className="pl-8 h-9 w-full sm:w-44 lg:w-48"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-40">
+              <SelectTrigger className="h-9 w-full sm:w-36 lg:w-40">
                 <SelectValue placeholder="Filter..." />
               </SelectTrigger>
               <SelectContent>
@@ -183,7 +183,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                 <Button
                   variant="outline"
                   size="icon"
-                  className={`w-10 h-10 ${isRefreshing ? 'animate-spin' : ''}`}
+                  className={`h-9 w-9 ${isRefreshing ? 'animate-spin' : ''}`}
                   onClick={handleRefresh}
                 >
                   <RefreshCw className="h-4 w-4" />
@@ -194,8 +194,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
-        <div className={`${scrollContainerClassName || 'overflow-x-auto'} ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
+      <CardContent className="p-0 flex-1 flex flex-col overflow-hidden min-h-0">
+        <div className={`${scrollContainerClassName || 'overflow-x-auto'} ${maxHeight} min-h-[340px] sm:min-h-[380px] overflow-y-auto ${styles.scrollContainer}`}>
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
@@ -221,7 +221,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                 return (
                   <TableRow
                     key={tender.id}
-                    className="cursor-pointer hover:bg-muted/50 text-xs sm:text-sm"
+                    className="cursor-pointer hover:bg-muted/50 text-xs"
                     onClick={() => onSelectOpportunity?.(tender)}
                   >
                     <TableCell className="font-mono font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap">{tender.opportunityRefNo || '—'}</TableCell>
@@ -298,7 +298,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
             </TableBody>
           </Table>
         </div>
-        <div className="p-3 text-xs text-muted-foreground border-t bg-background">
+        <div className="px-3 py-2 text-xs text-muted-foreground border-t bg-background">
           Showing: {filteredData.length} of {data.length} tenders
         </div>
       </CardContent>
