@@ -45,7 +45,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
     if (formatted.symbol === 'aed') {
       return (
         <span className="flex items-center gap-0.5">
-          <img src={aedSymbol} alt="AED" className="h-3 w-3 inline-block dark:invert" />
+          <img src={aedSymbol} alt="AED" className="h-3 sm:h-4 w-3 sm:w-4 inline-block dark:invert" />
           {formatted.value}
         </span>
       );
@@ -54,11 +54,11 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
   };
 
   const AedIcon = () => (
-    <img src={aedSymbol} alt="AED" className="h-3 w-3 dark:invert" />
+    <img src={aedSymbol} alt="AED" className="h-3 sm:h-4 w-3 sm:w-4 dark:invert" />
   );
 
   const DollarIcon = () => (
-    <span className="text-xs font-bold">$</span>
+    <span className="text-xs sm:text-sm font-bold">$</span>
   );
 
   const kpis = [
@@ -146,17 +146,17 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-10 gap-1.5 sm:gap-2">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-10 gap-2 sm:gap-2.5 md:gap-3">
       {kpis.map((kpi, index) => (
         <Card 
           key={kpi.label} 
-          className={`p-2 transition-all duration-300 hover:-translate-y-0.5 animate-fade-in ${onKPIClick ? 'cursor-pointer hover:shadow-md hover:ring-2 hover:ring-primary/20' : ''}`}
+          className={`p-2 sm:p-2.5 transition-all duration-300 hover:-translate-y-0.5 animate-fade-in ${onKPIClick ? 'cursor-pointer hover:shadow-md hover:ring-2 hover:ring-primary/20' : ''}`}
           style={{ animationDelay: `${index * 50}ms` }}
           onClick={() => onKPIClick?.(kpi.type)}
         >
-          <div className="flex flex-col items-start gap-1">
-            <div className={`p-1 rounded-md ${kpi.bgColor}`}>
-              <div className={`h-3 w-3 flex items-center justify-center ${kpi.color}`}>
+          <div className="flex flex-col items-start gap-1.5">
+            <div className={`p-1.5 rounded-md ${kpi.bgColor}`}>
+              <div className={`h-3 sm:h-4 w-3 sm:w-4 flex items-center justify-center ${kpi.color}`}>
                 <kpi.Icon />
               </div>
             </div>
