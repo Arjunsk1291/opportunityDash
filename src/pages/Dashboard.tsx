@@ -109,11 +109,11 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="w-full h-full flex flex-col bg-background">
+    <div className="w-full h-full min-h-0 flex flex-col bg-background">
       {/* Main Content - Full Width */}
       <div className="flex-1 flex flex-col w-full overflow-hidden">
         {/* Sync Status Bar */}
-        <div className="px-3 py-2 text-xs text-muted-foreground border-b bg-card flex items-center gap-3 flex-wrap">
+        <div className="px-3 py-1.5 text-xs text-muted-foreground border-b bg-card flex items-center gap-x-3 gap-y-1 flex-wrap">
           <div>Last synced: {lastSyncTime?.toLocaleTimeString()} - {opportunities.length} opportunities</div>
           {lastAutoRefreshTime && (
             <div className="flex items-center gap-2">
@@ -133,9 +133,9 @@ const Dashboard = () => {
         </div>
         
         {/* Filter & Export Bar */}
-        <div className="sticky top-0 z-40 px-3 py-2 bg-background/95 backdrop-blur border-b">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex-1 min-w-[300px]">
+        <div className="sticky top-0 z-10 px-3 py-2 bg-background/95 backdrop-blur border-b">
+          <div className="flex items-center justify-between gap-2 flex-wrap xl:flex-nowrap">
+            <div className="flex-1 min-w-[280px]">
               <AdvancedFilters
                 data={opportunities}
                 filters={filters}
@@ -143,7 +143,7 @@ const Dashboard = () => {
                 onClearFilters={() => setFilters(defaultFilters)}
               />
             </div>
-            <div className="flex gap-2 shrink-0">
+            <div className="flex gap-2 shrink-0 w-full sm:w-auto">
               <ExportButton data={filteredData} filename="tenders" />
               <ReportButton data={filteredData} filters={filters} />
             </div>
@@ -151,13 +151,13 @@ const Dashboard = () => {
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto w-full">
-          <div className="px-3 py-2 space-y-2 w-full">
+        <div className="flex-1 overflow-y-auto w-full min-h-0">
+          <div className="px-2 sm:px-3 py-2 space-y-2 w-full">
             {/* KPI Cards */}
             <KPICards stats={stats} onKPIClick={handleKPIClick} />
 
             {/* Opportunities Table */}
-            <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} maxHeight="max-h-[500px]" />
+            <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} maxHeight="max-h-[38vh] sm:max-h-[42vh] md:max-h-[46vh] lg:max-h-[50vh] xl:max-h-[54vh]" />
 
             {/* Charts Row */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 w-full">
