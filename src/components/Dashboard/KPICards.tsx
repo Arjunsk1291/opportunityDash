@@ -1,10 +1,11 @@
-import { Target, Trophy, XCircle, Clock, ThumbsDown, Zap, Play, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Target, Trophy, XCircle, Clock, ThumbsDown, Zap, Play, CheckCircle, AlertTriangle, FileText } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import aedSymbol from '@/assets/aed-symbol.png';
 
 interface KPICardsProps {
   stats: {
+    totalTenders: number;
     totalActive: number;
     totalPipelineValue: number;
     awardedCount: number;
@@ -21,7 +22,7 @@ interface KPICardsProps {
     ongoingValue: number;
     submissionNearCount: number;
   };
-  onKPIClick?: (kpiType: 'active' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => void;
+  onKPIClick?: (kpiType: 'alltenders' | 'active' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => void;
 }
 
 export function KPICards({ stats, onKPIClick }: KPICardsProps) {
@@ -61,6 +62,14 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
   );
 
   const kpis = [
+    { 
+      label: 'Total Tenders', 
+      displayValue: stats.totalTenders,
+      Icon: FileText, 
+      color: 'text-slate-600 dark:text-slate-400', 
+      bgColor: 'bg-slate-100 dark:bg-slate-900/40', 
+      type: 'alltenders' as const 
+    },
     { 
       label: 'Active Tenders', 
       displayValue: stats.totalActive,
@@ -122,7 +131,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
       label: 'Ongoing', 
       displayValue: stats.ongoingCount,
       Icon: CheckCircle, 
-      color: 'text-cyan-600', 
+      color: 'text-cyan-600 dark:text-cyan-400', 
       bgColor: 'bg-cyan-600/10', 
       type: 'ongoing' as const 
     },
@@ -130,14 +139,14 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
       label: 'Submission Near', 
       displayValue: stats.submissionNearCount,
       Icon: AlertTriangle, 
-      color: 'text-orange-600', 
+      color: 'text-orange-600 dark:text-orange-400', 
       bgColor: 'bg-orange-600/10', 
       type: 'submission' as const 
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-10 gap-3">
       {kpis.map((kpi, index) => (
         <Card 
           key={kpi.label} 
