@@ -383,5 +383,3 @@ function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster,
     </div>
   );
 }
-
-echo "✅ OpportunitiesTable.tsx updated - RESULT column removed, STATUS merged!"
