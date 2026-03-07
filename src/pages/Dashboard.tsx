@@ -124,7 +124,7 @@ const Dashboard = () => {
 
   if (error || opportunities.length === 0) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="w-full px-2 sm:px-3 md:px-4 py-4">
         <Alert variant="destructive" className="w-full">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription className="text-sm md:text-base">
@@ -145,19 +145,19 @@ const Dashboard = () => {
 
   return (
     <div className="w-full min-h-screen bg-background">
-      {/* Main Container */}
-      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 space-y-4 md:space-y-6 max-w-7xl mx-auto">
+      {/* Main Container - Compact Layout */}
+      <div className="px-2 sm:px-3 md:px-4 py-2 md:py-3 space-y-2 md:space-y-3">
         
         {/* Sync Status Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs md:text-sm text-muted-foreground">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs md:text-sm text-muted-foreground bg-card p-2 rounded-lg border">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3 gap-1">
             <div className="line-clamp-2">
-              Last synced: {lastSyncTime?.toLocaleTimeString()} - {opportunities.length} opportunities loaded
+              Last synced: {lastSyncTime?.toLocaleTimeString()} - {opportunities.length} opportunities
             </div>
             {lastAutoRefreshTime && (
               <div className="flex items-center gap-2">
                 <RefreshCw className={`h-3 w-3 flex-shrink-0 ${autoRefreshStatus === 'syncing' ? 'animate-spin' : ''}`} />
-                <span className="line-clamp-1">Auto-synced: {lastAutoRefreshTime.toLocaleTimeString()}</span>
+                <span className="line-clamp-1 text-xs">Auto: {lastAutoRefreshTime.toLocaleTimeString()}</span>
                 <span className={`text-xs font-semibold flex-shrink-0 ${
                   autoRefreshStatus === 'complete' ? 'text-green-600' :
                   autoRefreshStatus === 'error' ? 'text-red-600' :
@@ -175,8 +175,8 @@ const Dashboard = () => {
         </div>
         
         {/* Filter & Export Bar */}
-        <div className="sticky top-14 z-40 -mx-3 sm:-mx-4 md:-mx-6 lg:-mx-8 px-3 sm:px-4 md:px-6 lg:px-8 py-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 max-w-7xl mx-auto">
+        <div className="sticky top-14 z-40 -mx-2 sm:-mx-3 md:-mx-4 px-2 sm:px-3 md:px-4 py-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
             <div className="flex-1 min-w-0">
               <AdvancedFilters
                 data={opportunities}
@@ -198,8 +198,8 @@ const Dashboard = () => {
         {/* Opportunities Table */}
         <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
 
-        {/* Charts Row - Responsive Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+        {/* Charts Row - Compact Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
           <div className="lg:col-span-1">
             <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
           </div>
@@ -216,8 +216,8 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Data Health & Stats Row - Responsive Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+        {/* Data Health & Stats Row - Compact Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
           <div className="md:col-span-1">
             <ApprovalStatsWidget data={filteredData} />
           </div>
