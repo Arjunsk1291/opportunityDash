@@ -113,10 +113,10 @@ const Dashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-96">
+      <div className="flex items-center justify-center h-screen w-full">
         <div className="text-center space-y-4">
           <Loader2 className="w-8 h-8 animate-spin mx-auto text-muted-foreground" />
-          <p className="text-muted-foreground">Loading opportunities from MongoDB...</p>
+          <p className="text-muted-foreground text-sm md:text-base">Loading opportunities from MongoDB...</p>
         </div>
       </div>
     );
@@ -124,15 +124,15 @@ const Dashboard = () => {
 
   if (error || opportunities.length === 0) {
     return (
-      <div className="space-y-4">
-        <Alert variant="destructive">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+        <Alert variant="destructive" className="w-full">
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
+          <AlertDescription className="text-sm md:text-base">
             <strong>No Data Available</strong><br />
             {error || 'No opportunities found in MongoDB.'}
             <br /><br />
             <strong>Next Steps:</strong>
-            <ol className="list-decimal list-inside mt-2 space-y-1">
+            <ol className="list-decimal list-inside mt-2 space-y-1 text-xs md:text-sm">
               <li>Go to Master Panel (/master)</li>
               <li>Click "Sync from Graph Excel"</li>
               <li>Wait for data to load</li>
@@ -144,73 +144,87 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Sync Status Bar */}
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <div className="flex items-center gap-4">
-          <div>
-            Last synced: {lastSyncTime?.toLocaleTimeString()} - {opportunities.length} opportunities loaded
-          </div>
-          {lastAutoRefreshTime && (
-            <div className="flex items-center gap-2">
-              <RefreshCw className={`h-3 w-3 ${autoRefreshStatus === 'syncing' ? 'animate-spin' : ''}`} />
-              Auto-synced: {lastAutoRefreshTime.toLocaleTimeString()}
-              <span className={`text-xs font-semibold ${
-                autoRefreshStatus === 'complete' ? 'text-green-600' :
-                autoRefreshStatus === 'error' ? 'text-red-600' :
-                autoRefreshStatus === 'syncing' ? 'text-blue-600' :
-                'text-muted-foreground'
-              }`}>
-                ({autoRefreshStatus})
-              </span>
+    <div className="w-full min-h-screen bg-background">
+      {/* Main Container */}
+      <div className="px-3 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 space-y-4 md:space-y-6 max-w-7xl mx-auto">
+        
+        {/* Sync Status Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs md:text-sm text-muted-foreground">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 gap-2">
+            <div className="line-clamp-2">
+              Last synced: {lastSyncTime?.toLocaleTimeString()} - {opportunities.length} opportunities loaded
             </div>
-          )}
-        </div>
-        <div className="text-xs">
-          {isAutoRefreshActive ? '✅ Auto-refresh active' : '⏸️ Auto-refresh inactive'}
-        </div>
-      </div>
-      
-      {/* Filter & Export Bar */}
-      <div className="sticky top-14 z-40 -mx-3 sm:-mx-4 lg:-mx-6 px-3 sm:px-4 lg:px-6 py-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex-1">
-            <AdvancedFilters
-              data={opportunities}
-              filters={filters}
-              onFiltersChange={setFilters}
-              onClearFilters={() => setFilters(defaultFilters)}
-            />
+            {lastAutoRefreshTime && (
+              <div className="flex items-center gap-2">
+                <RefreshCw className={`h-3 w-3 flex-shrink-0 ${autoRefreshStatus === 'syncing' ? 'animate-spin' : ''}`} />
+                <span className="line-clamp-1">Auto-synced: {lastAutoRefreshTime.toLocaleTimeString()}</span>
+                <span className={`text-xs font-semibold flex-shrink-0 ${
+                  autoRefreshStatus === 'complete' ? 'text-green-600' :
+                  autoRefreshStatus === 'error' ? 'text-red-600' :
+                  autoRefreshStatus === 'syncing' ? 'text-blue-600' :
+                  'text-muted-foreground'
+                }`}>
+                  ({autoRefreshStatus})
+                </span>
+              </div>
+            )}
           </div>
-          <div className="flex gap-2 shrink-0">
-            <ExportButton data={filteredData} filename="tenders" />
-            <ReportButton data={filteredData} filters={filters} />
+          <div className="text-xs flex-shrink-0">
+            {isAutoRefreshActive ? '✅ Active' : '⏸️ Inactive'}
           </div>
         </div>
-      </div>
+        
+        {/* Filter & Export Bar */}
+        <div className="sticky top-14 z-40 -mx-3 sm:-mx-4 md:-mx-6 lg:-mx-8 px-3 sm:px-4 md:px-6 lg:px-8 py-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 max-w-7xl mx-auto">
+            <div className="flex-1 min-w-0">
+              <AdvancedFilters
+                data={opportunities}
+                filters={filters}
+                onFiltersChange={setFilters}
+                onClearFilters={() => setFilters(defaultFilters)}
+              />
+            </div>
+            <div className="flex gap-2 shrink-0 justify-end">
+              <ExportButton data={filteredData} filename="tenders" />
+              <ReportButton data={filteredData} filters={filters} />
+            </div>
+          </div>
+        </div>
 
-      {/* KPI Cards */}
-      <KPICards stats={stats} onKPIClick={handleKPIClick} />
+        {/* KPI Cards */}
+        <KPICards stats={stats} onKPIClick={handleKPIClick} />
 
-      {/* Opportunities Table */}
-      <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
+        {/* Opportunities Table */}
+        <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
-        <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
-        <ClientLeaderboard data={clientData} onClientClick={(client) => {
-          setFilters((prevFilters) => ({
-            ...prevFilters,
-            clients: [client],
-          }));
-        }} />
-      </div>
+        {/* Charts Row - Responsive Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+          <div className="lg:col-span-1">
+            <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
+          </div>
+          <div className="lg:col-span-1">
+            <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
+          </div>
+          <div className="lg:col-span-1">
+            <ClientLeaderboard data={clientData} onClientClick={(client) => {
+              setFilters((prevFilters) => ({
+                ...prevFilters,
+                clients: [client],
+              }));
+            }} />
+          </div>
+        </div>
 
-      {/* Data Health & Stats Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <ApprovalStatsWidget data={filteredData} />
-        <DataHealthWidget {...dataHealth} />
+        {/* Data Health & Stats Row - Responsive Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+          <div className="md:col-span-1">
+            <ApprovalStatsWidget data={filteredData} />
+          </div>
+          <div className="md:col-span-1 lg:col-span-1">
+            <DataHealthWidget {...dataHealth} />
+          </div>
+        </div>
       </div>
 
       {/* Opportunity Detail Popup Dialog */}
