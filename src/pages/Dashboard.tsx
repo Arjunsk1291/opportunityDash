@@ -41,14 +41,22 @@ const Dashboard = () => {
   }, [startAutoRefresh, stopAutoRefresh]);
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
-  const stats = useMemo(() => calculateSummaryStats(filteredData), [filteredData]);
+  const stats = useMemo(() => {
+    const baseStats = calculateSummaryStats(filteredData);
+    return {
+      ...baseStats,
+      totalTenders: filteredData.length,
+    };
+  }, [filteredData]);
   const funnelData = useMemo(() => calculateFunnelData(filteredData), [filteredData]);
   const clientData = useMemo(() => getClientData(filteredData), [filteredData]);
   const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
 
-  const handleKPIClick = (kpiType: 'active' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => {
+  const handleKPIClick = (kpiType: 'alltenders' | 'active' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => {
     setFilters((prevFilters) => {
       switch (kpiType) {
+        case 'alltenders':
+          return defaultFilters;
         case 'active':
           return {
             ...prevFilters,
