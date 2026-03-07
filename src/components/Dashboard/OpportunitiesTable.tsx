@@ -18,11 +18,12 @@ interface OpportunitiesTableProps {
   data: Opportunity[];
   onSelectOpportunity?: (opp: Opportunity) => void;
   scrollContainerClassName?: string;
+  maxHeight?: string;
 }
 
 const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
 
-export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName }: OpportunitiesTableProps) {
+export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-96' }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
@@ -47,7 +48,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
     return tender.tenderSubmittedDate || tender.tenderPlannedSubmissionDate || '';
   };
 
-  // Merged status: prioritize tenderResult over avenirStatus
   const getMergedStatus = (tender: Opportunity) => {
     if (tender.tenderResult) return tender.tenderResult;
     return tender.avenirStatus || '';
@@ -152,7 +152,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   };
 
   return (
-    <Card className="flex-1">
+    <Card className="flex-1 flex flex-col">
       <CardHeader className="pb-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <CardTitle className="text-lg">Tenders</CardTitle>
@@ -194,8 +194,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0">
-        <div className={scrollContainerClassName || 'overflow-x-auto'}>
+      <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
+        <div className={`${scrollContainerClassName || 'overflow-x-auto'} ${maxHeight} overflow-y-auto`}>
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
@@ -302,7 +302,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
             </TableBody>
           </Table>
         </div>
-        <div className="p-3 text-xs text-muted-foreground border-t">
+        <div className="p-3 text-xs text-muted-foreground border-t bg-background">
           Showing by RFP Received ({rfpSortOrder.toUpperCase()}): {filteredData.length} of {data.length} tenders (scroll to view all)
         </div>
       </CardContent>
