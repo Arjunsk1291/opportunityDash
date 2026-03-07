@@ -364,5 +364,3 @@ function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster,
     </div>
   );
 }
-
-echo "✅ OpportunitiesTable.tsx - Final optimized version!"
