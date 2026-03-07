@@ -133,9 +133,9 @@ const Dashboard = () => {
         </div>
         
         {/* Filter & Export Bar */}
-        <div className="sticky top-0 z-40 px-3 py-2 bg-background/95 backdrop-blur border-b">
-          <div className="flex items-center justify-between gap-2 flex-wrap xl:flex-nowrap">
-            <div className="flex-1 min-w-[280px]">
+        <div className="sticky top-14 z-40 px-3 py-2 bg-background/95 backdrop-blur border-b">
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2">
+            <div className="flex-1 min-w-0">
               <AdvancedFilters
                 data={opportunities}
                 filters={filters}
@@ -143,7 +143,7 @@ const Dashboard = () => {
                 onClearFilters={() => setFilters(defaultFilters)}
               />
             </div>
-            <div className="flex gap-2 shrink-0 w-full sm:w-auto">
+            <div className="flex gap-2 shrink-0 w-full sm:w-auto sm:self-end xl:self-auto">
               <ExportButton data={filteredData} filename="tenders" />
               <ReportButton data={filteredData} filters={filters} />
             </div>
