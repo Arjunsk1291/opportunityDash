@@ -23,7 +23,7 @@ interface OpportunitiesTableProps {
 
 const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
 
-export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-[52vh]' }: OpportunitiesTableProps) {
+export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-96' }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
@@ -60,44 +60,28 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       : '';
 
     return [
-      tender.opportunityRefNo,
-      tender.tenderName,
-      tender.opportunityClassification,
-      tender.clientName,
-      tender.groupClassification,
-      getRfpReceivedDisplay(tender),
-      tender.internalLead,
-      tender.opportunityValue,
-      tender.avenirStatus,
-      getSubmissionDisplay(tender),
-      tender.remarksReason,
-      tender.tenderResult,
-      approvalSearchValue,
-      tender.comments,
-      rowSnapshot,
+      tender.opportunityRefNo, tender.tenderName, tender.opportunityClassification, tender.clientName,
+      tender.groupClassification, getRfpReceivedDisplay(tender), tender.internalLead, tender.opportunityValue,
+      tender.avenirStatus, getSubmissionDisplay(tender), tender.remarksReason, tender.tenderResult,
+      approvalSearchValue, tender.comments, rowSnapshot,
     ].map((value) => String(value ?? '').toLowerCase()).join(' ');
   };
 
   const getRfpSortTime = (tender: Opportunity) => {
     const directDate = tender.dateTenderReceived ? new Date(tender.dateTenderReceived) : null;
     if (directDate && !Number.isNaN(directDate.getTime())) return directDate.getTime();
-
     const display = getRfpReceivedDisplay(tender);
     const parsedDisplay = display ? new Date(display) : null;
     if (parsedDisplay && !Number.isNaN(parsedDisplay.getTime())) return parsedDisplay.getTime();
-
     return 0;
   };
 
   const filteredData = data
     .filter((tender) => {
       const searchLower = search.toLowerCase();
-      const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
       const allSearchable = buildSearchableText(tender);
-
-      const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);
+      const matchesSearch = !search || allSearchable.includes(searchLower);
       const matchesStatus = statusFilter === 'ALL' || tender.avenirStatus?.toUpperCase() === statusFilter;
-
       return matchesSearch && matchesStatus;
     })
     .sort((a, b) => {
@@ -152,22 +136,22 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   };
 
   return (
-    <Card className="flex-1 flex flex-col w-full overflow-hidden">
+    <Card className="flex-1 flex flex-col w-full">
       <CardHeader className="pb-2 px-3 sm:px-4">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
-          <CardTitle className="text-base sm:text-lg md:text-xl">Tenders</CardTitle>
-          <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-1.5 sm:gap-2">
-            <div className="relative w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <CardTitle className="text-lg">Tenders</CardTitle>
+          <div className="flex flex-col xs:flex-row flex-wrap items-start xs:items-center gap-2">
+            <div className="relative w-full xs:w-48">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search..."
-                className="pl-8 h-9 w-full sm:w-44 lg:w-48"
+                className="pl-8 w-full text-sm"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-9 w-full sm:w-36 lg:w-40">
+              <SelectTrigger className="w-full xs:w-40 text-sm">
                 <SelectValue placeholder="Filter..." />
               </SelectTrigger>
               <SelectContent>
@@ -183,7 +167,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                 <Button
                   variant="outline"
                   size="icon"
-                  className={`h-9 w-9 ${isRefreshing ? 'animate-spin' : ''}`}
+                  className={`w-10 h-10 flex-shrink-0 ${isRefreshing ? 'animate-spin' : ''}`}
                   onClick={handleRefresh}
                 >
                   <RefreshCw className="h-4 w-4" />
@@ -194,8 +178,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0 flex-1 flex flex-col overflow-hidden min-h-0">
-        <div className={`${scrollContainerClassName || 'overflow-x-auto'} ${maxHeight} min-h-[340px] sm:min-h-[380px] overflow-y-auto ${styles.scrollContainer}`}>
+      <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
+        <div className={`${scrollContainerClassName || 'overflow-x-auto'} ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
@@ -221,22 +205,22 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                 return (
                   <TableRow
                     key={tender.id}
-                    className="cursor-pointer hover:bg-muted/50 text-xs"
+                    className="cursor-pointer hover:bg-muted/50 text-xs sm:text-sm"
                     onClick={() => onSelectOpportunity?.(tender)}
                   >
                     <TableCell className="font-mono font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap">{tender.opportunityRefNo || '—'}</TableCell>
-                    <TableCell className="hidden md:table-cell max-w-[200px] truncate">{tender.tenderName || '—'}</TableCell>
+                    <TableCell className="hidden md:table-cell max-w-xs truncate">{tender.tenderName || '—'}</TableCell>
                     <TableCell className="hidden lg:table-cell">
                       <Badge className={`text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="hidden xl:table-cell max-w-[120px] truncate font-semibold">{tender.clientName || '—'}</TableCell>
+                    <TableCell className="hidden xl:table-cell max-w-xs truncate font-semibold">{tender.clientName || '—'}</TableCell>
                     <TableCell className="whitespace-nowrap">
                       <Badge className={`text-xs font-mono ${getGroupBadge(tender.groupClassification)}`}>{tender.groupClassification || '—'}</Badge>
                     </TableCell>
                     <TableCell className="hidden sm:table-cell font-bold whitespace-nowrap text-xs">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
                     <TableCell className="hidden md:table-cell font-bold whitespace-nowrap text-xs">{getSubmissionDisplay(tender) || '—'}</TableCell>
                     <TableCell className="hidden lg:table-cell whitespace-nowrap text-xs">{tender.internalLead || 'Unassigned'}</TableCell>
-                    <TableCell className="text-right font-mono whitespace-nowrap">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
+                    <TableCell className="text-right font-mono whitespace-nowrap text-xs">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
                     <TableCell className="whitespace-nowrap">
                       <Badge className={getStatusBadge(getMergedStatus(tender))}>{getMergedStatus(tender) || '—'}</Badge>
                     </TableCell>
@@ -380,3 +364,5 @@ function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster,
     </div>
   );
 }
+
+echo "✅ OpportunitiesTable.tsx - Final optimized version!"
