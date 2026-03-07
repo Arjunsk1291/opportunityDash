@@ -58,45 +58,21 @@ const Dashboard = () => {
         case 'alltenders':
           return defaultFilters;
         case 'active':
-          return {
-            ...prevFilters,
-            statuses: ['WORKING', 'SUBMITTED', 'AWARDED'],
-          };
+          return { ...prevFilters, statuses: ['WORKING', 'SUBMITTED', 'AWARDED'] };
         case 'awarded':
-          return {
-            ...prevFilters,
-            statuses: ['AWARDED'],
-          };
+          return { ...prevFilters, statuses: ['AWARDED'] };
         case 'lost':
-          return {
-            ...prevFilters,
-            statuses: ['LOST'],
-          };
+          return { ...prevFilters, statuses: ['LOST'] };
         case 'regretted':
-          return {
-            ...prevFilters,
-            statuses: ['REGRETTED'],
-          };
+          return { ...prevFilters, statuses: ['REGRETTED'] };
         case 'working':
-          return {
-            ...prevFilters,
-            statuses: ['WORKING'],
-          };
+          return { ...prevFilters, statuses: ['WORKING'] };
         case 'tostart':
-          return {
-            ...prevFilters,
-            statuses: ['TO START'],
-          };
+          return { ...prevFilters, statuses: ['TO START'] };
         case 'ongoing':
-          return {
-            ...prevFilters,
-            statuses: ['ONGOING'],
-          };
+          return { ...prevFilters, statuses: ['ONGOING'] };
         case 'submission':
-          return {
-            ...prevFilters,
-            showAtRisk: true,
-          };
+          return { ...prevFilters, showAtRisk: true };
         default:
           return prevFilters;
       }
@@ -104,19 +80,15 @@ const Dashboard = () => {
   };
 
   const handleFunnelClick = (stage: string) => {
-    console.log('🔗 Funnel clicked:', stage);
-    setFilters((prevFilters) => ({
-      ...prevFilters,
-      statuses: [stage],
-    }));
+    setFilters((prevFilters) => ({ ...prevFilters, statuses: [stage] }));
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen w-full">
+      <div className="flex items-center justify-center h-screen">
         <div className="text-center space-y-4">
           <Loader2 className="w-8 h-8 animate-spin mx-auto text-muted-foreground" />
-          <p className="text-muted-foreground text-sm md:text-base">Loading opportunities from MongoDB...</p>
+          <p className="text-muted-foreground">Loading opportunities...</p>
         </div>
       </div>
     );
@@ -124,19 +96,12 @@ const Dashboard = () => {
 
   if (error || opportunities.length === 0) {
     return (
-      <div className="w-full px-3 sm:px-4 md:px-6 py-4">
-        <Alert variant="destructive" className="w-full">
+      <div className="p-4 w-full">
+        <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription className="text-sm md:text-base">
+          <AlertDescription>
             <strong>No Data Available</strong><br />
             {error || 'No opportunities found in MongoDB.'}
-            <br /><br />
-            <strong>Next Steps:</strong>
-            <ol className="list-decimal list-inside mt-2 space-y-1 text-xs md:text-sm">
-              <li>Go to Master Panel (/master)</li>
-              <li>Click "Sync from Graph Excel"</li>
-              <li>Wait for data to load</li>
-            </ol>
           </AlertDescription>
         </Alert>
       </div>
@@ -144,40 +109,33 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="w-full min-h-screen bg-background">
-      {/* Main Container */}
-      <div className="px-3 sm:px-4 md:px-6 py-3 md:py-4 space-y-3 md:space-y-4">
-        
+    <div className="w-full h-full flex flex-col bg-background">
+      {/* Main Content - Full Width */}
+      <div className="flex-1 flex flex-col w-full overflow-hidden">
         {/* Sync Status Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs md:text-sm text-muted-foreground bg-card p-2 md:p-3 rounded-lg border">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3 gap-1">
-            <div className="line-clamp-2">
-              Last synced: {lastSyncTime?.toLocaleTimeString()} - {opportunities.length} opportunities
+        <div className="px-3 py-2 text-xs text-muted-foreground border-b bg-card flex items-center gap-3 flex-wrap">
+          <div>Last synced: {lastSyncTime?.toLocaleTimeString()} - {opportunities.length} opportunities</div>
+          {lastAutoRefreshTime && (
+            <div className="flex items-center gap-2">
+              <RefreshCw className={`h-3 w-3 ${autoRefreshStatus === 'syncing' ? 'animate-spin' : ''}`} />
+              Auto: {lastAutoRefreshTime.toLocaleTimeString()}
+              <span className={`font-semibold ${
+                autoRefreshStatus === 'complete' ? 'text-green-600' :
+                autoRefreshStatus === 'error' ? 'text-red-600' :
+                autoRefreshStatus === 'syncing' ? 'text-blue-600' :
+                'text-muted-foreground'
+              }`}>({autoRefreshStatus})</span>
             </div>
-            {lastAutoRefreshTime && (
-              <div className="flex items-center gap-2">
-                <RefreshCw className={`h-3 w-3 flex-shrink-0 ${autoRefreshStatus === 'syncing' ? 'animate-spin' : ''}`} />
-                <span className="line-clamp-1 text-xs">Auto: {lastAutoRefreshTime.toLocaleTimeString()}</span>
-                <span className={`text-xs font-semibold flex-shrink-0 ${
-                  autoRefreshStatus === 'complete' ? 'text-green-600' :
-                  autoRefreshStatus === 'error' ? 'text-red-600' :
-                  autoRefreshStatus === 'syncing' ? 'text-blue-600' :
-                  'text-muted-foreground'
-                }`}>
-                  ({autoRefreshStatus})
-                </span>
-              </div>
-            )}
-          </div>
-          <div className="text-xs flex-shrink-0">
+          )}
+          <div className="ml-auto text-xs">
             {isAutoRefreshActive ? '✅ Active' : '⏸️ Inactive'}
           </div>
         </div>
         
         {/* Filter & Export Bar */}
-        <div className="sticky top-14 z-40 -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6 py-2 md:py-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-            <div className="flex-1 min-w-0">
+        <div className="sticky top-0 z-40 px-3 py-2 bg-background/95 backdrop-blur border-b">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex-1 min-w-[300px]">
               <AdvancedFilters
                 data={opportunities}
                 filters={filters}
@@ -185,49 +143,41 @@ const Dashboard = () => {
                 onClearFilters={() => setFilters(defaultFilters)}
               />
             </div>
-            <div className="flex gap-2 shrink-0 justify-end">
+            <div className="flex gap-2 shrink-0">
               <ExportButton data={filteredData} filename="tenders" />
               <ReportButton data={filteredData} filters={filters} />
             </div>
           </div>
         </div>
 
-        {/* KPI Cards */}
-        <KPICards stats={stats} onKPIClick={handleKPIClick} />
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto w-full">
+          <div className="px-3 py-2 space-y-2 w-full">
+            {/* KPI Cards */}
+            <KPICards stats={stats} onKPIClick={handleKPIClick} />
 
-        {/* Opportunities Table */}
-        <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
+            {/* Opportunities Table */}
+            <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} maxHeight="max-h-[500px]" />
 
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-          <div className="lg:col-span-1">
-            <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
-          </div>
-          <div className="lg:col-span-1">
-            <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
-          </div>
-          <div className="lg:col-span-1">
-            <ClientLeaderboard data={clientData} onClientClick={(client) => {
-              setFilters((prevFilters) => ({
-                ...prevFilters,
-                clients: [client],
-              }));
-            }} />
-          </div>
-        </div>
+            {/* Charts Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 w-full">
+              <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
+              <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
+              <ClientLeaderboard data={clientData} onClientClick={(client) => {
+                setFilters((prevFilters) => ({ ...prevFilters, clients: [client] }));
+              }} />
+            </div>
 
-        {/* Data Health & Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-          <div className="md:col-span-1">
-            <ApprovalStatsWidget data={filteredData} />
-          </div>
-          <div className="md:col-span-1 lg:col-span-1">
-            <DataHealthWidget {...dataHealth} />
+            {/* Data Health & Stats Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 w-full">
+              <ApprovalStatsWidget data={filteredData} />
+              <DataHealthWidget {...dataHealth} />
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Opportunity Detail Popup Dialog */}
+      {/* Dialog */}
       <OpportunityDetailDialog
         open={!!selectedOpp}
         opportunity={selectedOpp}
