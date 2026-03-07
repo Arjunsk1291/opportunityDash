@@ -23,7 +23,7 @@ interface OpportunitiesTableProps {
 
 const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
 
-export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-[40vh] sm:max-h-[44vh] lg:max-h-[48vh]' }: OpportunitiesTableProps) {
+export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-[52vh]' }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
@@ -152,8 +152,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   };
 
   return (
-    <Card className="flex-1 flex flex-col w-full overflow-hidden min-h-0">
-      <CardHeader className="pb-1.5 px-3 sm:px-4">
+    <Card className="flex-1 flex flex-col w-full overflow-hidden">
+      <CardHeader className="pb-2 px-3 sm:px-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
           <CardTitle className="text-base sm:text-lg md:text-xl">Tenders</CardTitle>
           <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-1.5 sm:gap-2">
@@ -195,7 +195,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
         </div>
       </CardHeader>
       <CardContent className="p-0 flex-1 flex flex-col overflow-hidden min-h-0">
-        <div className={`${scrollContainerClassName || 'overflow-x-auto'} ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
+        <div className={`${scrollContainerClassName || 'overflow-x-auto'} ${maxHeight} min-h-[340px] sm:min-h-[380px] overflow-y-auto ${styles.scrollContainer}`}>
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
