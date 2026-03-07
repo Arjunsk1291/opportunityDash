@@ -47,6 +47,12 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
     return tender.tenderSubmittedDate || tender.tenderPlannedSubmissionDate || '';
   };
 
+  // Merged status: prioritize tenderResult over avenirStatus
+  const getMergedStatus = (tender: Opportunity) => {
+    if (tender.tenderResult) return tender.tenderResult;
+    return tender.avenirStatus || '';
+  };
+
   const buildSearchableText = (tender: Opportunity) => {
     const approvalSearchValue = getApprovalStatus(tender.opportunityRefNo).toLowerCase();
     const rowSnapshot = tender.rawGraphData?.rowSnapshot && typeof tender.rawGraphData.rowSnapshot === 'object'
@@ -71,7 +77,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       rowSnapshot,
     ].map((value) => String(value ?? '').toLowerCase()).join(' ');
   };
-
 
   const getRfpSortTime = (tender: Opportunity) => {
     const directDate = tender.dateTenderReceived ? new Date(tender.dateTenderReceived) : null;
@@ -112,24 +117,12 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       'TO START': 'bg-info/20 text-info',
       'SUBMITTED': 'bg-pending/20 text-pending',
       'ONGOING': 'bg-warning/20 text-warning',
+      'LOST': 'bg-destructive/20 text-destructive',
       'HOLD / CLOSED': 'bg-muted text-muted-foreground',
       'REGRETTED': 'bg-muted text-muted-foreground',
     };
     return variants[upperStatus] || 'bg-muted text-muted-foreground';
   };
-
-  const getTenderResultBadge = (result?: string) => {
-    const upperResult = result?.toUpperCase() || '';
-    const variants: Record<string, string> = {
-      ONGOING: 'bg-warning/20 text-warning',
-      LOST: 'bg-destructive/20 text-destructive',
-      AWARDED: 'bg-success/20 text-success',
-      UNKNOWN: 'bg-muted/50 text-muted-foreground',
-    };
-    return variants[upperResult] || 'bg-muted/50 text-muted-foreground';
-  };
-
-
 
   const getTenderTypeBadge = (type?: string) => {
     const key = String(type || '').toUpperCase();
@@ -166,58 +159,59 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 w-full sm:w-48 h-9" />
+              <Input
+                placeholder="Search..."
+                className="pl-8"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder="Filter..." />
+              </SelectTrigger>
               <SelectContent>
-                {AVENIR_STATUS_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                {AVENIR_STATUS_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="outline"
-                  size="sm"
-                  onClick={() => setRfpSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
-                  className="h-9 px-3 gap-2"
+                  size="icon"
+                  className={isRefreshing ? 'animate-spin' : ''}
+                  onClick={handleRefresh}
                 >
-                  <ArrowUpDown className="h-4 w-4" />
-                  RFP {rfpSortOrder === 'desc' ? 'Desc' : 'Asc'}
+                  <RefreshCw className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Toggle RFP Received sort order</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" onClick={handleRefresh} className="h-9 px-3">
-                  <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Refresh approval status</TooltipContent>
+              <TooltipContent>Refresh approvals</TooltipContent>
             </Tooltip>
           </div>
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        <div className={scrollContainerClassName ?? "relative max-h-[400px] overflow-y-auto overflow-x-auto scrollbar-thin"}>
-          <Table className="border-separate border-spacing-0">
-            <TableHeader className="sticky top-0 z-30 bg-background">
+        <div className={scrollContainerClassName || 'overflow-x-auto'}>
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
-                <TableHead className="sticky top-0 z-40 bg-background w-24">Ref No.</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background min-w-[200px]">Tender Name</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background">Tender Type</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background">Client</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background">Group</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background font-bold">RFP Received</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background font-bold">Submission</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background">Lead</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background text-right">Value</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background">STATUS</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background max-w-[150px]">Remarks</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background">RESULT</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background w-[220px]">Approval</TableHead>
-                <TableHead className="sticky top-0 z-40 bg-background w-16">Info</TableHead>
+                <TableHead className="font-bold">Ref No.</TableHead>
+                <TableHead className="font-bold">Tender Name</TableHead>
+                <TableHead className="font-bold">Tender Type</TableHead>
+                <TableHead className="font-bold">Client</TableHead>
+                <TableHead className="font-bold">Group</TableHead>
+                <TableHead className="font-bold">RFP Received</TableHead>
+                <TableHead className="font-bold">Submission</TableHead>
+                <TableHead className="font-bold">Lead</TableHead>
+                <TableHead className="text-right font-bold">Value</TableHead>
+                <TableHead className="font-bold">Status</TableHead>
+                <TableHead className="font-bold">Remarks</TableHead>
+                <TableHead className="font-bold">Approval</TableHead>
+                <TableHead className="font-bold">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -248,7 +242,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     <TableCell>{tender.internalLead || 'Unassigned'}</TableCell>
                     <TableCell className="text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
                     <TableCell>
-                      <Badge className={getStatusBadge(tender.avenirStatus)}>{tender.avenirStatus || '—'}</Badge>
+                      <Badge className={getStatusBadge(getMergedStatus(tender))}>{getMergedStatus(tender) || '—'}</Badge>
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       {tender.remarksReason ? (
@@ -263,11 +257,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                             <p className="text-sm">{tender.remarksReason}</p>
                           </PopoverContent>
                         </Popover>
-                      ) : '—'}
-                    </TableCell>
-                    <TableCell>
-                      {tender.tenderResult ? (
-                        <Badge className={getTenderResultBadge(tender.tenderResult)}>{tender.tenderResult}</Badge>
                       ) : '—'}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
@@ -394,3 +383,5 @@ function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster,
     </div>
   );
 }
+
+echo "✅ OpportunitiesTable.tsx updated - RESULT column removed, STATUS merged!"
