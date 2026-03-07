@@ -33,7 +33,6 @@ const Dashboard = () => {
   useEffect(() => {
     console.log('📊 Dashboard mounted - starting auto-refresh');
     startAutoRefresh();
-
     return () => {
       console.log('📊 Dashboard unmounted - stopping auto-refresh');
       stopAutoRefresh();
@@ -43,10 +42,7 @@ const Dashboard = () => {
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
   const stats = useMemo(() => {
     const baseStats = calculateSummaryStats(filteredData);
-    return {
-      ...baseStats,
-      totalTenders: filteredData.length,
-    };
+    return { ...baseStats, totalTenders: filteredData.length };
   }, [filteredData]);
   const funnelData = useMemo(() => calculateFunnelData(filteredData), [filteredData]);
   const clientData = useMemo(() => getClientData(filteredData), [filteredData]);
@@ -55,26 +51,16 @@ const Dashboard = () => {
   const handleKPIClick = (kpiType: 'alltenders' | 'active' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => {
     setFilters((prevFilters) => {
       switch (kpiType) {
-        case 'alltenders':
-          return defaultFilters;
-        case 'active':
-          return { ...prevFilters, statuses: ['WORKING', 'SUBMITTED', 'AWARDED'] };
-        case 'awarded':
-          return { ...prevFilters, statuses: ['AWARDED'] };
-        case 'lost':
-          return { ...prevFilters, statuses: ['LOST'] };
-        case 'regretted':
-          return { ...prevFilters, statuses: ['REGRETTED'] };
-        case 'working':
-          return { ...prevFilters, statuses: ['WORKING'] };
-        case 'tostart':
-          return { ...prevFilters, statuses: ['TO START'] };
-        case 'ongoing':
-          return { ...prevFilters, statuses: ['ONGOING'] };
-        case 'submission':
-          return { ...prevFilters, showAtRisk: true };
-        default:
-          return prevFilters;
+        case 'alltenders': return defaultFilters;
+        case 'active': return { ...prevFilters, statuses: ['WORKING', 'SUBMITTED', 'AWARDED'] };
+        case 'awarded': return { ...prevFilters, statuses: ['AWARDED'] };
+        case 'lost': return { ...prevFilters, statuses: ['LOST'] };
+        case 'regretted': return { ...prevFilters, statuses: ['REGRETTED'] };
+        case 'working': return { ...prevFilters, statuses: ['WORKING'] };
+        case 'tostart': return { ...prevFilters, statuses: ['TO START'] };
+        case 'ongoing': return { ...prevFilters, statuses: ['ONGOING'] };
+        case 'submission': return { ...prevFilters, showAtRisk: true };
+        default: return prevFilters;
       }
     });
   };
@@ -110,9 +96,10 @@ const Dashboard = () => {
 
   return (
     <div className="w-full h-full min-h-0 flex flex-col bg-background">
-      {/* Main Content - Full Width */}
+      {/* Main Container */}
       <div className="flex-1 flex flex-col w-full overflow-hidden">
-        {/* Sync Status Bar */}
+        
+        {/* Sync Status Bar - Compact */}
         <div className="px-3 py-1.5 text-xs text-muted-foreground border-b bg-card flex items-center gap-x-3 gap-y-1 flex-wrap">
           <div>Last synced: {lastSyncTime?.toLocaleTimeString()} - {opportunities.length} opportunities</div>
           {lastAutoRefreshTime && (
@@ -127,12 +114,10 @@ const Dashboard = () => {
               }`}>({autoRefreshStatus})</span>
             </div>
           )}
-          <div className="ml-auto text-xs">
-            {isAutoRefreshActive ? '✅ Active' : '⏸️ Inactive'}
-          </div>
+          <div className="ml-auto text-xs">{isAutoRefreshActive ? '✅ Active' : '⏸️ Inactive'}</div>
         </div>
         
-        {/* Filter & Export Bar */}
+        {/* Filter & Export Bar - Sticky with offset */}
         <div className="sticky top-14 z-40 px-3 py-2 bg-background/95 backdrop-blur border-b">
           <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2">
             <div className="flex-1 min-w-0">
@@ -150,14 +135,19 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Scrollable Content */}
+        {/* Scrollable Content Area */}
         <div className="flex-1 overflow-y-auto w-full">
           <div className="px-2 sm:px-3 py-2 space-y-2 w-full">
+            
             {/* KPI Cards */}
             <KPICards stats={stats} onKPIClick={handleKPIClick} />
 
-            {/* Opportunities Table */}
-            <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} maxHeight="max-h-[54vh] sm:max-h-[58vh] lg:max-h-[62vh]" />
+            {/* Opportunities Table - Responsive Height */}
+            <OpportunitiesTable 
+              data={filteredData} 
+              onSelectOpportunity={setSelectedOpp} 
+              maxHeight="max-h-[54vh] sm:max-h-[58vh] lg:max-h-[62vh]" 
+            />
 
             {/* Charts Row */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 w-full">
@@ -177,7 +167,7 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Dialog */}
+      {/* Opportunity Detail Dialog */}
       <OpportunityDetailDialog
         open={!!selectedOpp}
         opportunity={selectedOpp}
