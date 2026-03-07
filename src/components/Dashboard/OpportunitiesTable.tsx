@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
+import styles from './OpportunitiesTable.module.css';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -195,7 +196,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
         </div>
       </CardHeader>
       <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
-        <div className={`${scrollContainerClassName || 'overflow-x-auto'} ${maxHeight} overflow-y-auto`}>
+        <div className={`${scrollContainerClassName || 'overflow-x-auto'} ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
