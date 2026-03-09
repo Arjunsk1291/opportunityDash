@@ -170,21 +170,21 @@ export function AdvancedFilters({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[250px]">
+    <div className="space-y-3 sm:space-y-4 md:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 md:gap-4">
+        <div className="relative w-full sm:flex-1 sm:min-w-[250px] min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search opportunities, clients, tenders..."
             value={filters.search}
             onChange={(e) => updateFilter("search", e.target.value)}
-            className="pl-10"
+            className="pl-10 text-xs sm:text-sm"
           />
         </div>
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto justify-between sm:justify-center gap-2">
               Status
               {filters.statuses.length > 0 && (
                 <Badge variant="secondary" className="ml-1 px-1.5">
@@ -214,7 +214,7 @@ export function AdvancedFilters({
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto justify-between sm:justify-center gap-2">
               Verticals
               {filters.groups.length > 0 && (
                 <Badge variant="secondary" className="ml-1 px-1.5">
@@ -244,7 +244,7 @@ export function AdvancedFilters({
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto justify-between sm:justify-center gap-2">
               Lead
               {filters.leads.length > 0 && (
                 <Badge variant="secondary" className="ml-1 px-1.5">
@@ -274,7 +274,7 @@ export function AdvancedFilters({
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto justify-between sm:justify-center gap-2">
               Client
               {filters.clients.length > 0 && (
                 <Badge variant="secondary" className="ml-1 px-1.5">
@@ -304,7 +304,7 @@ export function AdvancedFilters({
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto justify-between sm:justify-center gap-2">
               <Calendar className="h-3 w-3" />
               {filters.datePreset === "custom" && filters.dateRange.from ? (
                 <span>
@@ -385,7 +385,7 @@ export function AdvancedFilters({
           variant={isExpanded ? "secondary" : "outline"}
           size="sm"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="gap-2"
+          className="w-full sm:w-auto justify-between sm:justify-center gap-2"
         >
           <Filter className="h-3 w-3" />
           More Filters
@@ -397,7 +397,7 @@ export function AdvancedFilters({
         </Button>
 
         {activeFilterCount > 0 && (
-          <Button variant="ghost" size="sm" onClick={onClearFilters} className="gap-1">
+          <Button variant="ghost" size="sm" onClick={onClearFilters} className="w-full sm:w-auto justify-center gap-1">
             <X className="h-3 w-3" />
             Clear All
           </Button>
@@ -405,7 +405,7 @@ export function AdvancedFilters({
       </div>
 
       {isExpanded && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 p-4 bg-muted/30 rounded-lg border">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 md:gap-4 p-2 sm:p-3 bg-muted/30 rounded-lg border">
           <div className="space-y-2">
             <Label className="text-xs font-medium">Client Type</Label>
             <Select
@@ -524,7 +524,7 @@ export function AdvancedFilters({
       )}
 
       {activeFilterCount > 0 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 sm:gap-3 min-w-0">
           {filters.search && (
             <Badge variant="secondary" className="gap-1 pl-2">
               Search: "{filters.search}"

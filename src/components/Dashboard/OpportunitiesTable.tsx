@@ -153,22 +153,22 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   };
 
   return (
-    <Card className="flex-1 flex flex-col">
+    <Card className="flex-1 flex flex-col min-w-0">
       <CardHeader className="pb-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <CardTitle className="text-lg">Tenders</CardTitle>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <div className="relative min-w-0 w-full sm:w-auto">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search..."
-                className="pl-8"
+                className="pl-8 text-xs sm:text-sm"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-32">
+              <SelectTrigger className="w-full sm:w-32 text-xs sm:text-sm">
                 <SelectValue placeholder="Filter..." />
               </SelectTrigger>
               <SelectContent>
@@ -195,24 +195,24 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
-        <div className={`${scrollContainerClassName || 'overflow-x-auto'} ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
-          <Table>
+      <CardContent className="p-0 flex-1 flex flex-col overflow-hidden min-w-0">
+        <div className={`${scrollContainerClassName || ''} overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
+          <Table className="min-w-[900px] lg:min-w-0 text-xs sm:text-sm">
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
-                <TableHead className="font-bold">Ref No.</TableHead>
-                <TableHead className="font-bold">Tender Name</TableHead>
-                <TableHead className="font-bold">Tender Type</TableHead>
-                <TableHead className="font-bold">Client</TableHead>
-                <TableHead className="font-bold">Group</TableHead>
-                <TableHead className="font-bold">RFP Received</TableHead>
-                <TableHead className="font-bold">Submission</TableHead>
-                <TableHead className="font-bold">Lead</TableHead>
-                <TableHead className="text-right font-bold">Value</TableHead>
-                <TableHead className="font-bold">Status</TableHead>
-                <TableHead className="font-bold">Remarks</TableHead>
-                <TableHead className="font-bold">Approval</TableHead>
-                <TableHead className="font-bold">Actions</TableHead>
+                <TableHead className="px-2 sm:px-3 font-bold">Ref No.</TableHead>
+                <TableHead className="px-2 sm:px-3 font-bold">Tender Name</TableHead>
+                <TableHead className="hidden md:table-cell px-2 sm:px-3 font-bold">Tender Type</TableHead>
+                <TableHead className="px-2 sm:px-3 font-bold">Client</TableHead>
+                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">Group</TableHead>
+                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">RFP Received</TableHead>
+                <TableHead className="hidden xl:table-cell px-2 sm:px-3 font-bold">Submission</TableHead>
+                <TableHead className="hidden xl:table-cell px-2 sm:px-3 font-bold">Lead</TableHead>
+                <TableHead className="px-2 sm:px-3 text-right font-bold">Value</TableHead>
+                <TableHead className="px-2 sm:px-3 font-bold">Status</TableHead>
+                <TableHead className="hidden md:table-cell px-2 sm:px-3 font-bold">Remarks</TableHead>
+                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">Approval</TableHead>
+                <TableHead className="hidden sm:table-cell px-2 sm:px-3 font-bold">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -225,27 +225,27 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => onSelectOpportunity?.(tender)}
                   >
-                    <TableCell className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">{tender.opportunityRefNo || '—'}</TableCell>
-                    <TableCell className="max-w-[250px]">
+                    <TableCell className="px-2 sm:px-3 font-mono text-xs sm:text-sm font-bold text-blue-600 dark:text-blue-400">{tender.opportunityRefNo || '—'}</TableCell>
+                    <TableCell className="px-2 sm:px-3 max-w-[180px] sm:max-w-[250px] min-w-0">
                       <div className="truncate" title={tender.tenderName || ''}>
                         {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden md:table-cell px-2 sm:px-3">
                       <Badge className={`text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="max-w-[120px] truncate font-semibold text-foreground">{tender.clientName || '—'}</TableCell>
-                    <TableCell>
+                    <TableCell className="px-2 sm:px-3 max-w-[100px] sm:max-w-[140px] truncate font-semibold text-foreground">{tender.clientName || '—'}</TableCell>
+                    <TableCell className="hidden lg:table-cell px-2 sm:px-3">
                       <Badge className={`text-xs font-mono ${getGroupBadge(tender.groupClassification)}`}>{tender.groupClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="font-bold text-sm">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
-                    <TableCell className="font-bold text-sm">{getSubmissionDisplay(tender) || '—'}</TableCell>
-                    <TableCell>{tender.internalLead || 'Unassigned'}</TableCell>
-                    <TableCell className="text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
-                    <TableCell>
+                    <TableCell className="hidden lg:table-cell px-2 sm:px-3 font-bold text-xs sm:text-sm">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
+                    <TableCell className="hidden xl:table-cell px-2 sm:px-3 font-bold text-xs sm:text-sm">{getSubmissionDisplay(tender) || '—'}</TableCell>
+                    <TableCell className="hidden xl:table-cell px-2 sm:px-3">{tender.internalLead || 'Unassigned'}</TableCell>
+                    <TableCell className="px-2 sm:px-3 text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
+                    <TableCell className="px-2 sm:px-3">
                       <Badge className={getStatusBadge(getMergedStatus(tender))}>{getMergedStatus(tender) || '—'}</Badge>
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="hidden md:table-cell px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
                       {tender.remarksReason ? (
                         <Popover>
                           <PopoverTrigger asChild>
@@ -260,7 +260,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         </Popover>
                       ) : '—'}
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="hidden lg:table-cell px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
                       <ApprovalCell
                         approvalStatus={approvalStatus}
                         approvalState={approvalState}
@@ -272,8 +272,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         onRevert={() => revertApproval(tender.opportunityRefNo)}
                       />
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <div className="flex gap-1">
+                    <TableCell className="hidden sm:table-cell px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex gap-1 sm:gap-2">
                         {tender.comments && (
                           <Popover>
                             <PopoverTrigger asChild>
@@ -303,7 +303,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
             </TableBody>
           </Table>
         </div>
-        <div className="p-3 text-xs text-muted-foreground border-t bg-background">
+        <div className="p-2 sm:p-3 text-xs sm:text-sm text-muted-foreground border-t bg-background">
           Showing by RFP Received ({rfpSortOrder.toUpperCase()}): {filteredData.length} of {data.length} tenders (scroll to view all)
         </div>
       </CardContent>
