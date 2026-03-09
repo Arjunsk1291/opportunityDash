@@ -1,11 +1,10 @@
-import { Target, Trophy, XCircle, Clock, ThumbsDown, Zap, Play, CheckCircle, AlertTriangle, FileText } from 'lucide-react';
+import { Target, Trophy, XCircle, Clock, ThumbsDown, Zap, Play, CheckCircle, AlertTriangle } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import aedSymbol from '@/assets/aed-symbol.png';
 
 interface KPICardsProps {
   stats: {
-    totalTenders: number;
     totalActive: number;
     totalPipelineValue: number;
     awardedCount: number;
@@ -22,7 +21,7 @@ interface KPICardsProps {
     ongoingValue: number;
     submissionNearCount: number;
   };
-  onKPIClick?: (kpiType: 'alltenders' | 'active' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => void;
+  onKPIClick?: (kpiType: 'active' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => void;
 }
 
 export function KPICards({ stats, onKPIClick }: KPICardsProps) {
@@ -45,7 +44,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
     if (formatted.symbol === 'aed') {
       return (
         <span className="flex items-center gap-0.5">
-          <img src={aedSymbol} alt="AED" className="h-3 sm:h-4 w-3 sm:w-4 inline-block dark:invert" />
+          <img src={aedSymbol} alt="AED" className="h-4 w-4 inline-block dark:invert" />
           {formatted.value}
         </span>
       );
@@ -54,22 +53,14 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
   };
 
   const AedIcon = () => (
-    <img src={aedSymbol} alt="AED" className="h-3 sm:h-4 w-3 sm:w-4 dark:invert" />
+    <img src={aedSymbol} alt="AED" className="h-4 w-4 dark:invert" />
   );
 
   const DollarIcon = () => (
-    <span className="text-xs sm:text-sm font-bold">$</span>
+    <span className="text-sm font-bold">$</span>
   );
 
   const kpis = [
-    { 
-      label: 'Total Tenders', 
-      displayValue: stats.totalTenders,
-      Icon: FileText, 
-      color: 'text-slate-600 dark:text-slate-400', 
-      bgColor: 'bg-slate-100 dark:bg-slate-900/40', 
-      type: 'alltenders' as const 
-    },
     { 
       label: 'Active Tenders', 
       displayValue: stats.totalActive,
@@ -131,7 +122,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
       label: 'Ongoing', 
       displayValue: stats.ongoingCount,
       Icon: CheckCircle, 
-      color: 'text-cyan-600 dark:text-cyan-400', 
+      color: 'text-cyan-600', 
       bgColor: 'bg-cyan-600/10', 
       type: 'ongoing' as const 
     },
@@ -139,30 +130,31 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
       label: 'Submission Near', 
       displayValue: stats.submissionNearCount,
       Icon: AlertTriangle, 
-      color: 'text-orange-600 dark:text-orange-400', 
+      color: 'text-orange-600', 
       bgColor: 'bg-orange-600/10', 
       type: 'submission' as const 
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-10 gap-1.5 sm:gap-2">
+    <div className="overflow-x-auto">
+      <div className="grid min-w-[640px] grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-5 lg:min-w-0 lg:grid-cols-10">
       {kpis.map((kpi, index) => (
         <Card 
           key={kpi.label} 
-          className={`p-1.5 sm:p-2 transition-all duration-300 hover:-translate-y-0.5 animate-fade-in min-h-[88px] sm:min-h-[96px] ${onKPIClick ? 'cursor-pointer hover:shadow-md hover:ring-2 hover:ring-primary/20' : ''}`}
+          className={`p-2 sm:p-3 transition-all duration-300 hover:-translate-y-1 animate-fade-in ${onKPIClick ? 'cursor-pointer hover:shadow-lg hover:ring-2 hover:ring-primary/20' : ''}`}
           style={{ animationDelay: `${index * 50}ms` }}
           onClick={() => onKPIClick?.(kpi.type)}
         >
-          <div className="flex flex-col items-start gap-1">
-            <div className={`p-1 rounded-md ${kpi.bgColor}`}>
-              <div className={`h-3.5 sm:h-4 w-3.5 sm:w-4 flex items-center justify-center ${kpi.color}`}>
+          <div className="flex flex-col items-start gap-2">
+            <div className={`p-2 rounded-lg ${kpi.bgColor}`}>
+              <div className={`h-4 w-4 flex items-center justify-center ${kpi.color}`}>
                 <kpi.Icon />
               </div>
             </div>
             <div className="min-w-0 w-full">
-              <p className="text-[11px] sm:text-xs text-muted-foreground truncate leading-tight">{kpi.label}</p>
-              <p className={`text-sm sm:text-base font-bold ${kpi.color} break-words leading-tight`}>
+              <p className="text-xs text-muted-foreground truncate">{kpi.label}</p>
+              <p className={`text-sm font-bold ${kpi.color} break-words`}>
                 {kpi.isCurrency ? (
                   <CurrencyDisplay value={kpi.currencyValue!} />
                 ) : (
@@ -173,6 +165,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
           </div>
         </Card>
       ))}
+      </div>
     </div>
   );
 }

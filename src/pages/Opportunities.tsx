@@ -28,7 +28,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-5.5rem)] gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">
             {statusFilter ? `${statusFilter} Tenders` : 'All Tenders'}
@@ -37,7 +37,9 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
             {filteredData.length} tenders found
           </p>
         </div>
-        <ExportButton data={filteredData} filename={statusFilter ? `${statusFilter.toLowerCase().replace(/\//g, '-')}-tenders` : 'all-tenders'} />
+        <div className="w-full sm:w-auto">
+          <ExportButton data={filteredData} filename={statusFilter ? `${statusFilter.toLowerCase().replace(/\//g, '-')}-tenders` : 'all-tenders'} />
+        </div>
       </div>
 
       <AdvancedFilters
