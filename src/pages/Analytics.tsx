@@ -22,12 +22,14 @@ import {
 } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const COLORS = ['hsl(199, 89%, 48%)', 'hsl(38, 92%, 50%)', 'hsl(262, 83%, 58%)', 'hsl(142, 76%, 36%)', 'hsl(0, 84%, 60%)', 'hsl(220, 9%, 46%)'];
 
 const Analytics = () => {
   const { opportunities } = useData();
   const { convertValue } = useCurrency();
+  const isMobile = useIsMobile();
   
   const stats = useMemo(() => calculateSummaryStats(opportunities), [opportunities]);
   const clientData = useMemo(() => getClientData(opportunities), [opportunities]);
@@ -146,7 +148,7 @@ const Analytics = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
+            <div className="h-[250px] sm:h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -163,7 +165,7 @@ const Analytics = () => {
                     ))}
                   </Pie>
                   <Tooltip />
-                  <Legend />
+                  {!isMobile && <Legend />}
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -179,12 +181,12 @@ const Analytics = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
+            <div className="h-[250px] sm:h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={groupData} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis type="number" tickFormatter={(v) => `AED ${v}M`} />
-                  <YAxis type="category" dataKey="name" width={50} />
+                  <YAxis type="category" dataKey="name" width={isMobile ? 35 : 50} tick={{ fontSize: isMobile ? 10 : 12 }} />
                   <Tooltip formatter={(v: number) => [`AED ${v.toFixed(1)}M`, 'Value']} />
                   <Bar dataKey="value" fill="hsl(217, 91%, 60%)" radius={[0, 4, 4, 0]} />
                 </BarChart>
@@ -205,7 +207,7 @@ const Analytics = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
+            <div className="h-[250px] sm:h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={monthlyTrend}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -237,12 +239,12 @@ const Analytics = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-[300px]">
+            <div className="h-[250px] sm:h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={clientData.slice(0, 10)} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis type="number" tickFormatter={(v) => `AED ${(v / 1000000).toFixed(1)}M`} />
-                <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" width={isMobile ? 80 : 120} tick={{ fontSize: isMobile ? 10 : 11 }} />
                 <Tooltip formatter={(v: number) => [`AED ${(v / 1000000).toFixed(2)}M`, 'Value']} />
                 <Bar dataKey="value" fill="hsl(142, 76%, 36%)" radius={[0, 4, 4, 0]} />
               </BarChart>

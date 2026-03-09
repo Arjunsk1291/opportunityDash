@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import styles from './OpportunitiesTable.module.css';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -29,6 +30,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
   const { formatCurrency } = useCurrency();
+  const isMobile = useIsMobile();
   const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, revertApproval, refreshApprovals } = useApproval();
   const { isProposalHead, isSVP, isMaster, user } = useAuth();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -196,6 +198,33 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
         </div>
       </CardHeader>
       <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
+        {isMobile ? (
+          <div className={`${maxHeight} overflow-y-auto p-3 space-y-2 ${styles.scrollContainer}`}>
+            {filteredData.map((tender) => (
+              <div
+                key={tender.id}
+                className="rounded-lg border bg-card p-3 space-y-2 cursor-pointer hover:bg-muted/40"
+                onClick={() => onSelectOpportunity?.(tender)}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">{tender.opportunityRefNo || '—'}</p>
+                  <Badge className={getStatusBadge(getMergedStatus(tender))}>{getMergedStatus(tender) || '—'}</Badge>
+                </div>
+                <p className="text-sm font-semibold truncate">{tender.clientName || '—'}</p>
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                  <div>
+                    <p className="font-medium text-foreground">Value</p>
+                    <p>{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">Lead</p>
+                    <p>{tender.internalLead || 'Unassigned'}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
         <div className={`${scrollContainerClassName || 'overflow-x-auto'} ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-background">

@@ -1097,7 +1097,7 @@ export default function Admin() {
                 <div className="space-y-1 md:col-span-2">
                   <p className="text-sm font-medium">SVP Group</p>
                   <Select value={newAuthorizedUser.assignedGroup} onValueChange={(value) => setNewAuthorizedUser((prev) => ({ ...prev, assignedGroup: value }))}>
-                    <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {GROUP_OPTIONS.map((group) => (
                         <SelectItem key={group} value={group}>{group}</SelectItem>
@@ -1115,7 +1115,7 @@ export default function Admin() {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Users className="h-5 w-5" />
                   <CardTitle>Authorized Users ({users.length})</CardTitle>
                 </div>
@@ -1181,7 +1181,7 @@ export default function Admin() {
                             }}
                             disabled={changingRole === u.email}
                           >
-                            <SelectTrigger className="w-[140px] h-8">
+                            <SelectTrigger className="w-full sm:w-[140px] h-8">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -1198,7 +1198,7 @@ export default function Admin() {
                               onValueChange={(group) => changeUserRole(u.email, 'SVP', group)}
                               disabled={changingRole === u.email}
                             >
-                              <SelectTrigger className="w-[100px] h-8 mt-2">
+                              <SelectTrigger className="w-full sm:w-[100px] h-8 mt-2">
                                 <SelectValue placeholder="Group" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1210,7 +1210,7 @@ export default function Admin() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             {u.status === 'approved' && (
                               <Badge className="bg-success/20 text-success gap-1">
                                 <CheckCircle className="h-3 w-3" />
@@ -1319,7 +1319,7 @@ export default function Admin() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Database className="h-5 w-5" />
                     <div>
                       <CardTitle>Data Collection</CardTitle>

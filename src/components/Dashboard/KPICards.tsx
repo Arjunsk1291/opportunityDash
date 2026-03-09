@@ -164,6 +164,7 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
           </div>
         </Card>
       ))}
+      </div>
     </div>
   );
 }
