@@ -22,6 +22,11 @@ const syncedOpportunitySchema = new mongoose.Schema(
     remarksReason: String,
     comments: String,
     combinedStatuses: [String],  // ✅ NEW: Array of both statuses (no double count)
+    telecastAlerted: { type: Boolean, default: false },
+    telecastAlertedAt: { type: Date, default: null },
+    telecastAlertedKey: { type: String, default: '' },
+    telecastAlertedRefNo: { type: String, default: '' },
+    telecastAlertSource: { type: String, default: '' },
     rawGoogleData: mongoose.Schema.Types.Mixed,
     rawGraphData: mongoose.Schema.Types.Mixed,
     syncedAt: { type: Date, default: Date.now },

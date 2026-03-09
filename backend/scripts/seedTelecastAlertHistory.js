@@ -72,6 +72,27 @@ async function run() {
   }
 
   const now = new Date();
+
+  const bulkOps = opportunities.map((row) => {
+    const key = buildNotificationKey(row);
+    const refNo = getRefNo(row);
+    return {
+      updateOne: {
+        filter: { _id: row._id },
+        update: {
+          $set: {
+            telecastAlerted: true,
+            telecastAlertedAt: now,
+            telecastAlertedKey: key || '',
+            telecastAlertedRefNo: refNo || '',
+            telecastAlertSource: 'baseline_seed_script',
+          },
+        },
+      },
+    };
+  });
+  if (bulkOps.length) await SyncedOpportunity.bulkWrite(bulkOps);
+
   config.telecastAlertedKeys = Array.from(alertedKeys).slice(-50000);
   config.telecastAlertedRefNos = Array.from(alertedRefs).slice(-50000);
   config.telecastAlertSeededAt = config.telecastAlertSeededAt || now;
@@ -84,6 +105,7 @@ async function run() {
     success: true,
     mongodbUri: MONGODB_URI,
     syncedOpportunities: opportunities.length,
+    updatedSyncedOpportunities: bulkOps.length,
     telecastAlertedKeys: config.telecastAlertedKeys.length,
     telecastAlertedRefNos: config.telecastAlertedRefNos.length,
     telecastAlertSeededAt: config.telecastAlertSeededAt,

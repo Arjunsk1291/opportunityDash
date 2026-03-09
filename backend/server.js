@@ -362,6 +362,37 @@ const pushWeeklyTelecastStats = (config, newRows = []) => {
   config.telecastWeeklyStats = history.slice(-12);
 };
 
+const getExistingAlertedStateFromSyncedOpportunities = async () => {
+  const alertedRows = await SyncedOpportunity.find(
+    { telecastAlerted: true },
+    {
+      telecastAlertedKey: 1,
+      telecastAlertedRefNo: 1,
+      telecastAlertedAt: 1,
+      opportunityRefNo: 1,
+      rawGraphData: 1,
+    }
+  ).lean();
+
+  const keySet = new Set();
+  const refSet = new Set();
+  const keyAlertedAt = new Map();
+
+  alertedRows.forEach((row) => {
+    const key = String(row?.telecastAlertedKey || '').trim() || buildNotificationKey(row);
+    const ref = normalizeRefNo(String(row?.telecastAlertedRefNo || '').trim() || getTenderRefNo(row));
+    const alertedAt = row?.telecastAlertedAt || null;
+
+    if (key) {
+      keySet.add(key);
+      if (alertedAt) keyAlertedAt.set(key, alertedAt);
+    }
+    if (ref) refSet.add(ref);
+  });
+
+  return { keySet, refSet, keyAlertedAt, count: alertedRows.length };
+};
+
 const sendTelecastForNewRows = async ({ systemConfig, newRows = [], alertedKeySet = new Set() }) => {
   if (!newRows.length) {
     return {
@@ -493,6 +524,7 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const opportunities = await transformTendersToOpportunities(tenders);
 
   const systemConfig = await getSystemConfig();
+  const existingAlertedState = await getExistingAlertedStateFromSyncedOpportunities();
   const previousKeys = new Set(systemConfig.notificationRowSignatures || []);
   const eligibleSignatures = opportunities
     .filter(hasRequiredRowValues)
@@ -508,16 +540,15 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
       .filter(([sig]) => Boolean(sig))
   );
   const newRows = newRowSignatures.map((sig) => signatureToOpportunity.get(sig)).filter(Boolean);
-
-  await SyncedOpportunity.deleteMany({});
-  const inserted = await SyncedOpportunity.insertMany(opportunities);
-
   const now = new Date();
-  config.lastSyncAt = now;
-  await config.save();
-
-  const alertedKeySet = new Set(systemConfig.telecastAlertedKeys || []);
-  const alertedRefSet = new Set((systemConfig.telecastAlertedRefNos || []).map((ref) => normalizeRefNo(ref)).filter(Boolean));
+  const alertedKeySet = new Set([
+    ...(systemConfig.telecastAlertedKeys || []),
+    ...Array.from(existingAlertedState.keySet),
+  ]);
+  const alertedRefSet = new Set([
+    ...(systemConfig.telecastAlertedRefNos || []).map((ref) => normalizeRefNo(ref)).filter(Boolean),
+    ...Array.from(existingAlertedState.refSet),
+  ]);
   let seededAlertBaseline = false;
 
   if (!systemConfig.telecastAlertSeededAt) {
@@ -558,6 +589,36 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     console.error('[telecast.dispatch.error]', telecastError?.message || telecastError);
     telecastDispatch = { ...telecastDispatch, sent: 0, skipped: 'error' };
   }
+
+  const opportunitiesForInsert = opportunities.map((opportunity) => {
+    const key = buildNotificationKey(opportunity);
+    const ref = getTenderRefNo(opportunity);
+    const isAlerted = Boolean(key && alertedKeySet.has(key));
+    const historicalAlertedAt = key ? existingAlertedState.keyAlertedAt.get(key) : null;
+    const telecastAlertedAt = isAlerted ? (historicalAlertedAt || now) : null;
+    let telecastAlertSource = '';
+
+    if (isAlerted) {
+      if (telecastDispatch.dispatchedKeys.includes(key)) telecastAlertSource = 'telecast_dispatch';
+      else if (seededAlertBaseline) telecastAlertSource = 'baseline_seed';
+      else telecastAlertSource = 'history_preserved';
+    }
+
+    return {
+      ...opportunity,
+      telecastAlerted: isAlerted,
+      telecastAlertedAt,
+      telecastAlertedKey: key || '',
+      telecastAlertedRefNo: ref || '',
+      telecastAlertSource,
+    };
+  });
+
+  await SyncedOpportunity.deleteMany({});
+  const inserted = await SyncedOpportunity.insertMany(opportunitiesForInsert);
+
+  config.lastSyncAt = now;
+  await config.save();
 
   systemConfig.telecastAlertedKeys = Array.from(alertedKeySet).slice(-MAX_ALERTED_TRACKED_KEYS);
   systemConfig.telecastAlertedRefNos = Array.from(alertedRefSet).slice(-MAX_ALERTED_TRACKED_REFS);
@@ -1583,6 +1644,16 @@ app.get('/api/notifications/status', verifyToken, async (req, res) => {
     }
 
     const config = await getSystemConfig();
+    const alertedTracked = await SyncedOpportunity.countDocuments({ telecastAlerted: true });
+    const alertedKeysTracked = await SyncedOpportunity.distinct('telecastAlertedKey', { telecastAlerted: true, telecastAlertedKey: { $ne: '' } });
+    const alertedPreviewRows = await SyncedOpportunity.find(
+      { telecastAlerted: true, telecastAlertedRefNo: { $ne: '' } },
+      { telecastAlertedRefNo: 1, telecastAlertedAt: 1 }
+    ).sort({ telecastAlertedAt: -1 }).limit(50).lean();
+    const alertedRefNosPreview = alertedPreviewRows
+      .map((row) => normalizeRefNo(row?.telecastAlertedRefNo || ''))
+      .filter(Boolean);
+
     res.json({
       success: true,
       lastCheckedAt: config.notificationLastCheckedAt || null,
@@ -1592,9 +1663,9 @@ app.get('/api/notifications/status', verifyToken, async (req, res) => {
       alertWindowDays: TELECAST_RECENT_WINDOW_DAYS,
       alertSeededAt: config.telecastAlertSeededAt || null,
       alertSeededCount: Number(config.telecastAlertSeededCount || 0),
-      alertedKeysTracked: Array.isArray(config.telecastAlertedKeys) ? config.telecastAlertedKeys.length : 0,
-      alertedRefNosTracked: Array.isArray(config.telecastAlertedRefNos) ? config.telecastAlertedRefNos.length : 0,
-      alertedRefNosPreview: Array.isArray(config.telecastAlertedRefNos) ? config.telecastAlertedRefNos.slice(-50) : [],
+      alertedKeysTracked: alertedKeysTracked.length,
+      alertedRefNosTracked: alertedTracked,
+      alertedRefNosPreview,
       weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
     });
   } catch (error) {
@@ -1611,7 +1682,12 @@ app.get('/api/notifications/alerted', verifyToken, async (req, res) => {
     const limit = Math.max(1, Math.min(500, Number(req.query?.limit) || 200));
     const q = normalizeRefNo(req.query?.q || '');
     const config = await getSystemConfig();
-    let refs = Array.isArray(config.telecastAlertedRefNos) ? config.telecastAlertedRefNos.map((ref) => normalizeRefNo(ref)).filter(Boolean) : [];
+    const rows = await SyncedOpportunity.find(
+      { telecastAlerted: true, telecastAlertedRefNo: { $ne: '' } },
+      { telecastAlertedRefNo: 1, telecastAlertedAt: 1 }
+    ).sort({ telecastAlertedAt: -1 }).lean();
+
+    let refs = rows.map((row) => normalizeRefNo(row?.telecastAlertedRefNo || '')).filter(Boolean);
     refs = [...new Set(refs)];
     if (q) refs = refs.filter((ref) => ref.includes(q));
 
