@@ -136,15 +136,15 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 overflow-x-hidden">
       {/* Sync Status Bar */}
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4 min-w-0">
           <div>
             Last synced: {lastSyncTime?.toLocaleTimeString()} - {opportunities.length} opportunities loaded
           </div>
           {lastAutoRefreshTime && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <RefreshCw className={`h-3 w-3 ${autoRefreshStatus === 'syncing' ? 'animate-spin' : ''}`} />
               Auto-synced: {lastAutoRefreshTime.toLocaleTimeString()}
               <span className={`text-xs font-semibold ${
@@ -165,8 +165,8 @@ const Dashboard = () => {
       
       {/* Filter & Export Bar */}
       <div className="sticky top-14 z-40 -mx-3 sm:-mx-4 lg:-mx-6 px-3 sm:px-4 lg:px-6 py-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex-1">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex-1 min-w-0">
             <AdvancedFilters
               data={opportunities}
               filters={filters}
@@ -174,7 +174,7 @@ const Dashboard = () => {
               onClearFilters={() => setFilters(defaultFilters)}
             />
           </div>
-          <div className="flex gap-2 shrink-0">
+          <div className="flex flex-wrap gap-2 shrink-0">
             <ExportButton data={filteredData} filename="tenders" />
             <ReportButton data={filteredData} filters={filters} />
           </div>
