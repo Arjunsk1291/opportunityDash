@@ -98,6 +98,12 @@ interface NotificationSyncStatus {
   lastCheckedAt?: string | null;
   lastNewRowsCount: number;
   trackedRows: number;
+  alertWindowDays?: number;
+  alertSeededAt?: string | null;
+  alertSeededCount?: number;
+  alertedKeysTracked?: number;
+  alertedRefNosTracked?: number;
+  alertedRefNosPreview?: string[];
   weeklyStats?: WeeklyTelecastStat[];
 }
 
@@ -139,6 +145,12 @@ export default function Admin() {
     lastCheckedAt: null,
     lastNewRowsCount: 0,
     trackedRows: 0,
+    alertWindowDays: 28,
+    alertSeededAt: null,
+    alertSeededCount: 0,
+    alertedKeysTracked: 0,
+    alertedRefNosTracked: 0,
+    alertedRefNosPreview: [],
   });
   const [bootstrapUsername, setBootstrapUsername] = useState(DEFAULT_SERVICE_ACCOUNT);
   const [bootstrapPassword, setBootstrapPassword] = useState(DEFAULT_SERVICE_ACCOUNT);
@@ -355,6 +367,12 @@ export default function Admin() {
         lastCheckedAt: data.lastCheckedAt || null,
         lastNewRowsCount: Number(data.lastNewRowsCount || 0),
         trackedRows: Number(data.trackedRows || 0),
+        alertWindowDays: Number(data.alertWindowDays || 28),
+        alertSeededAt: data.alertSeededAt || null,
+        alertSeededCount: Number(data.alertSeededCount || 0),
+        alertedKeysTracked: Number(data.alertedKeysTracked || 0),
+        alertedRefNosTracked: Number(data.alertedRefNosTracked || 0),
+        alertedRefNosPreview: Array.isArray(data.alertedRefNosPreview) ? data.alertedRefNosPreview : [],
         weeklyStats: Array.isArray(data.weeklyStats) ? data.weeklyStats : [],
       });
       if (Array.isArray(data.weeklyStats)) setTelecastWeeklyStats(data.weeklyStats);
@@ -1562,6 +1580,32 @@ export default function Admin() {
         </TabsContent>
         <TabsContent value="telecast">
           <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Telecast Rules (Active)</CardTitle>
+                <CardDescription>These rules are enforced by backend before any new-row telecast email is sent.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <ul className="list-disc pl-5 text-xs sm:text-sm md:text-base space-y-1">
+                  <li>Only tenders received within the last {notificationSyncStatus.alertWindowDays || 28} days are eligible.</li>
+                  <li>If an existing row is edited, it is not treated as a new-row alert.</li>
+                  <li>A tender that was already alerted is never sent again.</li>
+                  <li>Historical tenders are seeded as already alerted and blocked from duplicate telecast.</li>
+                </ul>
+                <div className="rounded border p-3 text-xs sm:text-sm text-muted-foreground">
+                  <p>Alert baseline seeded: {notificationSyncStatus.alertSeededAt ? new Date(notificationSyncStatus.alertSeededAt).toLocaleString() : 'not yet'}</p>
+                  <p>Seeded tenders count: {notificationSyncStatus.alertSeededCount || 0}</p>
+                  <p>Tracked alerted refs: {notificationSyncStatus.alertedRefNosTracked || 0} • tracked alerted keys: {notificationSyncStatus.alertedKeysTracked || 0}</p>
+                </div>
+                {(notificationSyncStatus.alertedRefNosPreview?.length || 0) > 0 && (
+                  <div className="rounded border p-3 text-xs sm:text-sm">
+                    <p className="font-medium mb-2">Recently tracked alerted Ref Nos (preview)</p>
+                    <p className="text-muted-foreground break-words">{notificationSyncStatus.alertedRefNosPreview?.join(', ')}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">

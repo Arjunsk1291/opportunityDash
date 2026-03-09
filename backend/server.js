@@ -42,6 +42,20 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+app.get('/healthz', (_req, res) => {
+  res.status(200).json({ ok: true, service: 'backend', timestamp: new Date().toISOString() });
+});
+
+app.get('/api/health', (_req, res) => {
+  const dbReady = mongoose.connection.readyState === 1;
+  res.status(dbReady ? 200 : 503).json({
+    ok: dbReady,
+    service: 'backend',
+    dbState: mongoose.connection.readyState,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 console.log('[mongo.connect.start]', JSON.stringify({ uriConfigured: Boolean(MONGODB_URI), timestamp: new Date().toISOString() }));
 mongoose.connect(MONGODB_URI)
   .then(() => {
@@ -160,6 +174,9 @@ const getGraphConfig = async () => {
 };
 
 const REQUIRED_NEW_ROW_COLUMNS = ['YEAR', 'TENDER NO', 'TENDER NAME', 'CLIENT', 'GDS/GES', 'TENDER TYPE', 'DATE TENDER RECD'];
+const TELECAST_RECENT_WINDOW_DAYS = 28;
+const MAX_ALERTED_TRACKED_KEYS = 50000;
+const MAX_ALERTED_TRACKED_REFS = 50000;
 
 const normalizeColumnKey = (value = '') => String(value || '').toUpperCase().replace(/\s+/g, ' ').trim();
 
@@ -186,6 +203,72 @@ const buildRowSignature = (opportunity) => {
   ];
 
   return parts.map((part) => String(part).trim().toUpperCase()).join('||');
+};
+
+const normalizeRefNo = (value = '') => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+
+const getTenderRefNo = (opportunity) => {
+  const direct = normalizeRefNo(opportunity?.opportunityRefNo || '');
+  if (direct) return direct;
+  return normalizeRefNo(opportunity?.rawGraphData?.rowSnapshot?.['TENDER NO'] || '');
+};
+
+const buildNotificationKey = (opportunity) => {
+  const ref = getTenderRefNo(opportunity);
+  if (ref) return `REF::${ref}`;
+  const signature = buildRowSignature(opportunity);
+  return signature ? `SIG::${signature}` : '';
+};
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+
+  const dmyMatch = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (dmyMatch) {
+    const day = Number(dmyMatch[1]);
+    const month = Number(dmyMatch[2]);
+    const yearRaw = Number(dmyMatch[3]);
+    const year = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
+
+    const asDmy = new Date(Date.UTC(year, month - 1, day));
+    if (
+      asDmy.getUTCFullYear() === year
+      && asDmy.getUTCMonth() === month - 1
+      && asDmy.getUTCDate() === day
+    ) {
+      return asDmy;
+    }
+
+    const asMdy = new Date(Date.UTC(year, day - 1, month));
+    if (
+      asMdy.getUTCFullYear() === year
+      && asMdy.getUTCMonth() === day - 1
+      && asMdy.getUTCDate() === month
+    ) {
+      return asMdy;
+    }
+  }
+
+  return null;
+};
+
+const getTenderReceivedDate = (opportunity) => (
+  parseDateValue(opportunity?.dateTenderReceived)
+  || parseDateValue(opportunity?.rawGraphData?.rowSnapshot?.['DATE TENDER RECD'])
+);
+
+const isTenderRecentForTelecast = (opportunity, now = new Date()) => {
+  const received = getTenderReceivedDate(opportunity);
+  if (!received) return false;
+  const ageMs = now.getTime() - received.getTime();
+  if (ageMs < 0) return false;
+  return ageMs <= TELECAST_RECENT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 };
 
 const TELECAST_TEMPLATE_KEYWORDS = [
@@ -279,9 +362,31 @@ const pushWeeklyTelecastStats = (config, newRows = []) => {
   config.telecastWeeklyStats = history.slice(-12);
 };
 
-const sendTelecastForNewRows = async ({ systemConfig, newRows = [] }) => {
-  if (!newRows.length) return { sent: 0, skipped: 'no_new_rows' };
-  if (!systemConfig?.telecastGraphRefreshTokenEnc) return { sent: 0, skipped: 'telecast_not_connected' };
+const sendTelecastForNewRows = async ({ systemConfig, newRows = [], alertedKeySet = new Set() }) => {
+  if (!newRows.length) {
+    return {
+      sent: 0,
+      skipped: 'no_new_rows',
+      staleCount: 0,
+      alreadyAlertedCount: 0,
+      eligibleCount: 0,
+      skippedNoRecipients: 0,
+      dispatchedKeys: [],
+      dispatchedRefNos: [],
+    };
+  }
+  if (!systemConfig?.telecastGraphRefreshTokenEnc) {
+    return {
+      sent: 0,
+      skipped: 'telecast_not_connected',
+      staleCount: 0,
+      alreadyAlertedCount: 0,
+      eligibleCount: 0,
+      skippedNoRecipients: 0,
+      dispatchedKeys: [],
+      dispatchedRefNos: [],
+    };
+  }
 
   const groupRecipients = {
     GES: normalizeEmailList(systemConfig?.telecastGroupRecipients?.GES || []),
@@ -292,12 +397,37 @@ const sendTelecastForNewRows = async ({ systemConfig, newRows = [] }) => {
   const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc: systemConfig.telecastGraphRefreshTokenEnc });
   const subjectTemplate = systemConfig.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
   const bodyTemplate = systemConfig.telecastTemplateBody || 'New row detected for {{TENDER_NO}}';
-  let sent = 0;
+  const now = new Date();
+  const recentRows = newRows.filter((row) => isTenderRecentForTelecast(row, now));
+  const staleCount = newRows.length - recentRows.length;
+  const unsentRows = recentRows.filter((row) => !alertedKeySet.has(buildNotificationKey(row)));
+  const alreadyAlertedCount = recentRows.length - unsentRows.length;
 
-  for (const row of newRows) {
+  if (!unsentRows.length) {
+    return {
+      sent: 0,
+      skipped: staleCount > 0 ? 'outside_4_week_window_or_already_alerted' : 'already_alerted',
+      staleCount,
+      alreadyAlertedCount,
+      eligibleCount: 0,
+      skippedNoRecipients: 0,
+      dispatchedKeys: [],
+      dispatchedRefNos: [],
+    };
+  }
+
+  let sent = 0;
+  let skippedNoRecipients = 0;
+  const dispatchedKeys = [];
+  const dispatchedRefNos = [];
+
+  for (const row of unsentRows) {
     const group = getGroupFromOpportunity(row);
     const recipients = groupRecipients[group] || [];
-    if (!recipients.length) continue;
+    if (!recipients.length) {
+      skippedNoRecipients += 1;
+      continue;
+    }
 
     const values = getTemplateValues(row);
     const subject = renderTemplate(subjectTemplate, values);
@@ -319,10 +449,25 @@ const sendTelecastForNewRows = async ({ systemConfig, newRows = [] }) => {
       }),
     });
 
-    if (graphResponse.ok) sent += 1;
+    if (graphResponse.ok) {
+      sent += 1;
+      const key = buildNotificationKey(row);
+      if (key) dispatchedKeys.push(key);
+      const refNo = getTenderRefNo(row);
+      if (refNo) dispatchedRefNos.push(refNo);
+    }
   }
 
-  return { sent, skipped: null };
+  return {
+    sent,
+    skipped: null,
+    staleCount,
+    alreadyAlertedCount,
+    eligibleCount: unsentRows.length,
+    skippedNoRecipients,
+    dispatchedKeys: [...new Set(dispatchedKeys)],
+    dispatchedRefNos: [...new Set(dispatchedRefNos)],
+  };
 };
 
 const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
@@ -348,18 +493,18 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const opportunities = await transformTendersToOpportunities(tenders);
 
   const systemConfig = await getSystemConfig();
-  const previousSignatures = new Set(systemConfig.notificationRowSignatures || []);
+  const previousKeys = new Set(systemConfig.notificationRowSignatures || []);
   const eligibleSignatures = opportunities
     .filter(hasRequiredRowValues)
-    .map(buildRowSignature)
+    .map(buildNotificationKey)
     .filter(Boolean);
 
   const uniqueCurrentSignatures = [...new Set(eligibleSignatures)];
-  const newRowSignatures = uniqueCurrentSignatures.filter((signature) => !previousSignatures.has(signature));
+  const newRowSignatures = uniqueCurrentSignatures.filter((signature) => !previousKeys.has(signature));
   const signatureToOpportunity = new Map(
     opportunities
-      .filter(hasRequiredRowValues)
-      .map((item) => [buildRowSignature(item), item])
+      .filter(hasRequiredRowValues) // stable key prevents "old row edited" from being treated as new
+      .map((item) => [buildNotificationKey(item), item])
       .filter(([sig]) => Boolean(sig))
   );
   const newRows = newRowSignatures.map((sig) => signatureToOpportunity.get(sig)).filter(Boolean);
@@ -371,21 +516,52 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   config.lastSyncAt = now;
   await config.save();
 
+  const alertedKeySet = new Set(systemConfig.telecastAlertedKeys || []);
+  const alertedRefSet = new Set((systemConfig.telecastAlertedRefNos || []).map((ref) => normalizeRefNo(ref)).filter(Boolean));
+  let seededAlertBaseline = false;
+
+  if (!systemConfig.telecastAlertSeededAt) {
+    uniqueCurrentSignatures.forEach((key) => alertedKeySet.add(key));
+    opportunities.forEach((opportunity) => {
+      const ref = getTenderRefNo(opportunity);
+      if (ref) alertedRefSet.add(ref);
+    });
+    systemConfig.telecastAlertSeededAt = now;
+    systemConfig.telecastAlertSeededCount = uniqueCurrentSignatures.length;
+    seededAlertBaseline = true;
+  }
+
   systemConfig.notificationRowSignatures = uniqueCurrentSignatures;
   systemConfig.notificationLastCheckedAt = now;
   systemConfig.notificationLastNewRowsCount = newRowSignatures.length;
   systemConfig.notificationLastNewRows = newRowSignatures.slice(0, 50);
   systemConfig.telecastKeywordHelp = TELECAST_TEMPLATE_KEYWORDS;
-  pushWeeklyTelecastStats(systemConfig, newRows);
   systemConfig.updatedBy = source;
 
-  let telecastDispatch = { sent: 0, skipped: 'not_attempted' };
+  let telecastDispatch = {
+    sent: 0,
+    skipped: seededAlertBaseline ? 'baseline_seeded_existing_rows' : 'not_attempted',
+    staleCount: 0,
+    alreadyAlertedCount: 0,
+    eligibleCount: 0,
+    skippedNoRecipients: 0,
+    dispatchedKeys: [],
+    dispatchedRefNos: [],
+  };
   try {
-    telecastDispatch = await sendTelecastForNewRows({ systemConfig, newRows });
+    if (!seededAlertBaseline) {
+      telecastDispatch = await sendTelecastForNewRows({ systemConfig, newRows, alertedKeySet });
+      telecastDispatch.dispatchedKeys.forEach((key) => alertedKeySet.add(key));
+      telecastDispatch.dispatchedRefNos.forEach((ref) => alertedRefSet.add(ref));
+    }
   } catch (telecastError) {
     console.error('[telecast.dispatch.error]', telecastError?.message || telecastError);
-    telecastDispatch = { sent: 0, skipped: 'error' };
+    telecastDispatch = { ...telecastDispatch, sent: 0, skipped: 'error' };
   }
+
+  systemConfig.telecastAlertedKeys = Array.from(alertedKeySet).slice(-MAX_ALERTED_TRACKED_KEYS);
+  systemConfig.telecastAlertedRefNos = Array.from(alertedRefSet).slice(-MAX_ALERTED_TRACKED_REFS);
+  pushWeeklyTelecastStats(systemConfig, newRows);
 
   await systemConfig.save();
 
@@ -394,6 +570,13 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     checkedAt: now.toISOString(),
     eligibleRows: uniqueCurrentSignatures.length,
     newRows: newRowSignatures.length,
+    seededAlertBaseline,
+    alertedKeyCount: systemConfig.telecastAlertedKeys.length,
+    alertedRefCount: systemConfig.telecastAlertedRefNos.length,
+    telecastEligibleRows: telecastDispatch.eligibleCount,
+    telecastStaleRows: telecastDispatch.staleCount,
+    telecastAlreadyAlertedRows: telecastDispatch.alreadyAlertedCount,
+    telecastNoRecipientsRows: telecastDispatch.skippedNoRecipients,
     telecastSent: telecastDispatch.sent,
     telecastSkipped: telecastDispatch.skipped,
   }));
@@ -403,6 +586,13 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     newRowsCount: newRowSignatures.length,
     newRowSignatures: newRowSignatures.slice(0, 50),
     eligibleRows: uniqueCurrentSignatures.length,
+    seededAlertBaseline,
+    alertedKeysTracked: systemConfig.telecastAlertedKeys.length,
+    alertedRefNosTracked: systemConfig.telecastAlertedRefNos.length,
+    telecastEligibleRows: telecastDispatch.eligibleCount,
+    telecastStaleRows: telecastDispatch.staleCount,
+    telecastAlreadyAlertedRows: telecastDispatch.alreadyAlertedCount,
+    telecastNoRecipientsRows: telecastDispatch.skippedNoRecipients,
     telecastSent: telecastDispatch.sent,
     telecastSkipped: telecastDispatch.skipped,
     newRowsPreview: newRows.slice(0, 50).map((row) => ({
@@ -1399,7 +1589,38 @@ app.get('/api/notifications/status', verifyToken, async (req, res) => {
       lastNewRowsCount: Number(config.notificationLastNewRowsCount || 0),
       lastNewRows: Array.isArray(config.notificationLastNewRows) ? config.notificationLastNewRows : [],
       trackedRows: Array.isArray(config.notificationRowSignatures) ? config.notificationRowSignatures.length : 0,
+      alertWindowDays: TELECAST_RECENT_WINDOW_DAYS,
+      alertSeededAt: config.telecastAlertSeededAt || null,
+      alertSeededCount: Number(config.telecastAlertSeededCount || 0),
+      alertedKeysTracked: Array.isArray(config.telecastAlertedKeys) ? config.telecastAlertedKeys.length : 0,
+      alertedRefNosTracked: Array.isArray(config.telecastAlertedRefNos) ? config.telecastAlertedRefNos.length : 0,
+      alertedRefNosPreview: Array.isArray(config.telecastAlertedRefNos) ? config.telecastAlertedRefNos.slice(-50) : [],
       weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/notifications/alerted', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can view alerted tenders' });
+    }
+
+    const limit = Math.max(1, Math.min(500, Number(req.query?.limit) || 200));
+    const q = normalizeRefNo(req.query?.q || '');
+    const config = await getSystemConfig();
+    let refs = Array.isArray(config.telecastAlertedRefNos) ? config.telecastAlertedRefNos.map((ref) => normalizeRefNo(ref)).filter(Boolean) : [];
+    refs = [...new Set(refs)];
+    if (q) refs = refs.filter((ref) => ref.includes(q));
+
+    res.json({
+      success: true,
+      total: refs.length,
+      limit,
+      alertSeededAt: config.telecastAlertSeededAt || null,
+      refs: refs.slice(-limit),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
