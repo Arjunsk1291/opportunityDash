@@ -23,7 +23,7 @@ interface OpportunitiesTableProps {
 
 const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
 
-export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-96' }: OpportunitiesTableProps) {
+export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-[54vh] sm:max-h-[58vh] lg:max-h-[62vh]' }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
@@ -140,7 +140,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       <CardHeader className="pb-2 px-3 sm:px-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <CardTitle className="text-lg">Tenders</CardTitle>
-          <div className="flex flex-col xs:flex-row flex-wrap items-start xs:items-center gap-2">
+          <div className="flex flex-col xs:flex-row flex-wrap items-start xs:items-center gap-2 w-full sm:w-auto">
             <div className="relative w-full xs:w-48">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
