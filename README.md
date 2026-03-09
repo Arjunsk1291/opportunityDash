@@ -1,147 +1,261 @@
-# Welcome to your Lovable project
+# Opportunity Dashboard
 
-## Project info
+Avenir's Opportunity Dashboard is a full-stack platform for managing tender opportunities end-to-end, including:
 
-**URL**: https://lovable.dev/projects/ddf52303-4dfe-45e8-83ec-257fc27fd175
+- opportunity ingestion and sync from Microsoft Graph Excel
+- role-based approval workflows
+- analytics and KPI monitoring
+- filtering, export, and reporting
+- operational monitoring for sync and data health
 
-## How can I edit this code?
+## Architecture
 
-There are several ways of editing your application.
+The application is built as a 3-tier stack:
 
-**Use Lovable**
+1. Frontend
+- React + TypeScript + Vite + Tailwind
+- Served in production by Nginx
+- Calls backend via `/api/*`
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/ddf52303-4dfe-45e8-83ec-257fc27fd175) and start prompting.
+2. Backend
+- Node.js + Express
+- MongoDB via Mongoose
+- Handles auth, approvals, data sync, report generation, and admin operations
 
-Changes made via Lovable will be committed automatically to this repo.
+3. Database
+- MongoDB 7
+- Stores opportunities, approvals, users, logs, and system configuration
 
-**Use your preferred IDE**
+## Repository Structure
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- `src/`: frontend app
+- `backend/`: backend API and data services
+- `public/`: static web assets
+- `docker-compose.yml`: local full-stack orchestration
+- `Dockerfile.frontend`: frontend production image (build + nginx)
+- `backend/Dockerfile`: backend runtime image
+- `nginx.conf`: frontend web server and API reverse proxy config
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## Prerequisites (Non-Docker)
 
-Follow these steps:
+- Node.js 20+ (tested with Node 22)
+- npm 10+
+- MongoDB 7 (local or remote)
+
+## Local Development
+
+1. Install frontend dependencies
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+npm install
+```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+2. Install backend dependencies
 
-# Step 3: Install the necessary dependencies.
-npm i
+```sh
+cd backend
+npm install
+cd ..
+```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+3. Configure environment
+
+Create `backend/.env` and set required values.
+
+4. Run frontend
+
+```sh
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+5. Run backend
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```sh
+cd backend
+npm run dev
+```
 
-**Use GitHub Codespaces**
+Default local URLs:
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+- frontend: `http://localhost:8080`
+- backend: `http://localhost:3001`
 
-## What technologies are used for this project?
+## Backend Environment Variables
 
-This project is built with:
+Set these in `backend/.env` (or your deployment environment):
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+Core:
 
-## How can I deploy this project?
+- `PORT` (default `3001`)
+- `MONGODB_URI` (example: `mongodb://localhost:27017/opportunity-dashboard`)
+- `JWT_SECRET` (required for token verification and sessions)
 
-Simply open [Lovable](https://lovable.dev/projects/ddf52303-4dfe-45e8-83ec-257fc27fd175) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
-
-## Microsoft Graph Excel Sync Configuration
-
-Backend now supports syncing opportunities from a SharePoint/OneDrive Excel file via Microsoft Graph.
-
-### Required backend environment variables
-
-Set these variables in your backend environment (`backend/.env` for local, deployment secrets in production):
+Microsoft Graph / Excel Sync:
 
 - `GRAPH_TENANT_ID`
 - `GRAPH_CLIENT_ID`
 - `GRAPH_CLIENT_SECRET`
+- `GRAPH_SHEETS_SHARE_LINK` (optional default link)
 
-> Keep these values server-side only. Do not expose them in frontend code or browser storage.
+Optional debug flags:
 
-### Admin setup flow
+- `MAIL_DEBUG=true|false`
+- `NOTIFICATION_DEBUG=true|false`
+- `GRAPH_TOKEN_DEBUG=true|false`
 
-1. Login as **Master** user.
-2. Open **Master Panel → Data Sync**.
-3. Paste your Excel **Share Link** and click **Resolve**.
-4. Confirm/adjust `Drive ID` and `File ID`.
-5. Click **Refresh Sheets** and choose a worksheet.
-6. Set **Data Range** (default `B4:Z2000`) if your headers/data start below row 1.
-7. Click **Preview Rows** and select the correct header row offset.
-8. Optionally provide custom field mapping JSON.
-9. Click **Save Graph Config**.
-10. Click **Sync from Graph Excel** to load data into MongoDB.
+## Docker Deployment (Recommended)
 
-Auto-sync uses the same Graph configuration.
+This repository includes production-like Docker setup for frontend + backend + MongoDB.
 
-
-### One-time delegated token bootstrap (your account)
-
-If your tenant requires MFA (AADSTS50076), use **Device Code Auth** in **Master Panel → Data Sync**:
-
-1. Click **Start Device Auth**.
-2. Open the shown Microsoft verification URL and complete MFA.
-3. Return to Admin panel and click **Complete Device Auth**.
-4. Delegated refresh token is stored encrypted and auto-refreshed in backend.
-
-Fallback (no MFA only):
-- You can still use **Username/Password Auth** if your tenant allows ROPC and MFA is not enforced.
-
-If delegated bootstrap is not configured, backend falls back to application token (`client_credentials`).
-
-## Docker (frontend + backend + MongoDB)
-
-This repository now includes Docker support for local deployment:
-
-- `Dockerfile.frontend` (builds Vite app and serves it with Nginx)
-- `backend/Dockerfile` (runs Express backend)
-- `docker-compose.yml` (orchestrates frontend, backend, mongo)
-- `nginx.conf` (SPA fallback + `/api` reverse proxy to backend)
-
-### Run with Docker Compose
+### Start stack
 
 ```sh
-docker compose up --build
+docker compose up --build -d
 ```
 
-Services:
+### Stop stack
 
-- Frontend: `http://localhost:8080`
-- Backend API: `http://localhost:3001`
-- MongoDB: `mongodb://localhost:27017`
+```sh
+docker compose down
+```
 
-### Environment notes
+### Stop and remove volumes
 
-- Add Graph-related secrets (`GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`) to the `backend` service environment (or mount an env file).
-- Backend defaults to `MONGODB_URI=mongodb://mongo:27017/opportunity-dashboard` in compose.
+```sh
+docker compose down -v
+```
 
-## Repository hygiene notes
+### Services and ports
 
-Removed obsolete backup/patch artifacts (`*.backup*`, `*.patch`, `server-patch.txt`) that were not part of runtime/build paths.
+- frontend: `http://localhost:8080`
+- backend: `http://localhost:3001`
+- mongo: `mongodb://localhost:27017`
+
+Port overrides supported by compose env:
+
+- `FRONTEND_PORT` (default `8080`)
+- `BACKEND_PORT` (default `3001`)
+- `MONGO_PORT` (default `27017`)
+
+### Health checks
+
+- frontend container: `GET /`
+- backend container: `GET /healthz`
+- backend DB-aware health: `GET /api/health`
+- mongo container: `db.adminCommand('ping')`
+
+Verification commands:
+
+```sh
+docker compose ps
+docker compose logs -f backend frontend mongo
+```
+
+## API Routing and Reverse Proxy
+
+In container mode:
+
+- frontend serves static SPA assets
+- Nginx proxies `/api/*` requests to backend service
+- backend handles all API endpoints under `/api`
+
+This allows a single browser origin while keeping backend isolated.
+
+## Authentication and Access Model
+
+The backend uses token-based verification and role checks for protected routes.
+
+High-level roles in the system:
+
+- master/admin control
+- proposal head approvals
+- SVP approvals (group-scoped)
+- authorized user access
+
+Most sensitive endpoints require token verification middleware.
+
+## Approval Workflow Overview
+
+Typical approval states:
+
+1. pending proposal head approval
+2. proposal head approved
+3. awaiting SVP approval
+4. fully approved
+5. master revert support (if enabled by role)
+
+Approvals and logs are persisted in MongoDB.
+
+## Microsoft Graph Sync Flow
+
+1. Open admin sync panel
+2. resolve workbook share link
+3. select worksheet and data range
+4. preview and validate mapping
+5. save Graph sync configuration
+6. run manual sync or scheduled auto-sync
+
+If delegated token bootstrap is configured, backend can use delegated auth with refresh token encryption. Otherwise application token fallback may be used depending on configuration.
+
+## Reporting and Export
+
+The dashboard supports:
+
+- CSV/Excel exports from filtered opportunities
+- report document generation from summary + funnel + client metrics
+
+## Build and Quality Commands
+
+Frontend:
+
+```sh
+npm run lint
+npm run build
+```
+
+Backend syntax check:
+
+```sh
+node --check backend/server.js
+```
+
+## Troubleshooting
+
+1. Frontend loads but API fails
+- check backend container logs
+- verify `/api/health` returns `ok: true`
+- confirm Nginx proxy is active and backend is healthy
+
+2. Mongo connection failure
+- validate `MONGODB_URI`
+- verify mongo service/container status
+- confirm network reachability between backend and mongo
+
+3. Graph sync access errors
+- verify app registration permissions and tenant consent
+- validate workbook/site access scope
+- confirm sync config fields (drive ID, file ID, worksheet)
+
+4. Authentication issues
+- ensure token headers are present from frontend requests
+- verify `JWT_SECRET` consistency in backend runtime
+
+## Security Notes
+
+- keep all secrets server-side only
+- do not commit `backend/.env`
+- rotate Graph and JWT secrets periodically
+- apply least-privilege Graph permissions
+
+## Browser Branding
+
+Legacy scaffold branding has been removed from this repository's user-facing surfaces:
+
+- browser tab title
+- meta description/author tags
+- Open Graph and Twitter metadata
+- favicon now uses project branding (`public/favicon.svg`)
+
+## License and Ownership
+
+Internal project for Avenir opportunity operations. Follow your organization's standard code, security, and release governance policies.
