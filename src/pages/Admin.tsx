@@ -164,6 +164,8 @@ export default function Admin() {
   const [telecastKeywords, setTelecastKeywords] = useState<string[]>([]);
   const [telecastWeeklyStats, setTelecastWeeklyStats] = useState<WeeklyTelecastStat[]>([]);
   const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string[]>>({ GES: [], GDS: [], GTS: [] });
+  const [telecastRefNosToUnalert, setTelecastRefNosToUnalert] = useState('');
+  const [telecastBulkUpdating, setTelecastBulkUpdating] = useState(false);
   const [newAuthorizedUser, setNewAuthorizedUser] = useState<{ email: string; displayName: string; role: UserRole; assignedGroup: string; status: 'approved' | 'pending' }>({
     email: '',
     displayName: '',
@@ -943,6 +945,62 @@ export default function Admin() {
     }
   };
 
+  const markAllTelecastAlerted = async () => {
+    if (!token) return;
+    setTelecastBulkUpdating(true);
+    try {
+      const response = await fetch(API_URL + '/notifications/mark-all-alerted', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to mark all as alerted');
+      toast.success(data.message || 'All tenders marked as alerted');
+      await loadNotificationStatus();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setTelecastBulkUpdating(false);
+    }
+  };
+
+  const markSelectedTelecastUnalerted = async () => {
+    if (!token) return;
+    const refNos = [...new Set(
+      telecastRefNosToUnalert
+        .split(/[\n,;]+/g)
+        .map((value) => value.trim().toUpperCase())
+        .filter(Boolean)
+    )];
+    if (!refNos.length) {
+      toast.error('Enter one or more Ref Nos');
+      return;
+    }
+
+    setTelecastBulkUpdating(true);
+    try {
+      const response = await fetch(API_URL + '/notifications/mark-unalerted', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refNos }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to mark selected tenders as unalerted');
+      toast.success(data.message || 'Selected tenders marked as unalerted');
+      await loadNotificationStatus();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setTelecastBulkUpdating(false);
+    }
+  };
+
   if (!canAccessPanel) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -1657,6 +1715,53 @@ export default function Admin() {
                       <div className="text-xs text-muted-foreground">GES: {week.byGroup?.GES || 0} • GDS: {week.byGroup?.GDS || 0} • GTS: {week.byGroup?.GTS || 0}</div>
                     </div>
                   ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Alert Flag Controls</CardTitle>
+                <CardDescription>
+                  `telecastAlerted=true` blocks sending. `telecastAlerted=false` allows sending on force refresh (if within {notificationSyncStatus.alertWindowDays || 28} days).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                  <Button
+                    onClick={markAllTelecastAlerted}
+                    disabled={telecastBulkUpdating}
+                    variant="secondary"
+                    className="w-full sm:w-auto"
+                  >
+                    Mark All `true`
+                  </Button>
+                  <Button
+                    onClick={forceRefreshNotificationSync}
+                    disabled={syncLoading}
+                    className="w-full sm:w-auto"
+                  >
+                    {syncLoading ? 'Refreshing...' : 'Force Refresh'}
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Set Selected Ref Nos to `false`</p>
+                  <Textarea
+                    rows={5}
+                    placeholder={'Paste Ref Nos separated by comma/newline\nExample:\nAC26095\nAC26096'}
+                    value={telecastRefNosToUnalert}
+                    onChange={(e) => setTelecastRefNosToUnalert(e.target.value)}
+                    className="text-xs sm:text-sm"
+                  />
+                  <Button
+                    onClick={markSelectedTelecastUnalerted}
+                    disabled={telecastBulkUpdating}
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                  >
+                    Apply Selected `false`
+                  </Button>
                 </div>
               </CardContent>
             </Card>
