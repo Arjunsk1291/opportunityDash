@@ -5,16 +5,14 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertTriangle, Search, CheckCircle, Clock, RotateCcw, RefreshCw, MessageSquare, ArrowRight, ArrowUpDown } from 'lucide-react';
+import { AlertTriangle, Search, CheckCircle, Clock, RotateCcw, RefreshCw, MessageSquare, ArrowRight } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useApproval } from '@/contexts/ApprovalContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Separator } from '@/components/ui/separator';
 import styles from './OpportunitiesTable.module.css';
-import { useIsMobile } from '@/hooks/use-mobile';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -30,7 +28,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
   const { formatCurrency } = useCurrency();
-  const isMobile = useIsMobile();
   const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, revertApproval, refreshApprovals } = useApproval();
   const { isProposalHead, isSVP, isMaster, user } = useAuth();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -63,44 +60,28 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       : '';
 
     return [
-      tender.opportunityRefNo,
-      tender.tenderName,
-      tender.opportunityClassification,
-      tender.clientName,
-      tender.groupClassification,
-      getRfpReceivedDisplay(tender),
-      tender.internalLead,
-      tender.opportunityValue,
-      tender.avenirStatus,
-      getSubmissionDisplay(tender),
-      tender.remarksReason,
-      tender.tenderResult,
-      approvalSearchValue,
-      tender.comments,
-      rowSnapshot,
+      tender.opportunityRefNo, tender.tenderName, tender.opportunityClassification, tender.clientName,
+      tender.groupClassification, getRfpReceivedDisplay(tender), tender.internalLead, tender.opportunityValue,
+      tender.avenirStatus, getSubmissionDisplay(tender), tender.remarksReason, tender.tenderResult,
+      approvalSearchValue, tender.comments, rowSnapshot,
     ].map((value) => String(value ?? '').toLowerCase()).join(' ');
   };
 
   const getRfpSortTime = (tender: Opportunity) => {
     const directDate = tender.dateTenderReceived ? new Date(tender.dateTenderReceived) : null;
     if (directDate && !Number.isNaN(directDate.getTime())) return directDate.getTime();
-
     const display = getRfpReceivedDisplay(tender);
     const parsedDisplay = display ? new Date(display) : null;
     if (parsedDisplay && !Number.isNaN(parsedDisplay.getTime())) return parsedDisplay.getTime();
-
     return 0;
   };
 
   const filteredData = data
     .filter((tender) => {
       const searchLower = search.toLowerCase();
-      const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
       const allSearchable = buildSearchableText(tender);
-
-      const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);
+      const matchesSearch = !search || allSearchable.includes(searchLower);
       const matchesStatus = statusFilter === 'ALL' || tender.avenirStatus?.toUpperCase() === statusFilter;
-
       return matchesSearch && matchesStatus;
     })
     .sort((a, b) => {
@@ -155,22 +136,22 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   };
 
   return (
-    <Card className="flex-1 flex flex-col">
-      <CardHeader className="pb-3">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <Card className="flex-1 flex flex-col w-full">
+      <CardHeader className="pb-2 px-3 sm:px-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <CardTitle className="text-lg">Tenders</CardTitle>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
+          <div className="flex flex-col xs:flex-row flex-wrap items-start xs:items-center gap-2">
+            <div className="relative w-full xs:w-48">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search..."
-                className="pl-8"
+                className="pl-8 w-full text-sm"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-32">
+              <SelectTrigger className="w-full xs:w-40 text-sm">
                 <SelectValue placeholder="Filter..." />
               </SelectTrigger>
               <SelectContent>
@@ -186,7 +167,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                 <Button
                   variant="outline"
                   size="icon"
-                  className={isRefreshing ? 'animate-spin' : ''}
+                  className={`w-10 h-10 flex-shrink-0 ${isRefreshing ? 'animate-spin' : ''}`}
                   onClick={handleRefresh}
                 >
                   <RefreshCw className="h-4 w-4" />
@@ -198,50 +179,23 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
         </div>
       </CardHeader>
       <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
-        {isMobile ? (
-          <div className={`${maxHeight} overflow-y-auto p-3 space-y-2 ${styles.scrollContainer}`}>
-            {filteredData.map((tender) => (
-              <div
-                key={tender.id}
-                className="rounded-lg border bg-card p-3 space-y-2 cursor-pointer hover:bg-muted/40"
-                onClick={() => onSelectOpportunity?.(tender)}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">{tender.opportunityRefNo || '—'}</p>
-                  <Badge className={getStatusBadge(getMergedStatus(tender))}>{getMergedStatus(tender) || '—'}</Badge>
-                </div>
-                <p className="text-sm font-semibold truncate">{tender.clientName || '—'}</p>
-                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                  <div>
-                    <p className="font-medium text-foreground">Value</p>
-                    <p>{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</p>
-                  </div>
-                  <div>
-                    <p className="font-medium text-foreground">Lead</p>
-                    <p>{tender.internalLead || 'Unassigned'}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
         <div className={`${scrollContainerClassName || 'overflow-x-auto'} ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
-                <TableHead className="font-bold">Ref No.</TableHead>
-                <TableHead className="font-bold">Tender Name</TableHead>
-                <TableHead className="font-bold">Tender Type</TableHead>
-                <TableHead className="font-bold">Client</TableHead>
-                <TableHead className="font-bold">Group</TableHead>
-                <TableHead className="font-bold">RFP Received</TableHead>
-                <TableHead className="font-bold">Submission</TableHead>
-                <TableHead className="font-bold">Lead</TableHead>
-                <TableHead className="text-right font-bold">Value</TableHead>
-                <TableHead className="font-bold">Status</TableHead>
-                <TableHead className="font-bold">Remarks</TableHead>
-                <TableHead className="font-bold">Approval</TableHead>
-                <TableHead className="font-bold">Actions</TableHead>
+                <TableHead className="font-bold text-xs sm:text-sm">Ref No.</TableHead>
+                <TableHead className="font-bold text-xs sm:text-sm hidden md:table-cell">Tender Name</TableHead>
+                <TableHead className="font-bold text-xs sm:text-sm hidden lg:table-cell">Type</TableHead>
+                <TableHead className="font-bold text-xs sm:text-sm hidden xl:table-cell">Client</TableHead>
+                <TableHead className="font-bold text-xs sm:text-sm">Group</TableHead>
+                <TableHead className="font-bold text-xs sm:text-sm hidden sm:table-cell">RFP</TableHead>
+                <TableHead className="font-bold text-xs sm:text-sm hidden md:table-cell">Submission</TableHead>
+                <TableHead className="font-bold text-xs sm:text-sm hidden lg:table-cell">Lead</TableHead>
+                <TableHead className="text-right font-bold text-xs sm:text-sm">Value</TableHead>
+                <TableHead className="font-bold text-xs sm:text-sm">Status</TableHead>
+                <TableHead className="font-bold text-xs sm:text-sm hidden md:table-cell">Remarks</TableHead>
+                <TableHead className="font-bold text-xs sm:text-sm">Approval</TableHead>
+                <TableHead className="font-bold text-xs sm:text-sm">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -251,30 +205,26 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                 return (
                   <TableRow
                     key={tender.id}
-                    className="cursor-pointer hover:bg-muted/50"
+                    className="cursor-pointer hover:bg-muted/50 text-xs sm:text-sm"
                     onClick={() => onSelectOpportunity?.(tender)}
                   >
-                    <TableCell className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">{tender.opportunityRefNo || '—'}</TableCell>
-                    <TableCell className="max-w-[250px]">
-                      <div className="truncate" title={tender.tenderName || ''}>
-                        {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
-                      </div>
-                    </TableCell>
-                    <TableCell>
+                    <TableCell className="font-mono font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap">{tender.opportunityRefNo || '—'}</TableCell>
+                    <TableCell className="hidden md:table-cell max-w-xs truncate">{tender.tenderName || '—'}</TableCell>
+                    <TableCell className="hidden lg:table-cell">
                       <Badge className={`text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="max-w-[120px] truncate font-semibold text-foreground">{tender.clientName || '—'}</TableCell>
-                    <TableCell>
+                    <TableCell className="hidden xl:table-cell max-w-xs truncate font-semibold">{tender.clientName || '—'}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <Badge className={`text-xs font-mono ${getGroupBadge(tender.groupClassification)}`}>{tender.groupClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="font-bold text-sm">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
-                    <TableCell className="font-bold text-sm">{getSubmissionDisplay(tender) || '—'}</TableCell>
-                    <TableCell>{tender.internalLead || 'Unassigned'}</TableCell>
-                    <TableCell className="text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
-                    <TableCell>
+                    <TableCell className="hidden sm:table-cell font-bold whitespace-nowrap text-xs">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
+                    <TableCell className="hidden md:table-cell font-bold whitespace-nowrap text-xs">{getSubmissionDisplay(tender) || '—'}</TableCell>
+                    <TableCell className="hidden lg:table-cell whitespace-nowrap text-xs">{tender.internalLead || 'Unassigned'}</TableCell>
+                    <TableCell className="text-right font-mono whitespace-nowrap text-xs">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <Badge className={getStatusBadge(getMergedStatus(tender))}>{getMergedStatus(tender) || '—'}</Badge>
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="hidden md:table-cell" onClick={(e) => e.stopPropagation()}>
                       {tender.remarksReason ? (
                         <Popover>
                           <PopoverTrigger asChild>
@@ -282,14 +232,14 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                               <MessageSquare className="h-4 w-4 text-info" />
                             </Button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-80">
+                          <PopoverContent className="w-80 text-xs sm:text-sm">
                             <p className="text-xs font-medium text-muted-foreground">Remarks/Reason</p>
                             <p className="text-sm">{tender.remarksReason}</p>
                           </PopoverContent>
                         </Popover>
                       ) : '—'}
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       <ApprovalCell
                         approvalStatus={approvalStatus}
                         approvalState={approvalState}
@@ -301,7 +251,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         onRevert={() => revertApproval(tender.opportunityRefNo)}
                       />
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-1">
                         {tender.comments && (
                           <Popover>
@@ -310,7 +260,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                                 <MessageSquare className="h-4 w-4 text-muted-foreground" />
                               </Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-80">
+                            <PopoverContent className="w-80 text-xs sm:text-sm">
                               <p className="text-xs font-medium text-muted-foreground">Comments</p>
                               <p className="text-sm">{tender.comments}</p>
                             </PopoverContent>
@@ -318,7 +268,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         )}
                         {tender.isAtRisk && (
                           <Tooltip>
-                            <TooltipTrigger>
+                            <TooltipTrigger asChild>
                               <AlertTriangle className="h-4 w-4 text-warning" />
                             </TooltipTrigger>
                             <TooltipContent>Potentially at risk opportunity</TooltipContent>
@@ -332,8 +282,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
             </TableBody>
           </Table>
         </div>
-        <div className="p-3 text-xs text-muted-foreground border-t bg-background">
-          Showing by RFP Received ({rfpSortOrder.toUpperCase()}): {filteredData.length} of {data.length} tenders (scroll to view all)
+        <div className="px-3 py-2 text-xs text-muted-foreground border-t bg-background">
+          Showing: {filteredData.length} of {data.length} tenders
         </div>
       </CardContent>
     </Card>
@@ -355,9 +305,9 @@ function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster,
   if (approvalStatus === 'fully_approved') {
     return (
       <div className="flex items-center gap-1">
-        <Badge className="bg-success/20 text-success gap-1 text-xs">
+        <Badge className="bg-success/20 text-success gap-1 text-xs whitespace-nowrap">
           <CheckCircle className="h-3 w-3" />
-          Fully Approved
+          Approved
         </Badge>
         {isMaster && (
           <Tooltip>
@@ -377,15 +327,15 @@ function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster,
     return (
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-1">
-          <Badge className="bg-info/20 text-info gap-1 text-xs">
+          <Badge className="bg-info/20 text-info gap-1 text-xs whitespace-nowrap">
             <CheckCircle className="h-3 w-3" />
             PH ✓
           </Badge>
-          <ArrowRight className="h-3 w-3 text-muted-foreground" />
+          <ArrowRight className="h-3 w-3 text-muted-foreground hidden sm:inline" />
           {canSVPApprove ? (
-            <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={onApproveSVP}>SVP Approve</Button>
+            <Button size="sm" variant="outline" className="h-6 text-xs px-2 whitespace-nowrap" onClick={onApproveSVP}>SVP</Button>
           ) : (
-            <Badge variant="secondary" className="gap-1 text-xs">
+            <Badge variant="secondary" className="gap-1 text-xs whitespace-nowrap hidden sm:inline-flex">
               <Clock className="h-3 w-3" />
               Awaiting SVP
             </Badge>
@@ -403,11 +353,12 @@ function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster,
   return (
     <div className="flex items-center gap-1">
       {isProposalHead ? (
-        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={onApproveProposalHead}>PH Approve</Button>
+        <Button size="sm" variant="outline" className="h-6 text-xs px-2 whitespace-nowrap" onClick={onApproveProposalHead}>PH Approve</Button>
       ) : (
-        <Badge variant="secondary" className="gap-1 text-xs">
+        <Badge variant="secondary" className="gap-1 text-xs whitespace-nowrap">
           <Clock className="h-3 w-3" />
-          Pending PH
+          <span className="hidden sm:inline">Pending PH</span>
+          <span className="sm:hidden">Pending</span>
         </Badge>
       )}
     </div>
