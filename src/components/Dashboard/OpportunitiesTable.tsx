@@ -332,7 +332,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
             </TableBody>
           </Table>
         </div>
-        )}
         <div className="p-3 text-xs text-muted-foreground border-t bg-background">
           Showing by RFP Received ({rfpSortOrder.toUpperCase()}): {filteredData.length} of {data.length} tenders (scroll to view all)
         </div>

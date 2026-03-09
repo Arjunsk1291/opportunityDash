@@ -171,8 +171,8 @@ export function AdvancedFilters({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 w-full flex-1 sm:min-w-[200px] sm:max-w-sm">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[250px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search opportunities, clients, tenders..."
@@ -405,7 +405,7 @@ export function AdvancedFilters({
       </div>
 
       {isExpanded && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-lg border">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 p-4 bg-muted/30 rounded-lg border">
           <div className="space-y-2">
             <Label className="text-xs font-medium">Client Type</Label>
             <Select

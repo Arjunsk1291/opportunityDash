@@ -138,12 +138,11 @@ const Dashboard = () => {
   return (
     <div className="space-y-6">
       {/* Sync Status Bar */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <div className="flex items-center gap-4">
           <div>
             Last synced: {lastSyncTime?.toLocaleTimeString()} - {opportunities.length} opportunities loaded
           </div>
-          <span className="hidden sm:block">•</span>
           {lastAutoRefreshTime && (
             <div className="flex items-center gap-2">
               <RefreshCw className={`h-3 w-3 ${autoRefreshStatus === 'syncing' ? 'animate-spin' : ''}`} />
@@ -159,14 +158,14 @@ const Dashboard = () => {
             </div>
           )}
         </div>
-        <div className="text-xs sm:ml-auto">
+        <div className="text-xs">
           {isAutoRefreshActive ? '✅ Auto-refresh active' : '⏸️ Auto-refresh inactive'}
         </div>
       </div>
       
       {/* Filter & Export Bar */}
       <div className="sticky top-14 z-40 -mx-3 sm:-mx-4 lg:-mx-6 px-3 sm:px-4 lg:px-6 py-3 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-        <div className="flex flex-col items-start gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div className="flex-1">
             <AdvancedFilters
               data={opportunities}
@@ -175,7 +174,7 @@ const Dashboard = () => {
               onClearFilters={() => setFilters(defaultFilters)}
             />
           </div>
-          <div className="flex w-full flex-wrap gap-2 shrink-0 lg:w-auto">
+          <div className="flex gap-2 shrink-0">
             <ExportButton data={filteredData} filename="tenders" />
             <ReportButton data={filteredData} filters={filters} />
           </div>

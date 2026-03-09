@@ -137,12 +137,11 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
   ];
 
   return (
-    <div className="overflow-x-auto">
-      <div className="grid min-w-[640px] grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-5 lg:min-w-0 lg:grid-cols-10">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-3">
       {kpis.map((kpi, index) => (
         <Card 
           key={kpi.label} 
-          className={`p-2 sm:p-3 transition-all duration-300 hover:-translate-y-1 animate-fade-in ${onKPIClick ? 'cursor-pointer hover:shadow-lg hover:ring-2 hover:ring-primary/20' : ''}`}
+          className={`p-3 transition-all duration-300 hover:-translate-y-1 animate-fade-in ${onKPIClick ? 'cursor-pointer hover:shadow-lg hover:ring-2 hover:ring-primary/20' : ''}`}
           style={{ animationDelay: `${index * 50}ms` }}
           onClick={() => onKPIClick?.(kpi.type)}
         >
