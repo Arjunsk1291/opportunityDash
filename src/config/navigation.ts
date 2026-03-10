@@ -1,5 +1,14 @@
 import { BarChart3, Building2, FileText, LayoutDashboard, Shield } from 'lucide-react';
-export type PageKey = 'dashboard' | 'opportunities' | 'clients' | 'analytics' | 'master';
+export type PageKey =
+  | 'dashboard'
+  | 'opportunities'
+  | 'clients'
+  | 'analytics'
+  | 'master'
+  | 'master_general'
+  | 'master_users'
+  | 'master_data_sync'
+  | 'master_telecast';
 
 export const PAGE_LABELS: Record<PageKey, string> = {
   dashboard: 'Dashboard',
@@ -7,6 +16,10 @@ export const PAGE_LABELS: Record<PageKey, string> = {
   clients: 'Clients',
   analytics: 'Analytics',
   master: 'Master Panel',
+  master_general: 'Master Panel · General',
+  master_users: 'Master Panel · User Management',
+  master_data_sync: 'Master Panel · Data Sync',
+  master_telecast: 'Master Panel · Telecast',
 };
 
 export const DEFAULT_PAGE_ROLE_ACCESS: Record<PageKey, string[]> = {
@@ -15,6 +28,10 @@ export const DEFAULT_PAGE_ROLE_ACCESS: Record<PageKey, string[]> = {
   clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   master: ['Master', 'Admin'],
+  master_general: ['Master', 'Admin'],
+  master_users: ['Master', 'Admin'],
+  master_data_sync: ['Master', 'Admin'],
+  master_telecast: ['Master', 'Admin'],
 };
 
 export const NAV_ITEMS = [

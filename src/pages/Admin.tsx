@@ -121,7 +121,7 @@ interface NotificationSyncStatus {
 }
 
 export default function Admin() {
-  const { user, isMaster, token, pagePermissions, updatePagePermissions } = useAuth();
+  const { user, isMaster, token, pagePermissions, updatePagePermissions, canAccessPage } = useAuth();
   const canAccessPanel = isMaster || user?.role === 'Admin';
   const navigate = useNavigate();
   const [users, setUsers] = useState<AuthorizedUser[]>([]);
@@ -191,6 +191,25 @@ export default function Admin() {
   const [activeTab, setActiveTab] = useState('general');
   const [draftPagePermissions, setDraftPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
 
+  const tabConfig = useMemo(
+    () => ([
+      { value: 'general', label: 'General', pageKey: 'master_general' as PageKey },
+      { value: 'users', label: 'User Management', pageKey: 'master_users' as PageKey },
+      { value: 'data-sync', label: 'Data Sync', pageKey: 'master_data_sync' as PageKey },
+      { value: 'telecast', label: '📣 Telecast', pageKey: 'master_telecast' as PageKey },
+    ]),
+    [],
+  );
+
+  const allowedTabs = useMemo(
+    () => tabConfig.filter((tab) => canAccessPage(tab.pageKey)),
+    [tabConfig, canAccessPage],
+  );
+  const allowedTabValues = useMemo(
+    () => new Set(allowedTabs.map((tab) => tab.value)),
+    [allowedTabs],
+  );
+
   useEffect(() => {
     if (canAccessPanel) {
       loadUsers();
@@ -207,6 +226,13 @@ export default function Admin() {
   useEffect(() => {
     setDraftPagePermissions((pagePermissions || DEFAULT_PAGE_ROLE_ACCESS) as Record<PageKey, UserRole[]>);
   }, [pagePermissions]);
+
+  useEffect(() => {
+    if (!allowedTabs.length) return;
+    if (!allowedTabs.some((tab) => tab.value === activeTab)) {
+      setActiveTab(allowedTabs[0].value);
+    }
+  }, [allowedTabs, activeTab]);
 
   const telecastRecipientUsers = useMemo(
     () => users.filter((candidate) => candidate.status === 'approved').map((candidate) => ({
@@ -1062,7 +1088,13 @@ export default function Admin() {
           <h1 className="text-3xl font-bold">Admin Panel</h1>
           <p className="text-muted-foreground mt-2">System administration and control</p>
         </div>
-        <Button type="button" variant="secondary" className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" onClick={() => setActiveTab('telecast')}>
+        <Button
+          type="button"
+          variant="secondary"
+          className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto"
+          onClick={() => setActiveTab('telecast')}
+          disabled={!allowedTabValues.has('telecast')}
+        >
           <Send className="h-4 w-4" />
           Open Telecast
         </Button>
@@ -1076,12 +1108,14 @@ export default function Admin() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="w-full flex flex-wrap h-auto justify-start gap-1">
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="users">User Management</TabsTrigger>
-          <TabsTrigger value="data-sync">Data Sync</TabsTrigger>
-          <TabsTrigger value="telecast" className="font-semibold">📣 Telecast</TabsTrigger>
+          {allowedTabs.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
+        {allowedTabValues.has('general') && (
         <TabsContent value="general">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card>
@@ -1127,7 +1161,9 @@ export default function Admin() {
             </Card>
           </div>
         </TabsContent>
+        )}
 
+        {allowedTabValues.has('users') && (
         <TabsContent value="users">
           <Card className="mb-6">
             <CardHeader>
@@ -1191,7 +1227,6 @@ export default function Admin() {
                 <Select value={newAuthorizedUser.role} onValueChange={(value: UserRole) => setNewAuthorizedUser((prev) => ({ ...prev, role: value }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Master">Master</SelectItem>
                     <SelectItem value="Admin">Admin</SelectItem>
                     <SelectItem value="ProposalHead">Tender Manager</SelectItem>
                     <SelectItem value="SVP">SVP</SelectItem>
@@ -1286,43 +1321,48 @@ export default function Admin() {
                       <TableRow key={u._id}>
                         <TableCell className="font-mono text-sm">{u.email}</TableCell>
                         <TableCell>
-                          <Select
-                            value={u.role}
-                            onValueChange={(newRole) => {
-                              if (newRole === 'SVP') {
-                                changeUserRole(u.email, newRole, (u.assignedGroup || 'GES').toUpperCase());
-                                return;
-                              }
-                              changeUserRole(u.email, newRole);
-                            }}
-                            disabled={changingRole === u.email}
-                          >
-                            <SelectTrigger className="w-[140px] h-8">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Master">Master</SelectItem>
-                              <SelectItem value="Admin">Admin</SelectItem>
-                              <SelectItem value="ProposalHead">Tender Manager</SelectItem>
-                              <SelectItem value="SVP">SVP</SelectItem>
-                              <SelectItem value="Basic">Basic</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          {u.role === 'SVP' && (
-                            <Select
-                              value={(u.assignedGroup || 'GES').toUpperCase()}
-                              onValueChange={(group) => changeUserRole(u.email, 'SVP', group)}
-                              disabled={changingRole === u.email}
-                            >
-                              <SelectTrigger className="w-[100px] h-8 mt-2">
-                                <SelectValue placeholder="Group" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {GROUP_OPTIONS.map((group) => (
-                                  <SelectItem key={group} value={group}>{group}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                          {u.role === 'Master' ? (
+                            <Badge variant="outline">Master</Badge>
+                          ) : (
+                            <>
+                              <Select
+                                value={u.role}
+                                onValueChange={(newRole) => {
+                                  if (newRole === 'SVP') {
+                                    changeUserRole(u.email, newRole, (u.assignedGroup || 'GES').toUpperCase());
+                                    return;
+                                  }
+                                  changeUserRole(u.email, newRole);
+                                }}
+                                disabled={changingRole === u.email}
+                              >
+                                <SelectTrigger className="w-[140px] h-8">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Admin">Admin</SelectItem>
+                                  <SelectItem value="ProposalHead">Tender Manager</SelectItem>
+                                  <SelectItem value="SVP">SVP</SelectItem>
+                                  <SelectItem value="Basic">Basic</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {u.role === 'SVP' && (
+                                <Select
+                                  value={(u.assignedGroup || 'GES').toUpperCase()}
+                                  onValueChange={(group) => changeUserRole(u.email, 'SVP', group)}
+                                  disabled={changingRole === u.email}
+                                >
+                                  <SelectTrigger className="w-[100px] h-8 mt-2">
+                                    <SelectValue placeholder="Group" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {GROUP_OPTIONS.map((group) => (
+                                      <SelectItem key={group} value={group}>{group}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </>
                           )}
                         </TableCell>
                         <TableCell>
@@ -1387,7 +1427,7 @@ export default function Admin() {
                                 </Tooltip>
                               </>
                             )}
-                            {u.status === 'approved' && (
+                            {u.status === 'approved' && u.role !== 'Master' && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button
@@ -1403,7 +1443,7 @@ export default function Admin() {
                                 <TooltipContent>Remove this user</TooltipContent>
                               </Tooltip>
                             )}
-                            {u.status === 'rejected' && (
+                            {u.status === 'rejected' && u.role !== 'Master' && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button
@@ -1429,7 +1469,9 @@ export default function Admin() {
             </CardContent>
           </Card>
         </TabsContent>
+        )}
 
+        {allowedTabValues.has('data-sync') && (
         <TabsContent value="data-sync">
           <div className="space-y-4 sm:space-y-6 md:space-y-8">
             <Card>
@@ -1684,6 +1726,9 @@ export default function Admin() {
             </Card>
           </div>
         </TabsContent>
+        )}
+
+        {allowedTabValues.has('telecast') && (
         <TabsContent value="telecast">
           <div className="space-y-6">
             <Card>
@@ -1897,6 +1942,7 @@ export default function Admin() {
             </Card>
           </div>
         </TabsContent>
+        )}
 
       </Tabs>
     </div>

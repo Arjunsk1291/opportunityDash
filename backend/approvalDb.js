@@ -171,6 +171,48 @@ export default {
     return { success: true, updatedCount: toApprove.length, skipped, approvals, approvalStates, approvalLogs: logs };
   },
 
+  async bulkRevert(opportunityRefNos, performedBy, performedByRole) {
+    const refs = Array.isArray(opportunityRefNos) ? opportunityRefNos.filter(Boolean) : [];
+    if (!refs.length) {
+      return { success: true, updatedCount: 0, approvals: await this.getApprovals(), approvalStates: await this.getApprovalStates(), approvalLogs: await this.getApprovalLogs() };
+    }
+
+    const ops = refs.map((opportunityRefNo) => ({
+      updateOne: {
+        filter: { opportunityRefNo },
+        update: {
+          $set: {
+            opportunityRefNo,
+            status: 'pending',
+            proposalHeadApproved: false,
+            proposalHeadBy: null,
+            proposalHeadAt: null,
+            svpApproved: false,
+            svpBy: null,
+            svpAt: null,
+            svpGroup: null,
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    await Approval.bulkWrite(ops, { ordered: false });
+    await ApprovalLog.insertMany(
+      refs.map((opportunityRefNo) => ({
+        opportunityRefNo,
+        action: 'reverted',
+        performedBy,
+        performedByRole,
+      }))
+    );
+
+    const approvals = await this.getApprovals();
+    const approvalStates = await this.getApprovalStates();
+    const logs = await this.getApprovalLogs();
+    return { success: true, updatedCount: refs.length, approvals, approvalStates, approvalLogs: logs };
+  },
+
   async revertApproval(opportunityRefNo, performedBy, performedByRole) {
     await Approval.findOneAndUpdate(
       { opportunityRefNo },

@@ -1140,6 +1140,9 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
 
     const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
     if (!validRoles.includes(role)) return res.status(400).json({ error: 'Invalid role' });
+    if (role === 'Master') {
+      return res.status(403).json({ error: 'Assigning Master is not allowed' });
+    }
 
     if (role === 'SVP' && !assignedGroupRaw) {
       return res.status(400).json({ error: 'assignedGroup is required for SVP users' });
@@ -1147,6 +1150,11 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
 
     if (assignedGroupRaw && !['GES', 'GDS', 'GTS'].includes(assignedGroupRaw)) {
       return res.status(400).json({ error: 'assignedGroup must be one of GES, GDS, GTS' });
+    }
+
+    const existing = await AuthorizedUser.findOne({ email });
+    if (existing?.role === 'Master' || existing?.role === 'MASTER') {
+      return res.status(403).json({ error: 'Modifying Master users is not allowed' });
     }
 
     const user = await AuthorizedUser.findOneAndUpdate(
@@ -1246,6 +1254,9 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
     if (!validRoles.includes(newRole)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
+    if (newRole === 'Master' || newRole === 'MASTER') {
+      return res.status(403).json({ error: 'Assigning Master is not allowed' });
+    }
 
     if (newRole === 'SVP' && !assignedGroup) {
       return res.status(400).json({ error: 'assignedGroup is required for SVP users' });
@@ -1256,16 +1267,20 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'assignedGroup must be one of GES, GDS, GTS' });
     }
 
+    const existing = await AuthorizedUser.findOne({ email: email.toLowerCase() });
+    if (!existing) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (existing.role === 'Master' || existing.role === 'MASTER') {
+      return res.status(403).json({ error: 'Modifying Master users is not allowed' });
+    }
+
     const update = { role: newRole, assignedGroup: newRole === 'SVP' ? normalizedGroup : null };
     const user = await AuthorizedUser.findOneAndUpdate(
       { email: email.toLowerCase() },
       update,
       { new: true }
     );
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
 
     res.json({ success: true, user });
   } catch (error) {
@@ -1284,11 +1299,15 @@ app.delete('/api/users/remove', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    const result = await AuthorizedUser.deleteOne({ email: email.toLowerCase() });
-
-    if (result.deletedCount === 0) {
+    const target = await AuthorizedUser.findOne({ email: email.toLowerCase() });
+    if (!target) {
       return res.status(404).json({ error: 'User not found' });
     }
+    if (target.role === 'Master' || target.role === 'MASTER') {
+      return res.status(403).json({ error: 'Removing Master users is not allowed' });
+    }
+
+    const result = await AuthorizedUser.deleteOne({ email: email.toLowerCase() });
 
     res.json({ success: true, message: 'User removed' });
   } catch (error) {
@@ -1394,6 +1413,24 @@ app.post('/api/approvals/bulk-approve', verifyToken, async (req, res) => {
 
     const result = await approvalDb.bulkApproveAsSVP(refs, req.user.displayName, req.user.role, req.user.assignedGroup);
     return res.json({ success: true, updated: result.updatedCount || 0, skipped: result.skipped || [], approvals: result.approvals, approvalStates: result.approvalStates, approvalLogs: result.approvalLogs });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/approvals/bulk-revert', verifyToken, async (req, res) => {
+  try {
+    if (!['ProposalHead', 'Master'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Tender Manager or Master can bulk revert' });
+    }
+
+    const filters = req.body?.filters || {};
+    const opportunities = await SyncedOpportunity.find().lean();
+    const scoped = filterOpportunitiesForBulkApprove(opportunities, filters);
+    const refs = scoped.map((opp) => opp.opportunityRefNo).filter(Boolean);
+
+    const result = await approvalDb.bulkRevert(refs, req.user.displayName, req.user.role);
+    return res.json({ success: true, updated: result.updatedCount || 0, approvals: result.approvals, approvalStates: result.approvalStates, approvalLogs: result.approvalLogs });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1660,7 +1697,17 @@ app.post('/api/graph/auth/clear', verifyToken, async (req, res) => {
   }
 });
 
-const PAGE_KEYS = ['dashboard', 'opportunities', 'clients', 'analytics', 'master'];
+const PAGE_KEYS = [
+  'dashboard',
+  'opportunities',
+  'clients',
+  'analytics',
+  'master',
+  'master_general',
+  'master_users',
+  'master_data_sync',
+  'master_telecast',
+];
 const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
 const DEFAULT_PAGE_ROLE_ACCESS = {
   dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
@@ -1668,6 +1715,10 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
   clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   master: ['Master', 'Admin'],
+  master_general: ['Master', 'Admin'],
+  master_users: ['Master', 'Admin'],
+  master_data_sync: ['Master', 'Admin'],
+  master_telecast: ['Master', 'Admin'],
 };
 
 const sanitizePageRoleAccess = (input = {}) => {

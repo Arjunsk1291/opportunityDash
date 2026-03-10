@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -32,10 +32,11 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
   const { formatCurrency } = useCurrency();
-  const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, bulkApprove, revertApproval, refreshApprovals } = useApproval();
+  const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, bulkApprove, bulkRevert, revertApproval, refreshApprovals } = useApproval();
   const { isProposalHead, isSVP, isMaster, user } = useAuth();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [bulkMode, setBulkMode] = useState<'approve' | 'revert'>('approve');
   const [bulkAction, setBulkAction] = useState<'proposal_head' | 'svp'>(isSVP && !isMaster ? 'svp' : 'proposal_head');
   const [bulkFilters, setBulkFilters] = useState({
     dateFrom: '',
@@ -201,14 +202,24 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   const canBulkProposalHead = isProposalHead || isMaster;
   const canBulkSVP = isSVP || isMaster;
   const canBulkApprove = canBulkProposalHead || canBulkSVP;
+  const canBulkRevert = isProposalHead || isMaster;
+
+  useEffect(() => {
+    if (!isBulkOpen) setBulkMode('approve');
+  }, [isBulkOpen]);
 
   const handleBulkApprove = async () => {
     try {
-      const result = await bulkApprove(bulkAction, bulkFilters);
-      toast.success(`Bulk approval complete. Updated ${result.updated}.`);
+      if (bulkMode === 'revert') {
+        const result = await bulkRevert(bulkFilters);
+        toast.success(`Bulk revert complete. Updated ${result.updated}.`);
+      } else {
+        const result = await bulkApprove(bulkAction, bulkFilters);
+        toast.success(`Bulk approval complete. Updated ${result.updated}.`);
+      }
       setIsBulkOpen(false);
     } catch (error) {
-      toast.error((error as Error).message || 'Bulk approval failed');
+      toast.error((error as Error).message || 'Bulk action failed');
     }
   };
 
@@ -276,7 +287,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     <button
                       type="button"
                       onClick={() => setIsBulkOpen(true)}
-                      className="text-primary underline underline-offset-4"
+                      className="text-primary hover:text-primary/80"
                     >
                       Approval
                     </button>
@@ -385,7 +396,21 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
               <DialogDescription>Apply approvals across multiple tenders based on filters.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              {isMaster && (
+              {canBulkRevert && (
+                <div className="space-y-2">
+                  <Label>Action</Label>
+                  <Select value={bulkMode} onValueChange={(value) => setBulkMode(value as 'approve' | 'revert')}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="approve">Approve</SelectItem>
+                      <SelectItem value="revert">Revert to Pending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {isMaster && bulkMode === 'approve' && (
                 <div className="space-y-2">
                   <Label>Approval Step</Label>
                   <Select value={bulkAction} onValueChange={(value) => setBulkAction(value as 'proposal_head' | 'svp')}>
@@ -399,10 +424,10 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                   </Select>
                 </div>
               )}
-              {!isMaster && canBulkProposalHead && (
+              {!isMaster && canBulkProposalHead && bulkMode === 'approve' && (
                 <div className="text-xs text-muted-foreground">Action: Tender Manager Approval</div>
               )}
-              {!isMaster && canBulkSVP && !canBulkProposalHead && (
+              {!isMaster && canBulkSVP && !canBulkProposalHead && bulkMode === 'approve' && (
                 <div className="text-xs text-muted-foreground">Action: SVP Approval</div>
               )}
 
@@ -475,7 +500,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
             </div>
             <DialogFooter>
               <Button variant="secondary" onClick={() => setIsBulkOpen(false)}>Cancel</Button>
-              <Button onClick={handleBulkApprove}>Approve</Button>
+              <Button onClick={handleBulkApprove}>{bulkMode === 'revert' ? 'Revert' : 'Approve'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
