@@ -9,6 +9,7 @@ import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
+import Client from './models/Client.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig } from './services/graphExcelService.js';
@@ -179,6 +180,44 @@ const MAX_ALERTED_TRACKED_KEYS = 50000;
 const MAX_ALERTED_TRACKED_REFS = 50000;
 
 const normalizeColumnKey = (value = '') => String(value || '').toUpperCase().replace(/\s+/g, ' ').trim();
+
+const normalizeCompanyName = (name = '') => {
+  const cleaned = String(name || '').trim().replace(/\s+/g, ' ');
+  if (!cleaned) return '';
+  return cleaned
+    .toLowerCase()
+    .split(' ')
+    .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+    .join(' ');
+};
+
+const normalizeCompanyKey = (name = '') => normalizeCompanyName(name).toLowerCase();
+
+const contactKey = (contact = {}) => {
+  const first = String(contact.firstName || '').trim().toLowerCase();
+  const last = String(contact.lastName || '').trim().toLowerCase();
+  const email = String(contact.email || '').trim().toLowerCase();
+  const phone = String(contact.phone || '').trim().replace(/\s+/g, '');
+  if (!first && !last && !email && !phone) return '';
+  return `${email}|${phone}|${first}|${last}`;
+};
+
+const mergeContacts = (existing = [], incoming = []) => {
+  const seen = new Set(existing.map((contact) => contactKey(contact)).filter(Boolean));
+  const merged = [...existing];
+  incoming.forEach((contact) => {
+    const key = contactKey(contact);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    merged.push({
+      firstName: String(contact.firstName || '').trim(),
+      lastName: String(contact.lastName || '').trim(),
+      email: String(contact.email || '').trim(),
+      phone: String(contact.phone || '').trim(),
+    });
+  });
+  return merged;
+};
 
 const hasRequiredRowValues = (opportunity) => {
   const snapshot = opportunity?.rawGraphData?.rowSnapshot;
@@ -1930,6 +1969,96 @@ app.get('/api/opportunities', async (req, res) => {
     const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
     const mapped = opportunities.map(opp => mapIdField(opp));
     res.json(mapped);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/clients', async (_req, res) => {
+  try {
+    const clients = await Client.find().sort({ updatedAt: -1 }).lean();
+    res.json(clients.map((client) => mapIdField(client)));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/clients', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const companyName = normalizeCompanyName(payload.companyName || '');
+    if (!companyName) return res.status(400).json({ error: 'Company name is required' });
+    const companyKey = normalizeCompanyKey(companyName);
+    const incomingContacts = Array.isArray(payload.contacts) ? payload.contacts : [];
+
+    const existing = await Client.findOne({ companyKey });
+    if (!existing) {
+      const created = await Client.create({
+        companyName,
+        companyKey,
+        domain: String(payload.domain || '').trim(),
+        location: {
+          city: String(payload.city || payload.location?.city || '').trim(),
+          country: String(payload.country || payload.location?.country || '').trim(),
+        },
+        contacts: mergeContacts([], incomingContacts),
+      });
+      return res.json(mapIdField(created.toObject()));
+    }
+
+    existing.companyName = companyName;
+    existing.domain = String(payload.domain || existing.domain || '').trim();
+    existing.location = {
+      city: String(payload.city || existing.location?.city || '').trim(),
+      country: String(payload.country || existing.location?.country || '').trim(),
+    };
+    existing.contacts = mergeContacts(existing.contacts, incomingContacts);
+    await existing.save();
+
+    return res.json(mapIdField(existing.toObject()));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/clients/import', async (req, res) => {
+  try {
+    const inputs = Array.isArray(req.body?.clients) ? req.body.clients : [];
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    for (const input of inputs) {
+      const companyName = normalizeCompanyName(input?.companyName || '');
+      if (!companyName) continue;
+      const companyKey = normalizeCompanyKey(companyName);
+      const incomingContacts = Array.isArray(input?.contacts) ? input.contacts : [];
+      const existing = await Client.findOne({ companyKey });
+      if (!existing) {
+        await Client.create({
+          companyName,
+          companyKey,
+          domain: String(input?.domain || '').trim(),
+          location: {
+            city: String(input?.city || input?.location?.city || '').trim(),
+            country: String(input?.country || input?.location?.country || '').trim(),
+          },
+          contacts: mergeContacts([], incomingContacts),
+        });
+        createdCount += 1;
+      } else {
+        existing.companyName = companyName;
+        existing.domain = String(input?.domain || existing.domain || '').trim();
+        existing.location = {
+          city: String(input?.city || existing.location?.city || '').trim(),
+          country: String(input?.country || existing.location?.country || '').trim(),
+        };
+        existing.contacts = mergeContacts(existing.contacts, incomingContacts);
+        await existing.save();
+        updatedCount += 1;
+      }
+    }
+
+    res.json({ success: true, created: createdCount, updated: updatedCount, imported: createdCount + updatedCount });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

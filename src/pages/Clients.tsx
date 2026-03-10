@@ -1,183 +1,748 @@
 import { useMemo, useState } from 'react';
+import { Check, Copy, Globe, MapPin, Plus, Search, Upload } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
-import { Building2, Search, TrendingUp, FileText, DollarSign } from 'lucide-react';
-import { getClientData } from '@/data/opportunityData';
-import { useData } from '@/contexts/DataContext';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Label } from '@/components/ui/label';
+import { toast } from 'sonner';
+import { useClientStore } from '@/hooks/useClientStore';
+import type { ClientContactInput, ClientInput, ClientProfile } from '@/types/client';
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const highlightText = (text: string, query: string) => {
+  if (!query) return text;
+  const safeQuery = escapeRegex(query);
+  const queryLower = query.toLowerCase();
+  const regex = new RegExp(`(${safeQuery})`, 'gi');
+  const parts = String(text || '').split(regex);
+  return parts.map((part, idx) =>
+    part.toLowerCase() === queryLower ? (
+      <mark key={`${part}-${idx}`} className="bg-yellow-200/70 text-foreground px-1 rounded-sm">
+        {part}
+      </mark>
+    ) : (
+      <span key={`${part}-${idx}`}>{part}</span>
+    )
+  );
+};
+
+const buildSearchBlob = (client: ClientProfile) => {
+  const contactBlob = client.contacts
+    .map((contact) => [contact.firstName, contact.lastName, contact.email, contact.phone].join(' '))
+    .join(' ');
+  return [
+    client.companyName,
+    client.domain,
+    client.location.city,
+    client.location.country,
+    contactBlob,
+  ]
+    .join(' ')
+    .toLowerCase();
+};
+
+const countMatches = (client: ClientProfile, query: string) => {
+  if (!query) return 0;
+  const blob = buildSearchBlob(client);
+  const needle = query.toLowerCase();
+  if (!needle.trim()) return 0;
+  let count = 0;
+  let idx = blob.indexOf(needle);
+  while (idx !== -1) {
+    count += 1;
+    idx = blob.indexOf(needle, idx + needle.length);
+  }
+  return count;
+};
+
+const parseCsv = (text: string): string[][] => {
+  const rows: string[][] = [];
+  let current: string[] = [];
+  let value = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        value += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      current.push(value.trim());
+      value = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (value || current.length > 0) {
+        current.push(value.trim());
+        value = '';
+      }
+      if (current.length > 0) rows.push(current);
+      current = [];
+      if (char === '\r' && next === '\n') i += 1;
+      continue;
+    }
+
+    value += char;
+  }
+
+  if (value || current.length > 0) {
+    current.push(value.trim());
+  }
+  if (current.length > 0) rows.push(current);
+  return rows;
+};
+
+const mapCsvRows = (rows: string[][]): ClientInput[] => {
+  if (!rows.length) return [];
+  const headers = rows[0].map((header) => header.trim().toLowerCase());
+  const getIndex = (label: string) => headers.indexOf(label);
+
+  const idxCompany = getIndex('company name');
+  const idxCity = getIndex('city');
+  const idxCountry = getIndex('country');
+  const idxDomain = getIndex('domain');
+  const idxFirst = getIndex('first name');
+  const idxLast = getIndex('last name');
+  const idxEmail = getIndex('email');
+  const idxPhone = getIndex('phone');
+  if (idxCompany < 0) return [];
+
+  return rows.slice(1).map((row) => {
+    const contact: ClientContactInput = {
+      firstName: row[idxFirst] || '',
+      lastName: row[idxLast] || '',
+      email: row[idxEmail] || '',
+      phone: row[idxPhone] || '',
+    };
+
+    return {
+      companyName: row[idxCompany] || '',
+      domain: row[idxDomain] || '',
+      city: row[idxCity] || '',
+      country: row[idxCountry] || '',
+      contacts: contact.firstName || contact.lastName || contact.email || contact.phone ? [contact] : [],
+    };
+  });
+};
+
+const CopyButton = ({ value, label }: { value: string; label: string }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      toast.success(`${label} copied`);
+      setTimeout(() => setCopied(false), 1200);
+    } catch (error) {
+      toast.error('Copy failed');
+    }
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="inline-flex items-center justify-center h-7 w-7 rounded border border-border/50 bg-muted/30 text-muted-foreground hover:text-foreground transition"
+        >
+          {copied ? <Check className="h-4 w-4 text-primary" /> : <Copy className="h-4 w-4" />}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{copied ? 'Copied' : `Copy ${label}`}</TooltipContent>
+    </Tooltip>
+  );
+};
 
 const Clients = () => {
-  const { opportunities } = useData();
+  const { clients, stats, addClient, importClients, normalizeCompanyName, isLoading, error } = useClientStore();
   const [search, setSearch] = useState('');
-  
-  const clientStats = useMemo(() => {
-    const stats: Record<string, {
-      count: number;
-      value: number;
-      won: number;
-      lost: number;
-      inProgress: number;
-      submitted: number;
-    }> = {};
+  const [selectedClient, setSelectedClient] = useState<ClientProfile | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [filters, setFilters] = useState<{ domains: string[]; countries: string[] }>({ domains: [], countries: [] });
 
-    opportunities.forEach(o => {
-      if (!stats[o.clientName]) {
-        stats[o.clientName] = { count: 0, value: 0, won: 0, lost: 0, inProgress: 0, submitted: 0 };
+  const [newClient, setNewClient] = useState<ClientInput>({
+    companyName: '',
+    domain: '',
+    city: '',
+    country: '',
+    contacts: [{ firstName: '', lastName: '', email: '', phone: '' }],
+  });
+
+  const topFilters = useMemo(() => {
+    const domainCounts = new Map<string, number>();
+    const countryCounts = new Map<string, number>();
+    clients.forEach((client) => {
+      if (client.domain) domainCounts.set(client.domain, (domainCounts.get(client.domain) || 0) + 1);
+      if (client.location.country) {
+        countryCounts.set(client.location.country, (countryCounts.get(client.location.country) || 0) + 1);
       }
-      stats[o.clientName].count++;
-      stats[o.clientName].value += o.opportunityValue;
-      if (o.canonicalStage === 'Awarded') stats[o.clientName].won++;
-      if (o.canonicalStage === 'Lost/Regretted') stats[o.clientName].lost++;
-      if (o.canonicalStage === 'In Progress') stats[o.clientName].inProgress++;
-      if (o.canonicalStage === 'Submitted') stats[o.clientName].submitted++;
     });
-
-    return Object.entries(stats)
-      .map(([name, data]) => ({
-        name,
-        ...data,
-        winRate: data.won + data.lost > 0 
-          ? Math.round((data.won / (data.won + data.lost)) * 100) 
-          : 0,
-      }))
-      .sort((a, b) => b.value - a.value);
-  }, [opportunities]);
+    const topDomains = Array.from(domainCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([value, count]) => ({ value, count }));
+    const topCountries = Array.from(countryCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([value, count]) => ({ value, count }));
+    return { topDomains, topCountries };
+  }, [clients]);
 
   const filteredClients = useMemo(() => {
-    if (!search) return clientStats;
-    return clientStats.filter(c => 
-      c.name.toLowerCase().includes(search.toLowerCase())
+    const query = search.trim().toLowerCase();
+    return clients.filter((client) => {
+      if (filters.domains.length > 0 && !filters.domains.includes(client.domain)) return false;
+      if (filters.countries.length > 0 && !filters.countries.includes(client.location.country)) return false;
+      if (!query) return true;
+      return buildSearchBlob(client).includes(query);
+    });
+  }, [clients, filters, search]);
+
+  const handleCardClick = (client: ClientProfile) => {
+    setSelectedClient(client);
+    setIsDetailOpen(true);
+  };
+
+  const toggleFilter = (type: 'domains' | 'countries', value: string) => {
+    setFilters((prev) => {
+      const exists = prev[type].includes(value);
+      return {
+        ...prev,
+        [type]: exists ? prev[type].filter((item) => item !== value) : [...prev[type], value],
+      };
+    });
+  };
+
+  const handleDownloadTemplate = () => {
+    const headers = ['Company Name', 'City', 'Country', 'Domain', 'First Name', 'Last Name', 'Email', 'Phone'];
+    const example = [
+      ['Acme Corp', 'Dubai', 'UAE', 'acme.com', 'Sara', 'Ali', 'sara@acme.com', '+971 50 000 0000'],
+      ['Acme Corp', 'Dubai', 'UAE', 'acme.com', 'Omar', 'Hassan', 'omar@acme.com', '+971 55 000 0000'],
+    ];
+    const csv = [headers.join(','), ...example.map((row) => row.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'client-import-template.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const rows = parseCsv(text);
+      if (rows.length < 2) {
+        toast.error('No rows found in the CSV file');
+        return;
+      }
+      const inputs = mapCsvRows(rows).filter((row) => row.companyName.trim());
+      if (!inputs.length) {
+        toast.error('CSV headers are missing or no valid client rows found');
+        return;
+      }
+      await importClients(inputs);
+      toast.success(`Imported ${inputs.length} rows`);
+      setIsImportOpen(false);
+    } catch (err) {
+      toast.error('Import failed');
+    }
+  };
+
+  const handleAddClient = async () => {
+    if (!newClient.companyName.trim()) {
+      toast.error('Company name is required');
+      return;
+    }
+    const cleanedContacts = newClient.contacts.filter((contact) =>
+      [contact.firstName, contact.lastName, contact.email, contact.phone].some((value) => String(value || '').trim())
     );
-  }, [clientStats, search]);
-
-  const totalValue = clientStats.reduce((sum, c) => sum + c.value, 0);
-  const totalOpps = clientStats.reduce((sum, c) => sum + c.count, 0);
-  const maxValue = Math.max(...clientStats.map(c => c.value));
-
-  const formatCurrency = (value: number) => {
-    if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
-    if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
-    return `$${value}`;
+    try {
+      await addClient({
+        ...newClient,
+        companyName: normalizeCompanyName(newClient.companyName),
+        contacts: cleanedContacts,
+      });
+      setNewClient({
+        companyName: '',
+        domain: '',
+        city: '',
+        country: '',
+        contacts: [{ firstName: '', lastName: '', email: '', phone: '' }],
+      });
+      setIsAddOpen(false);
+      toast.success('Client added');
+    } catch (err) {
+      toast.error('Failed to add client');
+    }
   };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Clients</h1>
-        <p className="text-muted-foreground">{clientStats.length} clients in your pipeline</p>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Clients</p>
-                <p className="text-2xl font-bold">{clientStats.length}</p>
-              </div>
-              <Building2 className="h-8 w-8 text-primary opacity-50" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Opportunities</p>
-                <p className="text-2xl font-bold">{totalOpps}</p>
-              </div>
-              <FileText className="h-8 w-8 text-primary opacity-50" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Pipeline Value</p>
-                <p className="text-2xl font-bold">{formatCurrency(totalValue)}</p>
-              </div>
-              <DollarSign className="h-8 w-8 text-success opacity-50" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Avg per Client</p>
-                <p className="text-2xl font-bold">{formatCurrency(totalValue / clientStats.length)}</p>
-              </div>
-              <TrendingUp className="h-8 w-8 text-warning opacity-50" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search clients..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-10"
-        />
-      </div>
-
-      {/* Client List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredClients.map((client, index) => (
-          <Card key={client.name} className="hover:shadow-lg transition-shadow">
-            <CardHeader className="pb-2">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-muted-foreground w-6 h-6 rounded-full bg-muted flex items-center justify-center">
-                    {index + 1}
-                  </span>
-                  <CardTitle className="text-base truncate max-w-[180px]">{client.name}</CardTitle>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Clients</h1>
+          <p className="text-muted-foreground">Vendor-style directory of client profiles and contacts.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Upload className="h-4 w-4" />
+                Import
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Import Clients</DialogTitle>
+                <DialogDescription>
+                  Download the template and drop your completed CSV to merge clients by company name.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <Button variant="secondary" onClick={handleDownloadTemplate} className="w-fit">
+                  Download CSV Template
+                </Button>
+                <div
+                  className="border border-dashed border-border/50 rounded-lg p-6 text-center bg-muted/30"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const file = event.dataTransfer.files?.[0];
+                    if (file) handleImportFile(file);
+                  }}
+                >
+                  <p className="text-sm text-muted-foreground">Drag and drop CSV here, or click to upload.</p>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    className="mt-3 block w-full text-sm"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) handleImportFile(file);
+                    }}
+                  />
                 </div>
-                {client.winRate > 0 && (
-                  <Badge variant={client.winRate >= 50 ? "default" : "secondary"}>
-                    {client.winRate}% win
-                  </Badge>
-                )}
+                <Separator />
+                <div>
+                  <p className="text-sm font-medium text-foreground mb-2">Merge behavior example</p>
+                  <div className="border border-border/50 rounded-lg overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/30 text-muted-foreground">
+                        <tr>
+                          <th className="p-2 text-left">Company Name</th>
+                          <th className="p-2 text-left">City</th>
+                          <th className="p-2 text-left">Country</th>
+                          <th className="p-2 text-left">Domain</th>
+                          <th className="p-2 text-left">First Name</th>
+                          <th className="p-2 text-left">Last Name</th>
+                          <th className="p-2 text-left">Email</th>
+                          <th className="p-2 text-left">Phone</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-t border-border/50">
+                          <td className="p-2">Acme Corp</td>
+                          <td className="p-2">Dubai</td>
+                          <td className="p-2">UAE</td>
+                          <td className="p-2">acme.com</td>
+                          <td className="p-2">Sara</td>
+                          <td className="p-2">Ali</td>
+                          <td className="p-2">sara@acme.com</td>
+                          <td className="p-2">+971 50 000 0000</td>
+                        </tr>
+                        <tr className="border-t border-border/50">
+                          <td className="p-2">ACME CORP</td>
+                          <td className="p-2">Dubai</td>
+                          <td className="p-2">UAE</td>
+                          <td className="p-2">acme.com</td>
+                          <td className="p-2">Omar</td>
+                          <td className="p-2">Hassan</td>
+                          <td className="p-2">omar@acme.com</td>
+                          <td className="p-2">+971 55 000 0000</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Both rows merge into a single client with two contacts because company names are normalized to title-case.
+                  </p>
+                </div>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">{client.count} opportunities</span>
-                <span className="font-semibold">{formatCurrency(client.value)}</span>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                Add Client
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Add Client</DialogTitle>
+                <DialogDescription>Create a new client profile and add contacts.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Company Name</Label>
+                    <Input
+                      value={newClient.companyName}
+                      onChange={(event) => setNewClient({ ...newClient, companyName: event.target.value })}
+                      placeholder="Acme Corp"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Domain</Label>
+                    <Input
+                      value={newClient.domain}
+                      onChange={(event) => setNewClient({ ...newClient, domain: event.target.value })}
+                      placeholder="acme.com"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>City</Label>
+                    <Input
+                      value={newClient.city}
+                      onChange={(event) => setNewClient({ ...newClient, city: event.target.value })}
+                      placeholder="Dubai"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Country</Label>
+                    <Input
+                      value={newClient.country}
+                      onChange={(event) => setNewClient({ ...newClient, country: event.target.value })}
+                      placeholder="UAE"
+                    />
+                  </div>
+                </div>
+                <Separator />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Contacts</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setNewClient((prev) => ({
+                          ...prev,
+                          contacts: [...prev.contacts, { firstName: '', lastName: '', email: '', phone: '' }],
+                        }))
+                      }
+                    >
+                      Add Contact
+                    </Button>
+                  </div>
+                  {newClient.contacts.map((contact, idx) => (
+                    <div key={`contact-${idx}`} className="grid gap-3 md:grid-cols-4 items-end">
+                      <div className="space-y-1">
+                        <Label className="text-xs">First Name</Label>
+                        <Input
+                          value={contact.firstName}
+                          onChange={(event) => {
+                            const updated = [...newClient.contacts];
+                            updated[idx] = { ...updated[idx], firstName: event.target.value };
+                            setNewClient({ ...newClient, contacts: updated });
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Last Name</Label>
+                        <Input
+                          value={contact.lastName}
+                          onChange={(event) => {
+                            const updated = [...newClient.contacts];
+                            updated[idx] = { ...updated[idx], lastName: event.target.value };
+                            setNewClient({ ...newClient, contacts: updated });
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Email</Label>
+                        <Input
+                          value={contact.email}
+                          onChange={(event) => {
+                            const updated = [...newClient.contacts];
+                            updated[idx] = { ...updated[idx], email: event.target.value };
+                            setNewClient({ ...newClient, contacts: updated });
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Phone</Label>
+                        <Input
+                          value={contact.phone}
+                          onChange={(event) => {
+                            const updated = [...newClient.contacts];
+                            updated[idx] = { ...updated[idx], phone: event.target.value };
+                            setNewClient({ ...newClient, contacts: updated });
+                          }}
+                        />
+                      </div>
+                      {newClient.contacts.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const updated = newClient.contacts.filter((_, i) => i !== idx);
+                            setNewClient({ ...newClient, contacts: updated });
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-              <Progress value={(client.value / maxValue) * 100} className="h-1.5" />
-              <div className="flex gap-2 flex-wrap">
-                {client.won > 0 && (
-                  <Badge variant="outline" className="text-success border-success/30 bg-success/10 text-xs">
-                    {client.won} Won
-                  </Badge>
-                )}
-                {client.submitted > 0 && (
-                  <Badge variant="outline" className="text-[hsl(var(--pending))] border-[hsl(var(--pending))]/30 bg-[hsl(var(--pending))]/10 text-xs">
-                    {client.submitted} Submitted
-                  </Badge>
-                )}
-                {client.inProgress > 0 && (
-                  <Badge variant="outline" className="text-warning border-warning/30 bg-warning/10 text-xs">
-                    {client.inProgress} In Progress
-                  </Badge>
-                )}
-                {client.lost > 0 && (
-                  <Badge variant="outline" className="text-destructive border-destructive/30 bg-destructive/10 text-xs">
-                    {client.lost} Lost
-                  </Badge>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              <DialogFooter>
+                <Button onClick={handleAddClient}>Save Client</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card className="bg-card border border-border/50">
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Total Clients</p>
+            <p className="text-2xl font-bold text-foreground">{stats.totalClients}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border border-border/50">
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">With Contacts</p>
+            <p className="text-2xl font-bold text-foreground">{stats.withContacts}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border border-border/50">
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Total Contacts</p>
+            <p className="text-2xl font-bold text-foreground">{stats.totalContacts}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-card border border-border/50">
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Domains</p>
+            <p className="text-2xl font-bold text-foreground">{stats.domains}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative w-full lg:max-w-xl">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search companies, domains, locations, or contacts..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="h-12 pl-11 bg-card border-border/50"
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {filters.domains.length > 0 || filters.countries.length > 0 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setFilters({ domains: [], countries: [] })}
+            >
+              Clear Filters
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs text-muted-foreground">Top Domains</p>
+          {topFilters.topDomains.map((item) => (
+            <Badge
+              key={item.value}
+              onClick={() => toggleFilter('domains', item.value)}
+              className={`cursor-pointer border border-border/50 ${filters.domains.includes(item.value) ? 'bg-primary/10 text-primary' : 'bg-muted/30 text-muted-foreground'}`}
+            >
+              {item.value} ({item.count})
+            </Badge>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs text-muted-foreground">Top Countries</p>
+          {topFilters.topCountries.map((item) => (
+            <Badge
+              key={item.value}
+              onClick={() => toggleFilter('countries', item.value)}
+              className={`cursor-pointer border border-border/50 ${filters.countries.includes(item.value) ? 'bg-primary/10 text-primary' : 'bg-muted/30 text-muted-foreground'}`}
+            >
+              {item.value} ({item.count})
+            </Badge>
+          ))}
+        </div>
+      </div>
+
+      <div
+        className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+        style={{ perspective: '1000px' }}
+      >
+        {isLoading && (
+          <Card className="border border-border/50 bg-card p-6 text-sm text-muted-foreground">
+            Loading clients from MongoDB...
+          </Card>
+        )}
+        {error && !isLoading && (
+          <Card className="border border-border/50 bg-card p-6 text-sm text-destructive">
+            {error}
+          </Card>
+        )}
+        {filteredClients.map((client) => {
+          const firstContact = client.contacts[0];
+          const matchCount = countMatches(client, search);
+          return (
+            <Card
+              key={client.id}
+              onClick={() => handleCardClick(client)}
+              className="group relative cursor-pointer overflow-hidden border border-border/50 bg-card transform-gpu transition-all hover:shadow-xl hover:-translate-y-1 hover:scale-[1.01]"
+            >
+              <div className="h-1 w-full bg-gradient-to-r from-primary via-info to-accent" />
+              <CardHeader className="space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <CardTitle className="text-lg font-bold text-foreground group-hover:text-primary">
+                    {highlightText(client.companyName, search)}
+                  </CardTitle>
+                  {search.trim() && matchCount > 0 && (
+                    <Badge variant="secondary">{matchCount} matches</Badge>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-2">
+                    <Globe className="h-4 w-4" />
+                    {highlightText(client.domain || 'No domain', search)}
+                  </span>
+                  <Badge className="flex items-center gap-1 bg-muted/30 text-muted-foreground border border-border/50">
+                    <MapPin className="h-3 w-3" />
+                    {highlightText(
+                      client.location.city || client.location.country
+                        ? `${client.location.city}${client.location.city && client.location.country ? ', ' : ''}${client.location.country}`
+                        : 'Unknown location',
+                      search
+                    )}
+                  </Badge>
+                  <Badge className="bg-primary/10 text-primary border border-border/50">
+                    {client.contacts.length} contacts
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <p className="text-xs text-muted-foreground">Primary contact</p>
+                <p className="text-sm font-medium text-foreground">
+                  {firstContact
+                    ? highlightText(`${firstContact.firstName} ${firstContact.lastName}`.trim() || 'Unnamed contact', search)
+                    : 'No contacts yet'}
+                </p>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <DialogContent className="max-w-3xl">
+          {selectedClient && (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-border/50 bg-gradient-to-br from-primary/5 via-info/5 to-accent/5 p-4">
+                <DialogHeader>
+                  <DialogTitle className="text-xl text-foreground">{selectedClient.companyName}</DialogTitle>
+                  <DialogDescription className="text-muted-foreground">
+                    {selectedClient.domain || 'No domain'} • {selectedClient.location.city || 'Unknown city'}{' '}
+                    {selectedClient.location.country ? `, ${selectedClient.location.country}` : ''}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded border border-border/50 bg-card p-3">
+                    <p className="text-xs text-muted-foreground">Domain</p>
+                    <p className="text-sm font-medium text-foreground">{selectedClient.domain || 'N/A'}</p>
+                  </div>
+                  <div className="rounded border border-border/50 bg-card p-3">
+                    <p className="text-xs text-muted-foreground">City</p>
+                    <p className="text-sm font-medium text-foreground">{selectedClient.location.city || 'N/A'}</p>
+                  </div>
+                  <div className="rounded border border-border/50 bg-card p-3">
+                    <p className="text-xs text-muted-foreground">Country</p>
+                    <p className="text-sm font-medium text-foreground">{selectedClient.location.country || 'N/A'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-foreground">Contacts</p>
+                  <Badge className="bg-primary/10 text-primary border border-border/50">
+                    {selectedClient.contacts.length} total
+                  </Badge>
+                </div>
+                <ScrollArea className="h-64 rounded-lg border border-border/50 bg-card">
+                  <div className="divide-y divide-border/50">
+                    {selectedClient.contacts.map((contact) => (
+                      <div key={contact.id} className="p-3 grid gap-2 md:grid-cols-3 items-center">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">
+                            {contact.firstName} {contact.lastName}
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs text-muted-foreground truncate">{contact.email || 'No email'}</p>
+                          <CopyButton value={contact.email} label="Email" />
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs text-muted-foreground truncate">{contact.phone || 'No phone'}</p>
+                          <CopyButton value={contact.phone} label="Phone" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
