@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { toast } from 'sonner';
 import styles from './OpportunitiesTable.module.css';
 
 interface OpportunitiesTableProps {
@@ -29,9 +32,19 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
   const { formatCurrency } = useCurrency();
-  const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, revertApproval, refreshApprovals } = useApproval();
+  const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, bulkApprove, revertApproval, refreshApprovals } = useApproval();
   const { isProposalHead, isSVP, isMaster, user } = useAuth();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [bulkAction, setBulkAction] = useState<'proposal_head' | 'svp'>(isSVP && !isMaster ? 'svp' : 'proposal_head');
+  const [bulkFilters, setBulkFilters] = useState({
+    dateFrom: '',
+    dateTo: '',
+    group: '',
+    lead: '',
+    client: '',
+    submitter: '',
+  });
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -152,6 +165,53 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
     return tender.groupClassification?.toUpperCase() === user.assignedGroup?.toUpperCase();
   };
 
+  const getSubmitter = (tender: Opportunity) => {
+    const snapshot = tender.rawGraphData?.rowSnapshot;
+    if (!snapshot || typeof snapshot !== 'object') return '';
+    const entries = Object.entries(snapshot);
+    for (const [key, value] of entries) {
+      const normalized = String(key || '').toUpperCase().replace(/\\s+/g, ' ').trim();
+      if (['SUBMITTED BY', 'SUBMITTER', 'SUBMITTEDBY'].includes(normalized)) {
+        return String(value || '').trim();
+      }
+    }
+    return '';
+  };
+
+  const filterOptions = useMemo(() => {
+    const groups = new Set<string>();
+    const leads = new Set<string>();
+    const clients = new Set<string>();
+    const submitters = new Set<string>();
+    data.forEach((tender) => {
+      if (tender.groupClassification) groups.add(tender.groupClassification);
+      if (tender.internalLead) leads.add(tender.internalLead);
+      if (tender.clientName) clients.add(tender.clientName);
+      const submitter = getSubmitter(tender);
+      if (submitter) submitters.add(submitter);
+    });
+    return {
+      groups: Array.from(groups).sort(),
+      leads: Array.from(leads).sort(),
+      clients: Array.from(clients).sort(),
+      submitters: Array.from(submitters).sort(),
+    };
+  }, [data]);
+
+  const canBulkProposalHead = isProposalHead || isMaster;
+  const canBulkSVP = isSVP || isMaster;
+  const canBulkApprove = canBulkProposalHead || canBulkSVP;
+
+  const handleBulkApprove = async () => {
+    try {
+      const result = await bulkApprove(bulkAction, bulkFilters);
+      toast.success(`Bulk approval complete. Updated ${result.updated}.`);
+      setIsBulkOpen(false);
+    } catch (error) {
+      toast.error((error as Error).message || 'Bulk approval failed');
+    }
+  };
+
   return (
     <Card className="flex-1 flex flex-col min-w-0">
       <CardHeader className="pb-3">
@@ -211,7 +271,19 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                 <TableHead className="px-2 sm:px-3 text-right font-bold">Value</TableHead>
                 <TableHead className="px-2 sm:px-3 font-bold">Status</TableHead>
                 <TableHead className="hidden md:table-cell px-2 sm:px-3 font-bold">Remarks</TableHead>
-                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">Approval</TableHead>
+                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">
+                  {canBulkApprove ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsBulkOpen(true)}
+                      className="text-primary underline underline-offset-4"
+                    >
+                      Approval
+                    </button>
+                  ) : (
+                    'Approval'
+                  )}
+                </TableHead>
                 <TableHead className="hidden sm:table-cell px-2 sm:px-3 font-bold">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -306,6 +378,107 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
         <div className="p-2 sm:p-3 text-xs sm:text-sm text-muted-foreground border-t bg-background">
           Showing by RFP Received ({rfpSortOrder.toUpperCase()}): {filteredData.length} of {data.length} tenders (scroll to view all)
         </div>
+        <Dialog open={isBulkOpen} onOpenChange={setIsBulkOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Bulk Approve</DialogTitle>
+              <DialogDescription>Apply approvals across multiple tenders based on filters.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {isMaster && (
+                <div className="space-y-2">
+                  <Label>Approval Step</Label>
+                  <Select value={bulkAction} onValueChange={(value) => setBulkAction(value as 'proposal_head' | 'svp')}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {canBulkProposalHead && <SelectItem value="proposal_head">Tender Manager Approval</SelectItem>}
+                      {canBulkSVP && <SelectItem value="svp">SVP Approval</SelectItem>}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {!isMaster && canBulkProposalHead && (
+                <div className="text-xs text-muted-foreground">Action: Tender Manager Approval</div>
+              )}
+              {!isMaster && canBulkSVP && !canBulkProposalHead && (
+                <div className="text-xs text-muted-foreground">Action: SVP Approval</div>
+              )}
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Date From</Label>
+                  <Input type="date" value={bulkFilters.dateFrom} onChange={(e) => setBulkFilters((prev) => ({ ...prev, dateFrom: e.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Date To</Label>
+                  <Input type="date" value={bulkFilters.dateTo} onChange={(e) => setBulkFilters((prev) => ({ ...prev, dateTo: e.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Group</Label>
+                  <Select value={bulkFilters.group || 'ALL'} onValueChange={(value) => setBulkFilters((prev) => ({ ...prev, group: value === 'ALL' ? '' : value }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All</SelectItem>
+                      {filterOptions.groups.map((group) => (
+                        <SelectItem key={group} value={group}>{group}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Lead</Label>
+                  <Select value={bulkFilters.lead || 'ALL'} onValueChange={(value) => setBulkFilters((prev) => ({ ...prev, lead: value === 'ALL' ? '' : value }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All</SelectItem>
+                      {filterOptions.leads.map((lead) => (
+                        <SelectItem key={lead} value={lead}>{lead}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Client</Label>
+                  <Select value={bulkFilters.client || 'ALL'} onValueChange={(value) => setBulkFilters((prev) => ({ ...prev, client: value === 'ALL' ? '' : value }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All</SelectItem>
+                      {filterOptions.clients.map((client) => (
+                        <SelectItem key={client} value={client}>{client}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Submitter</Label>
+                  <Select value={bulkFilters.submitter || 'ALL'} onValueChange={(value) => setBulkFilters((prev) => ({ ...prev, submitter: value === 'ALL' ? '' : value }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All</SelectItem>
+                      {filterOptions.submitters.map((submitter) => (
+                        <SelectItem key={submitter} value={submitter}>{submitter}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="secondary" onClick={() => setIsBulkOpen(false)}>Cancel</Button>
+              <Button onClick={handleBulkApprove}>Approve</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

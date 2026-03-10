@@ -205,14 +205,13 @@ export function getClientData(data: Opportunity[]) {
   const clientStats: Record<string, { count: number; value: number }> = {};
   
   data.forEach(o => {
-    if (!clientStats[o.clientName]) {
-      clientStats[o.clientName] = { count: 0, value: 0 };
+    const name = String(o.clientName || '').trim();
+    if (!name) return;
+    if (!clientStats[name]) {
+      clientStats[name] = { count: 0, value: 0 };
     }
-    clientStats[o.clientName].count++;
-    const result = String(o.tenderResult || o.avenirStatus || "").toUpperCase();
-    if (result === "SUBMITTED") {
-      clientStats[o.clientName].value += o.opportunityValue;
-    }
+    clientStats[name].count++;
+    clientStats[name].value += Number(o.opportunityValue || 0);
   });
   
   return Object.entries(clientStats)

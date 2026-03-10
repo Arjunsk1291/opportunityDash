@@ -87,6 +87,90 @@ export default {
     return { success: true, approval: normalizeApproval(approval), approvals, approvalStates, approvalLogs: logs };
   },
 
+  async bulkApproveAsProposalHead(opportunityRefNos, performedBy, performedByRole) {
+    const refs = Array.isArray(opportunityRefNos) ? opportunityRefNos.filter(Boolean) : [];
+    if (!refs.length) {
+      return { success: true, updatedCount: 0, approvals: await this.getApprovals(), approvalStates: await this.getApprovalStates(), approvalLogs: await this.getApprovalLogs() };
+    }
+    const now = new Date();
+    const ops = refs.map((opportunityRefNo) => ({
+      updateOne: {
+        filter: { opportunityRefNo },
+        update: {
+          $set: {
+            opportunityRefNo,
+            status: 'proposal_head_approved',
+            proposalHeadApproved: true,
+            proposalHeadBy: performedBy,
+            proposalHeadAt: now,
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    await Approval.bulkWrite(ops, { ordered: false });
+    await ApprovalLog.insertMany(
+      refs.map((opportunityRefNo) => ({
+        opportunityRefNo,
+        action: 'proposal_head_approved',
+        performedBy,
+        performedByRole,
+      }))
+    );
+
+    const approvals = await this.getApprovals();
+    const approvalStates = await this.getApprovalStates();
+    const logs = await this.getApprovalLogs();
+    return { success: true, updatedCount: refs.length, approvals, approvalStates, approvalLogs: logs };
+  },
+
+  async bulkApproveAsSVP(opportunityRefNos, performedBy, performedByRole, group) {
+    const refs = Array.isArray(opportunityRefNos) ? opportunityRefNos.filter(Boolean) : [];
+    if (!refs.length) {
+      return { success: true, updatedCount: 0, approvals: await this.getApprovals(), approvalStates: await this.getApprovalStates(), approvalLogs: await this.getApprovalLogs(), skipped: [] };
+    }
+
+    const eligible = await Approval.find({ opportunityRefNo: { $in: refs }, proposalHeadApproved: true }).lean();
+    const eligibleRefs = new Set(eligible.map((item) => item.opportunityRefNo));
+    const toApprove = refs.filter((ref) => eligibleRefs.has(ref));
+    const skipped = refs.filter((ref) => !eligibleRefs.has(ref));
+
+    if (toApprove.length > 0) {
+      const now = new Date();
+      const ops = toApprove.map((opportunityRefNo) => ({
+        updateOne: {
+          filter: { opportunityRefNo },
+          update: {
+            $set: {
+              status: 'fully_approved',
+              svpApproved: true,
+              svpBy: performedBy,
+              svpAt: now,
+              svpGroup: group || null,
+            },
+          },
+        },
+      }));
+
+      await Approval.bulkWrite(ops, { ordered: false });
+      await ApprovalLog.insertMany(
+        toApprove.map((opportunityRefNo) => ({
+          opportunityRefNo,
+          action: 'svp_approved',
+          performedBy,
+          performedByRole,
+          group: group || null,
+        }))
+      );
+    }
+
+    const approvals = await this.getApprovals();
+    const approvalStates = await this.getApprovalStates();
+    const logs = await this.getApprovalLogs();
+    return { success: true, updatedCount: toApprove.length, skipped, approvals, approvalStates, approvalLogs: logs };
+  },
+
   async revertApproval(opportunityRefNo, performedBy, performedByRole) {
     await Approval.findOneAndUpdate(
       { opportunityRefNo },

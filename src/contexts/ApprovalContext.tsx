@@ -32,6 +32,7 @@ interface ApprovalContextType {
   getApprovalState: (opportunityRefNo: string) => ApprovalState;
   approveAsProposalHead: (opportunityRefNo: string) => Promise<void>;
   approveAsSVP: (opportunityRefNo: string, group?: string) => Promise<void>;
+  bulkApprove: (action: 'proposal_head' | 'svp', filters: Record<string, string>) => Promise<{ updated: number; skipped?: string[] }>;
   revertApproval: (opportunityRefNo: string) => Promise<void>;
   refreshApprovals: () => Promise<void>;
 }
@@ -120,6 +121,24 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     await refreshApprovals();
   }, [headers, refreshApprovals]);
 
+  const bulkApprove = useCallback(async (action: 'proposal_head' | 'svp', filters: Record<string, string>) => {
+    const response = await fetch(API_URL + '/approvals/bulk-approve', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ action, filters }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || 'Bulk approval failed');
+    }
+
+    setApprovals(payload.approvals || {});
+    setApprovalStates(payload.approvalStates || {});
+    if (payload.approvalLogs) setApprovalLogs(payload.approvalLogs);
+    return { updated: Number(payload.updated || 0), skipped: payload.skipped || [] };
+  }, [headers]);
+
   const revertApproval = useCallback(async (opportunityRefNo: string) => {
     const response = await fetch(API_URL + '/approvals/revert', {
       method: 'POST',
@@ -145,6 +164,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
         getApprovalState,
         approveAsProposalHead,
         approveAsSVP,
+        bulkApprove,
         revertApproval,
         refreshApprovals,
       }}

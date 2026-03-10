@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useClientStore } from '@/hooks/useClientStore';
+import { useAuth } from '@/contexts/AuthContext';
 import type { ClientContactInput, ClientInput, ClientProfile } from '@/types/client';
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -243,6 +244,8 @@ const CopyButton = ({ value, label }: { value: string; label: string }) => {
 
 const Clients = () => {
   const { clients, stats, addClient, importClients, normalizeCompanyName, isLoading, error } = useClientStore();
+  const { isAdmin, isMaster } = useAuth();
+  const canManageClients = isAdmin || isMaster;
   const [search, setSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<ClientProfile | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -378,13 +381,14 @@ const Clients = () => {
           <p className="text-muted-foreground">Vendor-style directory of client profiles and contacts.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="gap-2">
-                <Upload className="h-4 w-4" />
-                Import
-              </Button>
-            </DialogTrigger>
+          {canManageClients && (
+            <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  <Upload className="h-4 w-4" />
+                  Import
+                </Button>
+              </DialogTrigger>
             <DialogContent className="max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Import Clients</DialogTitle>
@@ -464,14 +468,16 @@ const Clients = () => {
               </div>
             </DialogContent>
           </Dialog>
+          )}
 
-          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                Add Client
-              </Button>
-            </DialogTrigger>
+          {canManageClients && (
+            <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+              <DialogTrigger asChild>
+                <Button className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Add Client
+                </Button>
+              </DialogTrigger>
             <DialogContent className="max-w-2xl">
               <DialogHeader>
                 <DialogTitle>Add Client</DialogTitle>
@@ -598,6 +604,7 @@ const Clients = () => {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          )}
         </div>
       </div>
 

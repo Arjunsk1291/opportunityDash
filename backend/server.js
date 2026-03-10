@@ -219,6 +219,54 @@ const mergeContacts = (existing = [], incoming = []) => {
   return merged;
 };
 
+const getSubmitterFromOpportunity = (opportunity = {}) => {
+  const snapshot = opportunity?.rawGraphData?.rowSnapshot;
+  if (!snapshot || typeof snapshot !== 'object') return '';
+  const normalizedEntries = Object.entries(snapshot).reduce((acc, [key, value]) => {
+    acc[normalizeColumnKey(key)] = String(value || '').trim();
+    return acc;
+  }, {});
+  return normalizedEntries['SUBMITTED BY'] || normalizedEntries['SUBMITTER'] || normalizedEntries['SUBMITTEDBY'] || '';
+};
+
+const normalizeFilterValue = (value = '') => String(value || '').trim().toLowerCase();
+
+const matchFilterValue = (source = '', target = '') => {
+  if (!target) return true;
+  return normalizeFilterValue(source) === normalizeFilterValue(target);
+};
+
+const filterOpportunitiesForBulkApprove = (opportunities = [], filters = {}) => {
+  const dateFromRaw = filters?.dateFrom ? parseDateValue(filters.dateFrom) : null;
+  const dateToRaw = filters?.dateTo ? parseDateValue(filters.dateTo) : null;
+  const dateFrom = dateFromRaw && !Number.isNaN(dateFromRaw.getTime()) ? dateFromRaw : null;
+  const dateTo = dateToRaw && !Number.isNaN(dateToRaw.getTime()) ? dateToRaw : null;
+
+  const group = normalizeFilterValue(filters.group || '');
+  const lead = normalizeFilterValue(filters.lead || '');
+  const client = normalizeFilterValue(filters.client || '');
+  const submitter = normalizeFilterValue(filters.submitter || '');
+
+  return opportunities.filter((opportunity) => {
+    if (group && normalizeFilterValue(opportunity.groupClassification || '') !== group) return false;
+    if (lead && normalizeFilterValue(opportunity.internalLead || '') !== lead) return false;
+    if (client && normalizeFilterValue(opportunity.clientName || '') !== client) return false;
+    if (submitter) {
+      const submittedBy = getSubmitterFromOpportunity(opportunity);
+      if (normalizeFilterValue(submittedBy) !== submitter) return false;
+    }
+
+    if (dateFrom || dateTo) {
+      const received = getTenderReceivedDate(opportunity);
+      if (!received) return false;
+      if (dateFrom && received < dateFrom) return false;
+      if (dateTo && received > dateTo) return false;
+    }
+
+    return true;
+  });
+};
+
 const buildClientSeedFromOpportunity = (opportunity = {}) => {
   const rawName = opportunity?.clientName || opportunity?.rawGraphData?.rowSnapshot?.CLIENT || '';
   const companyName = normalizeCompanyName(rawName);
@@ -1287,6 +1335,45 @@ app.post('/api/approvals/approve-svp', verifyToken, async (req, res) => {
 
     const result = await approvalDb.approveAsSVP(opportunityRefNo, req.user.displayName, req.user.role, group || req.user.assignedGroup);
     res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/approvals/bulk-approve', verifyToken, async (req, res) => {
+  try {
+    const action = String(req.body?.action || '').toLowerCase();
+    const filters = req.body?.filters || {};
+
+    if (action === 'proposal_head') {
+      if (!['ProposalHead', 'Master'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Only Tender Manager or Master can bulk approve step 1' });
+      }
+    } else if (action === 'svp') {
+      if (!['SVP', 'Master'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Only SVP or Master can bulk approve step 2' });
+      }
+    } else {
+      return res.status(400).json({ error: 'Invalid bulk approve action' });
+    }
+
+    const opportunities = await SyncedOpportunity.find().lean();
+    let scoped = filterOpportunitiesForBulkApprove(opportunities, filters);
+
+    if (action === 'svp' && req.user.role !== 'Master') {
+      const assignedGroup = String(req.user.assignedGroup || '').toUpperCase();
+      scoped = scoped.filter((opp) => String(opp.groupClassification || '').toUpperCase() === assignedGroup);
+    }
+
+    const refs = scoped.map((opp) => opp.opportunityRefNo).filter(Boolean);
+
+    if (action === 'proposal_head') {
+      const result = await approvalDb.bulkApproveAsProposalHead(refs, req.user.displayName, req.user.role);
+      return res.json({ success: true, updated: result.updatedCount || 0, approvals: result.approvals, approvalStates: result.approvalStates, approvalLogs: result.approvalLogs });
+    }
+
+    const result = await approvalDb.bulkApproveAsSVP(refs, req.user.displayName, req.user.role, req.user.assignedGroup);
+    return res.json({ success: true, updated: result.updatedCount || 0, skipped: result.skipped || [], approvals: result.approvals, approvalStates: result.approvalStates, approvalLogs: result.approvalLogs });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
