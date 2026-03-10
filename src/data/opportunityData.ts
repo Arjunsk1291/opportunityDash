@@ -211,7 +211,9 @@ export function getClientData(data: Opportunity[]) {
       clientStats[name] = { count: 0, value: 0 };
     }
     clientStats[name].count++;
-    clientStats[name].value += Number(o.opportunityValue || 0);
+    if (String(o.canonicalStage || '').toUpperCase() === 'AWARDED') {
+      clientStats[name].value += Number(o.opportunityValue || 0);
+    }
   });
   
   return Object.entries(clientStats)
