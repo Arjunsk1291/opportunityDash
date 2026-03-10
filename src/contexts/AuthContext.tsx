@@ -146,6 +146,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth();
   }, []);
 
+  useEffect(() => {
+    const handleMsalUser = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { username?: string | null };
+      const nextUsername = detail?.username ? String(detail.username).toLowerCase() : '';
+      if (!nextUsername) {
+        logout();
+        return;
+      }
+      if (nextUsername === token) return;
+      loginWithUsername(nextUsername).catch((error) => {
+        console.error('MSAL username sync failed:', error);
+      });
+    };
+
+    window.addEventListener('msal:user', handleMsalUser as EventListener);
+    return () => window.removeEventListener('msal:user', handleMsalUser as EventListener);
+  }, [loginWithUsername, logout, token]);
+
   const logout = useCallback(() => {
     setUser(null);
     setToken(null);

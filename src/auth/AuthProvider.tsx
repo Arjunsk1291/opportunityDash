@@ -45,6 +45,10 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         const active = msalInstance.getActiveAccount();
         setIsAuthenticated(!!active);
         setAccountUpn(active?.username);
+        if (active?.username) {
+          sessionStorage.setItem("username_token", active.username.toLowerCase());
+          window.dispatchEvent(new CustomEvent("msal:user", { detail: { username: active.username } }));
+        }
         authDebug("init.complete", {
           activeAccount: active?.username || null,
           accountCount: msalInstance.getAllAccounts().length,
@@ -78,6 +82,8 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       msalInstance.setActiveAccount(acct);
       setIsAuthenticated(true);
       setAccountUpn(acct.username);
+      sessionStorage.setItem("username_token", acct.username.toLowerCase());
+      window.dispatchEvent(new CustomEvent("msal:user", { detail: { username: acct.username } }));
       authDebug("login.complete", { account: acct.username });
     }
   };
@@ -86,6 +92,8 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     const msalInstance = getMsalInstance();
     const account = msalInstance.getActiveAccount();
     authDebug("logout.start", { account: account?.username || null });
+    sessionStorage.removeItem("username_token");
+    window.dispatchEvent(new CustomEvent("msal:user", { detail: { username: null } }));
     msalInstance.logoutPopup({ account })
       .then(() => authDebug("logout.popup.success"))
       .catch((error) => {
