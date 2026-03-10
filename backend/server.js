@@ -219,6 +219,62 @@ const mergeContacts = (existing = [], incoming = []) => {
   return merged;
 };
 
+const buildClientSeedFromOpportunity = (opportunity = {}) => {
+  const rawName = opportunity?.clientName || opportunity?.rawGraphData?.rowSnapshot?.CLIENT || '';
+  const companyName = normalizeCompanyName(rawName);
+  if (!companyName) return null;
+  const companyKey = normalizeCompanyKey(companyName);
+  return { companyName, companyKey };
+};
+
+const syncClientsFromOpportunities = async (opportunities = []) => {
+  const clientMap = new Map();
+  opportunities.forEach((opportunity) => {
+    const seed = buildClientSeedFromOpportunity(opportunity);
+    if (!seed) return;
+    clientMap.set(seed.companyKey, seed.companyName);
+  });
+
+  const keys = Array.from(clientMap.keys());
+  if (!keys.length) return { created: 0, updated: 0 };
+
+  const existing = await Client.find({ companyKey: { $in: keys } }).lean();
+  const existingKeys = new Set(existing.map((client) => client.companyKey));
+
+  const ops = [];
+  keys.forEach((key) => {
+    const companyName = clientMap.get(key);
+    if (!companyName) return;
+    if (!existingKeys.has(key)) {
+      ops.push({
+        insertOne: {
+          document: {
+            companyName,
+            companyKey: key,
+            domain: '',
+            location: { city: '', country: '' },
+            contacts: [],
+          },
+        },
+      });
+    } else {
+      ops.push({
+        updateOne: {
+          filter: { companyKey: key },
+          update: { $set: { companyName } },
+        },
+      });
+    }
+  });
+
+  if (!ops.length) return { created: 0, updated: 0 };
+  const result = await Client.bulkWrite(ops, { ordered: false });
+  return {
+    created: result.insertedCount || 0,
+    updated: result.modifiedCount || 0,
+  };
+};
+
 const hasRequiredRowValues = (opportunity) => {
   const snapshot = opportunity?.rawGraphData?.rowSnapshot;
   if (!snapshot || typeof snapshot !== 'object') return false;
@@ -681,6 +737,7 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
 
   await SyncedOpportunity.deleteMany({});
   const inserted = await SyncedOpportunity.insertMany(opportunitiesForInsert);
+  const clientSyncResult = await syncClientsFromOpportunities(opportunities);
 
   config.lastSyncAt = now;
   await config.save();
@@ -705,6 +762,8 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     telecastNoRecipientsRows: telecastDispatch.skippedNoRecipients,
     telecastSent: telecastDispatch.sent,
     telecastSkipped: telecastDispatch.skipped,
+    clientsSeeded: clientSyncResult?.created || 0,
+    clientsUpdated: clientSyncResult?.updated || 0,
   }));
 
   return {
@@ -721,6 +780,8 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     telecastNoRecipientsRows: telecastDispatch.skippedNoRecipients,
     telecastSent: telecastDispatch.sent,
     telecastSkipped: telecastDispatch.skipped,
+    clientsSeeded: clientSyncResult?.created || 0,
+    clientsUpdated: clientSyncResult?.updated || 0,
     newRowsPreview,
   };
 };
