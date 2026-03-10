@@ -14,6 +14,7 @@ const clientSchema = new mongoose.Schema(
   {
     companyName: { type: String, required: true },
     companyKey: { type: String, required: true, unique: true, index: true },
+    group: { type: String, default: '' },
     domain: { type: String, default: '' },
     location: {
       city: { type: String, default: '' },

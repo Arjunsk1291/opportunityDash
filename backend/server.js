@@ -272,7 +272,8 @@ const buildClientSeedFromOpportunity = (opportunity = {}) => {
   const companyName = normalizeCompanyName(rawName);
   if (!companyName) return null;
   const companyKey = normalizeCompanyKey(companyName);
-  return { companyName, companyKey };
+  const group = String(opportunity?.groupClassification || '').trim();
+  return { companyName, companyKey, group };
 };
 
 const syncClientsFromOpportunities = async (opportunities = []) => {
@@ -280,7 +281,7 @@ const syncClientsFromOpportunities = async (opportunities = []) => {
   opportunities.forEach((opportunity) => {
     const seed = buildClientSeedFromOpportunity(opportunity);
     if (!seed) return;
-    clientMap.set(seed.companyKey, seed.companyName);
+    clientMap.set(seed.companyKey, seed);
   });
 
   const keys = Array.from(clientMap.keys());
@@ -291,14 +292,17 @@ const syncClientsFromOpportunities = async (opportunities = []) => {
 
   const ops = [];
   keys.forEach((key) => {
-    const companyName = clientMap.get(key);
-    if (!companyName) return;
+    const seed = clientMap.get(key);
+    if (!seed) return;
+    const companyName = seed.companyName;
+    const group = seed.group || '';
     if (!existingKeys.has(key)) {
       ops.push({
         insertOne: {
           document: {
             companyName,
             companyKey: key,
+            group,
             domain: '',
             location: { city: '', country: '' },
             contacts: [],
@@ -306,10 +310,12 @@ const syncClientsFromOpportunities = async (opportunities = []) => {
         },
       });
     } else {
+      const update = { companyName };
+      if (group) update.group = group;
       ops.push({
         updateOne: {
           filter: { companyKey: key },
-          update: { $set: { companyName } },
+          update: { $set: update },
         },
       });
     }
@@ -2138,12 +2144,14 @@ app.post('/api/clients', async (req, res) => {
     if (!companyName) return res.status(400).json({ error: 'Company name is required' });
     const companyKey = normalizeCompanyKey(companyName);
     const incomingContacts = Array.isArray(payload.contacts) ? payload.contacts : [];
+    const group = String(payload.group || payload.groupClassification || '').trim();
 
     const existing = await Client.findOne({ companyKey });
     if (!existing) {
       const created = await Client.create({
         companyName,
         companyKey,
+        group,
         domain: String(payload.domain || '').trim(),
         location: {
           city: String(payload.city || payload.location?.city || '').trim(),
@@ -2155,6 +2163,7 @@ app.post('/api/clients', async (req, res) => {
     }
 
     existing.companyName = companyName;
+    if (group) existing.group = group;
     existing.domain = String(payload.domain || existing.domain || '').trim();
     existing.location = {
       city: String(payload.city || existing.location?.city || '').trim(),
@@ -2180,11 +2189,13 @@ app.post('/api/clients/import', async (req, res) => {
       if (!companyName) continue;
       const companyKey = normalizeCompanyKey(companyName);
       const incomingContacts = Array.isArray(input?.contacts) ? input.contacts : [];
+      const group = String(input?.group || input?.groupClassification || '').trim();
       const existing = await Client.findOne({ companyKey });
       if (!existing) {
         await Client.create({
           companyName,
           companyKey,
+          group,
           domain: String(input?.domain || '').trim(),
           location: {
             city: String(input?.city || input?.location?.city || '').trim(),
@@ -2195,6 +2206,7 @@ app.post('/api/clients/import', async (req, res) => {
         createdCount += 1;
       } else {
         existing.companyName = companyName;
+        if (group) existing.group = group;
         existing.domain = String(input?.domain || existing.domain || '').trim();
         existing.location = {
           city: String(input?.city || existing.location?.city || '').trim(),

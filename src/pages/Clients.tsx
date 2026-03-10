@@ -48,6 +48,7 @@ const buildSearchBlob = (client: ClientProfile) => {
   return [
     client.companyName,
     client.domain,
+    client.group,
     client.location.city,
     client.location.country,
     contactBlob,
@@ -265,7 +266,8 @@ const Clients = () => {
     const domainCounts = new Map<string, number>();
     const countryCounts = new Map<string, number>();
     clients.forEach((client) => {
-      if (client.domain) domainCounts.set(client.domain, (domainCounts.get(client.domain) || 0) + 1);
+      const domainKey = client.domain || client.group || '';
+      if (domainKey) domainCounts.set(domainKey, (domainCounts.get(domainKey) || 0) + 1);
       if (client.location.country) {
         countryCounts.set(client.location.country, (countryCounts.get(client.location.country) || 0) + 1);
       }
@@ -284,7 +286,8 @@ const Clients = () => {
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase();
     return clients.filter((client) => {
-      if (filters.domains.length > 0 && !filters.domains.includes(client.domain)) return false;
+      const domainKey = client.domain || client.group || '';
+      if (filters.domains.length > 0 && !filters.domains.includes(domainKey)) return false;
       if (filters.countries.length > 0 && !filters.countries.includes(client.location.country)) return false;
       if (!query) return true;
       return buildSearchBlob(client).includes(query);
@@ -701,6 +704,7 @@ const Clients = () => {
         )}
         {filteredClients.map((client) => {
           const firstContact = client.contacts[0];
+          const domainDisplay = client.domain || client.group || 'No domain';
           const matchCount = countMatches(client, search);
           return (
             <Card
@@ -721,7 +725,7 @@ const Clients = () => {
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   <span className="flex items-center gap-2">
                     <Globe className="h-4 w-4" />
-                    {highlightText(client.domain || 'No domain', search)}
+                    {highlightText(domainDisplay, search)}
                   </span>
                   <Badge className="flex items-center gap-1 bg-muted/30 text-muted-foreground border border-border/50">
                     <MapPin className="h-3 w-3" />
@@ -758,14 +762,14 @@ const Clients = () => {
                 <DialogHeader>
                   <DialogTitle className="text-xl text-foreground">{selectedClient.companyName}</DialogTitle>
                   <DialogDescription className="text-muted-foreground">
-                    {selectedClient.domain || 'No domain'} • {selectedClient.location.city || 'Unknown city'}{' '}
+                    {(selectedClient.domain || selectedClient.group || 'No domain')} • {selectedClient.location.city || 'Unknown city'}{' '}
                     {selectedClient.location.country ? `, ${selectedClient.location.country}` : ''}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
                   <div className="rounded border border-border/50 bg-card p-3">
                     <p className="text-xs text-muted-foreground">Domain</p>
-                    <p className="text-sm font-medium text-foreground">{selectedClient.domain || 'N/A'}</p>
+                    <p className="text-sm font-medium text-foreground">{selectedClient.domain || selectedClient.group || 'N/A'}</p>
                   </div>
                   <div className="rounded border border-border/50 bg-card p-3">
                     <p className="text-xs text-muted-foreground">City</p>

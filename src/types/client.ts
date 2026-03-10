@@ -14,6 +14,7 @@ export interface ClientLocation {
 export interface ClientProfile {
   id: string;
   companyName: string;
+  group?: string;
   domain: string;
   location: ClientLocation;
   contacts: ClientContact[];
