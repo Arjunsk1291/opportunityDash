@@ -7,7 +7,7 @@ const loginLogSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['Master', 'Admin', 'Basic'],
+    enum: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'MASTER', 'PROPOSAL_HEAD'],
     required: true,
   },
   loginTime: {

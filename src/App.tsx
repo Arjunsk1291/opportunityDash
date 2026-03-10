@@ -55,6 +55,10 @@ function AppRoutes() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route
+          path="/auth/callback"
+          element={<Navigate to={isPending && isAuthenticated ? "/pending" : "/"} replace />}
+        />
         <Route path="/login" element={<Login />} />
 
         {isPending && isAuthenticated ? (

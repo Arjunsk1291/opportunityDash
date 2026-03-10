@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { Opportunity } from '@/data/opportunityData';
 
@@ -34,6 +34,10 @@ export function OpportunityDetailDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden border-none bg-white">
+        <DialogHeader className="sr-only">
+          <DialogTitle>Opportunity details</DialogTitle>
+          <DialogDescription>Detailed information for the selected opportunity.</DialogDescription>
+        </DialogHeader>
         {/* Header */}
         <div className={`${getHeaderColor()} text-white p-6 -m-6 mb-0 rounded-t-lg`}>
           <Badge className="mb-3 bg-white/20 hover:bg-white/30 text-white border-none">

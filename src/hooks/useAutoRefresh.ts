@@ -7,13 +7,15 @@ const DEFAULT_AUTO_REFRESH_INTERVAL = 10 * 60 * 1000;
 
 export function useAutoRefresh() {
   const { refreshData } = useData();
-  const { token } = useAuth();
+  const { token, isAdmin } = useAuth();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isAutoRefreshActive, setIsAutoRefreshActive] = useState(false);
   const [lastAutoRefreshTime, setLastAutoRefreshTime] = useState<Date | null>(null);
   const [autoRefreshStatus, setAutoRefreshStatus] = useState<'idle' | 'syncing' | 'complete' | 'error'>('idle');
+  const canAutoSync = Boolean(isAdmin);
 
   const resolveIntervalMs = useCallback(async () => {
+    if (!canAutoSync) return DEFAULT_AUTO_REFRESH_INTERVAL;
     if (!token) return DEFAULT_AUTO_REFRESH_INTERVAL;
     try {
       const response = await fetch(API_URL + '/graph/config', {
@@ -29,9 +31,10 @@ export function useAutoRefresh() {
     } catch {
       return DEFAULT_AUTO_REFRESH_INTERVAL;
     }
-  }, [token]);
+  }, [token, canAutoSync]);
 
   const triggerAutoSync = useCallback(async () => {
+    if (!canAutoSync) return;
     try {
       console.log('🔄 AUTO-SYNC: Triggered at', new Date().toLocaleTimeString());
       setAutoRefreshStatus('syncing');
@@ -61,9 +64,13 @@ export function useAutoRefresh() {
       setAutoRefreshStatus('error');
       setTimeout(() => setAutoRefreshStatus('idle'), 5000);
     }
-  }, [refreshData, token]);
+  }, [refreshData, token, canAutoSync]);
 
   const startAutoRefresh = useCallback(async () => {
+    if (!canAutoSync) {
+      console.log('⏭️ AUTO-SYNC: Disabled for non-admin users');
+      return;
+    }
     if (intervalRef.current) {
       console.log('⏭️ AUTO-SYNC: Already active');
       return;
@@ -79,7 +86,7 @@ export function useAutoRefresh() {
     intervalRef.current = setInterval(() => {
       triggerAutoSync();
     }, intervalMs);
-  }, [resolveIntervalMs, triggerAutoSync]);
+  }, [resolveIntervalMs, triggerAutoSync, canAutoSync]);
 
   const stopAutoRefresh = useCallback(() => {
     if (intervalRef.current) {
@@ -91,12 +98,17 @@ export function useAutoRefresh() {
   }, []);
 
   useEffect(() => {
+    if (!canAutoSync && intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      setIsAutoRefreshActive(false);
+    }
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
     };
-  }, []);
+  }, [canAutoSync]);
 
   return {
     isAutoRefreshActive,
