@@ -244,23 +244,27 @@ const CopyButton = ({ value, label }: { value: string; label: string }) => {
 };
 
 const Clients = () => {
-  const { clients, stats, addClient, importClients, normalizeCompanyName, isLoading, error } = useClientStore();
-  const { isAdmin, isMaster } = useAuth();
+  const { clients, stats, addClient, importClients, updateClient, normalizeCompanyName, isLoading, error } = useClientStore();
+  const { isAdmin, isMaster, isProposalHead } = useAuth();
   const canManageClients = isAdmin || isMaster;
+  const canEditClients = isAdmin || isMaster || isProposalHead;
   const [search, setSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<ClientProfile | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
   const [filters, setFilters] = useState<{ domains: string[]; countries: string[] }>({ domains: [], countries: [] });
 
   const [newClient, setNewClient] = useState<ClientInput>({
     companyName: '',
+    group: '',
     domain: '',
     city: '',
     country: '',
     contacts: [{ firstName: '', lastName: '', email: '', phone: '' }],
   });
+  const [editClient, setEditClient] = useState<{ id: string; data: ClientInput } | null>(null);
 
   const topFilters = useMemo(() => {
     const domainCounts = new Map<string, number>();
@@ -364,6 +368,7 @@ const Clients = () => {
       });
       setNewClient({
         companyName: '',
+        group: '',
         domain: '',
         city: '',
         country: '',
@@ -373,6 +378,48 @@ const Clients = () => {
       toast.success('Client added');
     } catch (err) {
       toast.error('Failed to add client');
+    }
+  };
+
+  const handleStartEdit = (client: ClientProfile) => {
+    setEditClient({
+      id: client.id,
+      data: {
+        companyName: client.companyName,
+        group: client.group || '',
+        domain: client.domain || '',
+        city: client.location.city || '',
+        country: client.location.country || '',
+        contacts: client.contacts.map((contact) => ({
+          firstName: contact.firstName || '',
+          lastName: contact.lastName || '',
+          email: contact.email || '',
+          phone: contact.phone || '',
+        })),
+      },
+    });
+    setIsEditOpen(true);
+  };
+
+  const handleUpdateClient = async () => {
+    if (!editClient) return;
+    if (!editClient.data.companyName.trim()) {
+      toast.error('Company name is required');
+      return;
+    }
+    const cleanedContacts = editClient.data.contacts.filter((contact) =>
+      [contact.firstName, contact.lastName, contact.email, contact.phone].some((value) => String(value || '').trim())
+    );
+    try {
+      await updateClient(editClient.id, {
+        ...editClient.data,
+        companyName: normalizeCompanyName(editClient.data.companyName),
+        contacts: cleanedContacts,
+      });
+      toast.success('Client updated');
+      setIsEditOpen(false);
+    } catch (err) {
+      toast.error('Failed to update client');
     }
   };
 
@@ -494,6 +541,14 @@ const Clients = () => {
                       value={newClient.companyName}
                       onChange={(event) => setNewClient({ ...newClient, companyName: event.target.value })}
                       placeholder="Acme Corp"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Group</Label>
+                    <Input
+                      value={newClient.group || ''}
+                      onChange={(event) => setNewClient({ ...newClient, group: event.target.value })}
+                      placeholder="GES / GDS / GTS"
                     />
                   </div>
                   <div className="space-y-2">
@@ -811,8 +866,147 @@ const Clients = () => {
                   </div>
                 </ScrollArea>
               </div>
+              {canEditClients && (
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => handleStartEdit(selectedClient)}>Edit</Button>
+                </DialogFooter>
+              )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Client</DialogTitle>
+            <DialogDescription>Update client details and contacts.</DialogDescription>
+          </DialogHeader>
+          {editClient && (
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Company Name</Label>
+                  <Input
+                    value={editClient.data.companyName}
+                    onChange={(event) => setEditClient({ ...editClient, data: { ...editClient.data, companyName: event.target.value } })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Group</Label>
+                  <Input
+                    value={editClient.data.group || ''}
+                    onChange={(event) => setEditClient({ ...editClient, data: { ...editClient.data, group: event.target.value } })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Domain</Label>
+                  <Input
+                    value={editClient.data.domain}
+                    onChange={(event) => setEditClient({ ...editClient, data: { ...editClient.data, domain: event.target.value } })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>City</Label>
+                  <Input
+                    value={editClient.data.city}
+                    onChange={(event) => setEditClient({ ...editClient, data: { ...editClient.data, city: event.target.value } })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Country</Label>
+                  <Input
+                    value={editClient.data.country}
+                    onChange={(event) => setEditClient({ ...editClient, data: { ...editClient.data, country: event.target.value } })}
+                  />
+                </div>
+              </div>
+              <Separator />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Contacts</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setEditClient({
+                        ...editClient,
+                        data: { ...editClient.data, contacts: [...editClient.data.contacts, { firstName: '', lastName: '', email: '', phone: '' }] },
+                      })
+                    }
+                  >
+                    Add Contact
+                  </Button>
+                </div>
+                {editClient.data.contacts.map((contact, idx) => (
+                  <div key={`edit-contact-${idx}`} className="grid gap-3 md:grid-cols-4 items-end">
+                    <div className="space-y-1">
+                      <Label className="text-xs">First Name</Label>
+                      <Input
+                        value={contact.firstName}
+                        onChange={(event) => {
+                          const updated = [...editClient.data.contacts];
+                          updated[idx] = { ...updated[idx], firstName: event.target.value };
+                          setEditClient({ ...editClient, data: { ...editClient.data, contacts: updated } });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Last Name</Label>
+                      <Input
+                        value={contact.lastName}
+                        onChange={(event) => {
+                          const updated = [...editClient.data.contacts];
+                          updated[idx] = { ...updated[idx], lastName: event.target.value };
+                          setEditClient({ ...editClient, data: { ...editClient.data, contacts: updated } });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Email</Label>
+                      <Input
+                        value={contact.email}
+                        onChange={(event) => {
+                          const updated = [...editClient.data.contacts];
+                          updated[idx] = { ...updated[idx], email: event.target.value };
+                          setEditClient({ ...editClient, data: { ...editClient.data, contacts: updated } });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Phone</Label>
+                      <Input
+                        value={contact.phone}
+                        onChange={(event) => {
+                          const updated = [...editClient.data.contacts];
+                          updated[idx] = { ...updated[idx], phone: event.target.value };
+                          setEditClient({ ...editClient, data: { ...editClient.data, contacts: updated } });
+                        }}
+                      />
+                    </div>
+                    {editClient.data.contacts.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          const updated = editClient.data.contacts.filter((_, i) => i !== idx);
+                          setEditClient({ ...editClient, data: { ...editClient.data, contacts: updated } });
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setIsEditOpen(false)}>Cancel</Button>
+            <Button onClick={handleUpdateClient}>Save Changes</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

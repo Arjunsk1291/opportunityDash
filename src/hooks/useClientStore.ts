@@ -79,6 +79,7 @@ export const useClientStore = () => {
     if (!target) return;
     const payload = {
       companyName: update.companyName ?? target.companyName,
+      group: update.group ?? target.group,
       domain: update.domain ?? target.domain,
       city: update.city ?? target.location.city,
       country: update.country ?? target.location.country,

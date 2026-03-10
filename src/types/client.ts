@@ -31,6 +31,7 @@ export interface ClientContactInput {
 
 export interface ClientInput {
   companyName: string;
+  group?: string;
   domain: string;
   city: string;
   country: string;
