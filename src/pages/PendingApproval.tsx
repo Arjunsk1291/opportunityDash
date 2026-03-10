@@ -8,10 +8,10 @@ export default function PendingApproval() {
   const { user, logout } = useAuth();
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-muted">
-      <Card className="w-full max-w-md">
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background via-muted/40 to-muted">
+      <Card className="w-full max-w-lg border-border/50 shadow-2xl">
         <CardHeader>
-          <CardTitle className="text-center">Access Pending Approval</CardTitle>
+          <CardTitle className="text-center text-2xl">Access Pending Approval</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex justify-center">
