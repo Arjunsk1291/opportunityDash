@@ -57,6 +57,20 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+app.get('/api/auth/msal-config', (_req, res) => {
+  const tenantId = process.env.AZURE_TENANT_ID || '';
+  const clientId = process.env.AZURE_CLIENT_ID || '';
+  const redirectUri = process.env.AZURE_REDIRECT_URI || 'https://opportunitydash.onrender.com';
+  const redirectUriDev = process.env.AZURE_REDIRECT_URI_DEV || 'http://localhost:5173';
+  const useDev = String(process.env.NODE_ENV || '').toLowerCase() !== 'production';
+
+  res.json({
+    tenantId,
+    clientId,
+    redirectUri: useDev ? redirectUriDev : redirectUri,
+  });
+});
+
 console.log('[mongo.connect.start]', JSON.stringify({ uriConfigured: Boolean(MONGODB_URI), timestamp: new Date().toISOString() }));
 mongoose.connect(MONGODB_URI)
   .then(() => {

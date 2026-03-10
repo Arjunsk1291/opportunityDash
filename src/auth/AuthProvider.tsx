@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { msalInstance } from "./msalClient";
+import { getMsalInstance } from "./msalClient";
 import { loginRequest } from "./msalConfig";
 
 type AuthContextType = {
@@ -31,6 +31,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
 
   useEffect(() => {
     (async () => {
+      const msalInstance = getMsalInstance();
       authDebug("init.start", { mode: import.meta.env.MODE });
       try {
         const resp = await msalInstance.handleRedirectPromise();
@@ -58,6 +59,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, []);
 
   const login = async () => {
+    const msalInstance = getMsalInstance();
     authDebug("login.popup.start");
     try {
       await msalInstance.loginPopup(loginRequest);
@@ -81,6 +83,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   };
 
   const logout = () => {
+    const msalInstance = getMsalInstance();
     const account = msalInstance.getActiveAccount();
     authDebug("logout.start", { account: account?.username || null });
     msalInstance.logoutPopup({ account })
