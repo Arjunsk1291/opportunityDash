@@ -116,34 +116,95 @@ const parseCsv = (text: string): string[][] => {
   return rows;
 };
 
+const normalizeHeader = (value: string) =>
+  String(value || '')
+    .replace(/\\uFEFF/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+const HEADER_SYNONYMS: Record<string, string[]> = {
+  companyName: ['companyname', 'company', 'client', 'clientname', 'account', 'accountname', 'organisation', 'organization'],
+  city: ['city', 'town'],
+  country: ['country', 'nation', 'regioncountry'],
+  domain: ['domain', 'website', 'web', 'url'],
+  firstName: ['firstname', 'first', 'givenname', 'contactfirstname'],
+  lastName: ['lastname', 'last', 'surname', 'familyname', 'contactlastname'],
+  email: ['email', 'emailaddress', 'mail', 'contactemail'],
+  phone: ['phone', 'phonenumber', 'telephone', 'mobile', 'contactphone'],
+};
+
+const detectHeaderRow = (rows: string[][]) => {
+  let bestRowIndex = 0;
+  let bestScore = -1;
+  let bestMap: Record<string, number> = {};
+
+  const scanLimit = Math.min(rows.length, 10);
+  for (let i = 0; i < scanLimit; i += 1) {
+    const row = rows[i] || [];
+    const normalized = row.map((cell) => normalizeHeader(cell));
+    const map: Record<string, number> = {};
+    let score = 0;
+
+    Object.entries(HEADER_SYNONYMS).forEach(([key, variants]) => {
+      const idx = normalized.findIndex((cell) => variants.includes(cell));
+      if (idx >= 0) {
+        map[key] = idx;
+        score += 1;
+      }
+    });
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestRowIndex = i;
+      bestMap = map;
+    }
+  }
+
+  return { headerRowIndex: bestRowIndex, map: bestMap, score: bestScore };
+};
+
 const mapCsvRows = (rows: string[][]): ClientInput[] => {
   if (!rows.length) return [];
-  const headers = rows[0].map((header) => header.trim().toLowerCase());
-  const getIndex = (label: string) => headers.indexOf(label);
+  const { headerRowIndex, map, score } = detectHeaderRow(rows);
+  const dataRows = rows.slice(headerRowIndex + 1);
 
-  const idxCompany = getIndex('company name');
-  const idxCity = getIndex('city');
-  const idxCountry = getIndex('country');
-  const idxDomain = getIndex('domain');
-  const idxFirst = getIndex('first name');
-  const idxLast = getIndex('last name');
-  const idxEmail = getIndex('email');
-  const idxPhone = getIndex('phone');
-  if (idxCompany < 0) return [];
+  const idxCompany = map.companyName ?? -1;
+  const idxCity = map.city ?? -1;
+  const idxCountry = map.country ?? -1;
+  const idxDomain = map.domain ?? -1;
+  const idxFirst = map.firstName ?? -1;
+  const idxLast = map.lastName ?? -1;
+  const idxEmail = map.email ?? -1;
+  const idxPhone = map.phone ?? -1;
 
-  return rows.slice(1).map((row) => {
+  const hasHeader = score >= 2 && idxCompany >= 0;
+  const fallbackIndices = rows[0]?.length >= 8 ? { idxCompany: 0, idxCity: 1, idxCountry: 2, idxDomain: 3, idxFirst: 4, idxLast: 5, idxEmail: 6, idxPhone: 7 } : null;
+
+  if (!hasHeader && !fallbackIndices) return [];
+
+  return dataRows.map((row) => {
+    const companyIndex = hasHeader ? idxCompany : fallbackIndices!.idxCompany;
+    const cityIndex = hasHeader ? idxCity : fallbackIndices!.idxCity;
+    const countryIndex = hasHeader ? idxCountry : fallbackIndices!.idxCountry;
+    const domainIndex = hasHeader ? idxDomain : fallbackIndices!.idxDomain;
+    const firstIndex = hasHeader ? idxFirst : fallbackIndices!.idxFirst;
+    const lastIndex = hasHeader ? idxLast : fallbackIndices!.idxLast;
+    const emailIndex = hasHeader ? idxEmail : fallbackIndices!.idxEmail;
+    const phoneIndex = hasHeader ? idxPhone : fallbackIndices!.idxPhone;
+
     const contact: ClientContactInput = {
-      firstName: row[idxFirst] || '',
-      lastName: row[idxLast] || '',
-      email: row[idxEmail] || '',
-      phone: row[idxPhone] || '',
+      firstName: row[firstIndex] || '',
+      lastName: row[lastIndex] || '',
+      email: row[emailIndex] || '',
+      phone: row[phoneIndex] || '',
     };
 
     return {
-      companyName: row[idxCompany] || '',
-      domain: row[idxDomain] || '',
-      city: row[idxCity] || '',
-      country: row[idxCountry] || '',
+      companyName: row[companyIndex] || '',
+      domain: row[domainIndex] || '',
+      city: row[cityIndex] || '',
+      country: row[countryIndex] || '',
       contacts: contact.firstName || contact.lastName || contact.email || contact.phone ? [contact] : [],
     };
   });
