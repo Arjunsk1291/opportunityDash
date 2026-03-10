@@ -299,6 +299,29 @@ export default function Admin() {
     }
   };
 
+  const seedClientsFromOpportunities = async () => {
+    if (!token) return;
+    setSyncLoading(true);
+    try {
+      const response = await fetch(API_URL + '/clients/seed', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to seed clients');
+      }
+      toast.success(`Seeded ${result.created || 0} clients, updated ${result.updated || 0}`);
+    } catch (error) {
+      toast.error((error as Error).message || 'Client seed failed');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
   const loadGraphAuthStatus = async () => {
     if (!token) return;
     try {
@@ -1638,6 +1661,14 @@ export default function Admin() {
                       className="w-full"
                     >
                       Force Refresh New-Row Detection
+                    </Button>
+                    <Button
+                      onClick={seedClientsFromOpportunities}
+                      disabled={syncLoading}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      Seed Clients from Opportunities
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">

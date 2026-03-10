@@ -2125,6 +2125,19 @@ app.post('/api/clients/import', async (req, res) => {
   }
 });
 
+app.post('/api/clients/seed', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can seed clients' });
+    }
+    const opportunities = await SyncedOpportunity.find().lean();
+    const result = await syncClientsFromOpportunities(opportunities);
+    res.json({ success: true, created: result.created || 0, updated: result.updated || 0 });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/opportunities/stats', verifyToken, async (req, res) => {
   try {
     const opportunities = await SyncedOpportunity.find().lean();
