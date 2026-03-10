@@ -58,7 +58,7 @@ export default function UserRolesPanel() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Admin">Admin</SelectItem>
-                        <SelectItem value="ProposalHead">Proposal Head</SelectItem>
+                        <SelectItem value="ProposalHead">Tender Manager</SelectItem>
                         <SelectItem value="SVP">SVP</SelectItem>
                         <SelectItem value="Basic">Basic</SelectItem>
                       </SelectContent>

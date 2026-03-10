@@ -24,6 +24,8 @@ const systemConfigSchema = new mongoose.Schema(
     notificationLastCheckedAt: { type: Date, default: null },
     notificationLastNewRowsCount: { type: Number, default: 0 },
     notificationLastNewRows: { type: [String], default: [] },
+    notificationLastNewRowsPreview: { type: [Object], default: [] },
+    telecastLastEligibleRowsPreview: { type: [Object], default: [] },
     telecastAlertedKeys: { type: [String], default: [] },
     telecastAlertedRefNos: { type: [String], default: [] },
     telecastAlertSeededAt: { type: Date, default: null },

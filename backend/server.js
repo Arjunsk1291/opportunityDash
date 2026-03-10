@@ -529,6 +529,16 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
       .filter(([sig]) => Boolean(sig))
   );
   const newRows = newRowSignatures.map((sig) => signatureToOpportunity.get(sig)).filter(Boolean);
+  const newRowsPreview = newRows.slice(0, 50).map((row) => ({
+    signature: buildRowSignature(row),
+    tenderNo: row?.opportunityRefNo || '',
+    tenderName: row?.tenderName || '',
+    client: row?.clientName || '',
+    group: getGroupFromOpportunity(row),
+    type: row?.opportunityClassification || '',
+    dateTenderReceived: row?.dateTenderReceived || '',
+    value: row?.opportunityValue ?? null,
+  }));
   const now = new Date();
   const alertedKeySet = new Set([
     ...(systemConfig.telecastAlertedKeys || []),
@@ -555,11 +565,24 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   systemConfig.notificationLastCheckedAt = now;
   systemConfig.notificationLastNewRowsCount = newRowSignatures.length;
   systemConfig.notificationLastNewRows = newRowSignatures.slice(0, 50);
+  systemConfig.notificationLastNewRowsPreview = newRowsPreview;
   systemConfig.telecastKeywordHelp = TELECAST_TEMPLATE_KEYWORDS;
   systemConfig.updatedBy = source;
 
-  const recentRows = newRows.filter((row) => isTenderRecentForTelecast(row, now));
-  const staleCount = newRows.length - recentRows.length;
+  const telecastCandidates = newRows;
+  const recentRows = telecastCandidates.filter((row) => isTenderRecentForTelecast(row, now));
+  const staleCount = telecastCandidates.length - recentRows.length;
+  const telecastEligiblePreview = recentRows.slice(0, 50).map((row) => ({
+    signature: buildRowSignature(row),
+    tenderNo: row?.opportunityRefNo || '',
+    tenderName: row?.tenderName || '',
+    client: row?.clientName || '',
+    group: getGroupFromOpportunity(row),
+    type: row?.opportunityClassification || '',
+    dateTenderReceived: row?.dateTenderReceived || '',
+    value: row?.opportunityValue ?? null,
+  }));
+  systemConfig.telecastLastEligibleRowsPreview = telecastEligiblePreview;
   const rowsToSend = recentRows.filter((row) => {
     const key = buildNotificationKey(row);
     if (!key) return false;
@@ -659,16 +682,7 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     telecastNoRecipientsRows: telecastDispatch.skippedNoRecipients,
     telecastSent: telecastDispatch.sent,
     telecastSkipped: telecastDispatch.skipped,
-    newRowsPreview: newRows.slice(0, 50).map((row) => ({
-      signature: buildRowSignature(row),
-      tenderNo: row?.opportunityRefNo || '',
-      tenderName: row?.tenderName || '',
-      client: row?.clientName || '',
-      group: getGroupFromOpportunity(row),
-      type: row?.opportunityClassification || '',
-      dateTenderReceived: row?.dateTenderReceived || '',
-      value: row?.opportunityValue ?? null,
-    })),
+    newRowsPreview,
   };
 };
 
@@ -1674,6 +1688,7 @@ app.get('/api/notifications/status', verifyToken, async (req, res) => {
       lastCheckedAt: config.notificationLastCheckedAt || null,
       lastNewRowsCount: Number(config.notificationLastNewRowsCount || 0),
       lastNewRows: Array.isArray(config.notificationLastNewRows) ? config.notificationLastNewRows : [],
+      lastNewRowsPreview: Array.isArray(config.notificationLastNewRowsPreview) ? config.notificationLastNewRowsPreview : [],
       trackedRows: Array.isArray(config.notificationRowSignatures) ? config.notificationRowSignatures.length : 0,
       alertWindowDays: TELECAST_RECENT_WINDOW_DAYS,
       alertSeededAt: config.telecastAlertSeededAt || null,
@@ -1681,6 +1696,7 @@ app.get('/api/notifications/status', verifyToken, async (req, res) => {
       alertedKeysTracked: alertedKeysTracked.length,
       alertedRefNosTracked: alertedTracked,
       alertedRefNosPreview,
+      telecastEligibleRowsPreview: Array.isArray(config.telecastLastEligibleRowsPreview) ? config.telecastLastEligibleRowsPreview : [],
       weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
     });
   } catch (error) {

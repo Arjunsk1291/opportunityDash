@@ -99,7 +99,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Proposal Head approval failed');
+      throw new Error(error.error || 'Tender Manager approval failed');
     }
 
     await refreshApprovals();

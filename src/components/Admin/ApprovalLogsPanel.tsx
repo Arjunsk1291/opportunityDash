@@ -16,7 +16,7 @@ export default function ApprovalLogsPanel() {
           Approval Logs
         </CardTitle>
         <CardDescription>
-          History of two-step approval actions (Proposal Head → SVP)
+          History of two-step approval actions (Tender Manager → SVP)
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -40,7 +40,7 @@ function LogEntry({ log }: { log: ApprovalLogEntry }) {
   const getActionText = () => {
     switch (log.action) {
       case 'proposal_head_approved':
-        return 'Proposal Head approved';
+        return 'Tender Manager approved';
       case 'svp_approved':
         return `SVP approved${log.group ? ` (${log.group})` : ''}`;
       case 'reverted':

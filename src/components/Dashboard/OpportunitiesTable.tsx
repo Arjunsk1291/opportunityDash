@@ -350,7 +350,7 @@ function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster,
         <div className="flex items-center gap-1">
           <Badge className="bg-info/20 text-info gap-1 text-xs">
             <CheckCircle className="h-3 w-3" />
-            PH ✓
+            TM ✓
           </Badge>
           <ArrowRight className="h-3 w-3 text-muted-foreground" />
           {canSVPApprove ? (
@@ -374,11 +374,11 @@ function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster,
   return (
     <div className="flex items-center gap-1">
       {isProposalHead ? (
-        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={onApproveProposalHead}>PH Approve</Button>
+        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={onApproveProposalHead}>TM Approve</Button>
       ) : (
         <Badge variant="secondary" className="gap-1 text-xs">
           <Clock className="h-3 w-3" />
-          Pending PH
+          Pending TM
         </Badge>
       )}
     </div>

@@ -35,7 +35,7 @@ export function ApprovalStatsWidget({ data }: ApprovalStatsWidgetProps) {
         <div className="flex items-center justify-between p-3 bg-info/10 rounded-lg">
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4 text-info" />
-            <span className="text-sm">Proposal Head Approved</span>
+            <span className="text-sm">Tender Manager Approved</span>
           </div>
           <Badge className="bg-info/20 text-info">{proposalHeadApprovedCount}</Badge>
         </div>

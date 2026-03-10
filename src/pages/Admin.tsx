@@ -94,6 +94,17 @@ interface WeeklyTelecastStat {
   byGroup?: Record<string, number>;
 }
 
+interface NotificationRowPreview {
+  signature?: string;
+  tenderNo?: string;
+  tenderName?: string;
+  client?: string;
+  group?: string;
+  type?: string;
+  dateTenderReceived?: string;
+  value?: number | null;
+}
+
 interface NotificationSyncStatus {
   lastCheckedAt?: string | null;
   lastNewRowsCount: number;
@@ -105,6 +116,8 @@ interface NotificationSyncStatus {
   alertedRefNosTracked?: number;
   alertedRefNosPreview?: string[];
   weeklyStats?: WeeklyTelecastStat[];
+  lastNewRowsPreview?: NotificationRowPreview[];
+  telecastEligibleRowsPreview?: NotificationRowPreview[];
 }
 
 export default function Admin() {
@@ -151,6 +164,8 @@ export default function Admin() {
     alertedKeysTracked: 0,
     alertedRefNosTracked: 0,
     alertedRefNosPreview: [],
+    lastNewRowsPreview: [],
+    telecastEligibleRowsPreview: [],
   });
   const [bootstrapUsername, setBootstrapUsername] = useState(DEFAULT_SERVICE_ACCOUNT);
   const [bootstrapPassword, setBootstrapPassword] = useState(DEFAULT_SERVICE_ACCOUNT);
@@ -376,6 +391,8 @@ export default function Admin() {
         alertedRefNosTracked: Number(data.alertedRefNosTracked || 0),
         alertedRefNosPreview: Array.isArray(data.alertedRefNosPreview) ? data.alertedRefNosPreview : [],
         weeklyStats: Array.isArray(data.weeklyStats) ? data.weeklyStats : [],
+        lastNewRowsPreview: Array.isArray(data.lastNewRowsPreview) ? data.lastNewRowsPreview : [],
+        telecastEligibleRowsPreview: Array.isArray(data.telecastEligibleRowsPreview) ? data.telecastEligibleRowsPreview : [],
       });
       if (Array.isArray(data.weeklyStats)) setTelecastWeeklyStats(data.weeklyStats);
     } catch (error) {
@@ -1153,7 +1170,7 @@ export default function Admin() {
                   <SelectContent>
                     <SelectItem value="Master">Master</SelectItem>
                     <SelectItem value="Admin">Admin</SelectItem>
-                    <SelectItem value="ProposalHead">Proposal Head</SelectItem>
+                    <SelectItem value="ProposalHead">Tender Manager</SelectItem>
                     <SelectItem value="SVP">SVP</SelectItem>
                     <SelectItem value="Basic">Basic</SelectItem>
                   </SelectContent>
@@ -1263,7 +1280,7 @@ export default function Admin() {
                             <SelectContent>
                               <SelectItem value="Master">Master</SelectItem>
                               <SelectItem value="Admin">Admin</SelectItem>
-                              <SelectItem value="ProposalHead">Proposal Head</SelectItem>
+                              <SelectItem value="ProposalHead">Tender Manager</SelectItem>
                               <SelectItem value="SVP">SVP</SelectItem>
                               <SelectItem value="Basic">Basic</SelectItem>
                             </SelectContent>
@@ -1661,6 +1678,39 @@ export default function Admin() {
                     <p className="text-muted-foreground break-words">{notificationSyncStatus.alertedRefNosPreview?.join(', ')}</p>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Telecast Debug (Latest Sync)</CardTitle>
+                <CardDescription>Compares newly detected rows vs rows eligible for telecast (new + within the recent window).</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                <div className="rounded border p-3 text-xs sm:text-sm space-y-2">
+                  <p className="font-medium">New rows (preview)</p>
+                  {(notificationSyncStatus.lastNewRowsPreview?.length || 0) === 0 && (
+                    <p className="text-muted-foreground">No new rows detected in the latest sync.</p>
+                  )}
+                  {(notificationSyncStatus.lastNewRowsPreview || []).slice(0, 12).map((row, idx) => (
+                    <div key={`${row.signature || row.tenderNo || 'new'}-${idx}`} className="flex flex-col gap-1 border-b pb-2 last:border-b-0 last:pb-0">
+                      <p className="font-medium">{row.tenderNo || 'Unknown Ref'} • {row.tenderName || 'Untitled'}</p>
+                      <p className="text-muted-foreground">Client: {row.client || 'N/A'} • Group: {row.group || 'N/A'} • Date: {row.dateTenderReceived || 'N/A'}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="rounded border p-3 text-xs sm:text-sm space-y-2">
+                  <p className="font-medium">Telecast-eligible rows (preview)</p>
+                  {(notificationSyncStatus.telecastEligibleRowsPreview?.length || 0) === 0 && (
+                    <p className="text-muted-foreground">No telecast-eligible rows from the latest sync.</p>
+                  )}
+                  {(notificationSyncStatus.telecastEligibleRowsPreview || []).slice(0, 12).map((row, idx) => (
+                    <div key={`${row.signature || row.tenderNo || 'eligible'}-${idx}`} className="flex flex-col gap-1 border-b pb-2 last:border-b-0 last:pb-0">
+                      <p className="font-medium">{row.tenderNo || 'Unknown Ref'} • {row.tenderName || 'Untitled'}</p>
+                      <p className="text-muted-foreground">Client: {row.client || 'N/A'} • Group: {row.group || 'N/A'} • Date: {row.dateTenderReceived || 'N/A'}</p>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
 
