@@ -83,6 +83,46 @@ const getPresetLabel = (preset: DatePreset): string => {
   }
 };
 
+const normalizeKey = (value: string): string => value.trim().toLowerCase();
+
+const toTitleCase = (value: string): string =>
+  value
+    .toLowerCase()
+    .split(/\s+/)
+    .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+    .join(' ');
+
+const pickDisplayValue = (variants: string[]): string => {
+  const scored = variants.map((raw) => {
+    const value = raw.trim();
+    if (!value) return { value, score: -1 };
+    const isUpper = value === value.toUpperCase();
+    const isLower = value === value.toLowerCase();
+    const hasMixed = !isUpper && !isLower;
+    let display = value;
+    if (!hasMixed && isLower) display = toTitleCase(value);
+    const score = hasMixed ? 3 : isUpper ? 2 : isLower ? 1 : 0;
+    return { value: display, score };
+  });
+  scored.sort((a, b) => b.score - a.score || a.value.localeCompare(b.value));
+  return scored[0]?.value || '';
+};
+
+const buildCaseInsensitiveList = (values: Array<string | null | undefined>): string[] => {
+  const buckets = new Map<string, string[]>();
+  values.forEach((raw) => {
+    const value = String(raw || '').trim();
+    if (!value) return;
+    const key = normalizeKey(value);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(value);
+  });
+  return Array.from(buckets.entries())
+    .map(([, variants]) => pickDisplayValue(variants))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+};
+
 export interface FilterState {
   search: string;
   statuses: string[];
@@ -133,8 +173,8 @@ export function AdvancedFilters({
   const [isExpanded, setIsExpanded] = useState(false);
 
   const uniqueValues = useMemo(() => {
-    const leads = [...new Set(data.map((o) => o.internalLead).filter(Boolean))].sort();
-    const clients = [...new Set(data.map((o) => o.clientName).filter(Boolean))].sort();
+    const leads = buildCaseInsensitiveList(data.map((o) => o.internalLead));
+    const clients = buildCaseInsensitiveList(data.map((o) => o.clientName));
     const clientTypes = [...new Set(data.map((o) => o.clientType).filter(Boolean))].sort();
     const qualifications = [...new Set(data.map((o) => o.qualificationStatus).filter(Boolean))].sort();
     return { leads, clients, clientTypes, qualifications };
@@ -642,12 +682,16 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
       return false;
     }
 
-    if (filters.leads.length > 0 && !filters.leads.includes(o.internalLead)) {
-      return false;
+    if (filters.leads.length > 0) {
+      const leadKey = normalizeKey(String(o.internalLead || ''));
+      const selected = new Set(filters.leads.map((lead) => normalizeKey(lead)));
+      if (!selected.has(leadKey)) return false;
     }
 
-    if (filters.clients.length > 0 && !filters.clients.includes(o.clientName)) {
-      return false;
+    if (filters.clients.length > 0) {
+      const clientKey = normalizeKey(String(o.clientName || ''));
+      const selected = new Set(filters.clients.map((client) => normalizeKey(client)));
+      if (!selected.has(clientKey)) return false;
     }
 
     if (filters.clientTypes.length > 0 && !filters.clientTypes.includes(o.clientType)) {
