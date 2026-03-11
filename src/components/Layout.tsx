@@ -15,7 +15,7 @@ interface LayoutProps {
 }
 
 export function Layout({ children }: LayoutProps) {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, logout, token } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -79,7 +79,7 @@ export function Layout({ children }: LayoutProps) {
           </main>
         </SidebarInset>
       </div>
-      <ReportIssueButton />
+      <ReportIssueButton authToken={token} reporter={user ? { displayName: user.displayName, role: user.role, email: user.email } : null} />
     </SidebarProvider>
   );
 }

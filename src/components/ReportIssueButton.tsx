@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -9,7 +8,17 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { MessageSquareWarning } from 'lucide-react';
 import { toast } from 'sonner';
-import { useAuth } from '@/contexts/AuthContext';
+type ReporterInfo = {
+  displayName?: string;
+  role?: string;
+  email?: string;
+};
+
+type ReportIssueButtonProps = {
+  authToken?: string | null;
+  reporter?: ReporterInfo | null;
+  page?: string;
+};
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -31,9 +40,10 @@ const FEATURE_OPTIONS = [
   'Other',
 ];
 
-export function ReportIssueButton() {
-  const { token, user } = useAuth();
-  const location = useLocation();
+export function ReportIssueButton({ authToken, reporter, page }: ReportIssueButtonProps) {
+  const token = authToken || null;
+  const user = reporter || null;
+  const resolvedPage = page || window.location.pathname;
   const [open, setOpen] = useState(false);
   const [issueTypes, setIssueTypes] = useState<string[]>([]);
   const [feature, setFeature] = useState<string>('Dashboard');
@@ -89,7 +99,7 @@ export function ReportIssueButton() {
           summary: summary.trim(),
           steps: steps.trim(),
           comments: comments.trim(),
-          page: location.pathname,
+          page: resolvedPage,
           reporterDisplayName: user?.displayName || '',
         }),
       });

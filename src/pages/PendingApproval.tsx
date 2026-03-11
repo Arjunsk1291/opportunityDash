@@ -7,7 +7,7 @@ import { BrandCornerLogo } from '@/components/BrandCornerLogo';
 import { ReportIssueButton } from '@/components/ReportIssueButton';
 
 export default function PendingApproval() {
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
 
   return (
     <div className="relative flex items-center justify-center min-h-screen bg-[#0b0f1a] text-white overflow-hidden">
@@ -77,7 +77,7 @@ export default function PendingApproval() {
         </CardContent>
       </Card>
       <BrandCornerLogo className="bg-white/5" />
-      <ReportIssueButton />
+      <ReportIssueButton authToken={token} reporter={user ? { displayName: user.displayName, role: user.role, email: user.email } : null} />
     </div>
   );
 }
