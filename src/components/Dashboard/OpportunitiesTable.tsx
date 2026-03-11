@@ -34,7 +34,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<'ref' | 'rfp'>('ref');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
-  const [refSortOrder, setRefSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [refSortOrder, setRefSortOrder] = useState<'asc' | 'desc'>('desc');
   const { formatCurrency } = useCurrency();
   const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, bulkApprove, bulkRevert, revertApproval, refreshApprovals } = useApproval();
   const { isProposalHead, isSVP, isMaster, isAdmin, user, token } = useAuth();
