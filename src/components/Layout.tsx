@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { BarChart3, User, LogOut, Shield } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { BrandCornerLogo } from '@/components/BrandCornerLogo';
 
 interface LayoutProps {
   children: ReactNode;
@@ -19,7 +20,7 @@ export function Layout({ children }: LayoutProps) {
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate('/');
   };
 
   return (
@@ -76,6 +77,7 @@ export function Layout({ children }: LayoutProps) {
           <main className="flex-1 p-3 sm:p-4 lg:p-6">
             {children}
           </main>
+          <BrandCornerLogo />
         </SidebarInset>
       </div>
     </SidebarProvider>

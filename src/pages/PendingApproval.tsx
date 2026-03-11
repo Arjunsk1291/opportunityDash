@@ -3,13 +3,17 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Clock, LogOut, Mail } from 'lucide-react';
+import { BrandCornerLogo } from '@/components/BrandCornerLogo';
 
 export default function PendingApproval() {
   const { user, logout } = useAuth();
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background via-muted/40 to-muted">
-      <Card className="w-full max-w-lg border-border/50 shadow-2xl">
+    <div className="relative flex items-center justify-center min-h-screen bg-[#0a1a33] text-white overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,_rgba(8,18,36,0.95),_rgba(10,38,74,0.95)),radial-gradient(circle_at_top,_rgba(48,122,196,0.35),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(14,97,132,0.35),_transparent_60%)]" />
+      <div className="pointer-events-none absolute inset-0 opacity-25 [background:radial-gradient(circle_at_1px_1px,_rgba(255,255,255,0.18)_1px,_transparent_0)] [background-size:22px_22px]" />
+      <div className="pointer-events-none absolute -top-24 -right-20 h-72 w-72 rounded-full bg-sky-400/15 blur-3xl" />
+      <Card className="w-full max-w-lg border-border/50 shadow-2xl bg-card/90 backdrop-blur text-foreground">
         <CardHeader>
           <CardTitle className="text-center text-2xl">Access Pending Approval</CardTitle>
         </CardHeader>
@@ -71,6 +75,7 @@ export default function PendingApproval() {
           </Button>
         </CardContent>
       </Card>
+      <BrandCornerLogo className="bg-white/5" />
     </div>
   );
 }

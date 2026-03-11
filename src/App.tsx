@@ -10,7 +10,6 @@ import Opportunities from "./pages/Opportunities";
 import Clients from "./pages/Clients";
 import Analytics from "./pages/Analytics";
 import Admin from "./pages/Admin";
-import Login from "./pages/Login";
 import PendingApproval from "./pages/PendingApproval";
 import NotFound from "./pages/NotFound";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -59,7 +58,7 @@ function AppRoutes() {
           path="/auth/callback"
           element={<Navigate to={isPending && isAuthenticated ? "/pending" : "/"} replace />}
         />
-        <Route path="/login" element={<Login />} />
+        <Route path="/login" element={<Navigate to="/" replace />} />
 
         {isPending && isAuthenticated ? (
           <>

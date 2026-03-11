@@ -26,7 +26,6 @@ interface AuthContextType {
   authError: string | null;
   logout: () => void;
   token: string | null;
-  loginWithUsername: (username: string) => Promise<void>;
   getAllUsers: () => User[];
   updateUserRole: (userId: string, newRole: UserRole, assignedGroup?: string) => Promise<void>;
   refreshCurrentUser: () => Promise<void>;
@@ -37,9 +36,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_URL = import.meta.env.VITE_API_URL || '/api';
-const DEFAULT_MASTER_USERNAME = (import.meta.env.VITE_DEFAULT_MASTER_USERNAME || 'tender-notify@avenirengineering.com').toLowerCase();
-
-
 interface AuthorizedUserResponse {
   id?: string;
   _id?: string;
@@ -83,77 +79,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthError(null);
   }, [authHeaders, token]);
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const savedUsername = sessionStorage.getItem('username_token');
-        const candidateUsername = (savedUsername || DEFAULT_MASTER_USERNAME).toLowerCase();
-
-        const response = await fetch(API_URL + '/auth/verify-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: candidateUsername }),
-        });
-
-        if (!response.ok) {
-          setAuthError('Auth service unavailable');
-          console.error('Auth startup verify-token failed', {
-            endpoint: API_URL + '/auth/verify-token',
-            status: response.status,
-            statusText: response.statusText,
-            username: candidateUsername,
-          });
-          if (savedUsername) {
-            sessionStorage.removeItem('username_token');
-          }
-          return;
-        }
-
-        const data = await response.json();
-        const nextUser: User = {
-          email: data.user.email,
-          displayName: data.user.displayName || data.user.email,
-          role: data.user.role,
-          status: data.user.status,
-          assignedGroup: data.user.assignedGroup || null,
-        };
-        setUser(nextUser);
-        setToken(candidateUsername);
-        setIsPending(nextUser.status === 'pending');
-        setAuthError(null);
-        sessionStorage.setItem('username_token', candidateUsername);
-
-        if (nextUser.status === 'approved') {
-          await fetch(API_URL + '/auth/login', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: 'Bearer ' + candidateUsername,
-            },
-          });
-        }
-      } catch (error) {
-        setAuthError('Auth service unavailable');
-        console.error('Auth startup verify-token request crashed', {
-          endpoint: API_URL + '/auth/verify-token',
-          error,
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkAuth();
-  }, []);
-
-  const logout = useCallback(() => {
+  const clearAuthState = useCallback(() => {
     setUser(null);
     setToken(null);
     setAllUsers([]);
     setIsPending(false);
     setAuthError(null);
-    sessionStorage.removeItem('username_token');
+    setIsLoading(false);
   }, []);
+
+  const logout = useCallback(() => {
+    clearAuthState();
+    window.dispatchEvent(new CustomEvent('app:logout'));
+  }, [clearAuthState]);
 
   const loginWithUsername = useCallback(async (username: string) => {
     const normalizedUsername = username.trim().toLowerCase();
@@ -185,7 +123,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(nextUser);
     setToken(normalizedUsername);
     setAuthError(null);
-    sessionStorage.setItem('username_token', normalizedUsername);
 
     if (nextUser.status === 'pending') {
       setIsPending(true);
@@ -207,18 +144,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const detail = (event as CustomEvent).detail as { username?: string | null };
       const nextUsername = detail?.username ? String(detail.username).toLowerCase() : '';
       if (!nextUsername) {
-        logout();
+        clearAuthState();
         return;
       }
-      if (nextUsername === token) return;
-      loginWithUsername(nextUsername).catch((error) => {
+      if (nextUsername === token) {
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
+      loginWithUsername(nextUsername).then(() => {
+        setIsLoading(false);
+      }).catch((error) => {
         console.error('MSAL username sync failed:', error);
+        setAuthError('Auth service unavailable');
+        setIsLoading(false);
       });
     };
 
     window.addEventListener('msal:user', handleMsalUser as EventListener);
     return () => window.removeEventListener('msal:user', handleMsalUser as EventListener);
-  }, [loginWithUsername, logout, token]);
+  }, [clearAuthState, loginWithUsername, token]);
 
   const getAllUsers = useCallback(() => allUsers, [allUsers]);
 
@@ -332,7 +277,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authError,
         logout,
         token,
-        loginWithUsername,
         getAllUsers,
         updateUserRole,
         refreshCurrentUser,

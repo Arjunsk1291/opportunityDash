@@ -21,13 +21,13 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [accountUpn, setAccountUpn] = useState<string | undefined>(undefined);
-  const authDebug = (message: string, details?: Record<string, unknown>) => {
+  const authDebug = React.useCallback((message: string, details?: Record<string, unknown>) => {
     if (details) {
       console.info(`[auth.msal] ${message}`, details);
     } else {
       console.info(`[auth.msal] ${message}`);
     }
-  };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -46,8 +46,9 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         setIsAuthenticated(!!active);
         setAccountUpn(active?.username);
         if (active?.username) {
-          sessionStorage.setItem("username_token", active.username.toLowerCase());
           window.dispatchEvent(new CustomEvent("msal:user", { detail: { username: active.username } }));
+        } else {
+          window.dispatchEvent(new CustomEvent("msal:user", { detail: { username: null } }));
         }
         authDebug("init.complete", {
           activeAccount: active?.username || null,
@@ -61,6 +62,28 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    window.dispatchEvent(
+      new CustomEvent("msal:user", { detail: { username: accountUpn ?? null } })
+    );
+  }, [accountUpn, loading]);
+
+  const performLogout = React.useCallback(() => {
+    const msalInstance = getMsalInstance();
+    const account = msalInstance.getActiveAccount();
+    authDebug("logout.start", { account: account?.username || null });
+    setIsAuthenticated(false);
+    setAccountUpn(undefined);
+    window.dispatchEvent(new CustomEvent("msal:user", { detail: { username: null } }));
+    msalInstance.logoutPopup({ account })
+      .then(() => authDebug("logout.popup.success"))
+      .catch((error) => {
+        console.warn("[auth.msal] logout.popup.failed", error);
+        msalInstance.logoutRedirect({ account });
+      });
+  }, [authDebug]);
 
   const login = async () => {
     const msalInstance = getMsalInstance();
@@ -82,25 +105,20 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       msalInstance.setActiveAccount(acct);
       setIsAuthenticated(true);
       setAccountUpn(acct.username);
-      sessionStorage.setItem("username_token", acct.username.toLowerCase());
       window.dispatchEvent(new CustomEvent("msal:user", { detail: { username: acct.username } }));
       authDebug("login.complete", { account: acct.username });
     }
   };
 
   const logout = () => {
-    const msalInstance = getMsalInstance();
-    const account = msalInstance.getActiveAccount();
-    authDebug("logout.start", { account: account?.username || null });
-    sessionStorage.removeItem("username_token");
-    window.dispatchEvent(new CustomEvent("msal:user", { detail: { username: null } }));
-    msalInstance.logoutPopup({ account })
-      .then(() => authDebug("logout.popup.success"))
-      .catch((error) => {
-        console.warn("[auth.msal] logout.popup.failed", error);
-        msalInstance.logoutRedirect({ account });
-      });
+    performLogout();
   };
+
+  useEffect(() => {
+    const handler = () => performLogout();
+    window.addEventListener("app:logout", handler);
+    return () => window.removeEventListener("app:logout", handler);
+  }, [performLogout]);
 
   const value = useMemo(
     () => ({ loading, isAuthenticated, login, logout, accountUpn }),
