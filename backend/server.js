@@ -649,7 +649,7 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
   };
 };
 
-const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
+const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const config = await getGraphConfig();
   if (!config.driveId || !config.fileId || !config.worksheetName) {
     throw new Error('Graph config is incomplete. Please configure Share Link / Drive / File / Worksheet in admin panel.');
@@ -848,6 +848,22 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     clientsUpdated: clientSyncResult?.updated || 0,
     newRowsPreview,
   };
+};
+
+let syncInFlightPromise = null;
+
+const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
+  if (syncInFlightPromise) {
+    console.log('[sync.lock.waiting]', JSON.stringify({ source, timestamp: new Date().toISOString() }));
+    return syncInFlightPromise;
+  }
+
+  syncInFlightPromise = runSyncFromConfiguredGraph({ source })
+    .finally(() => {
+      syncInFlightPromise = null;
+    });
+
+  return syncInFlightPromise;
 };
 
 let graphAutoSyncTimer = null;
@@ -1696,6 +1712,7 @@ app.post('/api/graph/auth/clear', verifyToken, async (req, res) => {
 const PAGE_KEYS = [
   'dashboard',
   'opportunities',
+  'tender_updates',
   'clients',
   'analytics',
   'master',
@@ -1708,6 +1725,7 @@ const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
 const DEFAULT_PAGE_ROLE_ACCESS = {
   dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   master: ['Master', 'Admin'],
@@ -2278,7 +2296,7 @@ app.post('/api/opportunities/sync-graph/auto', verifyToken, async (req, res) => 
       return res.status(403).json({ error: 'Only Master/Admin can sync data' });
     }
 
-    const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
+    const syncResult = await syncFromConfiguredGraph({ source: 'auto_endpoint' });
     res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
   } catch (error) {
     res.status(500).json(toApiError(error, 'GRAPH_AUTOSYNC_FAILED'));
@@ -2303,7 +2321,7 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can sync data' });
     }
-    const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
+    const syncResult = await syncFromConfiguredGraph({ source: 'auto_endpoint_legacy' });
     res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
   } catch (error) {
     res.status(500).json(toApiError(error, 'GRAPH_AUTOSYNC_FAILED'));
@@ -2615,6 +2633,105 @@ app.post('/api/generate-report', async (req, res) => {
   } catch (error) {
     console.error('Error generating report:', error);
     res.status(500).json({ error: 'Failed to generate report' });
+  }
+});
+
+app.post('/api/tender-updates-report', verifyToken, async (req, res) => {
+  try {
+    const tenders = Array.isArray(req.body?.tenders) ? req.body.tenders : [];
+    const updates = Array.isArray(req.body?.updates) ? req.body.updates : [];
+
+    const updatesByTender = new Map();
+    updates.forEach((update) => {
+      const key = String(update?.opportunityId || '');
+      if (!updatesByTender.has(key)) updatesByTender.set(key, []);
+      updatesByTender.get(key).push(update);
+    });
+
+    const generatedAt = new Date().toLocaleString();
+    const totalUpdates = updates.length;
+
+    const children = [
+      new Paragraph({
+        text: 'TENDER UPDATES TRACKER REPORT',
+        heading: HeadingLevel.HEADING_1,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 },
+      }),
+      new Paragraph({
+        text: `Generated: ${generatedAt}`,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 300 },
+      }),
+      new Paragraph({
+        text: `Total Tenders: ${tenders.length} • Total Updates: ${totalUpdates}`,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 400 },
+      }),
+    ];
+
+    tenders.forEach((tender) => {
+      const tenderUpdates = updatesByTender.get(String(tender?.id || '')) || [];
+      children.push(
+        new Paragraph({
+          text: `${tender?.opportunityRefNo || ''} • ${tender?.tenderName || 'Tender'}`,
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 300, after: 120 },
+        }),
+        new Paragraph({
+          text: `Client: ${tender?.clientName || '—'} | Lead: ${tender?.internalLead || '—'} | Group: ${tender?.groupClassification || '—'}`,
+          spacing: { after: 200 },
+        })
+      );
+
+      if (tenderUpdates.length === 0) {
+        children.push(new Paragraph({ text: 'No updates recorded for this tender.', spacing: { after: 200 } }));
+        return;
+      }
+
+      const rows = [
+        new TableRow({
+          children: [
+            new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Type' })] }),
+            new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'SubType' })] }),
+            new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Actor' })] }),
+            new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Date' })] }),
+            new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Due Date' })] }),
+            new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Details' })] }),
+            new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Created By' })] }),
+          ],
+        }),
+        ...tenderUpdates.map((u) => new TableRow({
+          children: [
+            new TableCell({ borders, children: [new Paragraph(String(u.type || ''))] }),
+            new TableCell({ borders, children: [new Paragraph(String(u.subType || ''))] }),
+            new TableCell({ borders, children: [new Paragraph(String(u.actor || ''))] }),
+            new TableCell({ borders, children: [new Paragraph(String(u.date || ''))] }),
+            new TableCell({ borders, children: [new Paragraph(String(u.dueDate || ''))] }),
+            new TableCell({ borders, children: [new Paragraph(String(u.details || ''))] }),
+            new TableCell({ borders, children: [new Paragraph(String(u.createdBy || ''))] }),
+          ],
+        })),
+      ];
+
+      children.push(
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows,
+        })
+      );
+    });
+
+    const doc = new Document({
+      sections: [{ properties: {}, children }],
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    res.setHeader('Content-Disposition', 'attachment; filename=tender-updates-report.docx');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to generate report' });
   }
 });
 
