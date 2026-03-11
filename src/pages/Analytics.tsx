@@ -21,13 +21,11 @@ import {
   getClientData,
 } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
-import { useCurrency } from '@/contexts/CurrencyContext';
 
 const COLORS = ['hsl(199, 89%, 48%)', 'hsl(38, 92%, 50%)', 'hsl(262, 83%, 58%)', 'hsl(142, 76%, 36%)', 'hsl(0, 84%, 60%)', 'hsl(220, 9%, 46%)'];
 
 const Analytics = () => {
   const { opportunities } = useData();
-  const { convertValue } = useCurrency();
   
   const stats = useMemo(() => calculateSummaryStats(opportunities), [opportunities]);
   const clientData = useMemo(() => getClientData(opportunities), [opportunities]);
@@ -80,14 +78,6 @@ const Analytics = () => {
       }));
   }, [opportunities]);
 
-  // ✅ UPDATED: Format currency as AED
-  const formatCurrencyAED = (value: number) => {
-    const convertedValue = convertValue(value);
-    if (convertedValue >= 1000000) return `AED ${(convertedValue / 1000000).toFixed(1)}M`;
-    if (convertedValue >= 1000) return `AED ${(convertedValue / 1000).toFixed(0)}K`;
-    return `AED ${convertedValue.toFixed(0)}`;
-  };
-
   return (
     <div className="space-y-6">
       <div>
@@ -96,7 +86,7 @@ const Analytics = () => {
       </div>
 
       {/* Summary Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold">{stats.totalActive}</p>
@@ -113,24 +103,6 @@ const Analytics = () => {
           <CardContent className="pt-4 text-center">
             <p className="text-2xl font-bold text-destructive">{stats.lostCount}</p>
             <p className="text-xs text-muted-foreground">Lost</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold text-warning">{stats.atRiskCount}</p>
-            <p className="text-xs text-muted-foreground">At Risk</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{formatCurrencyAED(stats.totalPipelineValue)}</p>
-            <p className="text-xs text-muted-foreground">Pipeline Value</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-2xl font-bold">{formatCurrencyAED(stats.weightedPipeline)}</p>
-            <p className="text-xs text-muted-foreground">Weighted Value</p>
           </CardContent>
         </Card>
       </div>

@@ -25,15 +25,15 @@ export function AtRiskWidget({ data, onSelectOpportunity }: AtRiskWidgetProps) {
   const getDaysToDeadline = (opp: Opportunity): number => getSubmissionDaysLeft(opp);
 
   return (
-    <Card>
+    <Card className="flex h-full flex-col">
       <CardHeader className="pb-2">
         <CardTitle className="text-lg flex items-center gap-2">
           <Clock className="h-5 w-5 text-pending" />
           Submission in Next 10 Days
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-2 max-h-[280px] overflow-auto scrollbar-thin">
+      <CardContent className="flex-1 min-h-0">
+        <div className="h-full space-y-2 overflow-auto scrollbar-thin pr-1">
           {submissionNear.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">No tenders due within 10 days</p>
           ) : (

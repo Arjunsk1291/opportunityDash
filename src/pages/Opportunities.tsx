@@ -52,6 +52,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
           data={filteredData}
           onSelectOpportunity={setSelectedOpp}
           scrollContainerClassName="relative h-full overflow-y-auto overflow-x-auto scrollbar-thin"
+          maxHeight="h-full"
         />
       </div>
 

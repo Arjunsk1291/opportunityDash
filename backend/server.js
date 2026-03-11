@@ -485,6 +485,56 @@ const renderTemplate = (template = '', values = {}) => {
   return output;
 };
 
+const escapeHtml = (value = '') => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+const nl2br = (value = '') => escapeHtml(value).replace(/\n/g, '<br />');
+
+const buildTelecastEmailHtml = ({ values, renderedBody = '' }) => {
+  const rows = [
+    ['Tender Ref', values.TENDER_NO || '—'],
+    ['Tender Name', values.TENDER_NAME || '—'],
+    ['Client', values.CLIENT || '—'],
+    ['Group', values.GROUP || '—'],
+    ['Tender Type', values.TENDER_TYPE || '—'],
+    ['Date Received', values.DATE_TENDER_RECD || '—'],
+    ['Lead', values.LEAD || '—'],
+    ['Value', values.VALUE || '—'],
+  ];
+
+  return `
+    <div style="margin:0;padding:24px;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a;">
+      <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #dbeafe;border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+        <div style="padding:24px 28px;background:linear-gradient(135deg,#0f172a 0%,#1d4ed8 100%);color:#ffffff;">
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Telecast</div>
+          <h1 style="margin:0;font-size:24px;line-height:1.2;">New Tender Alert</h1>
+          <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">A new tender row was detected and matched your telecast rules.</p>
+        </div>
+        <div style="padding:24px 28px;">
+          <div style="margin-bottom:18px;padding:16px 18px;border-radius:14px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;">
+            <strong style="display:block;margin-bottom:6px;">Summary</strong>
+            <div style="font-size:14px;line-height:1.7;">${nl2br(renderedBody)}</div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;border-spacing:0;overflow:hidden;border:1px solid #e2e8f0;border-radius:14px;">
+            <tbody>
+              ${rows.map(([label, value], index) => `
+                <tr style="background:${index % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                  <th style="width:32%;padding:12px 14px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#475569;background:#f8fafc;border-bottom:1px solid #e2e8f0;">${escapeHtml(label)}</th>
+                  <td style="padding:12px 14px;font-size:14px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${escapeHtml(value)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
 
 
 const border = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' };
@@ -612,6 +662,7 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
     const values = getTemplateValues(row);
     const subject = renderTemplate(subjectTemplate, values);
     const content = renderTemplate(bodyTemplate, values);
+    const htmlContent = buildTelecastEmailHtml({ values, renderedBody: content });
 
     const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
       method: 'POST',
@@ -622,7 +673,7 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
       body: JSON.stringify({
         message: {
           subject,
-          body: { contentType: 'Text', content },
+          body: { contentType: 'HTML', content: htmlContent },
           toRecipients: recipients.map((email) => ({ emailAddress: { address: email } })),
         },
         saveToSentItems: true,
@@ -2164,6 +2215,20 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
     }
 
     const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc: config.telecastGraphRefreshTokenEnc });
+    const testValues = {
+      TENDER_NO: 'AVR-TEST-001',
+      TENDER_NAME: 'Telecast Test Opportunity',
+      CLIENT: 'Avenir Demo Client',
+      GROUP: 'GES',
+      TENDER_TYPE: 'Tender',
+      DATE_TENDER_RECD: new Date().toISOString().slice(0, 10),
+      LEAD: req.user.displayName || req.user.email || 'Avenir',
+      VALUE: 'AED 1,250,000',
+    };
+    const testHtml = buildTelecastEmailHtml({
+      values: testValues,
+      renderedBody: 'This is a test telecast email from the Opportunity Dashboard.',
+    });
     const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
       method: 'POST',
       headers: {
@@ -2174,8 +2239,8 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
         message: {
           subject: 'Hello from Dashboard',
           body: {
-            contentType: 'Text',
-            content: 'Hello from Dashboard',
+            contentType: 'HTML',
+            content: testHtml,
           },
           toRecipients: [{ emailAddress: { address: recipientEmail } }],
         },
@@ -2237,12 +2302,6 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
     const featureLabel = feature.toLowerCase() === 'other' ? featureOther : feature;
     const subject = `Issue report: ${featureLabel} · ${issueTypes.join(', ')}`;
     const reportedAt = new Date().toISOString();
-    const escapeHtml = (value = '') => String(value)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
     const safeReporter = escapeHtml(req.user.displayName || req.user.email || 'Unknown');
     const safeRole = escapeHtml(req.user.role || 'Unknown');
     const safeEmail = escapeHtml(req.user.email || 'Unknown');
@@ -2254,47 +2313,54 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
     const safeSteps = escapeHtml(steps);
     const safeComments = escapeHtml(comments);
     const html = `
-      <div style="font-family: Arial, sans-serif; color: #111827;">
-        <h2 style="margin: 0 0 12px; color: #0f172a;">Issue Report</h2>
-        <p style="margin: 0 0 16px;">A new issue report was submitted.</p>
-        <table style="border-collapse: collapse; width: 100%; max-width: 680px;">
-          <tr>
-            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Reporter</th>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safeReporter} (${safeRole})</td>
-          </tr>
-          <tr>
-            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Email</th>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safeEmail}</td>
-          </tr>
-          <tr>
-            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Page</th>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safePage}</td>
-          </tr>
-          <tr>
-            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Time (UTC)</th>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safeTime}</td>
-          </tr>
-          <tr>
-            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Issue Type(s)</th>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safeIssueTypes}</td>
-          </tr>
-          <tr>
-            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Feature</th>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safeFeature}</td>
-          </tr>
-          ${summary ? `<tr>
-            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Summary</th>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safeSummary}</td>
-          </tr>` : ''}
-          ${steps ? `<tr>
-            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Steps to Reproduce</th>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;"><pre style="margin: 0; font-family: inherit; white-space: pre-wrap;">${safeSteps}</pre></td>
-          </tr>` : ''}
-          <tr>
-            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Comments</th>
-            <td style="padding: 8px; border: 1px solid #e2e8f0;"><pre style="margin: 0; font-family: inherit; white-space: pre-wrap;">${safeComments}</pre></td>
-          </tr>
-        </table>
+      <div style="margin:0;padding:24px;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a;">
+        <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+          <div style="padding:24px 28px;background:linear-gradient(135deg,#0f172a 0%,#2563eb 100%);color:#ffffff;">
+            <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Reporting</div>
+            <h2 style="margin:0;font-size:24px;line-height:1.2;">Issue Report</h2>
+            <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">A new issue report was submitted from the dashboard.</p>
+          </div>
+          <div style="padding:24px 28px;">
+            <table style="border-collapse:collapse;width:100%;max-width:704px;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+              <tr>
+                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Reporter</th>
+                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safeReporter} (${safeRole})</td>
+              </tr>
+              <tr>
+                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Email</th>
+                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safeEmail}</td>
+              </tr>
+              <tr>
+                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Page</th>
+                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safePage}</td>
+              </tr>
+              <tr>
+                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Time (UTC)</th>
+                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safeTime}</td>
+              </tr>
+              <tr>
+                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Issue Type(s)</th>
+                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safeIssueTypes}</td>
+              </tr>
+              <tr>
+                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Feature</th>
+                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safeFeature}</td>
+              </tr>
+              ${summary ? `<tr>
+                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Summary</th>
+                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safeSummary}</td>
+              </tr>` : ''}
+              ${steps ? `<tr>
+                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Steps to Reproduce</th>
+                <td style="padding:10px 12px;border:1px solid #e2e8f0;"><div style="white-space:pre-wrap;line-height:1.7;">${safeSteps}</div></td>
+              </tr>` : ''}
+              <tr>
+                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Comments</th>
+                <td style="padding:10px 12px;border:1px solid #e2e8f0;"><div style="white-space:pre-wrap;line-height:1.7;">${safeComments}</div></td>
+              </tr>
+            </table>
+          </div>
+        </div>
       </div>
     `;
 
