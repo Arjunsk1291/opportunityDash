@@ -79,11 +79,19 @@ export const PROBABILITY_BY_STAGE: Record<string, number> = {
 
 export function calculateSummaryStats(data: Opportunity[]) {
 
+  const getMergedStatus = (opp: Opportunity) => {
+    if (opp.tenderResult) return opp.tenderResult;
+    if (opp.avenirStatus) return opp.avenirStatus;
+    return opp.canonicalStage || '';
+  };
+
   const activeOpps = data.filter(o => 
     ['WORKING', 'SUBMITTED', 'AWARDED'].includes(o.canonicalStage)
   );
   const awardedOpps = data.filter(o => o.canonicalStage === 'AWARDED');
-  const totalActiveValue = awardedOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+  const totalActiveValue = data
+    .filter((o) => getMergedStatus(o) === 'AWARDED')
+    .reduce((sum, o) => sum + o.opportunityValue, 0);
   const awardedCount = awardedOpps.length;
   const awardedValue = totalActiveValue;
 
