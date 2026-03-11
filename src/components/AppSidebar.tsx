@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useAuth } from '@/contexts/AuthContext';
 import { NAV_ITEMS } from '@/config/navigation';
-import logo from '@/assets/avenir-logo.png';
+import logo from '@/assets/Avenir_Logo.avif';
 
 export function AppSidebar() {
   const location = useLocation();

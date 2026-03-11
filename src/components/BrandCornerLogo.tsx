@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import logo from "@/assets/avenir-logo.png";
+import logo from "@/assets/Avenir_Logo.avif";
 
 type BrandCornerLogoProps = {
   className?: string;
