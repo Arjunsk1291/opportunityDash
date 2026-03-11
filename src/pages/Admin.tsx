@@ -1992,7 +1992,7 @@ export default function Admin() {
                 </div>
                 <div className="rounded border p-3 text-xs">
                   <p className="font-semibold mb-1">Supported keywords (exact):</p>
-                  <p>{(telecastKeywords.length ? telecastKeywords : ['{{TENDER_NO}}','{{TENDER_NAME}}','{{CLIENT}}','{{GROUP}}','{{TENDER_TYPE}}','{{DATE_TENDER_RECD}}','{{YEAR}}','{{LEAD}}','{{VALUE}}','{{OPPORTUNITY_ID}}','{{COMMENTS}}']).join(', ')}</p>
+                  <p>{(telecastKeywords.length ? telecastKeywords : ['{{TENDER_NO}}','{{TENDER_NAME}}','{{CLIENT}}','{{GROUP}}','{{TENDER_TYPE}}','{{DATE_TENDER_RECD}}','{{YEAR}}','{{LEAD}}','{{OPPORTUNITY_ID}}','{{COMMENTS}}']).join(', ')}</p>
                 </div>
                 <Button onClick={saveTelecastConfig} disabled={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">Save Template & Recipients</Button>
               </CardContent>

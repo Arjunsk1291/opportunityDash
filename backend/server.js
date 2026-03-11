@@ -431,7 +431,7 @@ const isTenderRecentForTelecast = (opportunity, now = new Date()) => {
 };
 
 const TELECAST_TEMPLATE_KEYWORDS = [
-  '{{TENDER_NO}}', '{{TENDER_NAME}}', '{{CLIENT}}', '{{GROUP}}', '{{TENDER_TYPE}}', '{{DATE_TENDER_RECD}}', '{{YEAR}}', '{{LEAD}}', '{{VALUE}}', '{{OPPORTUNITY_ID}}', '{{COMMENTS}}',
+  '{{TENDER_NO}}', '{{TENDER_NAME}}', '{{CLIENT}}', '{{GROUP}}', '{{TENDER_TYPE}}', '{{DATE_TENDER_RECD}}', '{{YEAR}}', '{{LEAD}}', '{{OPPORTUNITY_ID}}', '{{COMMENTS}}',
 ];
 
 const normalizeEmailList = (value) => {
@@ -458,7 +458,6 @@ const getTemplateValues = (opportunity) => {
   const dateTenderRecd = opportunity?.dateTenderReceived || row['DATE TENDER RECD'] || '';
   const year = row.YEAR || opportunity?.rawGraphData?.year || '';
   const lead = opportunity?.internalLead || row.LEAD || '';
-  const value = opportunity?.opportunityValue ?? row['TENDER VALUE'] ?? '';
   const comments = opportunity?.comments || row.COMMENTS || '';
 
   return {
@@ -470,7 +469,6 @@ const getTemplateValues = (opportunity) => {
     DATE_TENDER_RECD: String(dateTenderRecd || ''),
     YEAR: String(year || ''),
     LEAD: String(lead || ''),
-    VALUE: String(value || ''),
     OPPORTUNITY_ID: String(opportunity?.id || ''),
     COMMENTS: String(comments || ''),
   };
@@ -503,7 +501,6 @@ const buildTelecastEmailHtml = ({ values, renderedBody = '' }) => {
     ['Tender Type', values.TENDER_TYPE || '—'],
     ['Date Received', values.DATE_TENDER_RECD || '—'],
     ['Lead', values.LEAD || '—'],
-    ['Value', values.VALUE || '—'],
   ];
 
   return `
@@ -2226,7 +2223,6 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
       DATE_TENDER_RECD: new Date().toISOString().slice(0, 10),
       YEAR: String(new Date().getFullYear()),
       LEAD: req.user.displayName || req.user.email || 'Avenir',
-      VALUE: 'AED 12,500,000',
       OPPORTUNITY_ID: `telecast-preview-${Date.now()}`,
       COMMENTS: 'Sample values inserted for template preview from Admin > Send Test Mail.',
     };

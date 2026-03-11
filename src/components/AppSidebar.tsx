@@ -10,12 +10,10 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarHeader,
-  SidebarFooter,
   useSidebar,
 } from '@/components/ui/sidebar';
 import { useAuth } from '@/contexts/AuthContext';
 import { NAV_ITEMS } from '@/config/navigation';
-import logo from '@/assets/Avenir_Logo.avif';
 
 export function AppSidebar() {
   const location = useLocation();
@@ -81,19 +79,6 @@ export function AppSidebar() {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-4">
-        <div className="flex items-center">
-          <img
-            src={logo}
-            alt="Avenir Engineering"
-            className={
-              collapsed
-                ? "h-7 w-7 object-contain opacity-80"
-                : "h-10 w-full max-w-[200px] object-contain"
-            }
-          />
-        </div>
-      </SidebarFooter>
     </Sidebar>
   );
 }
