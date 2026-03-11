@@ -10,6 +10,7 @@ import { Opportunity } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useApproval } from '@/contexts/ApprovalContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useData } from '@/contexts/DataContext';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
@@ -26,6 +27,7 @@ interface OpportunitiesTableProps {
 }
 
 const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-96' }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
@@ -33,7 +35,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
   const { formatCurrency } = useCurrency();
   const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, bulkApprove, bulkRevert, revertApproval, refreshApprovals } = useApproval();
-  const { isProposalHead, isSVP, isMaster, user } = useAuth();
+  const { isProposalHead, isSVP, isMaster, isAdmin, user, token } = useAuth();
+  const { refreshData } = useData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBulkOpen, setIsBulkOpen] = useState(false);
   const [bulkMode, setBulkMode] = useState<'approve' | 'revert'>('approve');
@@ -49,8 +52,33 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await refreshApprovals();
-    setTimeout(() => setIsRefreshing(false), 500);
+    try {
+      const canSync = (isMaster || isAdmin) && Boolean(token);
+      if (canSync) {
+        const response = await fetch(API_URL + '/opportunities/sync-graph', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + token,
+          },
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.error || 'Sync failed');
+        }
+        const newRowsCount = Number(payload?.newRowsCount || 0);
+        if (newRowsCount > 0) {
+          toast.success(`Sync complete. ${newRowsCount} new row${newRowsCount === 1 ? '' : 's'} detected.`);
+        } else {
+          toast.message('Sync complete. No new rows detected.');
+        }
+      }
+      await Promise.all([refreshApprovals(), refreshData()]);
+    } catch (error) {
+      toast.error((error as Error).message || 'Refresh failed');
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const getRfpReceivedDisplay = (tender: Opportunity) => {

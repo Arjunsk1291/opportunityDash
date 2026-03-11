@@ -50,7 +50,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   const [approvals, setApprovals] = useState<Record<string, ApprovalStatus>>({});
   const [approvalStates, setApprovalStates] = useState<Record<string, ApprovalState>>({});
   const [approvalLogs, setApprovalLogs] = useState<ApprovalLogEntry[]>([]);
-  const { token, isAuthenticated } = useAuth();
+  const { token, isAuthenticated, user } = useAuth();
 
   const headers = useCallback(
     () => token ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token } : { 'Content-Type': 'application/json' },
@@ -61,19 +61,19 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     if (!isAuthenticated || !token) return;
 
     try {
-      const response = await fetch(API_URL + '/approvals', { headers: headers() });
-      if (!response.ok) {
+      const [approvalsResponse, logsResponse] = await Promise.all([
+        fetch(API_URL + '/approvals', { headers: headers() }),
+        fetch(API_URL + '/approval-logs', { headers: headers() }),
+      ]);
+      if (!approvalsResponse.ok) {
         throw new Error('Failed to load approvals');
       }
-      const data = await response.json();
-      setApprovals(data.approvals || {});
-      setApprovalStates(data.approvalStates || {});
-
-      const logsResponse = await fetch(API_URL + '/approval-logs', { headers: headers() });
       if (!logsResponse.ok) {
         throw new Error('Failed to load approval logs');
       }
-      const logs = await logsResponse.json();
+      const [data, logs] = await Promise.all([approvalsResponse.json(), logsResponse.json()]);
+      setApprovals(data.approvals || {});
+      setApprovalStates(data.approvalStates || {});
       setApprovalLogs(logs);
     } catch (error) {
       console.error('❌ Failed to refresh approvals:', error);
@@ -93,34 +93,65 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   }, [approvalStates]);
 
   const approveAsProposalHead = useCallback(async (opportunityRefNo: string) => {
+    setApprovals((prev) => ({ ...prev, [opportunityRefNo]: 'proposal_head_approved' }));
+    setApprovalStates((prev) => ({
+      ...prev,
+      [opportunityRefNo]: {
+        ...defaultState,
+        ...(prev[opportunityRefNo] || {}),
+        status: 'proposal_head_approved',
+        proposalHeadApproved: true,
+        proposalHeadBy: user?.displayName || null,
+      },
+    }));
+
     const response = await fetch(API_URL + '/approvals/approve-proposal-head', {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({ opportunityRefNo }),
     });
 
+    const payload = await response.json();
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Tender Manager approval failed');
+      await refreshApprovals();
+      throw new Error(payload.error || 'Tender Manager approval failed');
     }
 
-    await refreshApprovals();
-  }, [headers, refreshApprovals]);
+    setApprovals(payload.approvals || {});
+    setApprovalStates(payload.approvalStates || {});
+    if (payload.approvalLogs) setApprovalLogs(payload.approvalLogs);
+  }, [headers, refreshApprovals, user?.displayName]);
 
   const approveAsSVP = useCallback(async (opportunityRefNo: string, group?: string) => {
+    setApprovals((prev) => ({ ...prev, [opportunityRefNo]: 'fully_approved' }));
+    setApprovalStates((prev) => ({
+      ...prev,
+      [opportunityRefNo]: {
+        ...defaultState,
+        ...(prev[opportunityRefNo] || {}),
+        status: 'fully_approved',
+        svpApproved: true,
+        svpBy: user?.displayName || null,
+        svpGroup: group || prev[opportunityRefNo]?.svpGroup || null,
+      },
+    }));
+
     const response = await fetch(API_URL + '/approvals/approve-svp', {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({ opportunityRefNo, group }),
     });
 
+    const payload = await response.json();
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'SVP approval failed');
+      await refreshApprovals();
+      throw new Error(payload.error || 'SVP approval failed');
     }
 
-    await refreshApprovals();
-  }, [headers, refreshApprovals]);
+    setApprovals(payload.approvals || {});
+    setApprovalStates(payload.approvalStates || {});
+    if (payload.approvalLogs) setApprovalLogs(payload.approvalLogs);
+  }, [headers, refreshApprovals, user?.displayName]);
 
   const bulkApprove = useCallback(async (action: 'proposal_head' | 'svp', filters: Record<string, string>) => {
     const response = await fetch(API_URL + '/approvals/bulk-approve', {
@@ -159,18 +190,35 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   }, [headers]);
 
   const revertApproval = useCallback(async (opportunityRefNo: string) => {
+    setApprovals((prev) => ({ ...prev, [opportunityRefNo]: 'pending' }));
+    setApprovalStates((prev) => ({
+      ...prev,
+      [opportunityRefNo]: {
+        ...defaultState,
+        status: 'pending',
+        proposalHeadApproved: false,
+        proposalHeadBy: null,
+        svpApproved: false,
+        svpBy: null,
+        svpGroup: null,
+      },
+    }));
+
     const response = await fetch(API_URL + '/approvals/revert', {
       method: 'POST',
       headers: headers(),
       body: JSON.stringify({ opportunityRefNo }),
     });
 
+    const payload = await response.json();
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Revert failed');
+      await refreshApprovals();
+      throw new Error(payload.error || 'Revert failed');
     }
 
-    await refreshApprovals();
+    setApprovals(payload.approvals || {});
+    setApprovalStates(payload.approvalStates || {});
+    if (payload.approvalLogs) setApprovalLogs(payload.approvalLogs);
   }, [headers, refreshApprovals]);
 
   return (
