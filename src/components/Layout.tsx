@@ -9,6 +9,7 @@ import { BarChart3, User, LogOut, Shield } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { ReportIssueButton } from '@/components/ReportIssueButton';
+import logo from '@/assets/Avenir_Logo.avif';
 
 interface LayoutProps {
   children: ReactNode;
@@ -38,9 +39,11 @@ export function Layout({ children }: LayoutProps) {
               </div>
             </div>
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-              <span className="text-sm text-muted-foreground hidden md:inline">
-                Last updated: {new Date().toLocaleDateString()}
-              </span>
+              <img
+                src={logo}
+                alt="Avenir Engineering"
+                className="hidden md:block h-7 w-auto"
+              />
               <ThemeToggle />
               
               {/* User Menu */}
