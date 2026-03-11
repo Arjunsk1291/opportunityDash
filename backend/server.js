@@ -2132,6 +2132,93 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
   }
 });
 
+app.post('/api/issue-reports', verifyToken, async (req, res) => {
+  try {
+    const issueTypes = Array.isArray(req.body?.issueTypes) ? req.body.issueTypes.filter(Boolean) : [];
+    const feature = String(req.body?.feature || '').trim();
+    const featureOther = String(req.body?.featureOther || '').trim();
+    const summary = String(req.body?.summary || '').trim();
+    const steps = String(req.body?.steps || '').trim();
+    const comments = String(req.body?.comments || '').trim();
+    const page = String(req.body?.page || '').trim();
+
+    if (!issueTypes.length) {
+      return res.status(400).json({ error: 'At least one issue type is required' });
+    }
+    if (!feature) {
+      return res.status(400).json({ error: 'Feature is required' });
+    }
+    if (feature.toLowerCase() === 'other' && !featureOther) {
+      return res.status(400).json({ error: 'Feature (other) is required' });
+    }
+    if (!comments) {
+      return res.status(400).json({ error: 'Comments are required' });
+    }
+
+    const masters = await AuthorizedUser.find({
+      role: { $in: ['Master', 'MASTER'] },
+      status: 'approved',
+    }).lean();
+    const recipients = masters.map((user) => String(user.email || '').trim()).filter(Boolean);
+    if (recipients.length === 0) {
+      return res.status(400).json({ error: 'No Master recipients configured' });
+    }
+
+    const config = await getSystemConfig();
+    const graphRefreshTokenEnc = config.telecastGraphRefreshTokenEnc || config.graphRefreshTokenEnc || config.mailRefreshTokenEnc || '';
+    if (!graphRefreshTokenEnc) {
+      return res.status(400).json({ error: 'Mail service is not configured' });
+    }
+
+    const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc });
+    const featureLabel = feature.toLowerCase() === 'other' ? featureOther : feature;
+    const subject = `Issue report: ${featureLabel} · ${issueTypes.join(', ')}`;
+    const reportedAt = new Date().toISOString();
+    const content = [
+      'A new issue report was submitted.',
+      '',
+      `Reported by: ${req.user.displayName || req.user.email || 'Unknown'} (${req.user.role || 'Unknown'})`,
+      `Email: ${req.user.email || 'Unknown'}`,
+      `Page: ${page || 'Unknown'}`,
+      `Time: ${reportedAt}`,
+      '',
+      `Issue type(s): ${issueTypes.join(', ')}`,
+      `Feature: ${featureLabel}`,
+      summary ? `Summary: ${summary}` : '',
+      steps ? `Steps to reproduce: ${steps}` : '',
+      '',
+      'Comments:',
+      comments,
+    ].filter(Boolean).join('\n');
+
+    const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: { contentType: 'Text', content },
+          toRecipients: recipients.map((email) => ({ emailAddress: { address: email } })),
+        },
+        saveToSentItems: true,
+      }),
+    });
+
+    if (!graphResponse.ok) {
+      const payload = await graphResponse.json().catch(() => ({}));
+      const message = payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`;
+      return res.status(500).json({ error: message });
+    }
+
+    res.json({ success: true, recipients: recipients.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to send issue report' });
+  }
+});
+
 app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
   try {
     if (!['Master', 'Admin'].includes(req.user.role)) {

@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { BarChart3, User, LogOut, Shield } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { ReportIssueButton } from '@/components/ReportIssueButton';
 
 interface LayoutProps {
   children: ReactNode;
@@ -78,6 +79,7 @@ export function Layout({ children }: LayoutProps) {
           </main>
         </SidebarInset>
       </div>
+      <ReportIssueButton />
     </SidebarProvider>
   );
 }

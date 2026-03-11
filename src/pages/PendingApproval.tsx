@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Clock, LogOut, Mail } from 'lucide-react';
 import { BrandCornerLogo } from '@/components/BrandCornerLogo';
+import { ReportIssueButton } from '@/components/ReportIssueButton';
 
 export default function PendingApproval() {
   const { user, logout } = useAuth();
@@ -76,6 +77,7 @@ export default function PendingApproval() {
         </CardContent>
       </Card>
       <BrandCornerLogo className="bg-white/5" />
+      <ReportIssueButton />
     </div>
   );
 }
