@@ -2001,13 +2001,14 @@ export default function Admin() {
             <Card>
               <CardHeader>
                 <CardTitle>Send Test Mail</CardTitle>
+                <CardDescription>Sends the current telecast subject and body template to the entered email using sample tender values so you can review the final alert exactly as recipients would see it.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 sm:space-y-3 md:space-y-4">
                 <p className="text-xs sm:text-sm md:text-base font-medium">Recipient Email</p>
                 <Input type="email" className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" placeholder="name@company.com" value={telecastRecipientEmail} onChange={(e) => setTelecastRecipientEmail(e.target.value)} />
                 <Button onClick={sendTelecastTestMail} disabled={telecastSending || !telecastAuthStatus.hasRefreshToken} className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
                   <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${telecastSending ? 'animate-pulse' : ''}`} />
-                  {telecastSending ? 'Sending...' : 'Send Test Mail'}
+                  {telecastSending ? 'Sending...' : 'Send Template Preview'}
                 </Button>
               </CardContent>
             </Card>

@@ -2215,19 +2215,26 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
     }
 
     const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc: config.telecastGraphRefreshTokenEnc });
+    const subjectTemplate = config.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
+    const bodyTemplate = config.telecastTemplateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.';
     const testValues = {
-      TENDER_NO: 'AVR-TEST-001',
-      TENDER_NAME: 'Telecast Test Opportunity',
+      TENDER_NO: `AVR-TEST-${String(Math.floor(Math.random() * 900) + 100)}`,
+      TENDER_NAME: 'District Cooling Plant Expansion',
       CLIENT: 'Avenir Demo Client',
-      GROUP: 'GES',
-      TENDER_TYPE: 'Tender',
+      GROUP: 'GDS',
+      TENDER_TYPE: 'Proposal',
       DATE_TENDER_RECD: new Date().toISOString().slice(0, 10),
+      YEAR: String(new Date().getFullYear()),
       LEAD: req.user.displayName || req.user.email || 'Avenir',
-      VALUE: 'AED 1,250,000',
+      VALUE: 'AED 12,500,000',
+      OPPORTUNITY_ID: `telecast-preview-${Date.now()}`,
+      COMMENTS: 'Sample values inserted for template preview from Admin > Send Test Mail.',
     };
+    const renderedSubject = renderTemplate(subjectTemplate, testValues);
+    const renderedBody = renderTemplate(bodyTemplate, testValues);
     const testHtml = buildTelecastEmailHtml({
       values: testValues,
-      renderedBody: 'This is a test telecast email from the Opportunity Dashboard.',
+      renderedBody,
     });
     const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
       method: 'POST',
@@ -2237,7 +2244,7 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
       },
       body: JSON.stringify({
         message: {
-          subject: 'Hello from Dashboard',
+          subject: renderedSubject,
           body: {
             contentType: 'HTML',
             content: testHtml,
@@ -2254,7 +2261,7 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
       return res.status(500).json({ error: message });
     }
 
-    res.json({ success: true, message: `Test mail sent to ${recipientEmail}` });
+    res.json({ success: true, message: `Template preview mail sent to ${recipientEmail}`, subject: renderedSubject });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to send test mail' });
   }
