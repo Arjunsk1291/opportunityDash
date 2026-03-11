@@ -32,7 +32,9 @@ const API_URL = import.meta.env.VITE_API_URL || '/api';
 export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-96' }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [sortBy, setSortBy] = useState<'ref' | 'rfp'>('ref');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [refSortOrder, setRefSortOrder] = useState<'asc' | 'desc'>('asc');
   const { formatCurrency } = useCurrency();
   const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, bulkApprove, bulkRevert, revertApproval, refreshApprovals } = useApproval();
   const { isProposalHead, isSVP, isMaster, isAdmin, user, token } = useAuth();
@@ -144,10 +146,17 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       return matchesSearch && matchesStatus;
     })
     .sort((a, b) => {
+      const refA = String(a.opportunityRefNo || '').toUpperCase();
+      const refB = String(b.opportunityRefNo || '').toUpperCase();
+      if (sortBy === 'ref') {
+        const refCompare = refA.localeCompare(refB);
+        return refSortOrder === 'asc' ? refCompare : -refCompare;
+      }
       const aTime = getRfpSortTime(a);
       const bTime = getRfpSortTime(b);
       if (aTime === bTime) {
-        return String(a.opportunityRefNo || '').localeCompare(String(b.opportunityRefNo || ''));
+        const refCompare = refA.localeCompare(refB);
+        return refSortOrder === 'asc' ? refCompare : -refCompare;
       }
       return rfpSortOrder === 'desc' ? bTime - aTime : aTime - bTime;
     });
@@ -299,12 +308,36 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
           <Table className="min-w-[900px] lg:min-w-0 text-xs sm:text-sm">
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
-                <TableHead className="px-2 sm:px-3 font-bold">Ref No.</TableHead>
+                <TableHead className="px-2 sm:px-3 font-bold">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-primary hover:text-primary/80"
+                    onClick={() => {
+                      setSortBy('ref');
+                      setRefSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+                    }}
+                  >
+                    Ref No.
+                    <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </TableHead>
                 <TableHead className="px-2 sm:px-3 font-bold">Tender Name</TableHead>
                 <TableHead className="hidden md:table-cell px-2 sm:px-3 font-bold">Tender Type</TableHead>
                 <TableHead className="px-2 sm:px-3 font-bold">Client</TableHead>
                 <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">Group</TableHead>
-                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">RFP Received</TableHead>
+                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-primary hover:text-primary/80"
+                    onClick={() => {
+                      setSortBy('rfp');
+                      setRfpSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+                    }}
+                  >
+                    RFP Received
+                    <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </TableHead>
                 <TableHead className="hidden xl:table-cell px-2 sm:px-3 font-bold">Submission</TableHead>
                 <TableHead className="hidden xl:table-cell px-2 sm:px-3 font-bold">Lead</TableHead>
                 <TableHead className="px-2 sm:px-3 text-right font-bold">Value</TableHead>
@@ -415,7 +448,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
           </Table>
         </div>
         <div className="p-2 sm:p-3 text-xs sm:text-sm text-muted-foreground border-t bg-background">
-          Showing by RFP Received ({rfpSortOrder.toUpperCase()}): {filteredData.length} of {data.length} tenders (scroll to view all)
+          Showing by {sortBy === 'ref' ? `Ref No. (${refSortOrder.toUpperCase()})` : `RFP Received (${rfpSortOrder.toUpperCase()})`}: {filteredData.length} of {data.length} tenders (scroll to view all)
         </div>
         <Dialog open={isBulkOpen} onOpenChange={setIsBulkOpen}>
           <DialogContent className="max-w-2xl">

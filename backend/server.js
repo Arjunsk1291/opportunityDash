@@ -2174,22 +2174,66 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
     const featureLabel = feature.toLowerCase() === 'other' ? featureOther : feature;
     const subject = `Issue report: ${featureLabel} · ${issueTypes.join(', ')}`;
     const reportedAt = new Date().toISOString();
-    const content = [
-      'A new issue report was submitted.',
-      '',
-      `Reported by: ${req.user.displayName || req.user.email || 'Unknown'} (${req.user.role || 'Unknown'})`,
-      `Email: ${req.user.email || 'Unknown'}`,
-      `Page: ${page || 'Unknown'}`,
-      `Time: ${reportedAt}`,
-      '',
-      `Issue type(s): ${issueTypes.join(', ')}`,
-      `Feature: ${featureLabel}`,
-      summary ? `Summary: ${summary}` : '',
-      steps ? `Steps to reproduce: ${steps}` : '',
-      '',
-      'Comments:',
-      comments,
-    ].filter(Boolean).join('\n');
+    const escapeHtml = (value = '') => String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+    const safeReporter = escapeHtml(req.user.displayName || req.user.email || 'Unknown');
+    const safeRole = escapeHtml(req.user.role || 'Unknown');
+    const safeEmail = escapeHtml(req.user.email || 'Unknown');
+    const safePage = escapeHtml(page || 'Unknown');
+    const safeTime = escapeHtml(reportedAt);
+    const safeIssueTypes = issueTypes.map((item) => escapeHtml(item)).join(', ');
+    const safeFeature = escapeHtml(featureLabel);
+    const safeSummary = escapeHtml(summary);
+    const safeSteps = escapeHtml(steps);
+    const safeComments = escapeHtml(comments);
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #111827;">
+        <h2 style="margin: 0 0 12px; color: #0f172a;">Issue Report</h2>
+        <p style="margin: 0 0 16px;">A new issue report was submitted.</p>
+        <table style="border-collapse: collapse; width: 100%; max-width: 680px;">
+          <tr>
+            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Reporter</th>
+            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safeReporter} (${safeRole})</td>
+          </tr>
+          <tr>
+            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Email</th>
+            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safeEmail}</td>
+          </tr>
+          <tr>
+            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Page</th>
+            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safePage}</td>
+          </tr>
+          <tr>
+            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Time (UTC)</th>
+            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safeTime}</td>
+          </tr>
+          <tr>
+            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Issue Type(s)</th>
+            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safeIssueTypes}</td>
+          </tr>
+          <tr>
+            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Feature</th>
+            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safeFeature}</td>
+          </tr>
+          ${summary ? `<tr>
+            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Summary</th>
+            <td style="padding: 8px; border: 1px solid #e2e8f0;">${safeSummary}</td>
+          </tr>` : ''}
+          ${steps ? `<tr>
+            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Steps to Reproduce</th>
+            <td style="padding: 8px; border: 1px solid #e2e8f0;"><pre style="margin: 0; font-family: inherit; white-space: pre-wrap;">${safeSteps}</pre></td>
+          </tr>` : ''}
+          <tr>
+            <th style="text-align: left; padding: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;">Comments</th>
+            <td style="padding: 8px; border: 1px solid #e2e8f0;"><pre style="margin: 0; font-family: inherit; white-space: pre-wrap;">${safeComments}</pre></td>
+          </tr>
+        </table>
+      </div>
+    `;
 
     const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
       method: 'POST',
@@ -2200,7 +2244,7 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
       body: JSON.stringify({
         message: {
           subject,
-          body: { contentType: 'Text', content },
+          body: { contentType: 'HTML', content: html },
           toRecipients: recipients.map((email) => ({ emailAddress: { address: email } })),
         },
         saveToSentItems: true,
