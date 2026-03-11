@@ -343,28 +343,23 @@ const syncClientsFromOpportunities = async (opportunities = []) => {
   };
 };
 
-const hasRequiredRowValues = (opportunity) => {
+const getNormalizedRowSnapshot = (opportunity) => {
   const snapshot = opportunity?.rawGraphData?.rowSnapshot;
-  if (!snapshot || typeof snapshot !== 'object') return false;
-
-  const normalizedEntries = Object.entries(snapshot).reduce((acc, [key, value]) => {
+  if (!snapshot || typeof snapshot !== 'object') return {};
+  return Object.entries(snapshot).reduce((acc, [key, value]) => {
     acc[normalizeColumnKey(key)] = String(value || '').trim();
     return acc;
   }, {});
+};
 
+const hasRequiredRowValues = (opportunity) => {
+  const normalizedEntries = getNormalizedRowSnapshot(opportunity);
   return REQUIRED_NEW_ROW_COLUMNS.every((col) => Boolean(normalizedEntries[col]));
 };
 
 const buildRowSignature = (opportunity) => {
-  const parts = [
-    opportunity?.opportunityRefNo || '',
-    opportunity?.tenderName || '',
-    opportunity?.clientName || '',
-    opportunity?.groupClassification || '',
-    opportunity?.opportunityClassification || '',
-    opportunity?.dateTenderReceived || '',
-  ];
-
+  const normalizedEntries = getNormalizedRowSnapshot(opportunity);
+  const parts = REQUIRED_NEW_ROW_COLUMNS.map((col) => normalizedEntries[col] || '');
   return parts.map((part) => String(part).trim().toUpperCase()).join('||');
 };
 
@@ -373,7 +368,8 @@ const normalizeRefNo = (value = '') => String(value || '').trim().toUpperCase().
 const getTenderRefNo = (opportunity) => {
   const direct = normalizeRefNo(opportunity?.opportunityRefNo || '');
   if (direct) return direct;
-  return normalizeRefNo(opportunity?.rawGraphData?.rowSnapshot?.['TENDER NO'] || '');
+  const normalizedEntries = getNormalizedRowSnapshot(opportunity);
+  return normalizeRefNo(normalizedEntries['TENDER NO'] || '');
 };
 
 const buildNotificationKey = (opportunity) => {
