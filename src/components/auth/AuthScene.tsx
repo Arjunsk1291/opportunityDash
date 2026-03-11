@@ -17,28 +17,7 @@ export function AuthScene({ title, children, footer, cardClassName }: AuthSceneP
 
       <div className="relative z-10 flex min-h-screen">
         <aside className="hidden w-[46%] flex-col justify-between px-12 py-14 lg:flex xl:px-16">
-          <div className="space-y-10">
-            <img src={logo} alt="Avenir Engineering" className="h-11 w-auto" />
-            <div className="max-w-xl space-y-6">
-              <div className="inline-flex items-center rounded-full border border-white/12 bg-white/6 px-4 py-2 text-xs uppercase tracking-[0.22em] text-white/70">
-                Avenir Engineering
-              </div>
-              <h1 className="max-w-lg text-5xl font-semibold leading-[1.02] text-white">
-                Secure tender intelligence for teams that move fast.
-              </h1>
-              <p className="max-w-lg text-base leading-8 text-white/68">
-                Access the opportunity dashboard with your Microsoft work account to review tenders,
-                approvals, analytics, sync status, and operational alerts in one place.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <InfoStat label="SSO Access" value="Microsoft 365" />
-            <InfoStat label="Security" value="Approved users only" />
-            <InfoStat label="Telemetry" value="Sync + telecast ready" />
-            <InfoStat label="Workspace" value="Avenir operations" />
-          </div>
+          <div />
         </aside>
 
         <div className="flex w-full items-center justify-center px-6 py-10 lg:w-[54%] lg:px-10">
@@ -95,15 +74,6 @@ function MicrosoftMark() {
       <span className="rounded-[1px] bg-[#00a4ef]" />
       <span className="rounded-[1px] bg-[#ffb900]" />
     </span>
-  );
-}
-
-function InfoStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 backdrop-blur-sm">
-      <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">{label}</div>
-      <div className="mt-2 text-sm font-medium text-white/86">{value}</div>
-    </div>
   );
 }
 
