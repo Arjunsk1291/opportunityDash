@@ -37,7 +37,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   const [refSortOrder, setRefSortOrder] = useState<'asc' | 'desc'>('desc');
   const { formatCurrency } = useCurrency();
   const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, bulkApprove, bulkRevert, revertApproval, refreshApprovals } = useApproval();
-  const { isProposalHead, isSVP, isMaster, isAdmin, user, token } = useAuth();
+  const { isProposalHead, isSVP, isMaster, user, token, canPerformAction } = useAuth();
   const { refreshData } = useData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBulkOpen, setIsBulkOpen] = useState(false);
@@ -55,7 +55,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const canSync = (isMaster || isAdmin) && Boolean(token);
+      const canSync = Boolean(token) && canPerformAction('opportunities_sync');
       if (canSync) {
         const response = await fetch(API_URL + '/opportunities/sync-graph', {
           method: 'POST',
@@ -198,8 +198,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   };
 
   const canSVPApprove = (tender: Opportunity) => {
-    if (isMaster) return true;
-    if (!isSVP || !user?.assignedGroup) return false;
+    if (!canPerformAction('approvals_svp')) return false;
+    if (isMaster || !user?.assignedGroup) return true;
     return tender.groupClassification?.toUpperCase() === user.assignedGroup?.toUpperCase();
   };
 
@@ -236,10 +236,11 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
     };
   }, [data]);
 
-  const canBulkProposalHead = isProposalHead || isMaster;
-  const canBulkSVP = isSVP || isMaster;
+  const canBulkProposalHead = canPerformAction('approvals_proposal_head');
+  const canBulkSVP = canPerformAction('approvals_svp');
   const canBulkApprove = canBulkProposalHead || canBulkSVP;
-  const canBulkRevert = isProposalHead || isMaster;
+  const canBulkRevert = canPerformAction('approvals_bulk_revert');
+  const canSingleRevert = canPerformAction('approvals_revert');
 
   useEffect(() => {
     if (!isBulkOpen) setBulkMode('approve');
@@ -408,9 +409,9 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                       <ApprovalCell
                         approvalStatus={approvalStatus}
                         approvalState={approvalState}
-                        isProposalHead={isProposalHead}
-                        canSVPApprove={canSVPApprove(tender)}
-                        isMaster={isMaster}
+                        canProposalHeadApprove={canPerformAction('approvals_proposal_head')}
+                        canSVPApprove={canSVPApprove(tender) && canPerformAction('approvals_svp')}
+                        canRevert={canSingleRevert}
                         onApproveProposalHead={() => approveAsProposalHead(tender.opportunityRefNo)}
                         onApproveSVP={() => approveAsSVP(tender.opportunityRefNo, tender.groupClassification)}
                         onRevert={() => revertApproval(tender.opportunityRefNo)}
@@ -573,15 +574,15 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
 interface ApprovalCellProps {
   approvalStatus: string;
   approvalState: { proposalHeadApproved: boolean; proposalHeadBy?: string | null; svpApproved: boolean; svpBy?: string | null };
-  isProposalHead: boolean;
+  canProposalHeadApprove: boolean;
   canSVPApprove: boolean;
-  isMaster: boolean;
+  canRevert: boolean;
   onApproveProposalHead: () => void;
   onApproveSVP: () => void;
   onRevert: () => void;
 }
 
-function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster, onApproveProposalHead, onApproveSVP, onRevert }: ApprovalCellProps) {
+function ApprovalCell({ approvalStatus, canProposalHeadApprove, canSVPApprove, canRevert, onApproveProposalHead, onApproveSVP, onRevert }: ApprovalCellProps) {
   if (approvalStatus === 'fully_approved') {
     return (
       <div className="flex items-center gap-1">
@@ -589,7 +590,7 @@ function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster,
           <CheckCircle className="h-3 w-3" />
           Fully Approved
         </Badge>
-        {isMaster && (
+        {canRevert && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onRevert}>
@@ -621,7 +622,7 @@ function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster,
             </Badge>
           )}
         </div>
-        {isMaster && (
+        {canRevert && (
           <Button variant="ghost" size="sm" className="h-5 text-xs text-muted-foreground" onClick={onRevert}>
             <RotateCcw className="h-3 w-3 mr-1" /> Revert
           </Button>
@@ -632,7 +633,7 @@ function ApprovalCell({ approvalStatus, isProposalHead, canSVPApprove, isMaster,
 
   return (
     <div className="flex items-center gap-1">
-      {isProposalHead ? (
+      {canProposalHeadApprove ? (
         <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={onApproveProposalHead}>TM Approve</Button>
       ) : (
         <Badge variant="secondary" className="gap-1 text-xs">

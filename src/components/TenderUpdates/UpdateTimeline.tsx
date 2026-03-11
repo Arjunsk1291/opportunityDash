@@ -1,7 +1,8 @@
+import type { ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { ArrowRight, Trash2 } from 'lucide-react';
+import { ArrowRight, Building2, Trash2, Users } from 'lucide-react';
 import type { TenderUpdate } from '@/lib/tenderUpdates';
 import { cn } from '@/lib/utils';
 
@@ -31,6 +32,7 @@ export function UpdateTimeline({ updates, canEdit, onDelete }: UpdateTimelinePro
       <TimelineLane
         title="Subcontractor"
         count={laneUpdates.subcontractor.length}
+        icon={<Users className="h-4 w-4" />}
         className="text-info"
         lineClassName="border-info/30"
         accentClassName="bg-info"
@@ -42,6 +44,7 @@ export function UpdateTimeline({ updates, canEdit, onDelete }: UpdateTimelinePro
       <TimelineLane
         title="Client"
         count={laneUpdates.client.length}
+        icon={<Building2 className="h-4 w-4" />}
         className="text-success"
         lineClassName="border-success/30"
         accentClassName="bg-success"
@@ -57,6 +60,7 @@ export function UpdateTimeline({ updates, canEdit, onDelete }: UpdateTimelinePro
 type TimelineLaneProps = {
   title: string;
   count: number;
+  icon: ReactNode;
   className: string;
   lineClassName: string;
   accentClassName: string;
@@ -66,11 +70,12 @@ type TimelineLaneProps = {
   onDelete: (id: string) => void;
 };
 
-function TimelineLane({ title, count, className, lineClassName, accentClassName, badgeClassName, updates, canEdit, onDelete }: TimelineLaneProps) {
+function TimelineLane({ title, count, icon, className, lineClassName, accentClassName, badgeClassName, updates, canEdit, onDelete }: TimelineLaneProps) {
   return (
     <div className="rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4">
       <div className="flex items-center justify-between">
         <div className={cn("flex items-center gap-2 text-sm font-semibold uppercase tracking-wider", className)}>
+          <span>{icon}</span>
           <span>{title}</span>
         </div>
         <Badge variant="outline" className={cn("text-xs", badgeClassName)}>{count} updates</Badge>

@@ -20,7 +20,6 @@ import {
   deleteTenderUpdate,
   getNextDueDate,
   getTenderUpdates,
-  seedTenderUpdates,
   type TenderUpdate,
   type TenderUpdateSubType,
   type TenderUpdateType,
@@ -97,10 +96,7 @@ export default function TenderUpdates() {
   }, []);
 
   useEffect(() => {
-    if (opportunities.length > 0) {
-      seedTenderUpdates(opportunities);
-      setUpdates(getTenderUpdates());
-    }
+    setUpdates(getTenderUpdates());
   }, [opportunities]);
 
   const refreshUpdates = () => setUpdates(getTenderUpdates());
@@ -314,6 +310,13 @@ export default function TenderUpdates() {
     safe: 'bg-muted text-muted-foreground',
   };
 
+  const dueCardStyles: Record<string, string> = {
+    overdue: 'border-destructive/30 bg-destructive/5',
+    urgent: 'border-warning/30 bg-warning/5',
+    upcoming: 'border-info/30 bg-info/5',
+    safe: 'border-border bg-card/30',
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <Card className="p-4 sm:p-6 bg-card/80 backdrop-blur-sm">
@@ -330,19 +333,19 @@ export default function TenderUpdates() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="gap-2" disabled={!selectedTender} onClick={() => setGraphOpen(true)}>
+            <Button variant="outline" className="gap-2" size="sm" disabled={!selectedTender} onClick={() => setGraphOpen(true)}>
               <Maximize2 className="h-4 w-4" />
               <span className="hidden sm:inline">Fullscreen Tree</span>
             </Button>
-            <Button variant="outline" className="gap-2" disabled={!selectedTender} onClick={() => setMermaidOpen(true)}>
+            <Button variant="outline" className="gap-2" size="sm" disabled={!selectedTender} onClick={() => setMermaidOpen(true)}>
               <Wand2 className="h-4 w-4" />
               <span className="hidden sm:inline">Mermaid Preview</span>
             </Button>
-            <Button variant="outline" className="gap-2" onClick={exportExcel}>
+            <Button variant="outline" className="gap-2" size="sm" onClick={exportExcel}>
               <FileSpreadsheet className="h-4 w-4" />
               <span className="hidden sm:inline">Excel</span>
             </Button>
-            <Button variant="outline" className="gap-2" onClick={exportWord}>
+            <Button variant="outline" className="gap-2" size="sm" onClick={exportWord}>
               <FileDown className="h-4 w-4" />
               <span className="hidden sm:inline">Word export</span>
             </Button>
@@ -460,7 +463,13 @@ export default function TenderUpdates() {
                   <p className="text-sm text-muted-foreground">No upcoming due dates in the selected window.</p>
                 )}
                 {dueCards.map((card) => (
-                  <div key={card.id} className="rounded-lg border border-border bg-card/30 backdrop-blur-sm p-3">
+                  <div
+                    key={card.id}
+                    className={cn(
+                      "rounded-lg border backdrop-blur-sm p-3 transition-colors",
+                      dueCardStyles[card.status],
+                    )}
+                  >
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-xs text-muted-foreground">{card.refNo}</span>
                       <Badge className={dueStatusStyles[card.status]}>{card.status}</Badge>
@@ -620,20 +629,24 @@ export default function TenderUpdates() {
       </Dialog>
 
       <Dialog open={graphOpen} onOpenChange={setGraphOpen}>
-        <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh]">
+        <DialogContent className="w-[99vw] max-w-none h-[97vh] p-0 gap-0 sm:w-[98vw] sm:h-[96vh]">
           <DialogHeader>
-            <DialogTitle>Interactive Tender Tree</DialogTitle>
-            <DialogDescription>Selected tender updates in a focused tree view.</DialogDescription>
+            <div className="px-6 pt-6">
+              <DialogTitle>Interactive Tender Tree</DialogTitle>
+              <DialogDescription>Selected tender updates in a focused tree view.</DialogDescription>
+            </div>
           </DialogHeader>
-          {selectedTender ? (
-            <InteractiveGraph
-              tenderName={selectedTender.tenderName}
-              tenderRef={selectedTender.opportunityRefNo}
-              updates={selectedUpdates}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-muted-foreground">Select a tender first.</div>
-          )}
+          <div className="min-h-0 flex-1 px-4 pb-4 sm:px-6 sm:pb-6">
+            {selectedTender ? (
+              <InteractiveGraph
+                tenderName={selectedTender.tenderName}
+                tenderRef={selectedTender.opportunityRefNo}
+                updates={selectedUpdates}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-muted-foreground">Select a tender first.</div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 

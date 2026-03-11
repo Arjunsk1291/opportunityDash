@@ -55,6 +55,7 @@ const systemConfigSchema = new mongoose.Schema(
       default: [],
     },
     pageRoleAccess: { type: Object, default: {} },
+    actionRoleAccess: { type: Object, default: {} },
     lastUpdatedBy: { type: String, default: null },
     updatedBy: { type: String, default: null },
   },

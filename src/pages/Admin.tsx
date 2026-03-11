@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DEFAULT_PAGE_ROLE_ACCESS, PAGE_LABELS, PageKey } from '@/config/navigation';
 import { UserRole } from '@/contexts/AuthContext';
+import { ACTION_DESCRIPTIONS, ACTION_LABELS, ActionKey, DEFAULT_ACTION_ROLE_ACCESS } from '@/config/actionPermissions';
 import { RecipientBlockSelector } from '@/components/Admin/RecipientBlockSelector';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -121,7 +122,7 @@ interface NotificationSyncStatus {
 }
 
 export default function Admin() {
-  const { user, isMaster, token, pagePermissions, updatePagePermissions, canAccessPage } = useAuth();
+  const { user, isMaster, token, pagePermissions, updatePagePermissions, canAccessPage, actionPermissions, updateActionPermissions } = useAuth();
   const canAccessPanel = isMaster || user?.role === 'Admin';
   const navigate = useNavigate();
   const [users, setUsers] = useState<AuthorizedUser[]>([]);
@@ -190,6 +191,7 @@ export default function Admin() {
   });
   const [activeTab, setActiveTab] = useState('general');
   const [draftPagePermissions, setDraftPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
+  const [draftActionPermissions, setDraftActionPermissions] = useState<Record<ActionKey, UserRole[]>>(DEFAULT_ACTION_ROLE_ACCESS as Record<ActionKey, UserRole[]>);
 
   const tabConfig = useMemo(
     () => ([
@@ -226,6 +228,10 @@ export default function Admin() {
   useEffect(() => {
     setDraftPagePermissions((pagePermissions || DEFAULT_PAGE_ROLE_ACCESS) as Record<PageKey, UserRole[]>);
   }, [pagePermissions]);
+
+  useEffect(() => {
+    setDraftActionPermissions((actionPermissions || DEFAULT_ACTION_ROLE_ACCESS) as Record<ActionKey, UserRole[]>);
+  }, [actionPermissions]);
 
   useEffect(() => {
     if (!allowedTabs.length) return;
@@ -823,6 +829,26 @@ export default function Admin() {
     }
   };
 
+  const toggleActionPermission = (actionKey: ActionKey, role: UserRole, checked: boolean) => {
+    setDraftActionPermissions((prev) => {
+      const current = new Set(prev[actionKey] || []);
+      if (checked) current.add(role);
+      else current.delete(role);
+      const nextRoles = Array.from(current) as UserRole[];
+      return { ...prev, [actionKey]: nextRoles.length ? nextRoles : prev[actionKey] };
+    });
+  };
+
+  const saveActionPermissions = async () => {
+    try {
+      await updateActionPermissions(draftActionPermissions);
+      setMessage({ type: 'success', text: '✅ Action permissions updated' });
+      setTimeout(() => setMessage(null), 3000);
+    } catch (error) {
+      setMessage({ type: 'error', text: '❌ Failed to save action permissions: ' + (error as Error).message });
+    }
+  };
+
   const removeUser = async (email: string) => {
     if (!token || !confirm('Are you sure you want to remove ' + email + '?')) return;
     try {
@@ -1202,6 +1228,51 @@ export default function Admin() {
               {isMaster && (
                 <div className="mt-4">
                   <Button onClick={savePagePermissions}>Save Page Permissions</Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>MongoDB Write Permissions by Role</CardTitle>
+              <CardDescription>Control which roles may perform write actions that persist changes into MongoDB.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 pr-3">Action</th>
+                      {ROLE_OPTIONS.map((role) => (
+                        <th key={role} className="text-center py-2 px-3">{role}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(Object.keys(ACTION_LABELS) as ActionKey[]).map((actionKey) => (
+                      <tr key={actionKey} className="border-b align-top">
+                        <td className="py-2 pr-3">
+                          <div className="font-medium">{ACTION_LABELS[actionKey]}</div>
+                          <div className="text-xs text-muted-foreground">{ACTION_DESCRIPTIONS[actionKey]}</div>
+                        </td>
+                        {ROLE_OPTIONS.map((role) => (
+                          <td key={role} className="text-center py-2 px-3">
+                            <Checkbox
+                              checked={(draftActionPermissions[actionKey] || []).includes(role)}
+                              onCheckedChange={(checked) => toggleActionPermission(actionKey, role, Boolean(checked))}
+                              disabled={!isMaster}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {isMaster && (
+                <div className="mt-4">
+                  <Button onClick={saveActionPermissions}>Save Action Permissions</Button>
                 </div>
               )}
             </CardContent>

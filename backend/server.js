@@ -1138,9 +1138,7 @@ app.get('/api/users/authorized', verifyToken, async (req, res) => {
 
 app.post('/api/users/add', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can add users' });
-    }
+    if (!await requireActionPermission(req, res, 'users_manage')) return;
 
     const email = String(req.body?.email || '').trim().toLowerCase();
     const displayName = String(req.body?.displayName || '').trim();
@@ -1191,9 +1189,7 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
 
 app.post('/api/users/approve', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can approve' });
-    }
+    if (!await requireActionPermission(req, res, 'users_manage')) return;
 
     const { email } = req.body;
     if (!email) {
@@ -1222,9 +1218,7 @@ app.post('/api/users/approve', verifyToken, async (req, res) => {
 
 app.post('/api/users/reject', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can reject' });
-    }
+    if (!await requireActionPermission(req, res, 'users_manage')) return;
 
     const { email } = req.body;
     if (!email) {
@@ -1253,9 +1247,7 @@ app.post('/api/users/reject', verifyToken, async (req, res) => {
 
 app.post('/api/users/change-role', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can change roles' });
-    }
+    if (!await requireActionPermission(req, res, 'users_manage')) return;
 
     const { email, newRole, assignedGroup } = req.body;
     if (!email || !newRole) {
@@ -1302,9 +1294,7 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
 
 app.delete('/api/users/remove', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can remove users' });
-    }
+    if (!await requireActionPermission(req, res, 'users_manage')) return;
 
     const { email } = req.body;
     if (!email) {
@@ -1329,9 +1319,7 @@ app.delete('/api/users/remove', verifyToken, async (req, res) => {
 
 app.post('/api/logs/cleanup', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can cleanup logs' });
-    }
+    if (!await requireActionPermission(req, res, 'logs_cleanup')) return;
 
     const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
     const result = await LoginLog.deleteMany({ loginTime: { $lt: fifteenDaysAgo } });
@@ -1353,9 +1341,7 @@ app.get('/api/approvals', verifyToken, async (req, res) => {
 
 app.post('/api/approvals/approve-proposal-head', verifyToken, async (req, res) => {
   try {
-    if (!['ProposalHead', 'Master'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Proposal Head or Master can approve step 1' });
-    }
+    if (!await requireActionPermission(req, res, 'approvals_proposal_head')) return;
 
     const { opportunityRefNo } = req.body;
     if (!opportunityRefNo) {
@@ -1371,9 +1357,7 @@ app.post('/api/approvals/approve-proposal-head', verifyToken, async (req, res) =
 
 app.post('/api/approvals/approve-svp', verifyToken, async (req, res) => {
   try {
-    if (!['SVP', 'Master'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only SVP or Master can approve step 2' });
-    }
+    if (!await requireActionPermission(req, res, 'approvals_svp')) return;
 
     const { opportunityRefNo, group } = req.body;
     if (!opportunityRefNo) {
@@ -1397,13 +1381,9 @@ app.post('/api/approvals/bulk-approve', verifyToken, async (req, res) => {
     const filters = req.body?.filters || {};
 
     if (action === 'proposal_head') {
-      if (!['ProposalHead', 'Master'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Only Tender Manager or Master can bulk approve step 1' });
-      }
+      if (!await requireActionPermission(req, res, 'approvals_proposal_head')) return;
     } else if (action === 'svp') {
-      if (!['SVP', 'Master'].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Only SVP or Master can bulk approve step 2' });
-      }
+      if (!await requireActionPermission(req, res, 'approvals_svp')) return;
     } else {
       return res.status(400).json({ error: 'Invalid bulk approve action' });
     }
@@ -1432,9 +1412,7 @@ app.post('/api/approvals/bulk-approve', verifyToken, async (req, res) => {
 
 app.post('/api/approvals/bulk-revert', verifyToken, async (req, res) => {
   try {
-    if (!['ProposalHead', 'Master'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Tender Manager or Master can bulk revert' });
-    }
+    if (!await requireActionPermission(req, res, 'approvals_bulk_revert')) return;
 
     const filters = req.body?.filters || {};
     const opportunities = await SyncedOpportunity.find().lean();
@@ -1450,9 +1428,7 @@ app.post('/api/approvals/bulk-revert', verifyToken, async (req, res) => {
 
 app.post('/api/approvals/revert', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can revert approvals' });
-    }
+    if (!await requireActionPermission(req, res, 'approvals_revert')) return;
 
     const { opportunityRefNo } = req.body;
     if (!opportunityRefNo) {
@@ -1498,9 +1474,7 @@ app.get('/api/graph/config', verifyToken, async (req, res) => {
 
 app.put('/api/graph/config', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can update graph config' });
-    }
+    if (!await requireActionPermission(req, res, 'graph_config_write')) return;
 
     const config = await getGraphConfig();
     const { shareLink, driveId, fileId, worksheetName, dataRange, headerRowOffset, syncIntervalMinutes, fieldMapping } = req.body || {};
@@ -1643,9 +1617,7 @@ app.get('/api/graph/auth/status', verifyToken, async (req, res) => {
 app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
   const username = req.body?.username || '';
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can bootstrap Graph auth' });
-    }
+    if (!await requireActionPermission(req, res, 'graph_auth_write')) return;
 
     const { password } = req.body || {};
     if (!username || !password) {
@@ -1691,9 +1663,7 @@ app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
 
 app.post('/api/graph/auth/clear', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can clear Graph auth' });
-    }
+    if (!await requireActionPermission(req, res, 'graph_auth_write')) return;
 
     const config = await getGraphConfig();
     config.graphAuthMode = 'application';
@@ -1722,6 +1692,24 @@ const PAGE_KEYS = [
   'master_telecast',
 ];
 const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
+const ACTION_KEYS = [
+  'opportunities_sync',
+  'approvals_proposal_head',
+  'approvals_svp',
+  'approvals_bulk_revert',
+  'approvals_revert',
+  'clients_write',
+  'clients_import',
+  'clients_seed',
+  'users_manage',
+  'navigation_permissions_write',
+  'graph_config_write',
+  'graph_auth_write',
+  'telecast_config_write',
+  'telecast_auth_write',
+  'notification_alert_flags_write',
+  'logs_cleanup',
+];
 const DEFAULT_PAGE_ROLE_ACCESS = {
   dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
@@ -1734,6 +1722,24 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
   master_data_sync: ['Master', 'Admin'],
   master_telecast: ['Master', 'Admin'],
 };
+const DEFAULT_ACTION_ROLE_ACCESS = {
+  opportunities_sync: ['Master', 'Admin'],
+  approvals_proposal_head: ['Master', 'ProposalHead'],
+  approvals_svp: ['Master', 'SVP'],
+  approvals_bulk_revert: ['Master', 'ProposalHead'],
+  approvals_revert: ['Master'],
+  clients_write: ['Master', 'Admin', 'ProposalHead'],
+  clients_import: ['Master', 'Admin'],
+  clients_seed: ['Master', 'Admin'],
+  users_manage: ['Master'],
+  navigation_permissions_write: ['Master'],
+  graph_config_write: ['Master'],
+  graph_auth_write: ['Master'],
+  telecast_config_write: ['Master'],
+  telecast_auth_write: ['Master'],
+  notification_alert_flags_write: ['Master', 'Admin'],
+  logs_cleanup: ['Master'],
+};
 
 const sanitizePageRoleAccess = (input = {}) => {
   const normalized = {};
@@ -1745,9 +1751,39 @@ const sanitizePageRoleAccess = (input = {}) => {
   return normalized;
 };
 
+const sanitizeActionRoleAccess = (input = {}) => {
+  const normalized = {};
+  for (const action of ACTION_KEYS) {
+    const list = Array.isArray(input?.[action]) ? input[action] : DEFAULT_ACTION_ROLE_ACCESS[action];
+    normalized[action] = [...new Set(list.filter((role) => ROLE_KEYS.includes(role)))];
+    if (!normalized[action].length) normalized[action] = [...DEFAULT_ACTION_ROLE_ACCESS[action]];
+  }
+  return normalized;
+};
+
 const getSystemConfig = async () => {
   let config = await SystemConfig.findOne();
   if (!config) config = await SystemConfig.create({});
+  return config;
+};
+
+const getActionPermissions = async () => {
+  const config = await getSystemConfig();
+  const permissions = sanitizeActionRoleAccess(config.actionRoleAccess || {});
+  if (!config.actionRoleAccess || Object.keys(config.actionRoleAccess).length === 0) {
+    config.actionRoleAccess = permissions;
+    await config.save();
+  }
+  return { config, permissions };
+};
+
+const requireActionPermission = async (req, res, actionKey) => {
+  const { config, permissions } = await getActionPermissions();
+  const allowedRoles = permissions[actionKey] || [];
+  if (!allowedRoles.includes(req.user.role)) {
+    res.status(403).json({ error: `Role ${req.user.role} is not allowed to perform ${actionKey}` });
+    return null;
+  }
   return config;
 };
 
@@ -1780,13 +1816,36 @@ app.get('/api/navigation/permissions', verifyToken, async (req, res) => {
 
 app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can update page permissions' });
-    }
+    if (!await requireActionPermission(req, res, 'navigation_permissions_write')) return;
 
     const permissions = sanitizePageRoleAccess(req.body?.permissions || {});
     const config = await getSystemConfig();
     config.pageRoleAccess = permissions;
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({ success: true, permissions });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/action-permissions', verifyToken, async (_req, res) => {
+  try {
+    const { permissions } = await getActionPermissions();
+    res.json({ success: true, permissions });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/action-permissions', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'navigation_permissions_write')) return;
+
+    const permissions = sanitizeActionRoleAccess(req.body?.permissions || {});
+    const config = await getSystemConfig();
+    config.actionRoleAccess = permissions;
     config.updatedBy = req.user.email;
     await config.save();
 
@@ -1823,9 +1882,7 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
 
 app.post('/api/telecast/config', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can update telecast config' });
-    }
+    if (!await requireActionPermission(req, res, 'telecast_config_write')) return;
 
     const templateSubject = String(req.body?.templateSubject || '').trim();
     const templateBody = String(req.body?.templateBody || '').trim();
@@ -1872,9 +1929,7 @@ app.get('/api/telecast/auth/status', verifyToken, async (req, res) => {
 app.post('/api/telecast/auth/bootstrap', verifyToken, async (req, res) => {
   const username = req.body?.username || '';
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can bootstrap telecast auth' });
-    }
+    if (!await requireActionPermission(req, res, 'telecast_auth_write')) return;
 
     const { password } = req.body || {};
     if (!username || !password) {
@@ -1920,9 +1975,7 @@ app.post('/api/telecast/auth/bootstrap', verifyToken, async (req, res) => {
 
 app.post('/api/telecast/auth/clear', verifyToken, async (req, res) => {
   try {
-    if (req.user.role !== 'Master') {
-      return res.status(403).json({ error: 'Only Master users can clear telecast auth' });
-    }
+    if (!await requireActionPermission(req, res, 'telecast_auth_write')) return;
 
     const config = await getSystemConfig();
     config.telecastGraphAuthMode = 'application';
@@ -2008,9 +2061,7 @@ app.get('/api/notifications/alerted', verifyToken, async (req, res) => {
 
 app.post('/api/notifications/mark-all-alerted', verifyToken, async (req, res) => {
   try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can bulk update telecast alert flags' });
-    }
+    if (!await requireActionPermission(req, res, 'notification_alert_flags_write')) return;
 
     const now = new Date();
     const result = await SyncedOpportunity.updateMany(
@@ -2042,9 +2093,7 @@ app.post('/api/notifications/mark-all-alerted', verifyToken, async (req, res) =>
 
 app.post('/api/notifications/mark-unalerted', verifyToken, async (req, res) => {
   try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can selectively mark telecast alerts false' });
-    }
+    if (!await requireActionPermission(req, res, 'notification_alert_flags_write')) return;
 
     const inputRefNos = Array.isArray(req.body?.refNos) ? req.body.refNos : [];
     const refNos = [...new Set(inputRefNos.map((ref) => normalizeRefNo(ref)).filter(Boolean))];
@@ -2279,9 +2328,7 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
 
 app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
   try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can sync data' });
-    }
+    if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
 
     const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
     res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
@@ -2292,9 +2339,7 @@ app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
 
 app.post('/api/opportunities/sync-graph/auto', verifyToken, async (req, res) => {
   try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can sync data' });
-    }
+    if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
 
     const syncResult = await syncFromConfiguredGraph({ source: 'auto_endpoint' });
     res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
@@ -2306,9 +2351,7 @@ app.post('/api/opportunities/sync-graph/auto', verifyToken, async (req, res) => 
 // Backward-compatible aliases
 app.post('/api/opportunities/sync-sheets', verifyToken, async (req, res) => {
   try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can sync data' });
-    }
+    if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
     const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
     res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
   } catch (error) {
@@ -2318,9 +2361,7 @@ app.post('/api/opportunities/sync-sheets', verifyToken, async (req, res) => {
 
 app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) => {
   try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can sync data' });
-    }
+    if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
     const syncResult = await syncFromConfiguredGraph({ source: 'auto_endpoint_legacy' });
     res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
   } catch (error) {
@@ -2347,8 +2388,9 @@ app.get('/api/clients', async (_req, res) => {
   }
 });
 
-app.post('/api/clients', async (req, res) => {
+app.post('/api/clients', verifyToken, async (req, res) => {
   try {
+    if (!await requireActionPermission(req, res, 'clients_write')) return;
     const payload = req.body || {};
     const companyName = normalizeCompanyName(payload.companyName || '');
     if (!companyName) return res.status(400).json({ error: 'Company name is required' });
@@ -2388,8 +2430,9 @@ app.post('/api/clients', async (req, res) => {
   }
 });
 
-app.post('/api/clients/import', async (req, res) => {
+app.post('/api/clients/import', verifyToken, async (req, res) => {
   try {
+    if (!await requireActionPermission(req, res, 'clients_import')) return;
     const inputs = Array.isArray(req.body?.clients) ? req.body.clients : [];
     let createdCount = 0;
     let updatedCount = 0;
@@ -2436,9 +2479,7 @@ app.post('/api/clients/import', async (req, res) => {
 
 app.post('/api/clients/seed', verifyToken, async (req, res) => {
   try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can seed clients' });
-    }
+    if (!await requireActionPermission(req, res, 'clients_seed')) return;
     const opportunities = await SyncedOpportunity.find().lean();
     const result = await syncClientsFromOpportunities(opportunities);
     res.json({ success: true, created: result.created || 0, updated: result.updated || 0 });

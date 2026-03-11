@@ -50,7 +50,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   const [approvals, setApprovals] = useState<Record<string, ApprovalStatus>>({});
   const [approvalStates, setApprovalStates] = useState<Record<string, ApprovalState>>({});
   const [approvalLogs, setApprovalLogs] = useState<ApprovalLogEntry[]>([]);
-  const { token, isAuthenticated, user } = useAuth();
+  const { token, isAuthenticated, user, canPerformAction } = useAuth();
 
   const headers = useCallback(
     () => token ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token } : { 'Content-Type': 'application/json' },
@@ -93,6 +93,9 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   }, [approvalStates]);
 
   const approveAsProposalHead = useCallback(async (opportunityRefNo: string) => {
+    if (!canPerformAction('approvals_proposal_head')) {
+      throw new Error('You do not have permission to approve as Tender Manager');
+    }
     setApprovals((prev) => ({ ...prev, [opportunityRefNo]: 'proposal_head_approved' }));
     setApprovalStates((prev) => ({
       ...prev,
@@ -120,9 +123,12 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     setApprovals(payload.approvals || {});
     setApprovalStates(payload.approvalStates || {});
     if (payload.approvalLogs) setApprovalLogs(payload.approvalLogs);
-  }, [headers, refreshApprovals, user?.displayName]);
+  }, [canPerformAction, headers, refreshApprovals, user?.displayName]);
 
   const approveAsSVP = useCallback(async (opportunityRefNo: string, group?: string) => {
+    if (!canPerformAction('approvals_svp')) {
+      throw new Error('You do not have permission to approve as SVP');
+    }
     setApprovals((prev) => ({ ...prev, [opportunityRefNo]: 'fully_approved' }));
     setApprovalStates((prev) => ({
       ...prev,
@@ -151,9 +157,13 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     setApprovals(payload.approvals || {});
     setApprovalStates(payload.approvalStates || {});
     if (payload.approvalLogs) setApprovalLogs(payload.approvalLogs);
-  }, [headers, refreshApprovals, user?.displayName]);
+  }, [canPerformAction, headers, refreshApprovals, user?.displayName]);
 
   const bulkApprove = useCallback(async (action: 'proposal_head' | 'svp', filters: Record<string, string>) => {
+    const permissionKey = action === 'proposal_head' ? 'approvals_proposal_head' : 'approvals_svp';
+    if (!canPerformAction(permissionKey)) {
+      throw new Error('You do not have permission to run this bulk approval');
+    }
     const response = await fetch(API_URL + '/approvals/bulk-approve', {
       method: 'POST',
       headers: headers(),
@@ -169,9 +179,12 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     setApprovalStates(payload.approvalStates || {});
     if (payload.approvalLogs) setApprovalLogs(payload.approvalLogs);
     return { updated: Number(payload.updated || 0), skipped: payload.skipped || [] };
-  }, [headers]);
+  }, [canPerformAction, headers]);
 
   const bulkRevert = useCallback(async (filters: Record<string, string>) => {
+    if (!canPerformAction('approvals_bulk_revert')) {
+      throw new Error('You do not have permission to bulk revert approvals');
+    }
     const response = await fetch(API_URL + '/approvals/bulk-revert', {
       method: 'POST',
       headers: headers(),
@@ -187,9 +200,12 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     setApprovalStates(payload.approvalStates || {});
     if (payload.approvalLogs) setApprovalLogs(payload.approvalLogs);
     return { updated: Number(payload.updated || 0) };
-  }, [headers]);
+  }, [canPerformAction, headers]);
 
   const revertApproval = useCallback(async (opportunityRefNo: string) => {
+    if (!canPerformAction('approvals_revert')) {
+      throw new Error('You do not have permission to revert approvals');
+    }
     setApprovals((prev) => ({ ...prev, [opportunityRefNo]: 'pending' }));
     setApprovalStates((prev) => ({
       ...prev,
@@ -219,7 +235,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
     setApprovals(payload.approvals || {});
     setApprovalStates(payload.approvalStates || {});
     if (payload.approvalLogs) setApprovalLogs(payload.approvalLogs);
-  }, [headers, refreshApprovals]);
+  }, [canPerformAction, headers, refreshApprovals]);
 
   return (
     <ApprovalContext.Provider

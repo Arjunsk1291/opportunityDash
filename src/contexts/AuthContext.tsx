@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { DEFAULT_PAGE_ROLE_ACCESS, PageKey } from '@/config/navigation';
+import { ActionKey, DEFAULT_ACTION_ROLE_ACCESS } from '@/config/actionPermissions';
 
 export type UserRole = 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'Basic';
 export type UserStatus = 'approved' | 'pending' | 'rejected';
@@ -32,6 +33,9 @@ interface AuthContextType {
   pagePermissions: Record<PageKey, UserRole[]>;
   canAccessPage: (pageKey: PageKey) => boolean;
   updatePagePermissions: (permissions: Record<PageKey, UserRole[]>) => Promise<void>;
+  actionPermissions: Record<ActionKey, UserRole[]>;
+  canPerformAction: (actionKey: ActionKey) => boolean;
+  updateActionPermissions: (permissions: Record<ActionKey, UserRole[]>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -54,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [pagePermissions, setPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
+  const [actionPermissions, setActionPermissions] = useState<Record<ActionKey, UserRole[]>>(DEFAULT_ACTION_ROLE_ACCESS as Record<ActionKey, UserRole[]>);
 
   const authHeaders = useCallback(
     () => token ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token } : { 'Content-Type': 'application/json' },
@@ -204,6 +209,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loadPagePermissions();
   }, [loadPagePermissions]);
 
+  const loadActionPermissions = useCallback(async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/action-permissions', { headers: authHeaders() });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data?.permissions) {
+        setActionPermissions(data.permissions);
+      }
+    } catch (error) {
+      console.error('Failed to load action permissions', error);
+    }
+  }, [authHeaders, token]);
+
+  useEffect(() => {
+    loadActionPermissions();
+  }, [loadActionPermissions]);
+
   const updatePagePermissions = useCallback(async (permissions: Record<PageKey, UserRole[]>) => {
     if (!token || user?.role !== 'Master') {
       throw new Error('Only Master users can update page permissions');
@@ -257,6 +280,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return allowedRoles.includes(user.role);
   }, [pagePermissions, user]);
 
+  const canPerformAction = useCallback((actionKey: ActionKey) => {
+    if (!user || user.status !== 'approved') return false;
+    const allowedRoles = actionPermissions[actionKey] || [];
+    return allowedRoles.includes(user.role);
+  }, [actionPermissions, user]);
+
+  const updateActionPermissions = useCallback(async (permissions: Record<ActionKey, UserRole[]>) => {
+    if (!token || user?.role !== 'Master') {
+      throw new Error('Only Master users can update action permissions');
+    }
+
+    const response = await fetch(API_URL + '/action-permissions', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ permissions }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.error || 'Failed to update action permissions');
+    }
+
+    if (data?.permissions) setActionPermissions(data.permissions);
+  }, [authHeaders, token, user?.role]);
+
   const isAuthenticated = user !== null && token !== null;
   const isMaster = user?.role === 'Master' && user?.status === 'approved';
   const isAdmin = ['Admin', 'Master'].includes(user?.role || '') && user?.status === 'approved';
@@ -283,6 +331,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pagePermissions,
         canAccessPage,
         updatePagePermissions,
+        actionPermissions,
+        canPerformAction,
+        updateActionPermissions,
       }}
     >
       {authError && (

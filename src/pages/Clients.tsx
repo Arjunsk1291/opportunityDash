@@ -245,9 +245,9 @@ const CopyButton = ({ value, label }: { value: string; label: string }) => {
 
 const Clients = () => {
   const { clients, stats, addClient, importClients, updateClient, normalizeCompanyName, isLoading, error } = useClientStore();
-  const { isAdmin, isMaster, isProposalHead } = useAuth();
-  const canManageClients = isAdmin || isMaster;
-  const canEditClients = isAdmin || isMaster || isProposalHead;
+  const { canPerformAction } = useAuth();
+  const canManageClients = canPerformAction('clients_import');
+  const canEditClients = canPerformAction('clients_write');
   const [search, setSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<ClientProfile | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);

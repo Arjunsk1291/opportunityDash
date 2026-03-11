@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ClientContactInput, ClientInput, ClientProfile } from '@/types/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -24,9 +25,15 @@ const contactKey = (contact: ClientContactInput): string => {
 
 
 export const useClientStore = () => {
+  const { token, canPerformAction } = useAuth();
   const [clients, setClients] = useState<ClientProfile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const writeHeaders = () => ({
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: 'Bearer ' + token } : {}),
+  });
 
   const fetchClients = useCallback(async () => {
     setIsLoading(true);
@@ -53,6 +60,9 @@ export const useClientStore = () => {
   }, [fetchClients]);
 
   const addClient = async (input: ClientInput) => {
+    if (!canPerformAction('clients_write')) {
+      throw new Error('You do not have permission to write clients');
+    }
     const payload = {
       ...input,
       companyName: normalizeCompanyName(input.companyName),
@@ -60,7 +70,7 @@ export const useClientStore = () => {
     };
     const response = await fetch(`${API_URL}/clients`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: writeHeaders(),
       body: JSON.stringify(payload),
     });
     if (!response.ok) throw new Error('Failed to save client');
@@ -93,6 +103,9 @@ export const useClientStore = () => {
   };
 
   const importClients = async (inputs: ClientInput[]) => {
+    if (!canPerformAction('clients_import')) {
+      throw new Error('You do not have permission to import clients');
+    }
     const payload = inputs.map((input) => ({
       ...input,
       companyName: normalizeCompanyName(input.companyName),
@@ -100,7 +113,7 @@ export const useClientStore = () => {
     }));
     const response = await fetch(`${API_URL}/clients/import`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: writeHeaders(),
       body: JSON.stringify({ clients: payload }),
     });
     if (!response.ok) throw new Error('Failed to import clients');

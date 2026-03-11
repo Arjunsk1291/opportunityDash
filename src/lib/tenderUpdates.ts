@@ -1,5 +1,3 @@
-import type { Opportunity } from '@/data/opportunityData';
-
 export type TenderUpdateType = 'subcontractor' | 'client';
 export type TenderUpdateSubType = 'contacted' | 'response' | 'note' | 'submission' | 'extension' | 'clarification';
 
@@ -21,6 +19,8 @@ export type DueDateStatus = 'overdue' | 'urgent' | 'upcoming' | 'safe';
 
 const STORAGE_KEY = 'tender_updates_v1';
 
+const canUseStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+
 const safeParse = (value: string | null) => {
   if (!value) return [];
   try {
@@ -32,6 +32,7 @@ const safeParse = (value: string | null) => {
 };
 
 const saveUpdates = (updates: TenderUpdate[]) => {
+  if (!canUseStorage()) return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updates));
 };
 
@@ -43,6 +44,7 @@ const newId = () => {
 };
 
 export const getTenderUpdates = (): TenderUpdate[] => {
+  if (!canUseStorage()) return [];
   const raw = safeParse(localStorage.getItem(STORAGE_KEY)) as TenderUpdate[];
   return raw.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 };
@@ -82,94 +84,4 @@ export const resolveDueStatus = (date: string, now = new Date()): DueDateStatus 
   if (diffDays <= 7) return 'urgent';
   if (diffDays <= 30) return 'upcoming';
   return 'safe';
-};
-
-export const seedTenderUpdates = (opportunities: Opportunity[]) => {
-  if (getTenderUpdates().length > 0) return;
-  const sampleTargets = opportunities.slice(0, 4);
-  const today = new Date();
-  const addDays = (days: number) => new Date(today.getTime() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-
-  const samples: TenderUpdate[] = [
-    {
-      id: newId(),
-      opportunityId: sampleTargets[0]?.id || 'sample-1',
-      type: 'subcontractor',
-      subType: 'contacted',
-      actor: 'A. Nair',
-      date: addDays(-2),
-      dueDate: addDays(5),
-      details: 'Initial outreach sent to mechanical subcontractors.',
-      attachments: [],
-      createdBy: 'System',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: newId(),
-      opportunityId: sampleTargets[0]?.id || 'sample-1',
-      type: 'client',
-      subType: 'clarification',
-      actor: 'R. Mathew',
-      date: addDays(-1),
-      dueDate: addDays(10),
-      details: 'Requested clarification on scope boundaries for phase 2.',
-      attachments: [],
-      createdBy: 'System',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: newId(),
-      opportunityId: sampleTargets[1]?.id || 'sample-2',
-      type: 'subcontractor',
-      subType: 'response',
-      actor: 'L. Pereira',
-      date: addDays(-3),
-      dueDate: addDays(3),
-      details: 'Received pricing feedback for HVAC components.',
-      attachments: [],
-      createdBy: 'System',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: newId(),
-      opportunityId: sampleTargets[1]?.id || 'sample-2',
-      type: 'client',
-      subType: 'note',
-      actor: 'S. Iyer',
-      date: addDays(-6),
-      dueDate: null,
-      details: 'Client prefers staggered submission schedule.',
-      attachments: [],
-      createdBy: 'System',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: newId(),
-      opportunityId: sampleTargets[2]?.id || 'sample-3',
-      type: 'client',
-      subType: 'submission',
-      actor: 'M. Thomas',
-      date: addDays(-8),
-      dueDate: addDays(14),
-      details: 'Draft submission shared for client review.',
-      attachments: [],
-      createdBy: 'System',
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: newId(),
-      opportunityId: sampleTargets[3]?.id || 'sample-4',
-      type: 'subcontractor',
-      subType: 'extension',
-      actor: 'P. George',
-      date: addDays(-4),
-      dueDate: addDays(25),
-      details: 'Requested extension for vendor quote validity.',
-      attachments: [],
-      createdBy: 'System',
-      createdAt: new Date().toISOString(),
-    },
-  ];
-
-  saveUpdates(samples);
 };

@@ -7,12 +7,12 @@ const DEFAULT_AUTO_REFRESH_INTERVAL = 10 * 60 * 1000;
 
 export function useAutoRefresh() {
   const { refreshData } = useData();
-  const { token, isAdmin } = useAuth();
+  const { token, canPerformAction } = useAuth();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isAutoRefreshActive, setIsAutoRefreshActive] = useState(false);
   const [lastAutoRefreshTime, setLastAutoRefreshTime] = useState<Date | null>(null);
   const [autoRefreshStatus, setAutoRefreshStatus] = useState<'idle' | 'syncing' | 'complete' | 'error'>('idle');
-  const canAutoSync = Boolean(isAdmin);
+  const canAutoSync = Boolean(token) && canPerformAction('opportunities_sync');
 
   const resolveIntervalMs = useCallback(async () => {
     if (!canAutoSync) return DEFAULT_AUTO_REFRESH_INTERVAL;
