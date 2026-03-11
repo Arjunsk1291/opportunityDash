@@ -1,34 +1,27 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Clock, LogOut, Mail } from 'lucide-react';
-import { BrandCornerLogo } from '@/components/BrandCornerLogo';
+import { AuthScene } from '@/components/auth/AuthScene';
 import { ReportIssueButton } from '@/components/ReportIssueButton';
 
 export default function PendingApproval() {
   const { user, logout, token } = useAuth();
 
   return (
-    <div className="relative flex items-center justify-center min-h-screen bg-[#0b0f1a] text-white overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,_rgba(6,10,18,0.98),_rgba(12,22,40,0.95)),radial-gradient(circle_at_top,_rgba(24,87,154,0.28),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(8,122,138,0.25),_transparent_60%)]" />
-      <div className="pointer-events-none absolute inset-0 opacity-25 [background:radial-gradient(circle_at_1px_1px,_rgba(255,255,255,0.16)_1px,_transparent_0)] [background-size:22px_22px]" />
-      <div className="pointer-events-none absolute -top-24 -right-20 h-72 w-72 rounded-full bg-sky-400/10 blur-3xl" />
-      <Card className="w-full max-w-lg border-border/50 shadow-2xl bg-card/90 backdrop-blur text-foreground">
-        <CardHeader>
-          <CardTitle className="text-center text-2xl">Access Pending Approval</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
+    <>
+      <AuthScene title="Access Pending Approval">
+        <div className="space-y-6">
           <div className="flex justify-center">
             <div className="relative">
-              <div className="absolute inset-0 bg-warning/20 rounded-full blur-lg"></div>
-              <Clock className="h-16 w-16 text-warning relative" />
+              <div className="absolute inset-0 rounded-full bg-blue-200 blur-xl" />
+              <Clock className="relative h-16 w-16 text-blue-700" />
             </div>
           </div>
 
           <div className="space-y-4">
-            <Alert variant="default" className="border-warning/50 bg-warning/5">
-              <Clock className="h-4 w-4 text-warning" />
+            <Alert variant="default" className="border-blue-200 bg-blue-50 text-slate-700">
+              <Clock className="h-4 w-4 text-blue-700" />
               <AlertDescription>
                 <strong>Welcome!</strong> Your account has been created and is awaiting approval from the Master user.
               </AlertDescription>
@@ -42,11 +35,11 @@ export default function PendingApproval() {
                 <strong>Role:</strong> {user?.role}
               </p>
               <p className="text-muted-foreground">
-                <strong>Status:</strong> <span className="text-warning font-semibold">Pending Approval</span>
+                <strong>Status:</strong> <span className="font-semibold text-blue-700">Pending Approval</span>
               </p>
             </div>
 
-            <div className="bg-muted p-4 rounded-lg space-y-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
               <p className="text-sm font-medium flex items-center gap-2">
                 <Mail className="h-4 w-4" />
                 What happens next?
@@ -59,25 +52,24 @@ export default function PendingApproval() {
               </ul>
             </div>
 
-            <Alert variant="default" className="border-info/50 bg-info/5">
+            <Alert variant="default" className="border-slate-200 bg-slate-50">
               <AlertDescription className="text-xs">
                 📌 Contact your Master user if you need immediate access.
               </AlertDescription>
             </Alert>
           </div>
 
-          <Button 
+          <Button
             onClick={logout} 
-            variant="outline" 
-            className="w-full"
+            variant="outline"
+            className="w-full rounded-2xl border-slate-300"
           >
             <LogOut className="h-4 w-4 mr-2" />
             Logout
           </Button>
-        </CardContent>
-      </Card>
-      <BrandCornerLogo className="bg-white/5" />
+        </div>
+      </AuthScene>
       <ReportIssueButton authToken={token} reporter={user ? { displayName: user.displayName, role: user.role, email: user.email } : null} />
-    </div>
+    </>
   );
 }
