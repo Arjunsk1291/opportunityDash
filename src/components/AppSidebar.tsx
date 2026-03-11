@@ -81,23 +81,18 @@ export function AppSidebar() {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-4 space-y-3">
+      <SidebarFooter className="border-t border-sidebar-border p-4">
         <div className="flex items-center">
           <img
             src={logo}
             alt="Avenir Engineering"
             className={
               collapsed
-                ? "h-6 w-6 object-contain opacity-80"
-                : "h-7 w-auto max-w-[150px] object-contain"
+                ? "h-7 w-7 object-contain opacity-80"
+                : "h-10 w-full max-w-[200px] object-contain"
             }
           />
         </div>
-        {!collapsed && (
-          <div className="text-xs text-muted-foreground">
-            <p>Last sync: {new Date().toLocaleString()}</p>
-          </div>
-        )}
       </SidebarFooter>
     </Sidebar>
   );

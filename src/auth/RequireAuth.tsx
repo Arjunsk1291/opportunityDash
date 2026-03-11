@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ShieldCheck, LogIn } from "lucide-react";
-import { BrandCornerLogo } from "@/components/BrandCornerLogo";
+import logo from "@/assets/Avenir_Logo.avif";
 
 export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => {
   const { loading, isAuthenticated, login } = React.useContext(AuthContext);
@@ -14,6 +14,9 @@ export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => 
       <div className="relative min-h-screen flex items-center justify-center bg-[#0b0f1a] text-white overflow-hidden">
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,_rgba(6,10,18,0.98),_rgba(12,22,40,0.95)),radial-gradient(circle_at_top,_rgba(24,87,154,0.28),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(8,122,138,0.25),_transparent_60%)]" />
         <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-cyan-400/10 blur-3xl" />
+        <div className="pointer-events-none absolute top-6 left-1/2 -translate-x-1/2 rounded-full bg-white px-5 py-3 shadow-lg ring-1 ring-black/10">
+          <img src={logo} alt="Avenir Engineering" className="h-8 w-auto" />
+        </div>
         <Card className="w-full max-w-md border-border/50 shadow-xl text-foreground">
           <CardHeader className="space-y-2">
             <div className="flex items-center gap-2">
@@ -26,7 +29,6 @@ export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => 
             Checking your sign-in session…
           </CardContent>
         </Card>
-        <BrandCornerLogo className="bg-white/5" />
       </div>
     );
   }
@@ -37,6 +39,9 @@ export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => 
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,_rgba(6,10,18,0.98),_rgba(12,22,40,0.95)),radial-gradient(circle_at_top,_rgba(24,87,154,0.28),_transparent_55%),radial-gradient(circle_at_bottom,_rgba(8,122,138,0.25),_transparent_60%)]" />
         <div className="pointer-events-none absolute inset-0 opacity-25 [background:radial-gradient(circle_at_1px_1px,_rgba(255,255,255,0.16)_1px,_transparent_0)] [background-size:22px_22px]" />
         <div className="pointer-events-none absolute -bottom-24 -left-20 h-80 w-80 rounded-full bg-sky-500/10 blur-3xl" />
+        <div className="pointer-events-none absolute top-6 left-1/2 -translate-x-1/2 rounded-full bg-white px-5 py-3 shadow-lg ring-1 ring-black/10">
+          <img src={logo} alt="Avenir Engineering" className="h-8 w-auto" />
+        </div>
         <Card className="w-full max-w-lg border-border/50 shadow-2xl bg-card/90 backdrop-blur text-foreground">
           <CardHeader className="space-y-3">
             <div className="flex items-center justify-between">
@@ -69,7 +74,6 @@ export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => 
             </Button>
           </CardContent>
         </Card>
-        <BrandCornerLogo className="bg-white/5" />
       </div>
     );
   }
