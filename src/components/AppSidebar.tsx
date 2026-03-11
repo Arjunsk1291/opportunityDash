@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useAuth } from '@/contexts/AuthContext';
 import { NAV_ITEMS } from '@/config/navigation';
+import logo from '@/assets/avenir-logo.png';
 
 export function AppSidebar() {
   const location = useLocation();
@@ -80,7 +81,18 @@ export function AppSidebar() {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-4">
+      <SidebarFooter className="border-t border-sidebar-border p-4 space-y-3">
+        <div className="flex items-center">
+          <img
+            src={logo}
+            alt="Avenir Engineering"
+            className={
+              collapsed
+                ? "h-6 w-6 object-contain opacity-80"
+                : "h-7 w-auto max-w-[150px] object-contain"
+            }
+          />
+        </div>
         {!collapsed && (
           <div className="text-xs text-muted-foreground">
             <p>Last sync: {new Date().toLocaleString()}</p>
