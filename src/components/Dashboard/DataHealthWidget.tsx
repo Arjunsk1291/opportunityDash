@@ -5,13 +5,24 @@ import { CheckCircle, AlertCircle } from 'lucide-react';
 interface DataHealthWidgetProps {
   healthScore: number;
   missingRows: Array<{ id: string; refNo: string; missingFields: string[] }>;
+  duplicateTenderRows: Array<{ id: string; refNo: string; tenderName: string; duplicateCount: number }>;
   imputedCount: number;
   missingFieldCount: number;
   totalRecords: number;
   completeRecords: number;
+  duplicateTenderCount: number;
 }
 
-export function DataHealthWidget({ healthScore, missingRows, imputedCount, missingFieldCount, totalRecords, completeRecords }: DataHealthWidgetProps) {
+export function DataHealthWidget({
+  healthScore,
+  missingRows,
+  duplicateTenderRows,
+  imputedCount,
+  missingFieldCount,
+  totalRecords,
+  completeRecords,
+  duplicateTenderCount,
+}: DataHealthWidgetProps) {
   return (
     <Card>
       <CardHeader>
@@ -42,6 +53,10 @@ export function DataHealthWidget({ healthScore, missingRows, imputedCount, missi
             <span className="text-muted-foreground">Imputed Values</span>
             <span className="font-mono">{imputedCount}</span>
           </div>
+          <div className="flex items-center justify-between p-2 bg-muted rounded">
+            <span className="text-muted-foreground">Duplicate Tenders</span>
+            <span className="font-mono">{duplicateTenderCount}</span>
+          </div>
         </div>
 
         {missingRows.length > 0 && (
@@ -60,6 +75,29 @@ export function DataHealthWidget({ healthScore, missingRows, imputedCount, missi
               {missingRows.length > 5 && (
                 <p className="text-xs text-muted-foreground px-2">
                   +{missingRows.length - 5} more records with missing data
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {duplicateTenderRows.length > 0 && (
+          <div className="mt-4 pt-4 border-t space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Tender names appearing more than once:</p>
+            <div className="space-y-1 max-h-[150px] overflow-y-auto">
+              {duplicateTenderRows.slice(0, 5).map((row) => (
+                <div key={row.id} className="text-xs p-2 bg-destructive/10 rounded flex items-start gap-2">
+                  <AlertCircle className="h-3 w-3 mt-0.5 text-destructive flex-shrink-0" />
+                  <div>
+                    <p className="font-medium">{row.tenderName || 'Untitled Tender'}</p>
+                    <p className="font-mono text-xs">{row.refNo}</p>
+                    <p className="text-muted-foreground">{row.duplicateCount} rows share this tender name</p>
+                  </div>
+                </div>
+              ))}
+              {duplicateTenderRows.length > 5 && (
+                <p className="text-xs text-muted-foreground px-2">
+                  +{duplicateTenderRows.length - 5} more duplicate tender names
                 </p>
               )}
             </div>

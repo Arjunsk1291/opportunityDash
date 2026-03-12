@@ -22,7 +22,7 @@ interface KPICardsProps {
     ongoingValue: number;
     submissionNearCount: number;
   };
-  onKPIClick?: (kpiType: 'active' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => void;
+  onKPIClick?: (kpiType: 'active' | 'quoted' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => void;
 }
 
 export function KPICards({ stats, onKPIClick }: KPICardsProps) {
@@ -71,13 +71,13 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
       type: 'active' as const 
     },
     { 
-      label: 'Total Active Value', 
+      label: 'Total Quoted Value', 
       currencyValue: stats.totalPipelineValue, 
       isCurrency: true,
       Icon: currency === 'AED' ? AedIcon : DollarIcon,
       color: 'text-info', 
       bgColor: 'bg-info/10', 
-      type: 'awarded' as const 
+      type: 'quoted' as const 
     },
     { 
       label: 'Awarded', 

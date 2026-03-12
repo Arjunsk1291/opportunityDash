@@ -29,18 +29,30 @@ const Dashboard = () => {
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
-  const stats = useMemo(() => calculateSummaryStats(filteredData), [filteredData]);
+  const quotedValueStatuses = useMemo(
+    () => (filters.statuses.length > 0 ? filters.statuses : ['SUBMITTED']),
+    [filters.statuses]
+  );
+  const stats = useMemo(
+    () => calculateSummaryStats(filteredData, { quotedValueStatuses }),
+    [filteredData, quotedValueStatuses]
+  );
   const funnelData = useMemo(() => calculateFunnelData(filteredData), [filteredData]);
   const clientData = useMemo(() => getClientData(filteredData), [filteredData]);
   const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
 
-  const handleKPIClick = (kpiType: 'active' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => {
+  const handleKPIClick = (kpiType: 'active' | 'quoted' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => {
     setFilters((prevFilters) => {
       switch (kpiType) {
         case 'active':
           return {
             ...prevFilters,
             statuses: ['WORKING', 'SUBMITTED', 'AWARDED'],
+          };
+        case 'quoted':
+          return {
+            ...prevFilters,
+            statuses: ['SUBMITTED'],
           };
         case 'awarded':
           return {

@@ -77,23 +77,57 @@ export const PROBABILITY_BY_STAGE: Record<string, number> = {
   'HOLD / CLOSED': 20,
 };
 
-export function calculateSummaryStats(data: Opportunity[]) {
+const getMergedStatus = (opp: Opportunity) => {
+  if (opp.tenderResult) return String(opp.tenderResult).trim().toUpperCase();
+  if (opp.avenirStatus) return String(opp.avenirStatus).trim().toUpperCase();
+  return String(opp.canonicalStage || '').trim().toUpperCase();
+};
 
-  const getMergedStatus = (opp: Opportunity) => {
-    if (opp.tenderResult) return opp.tenderResult;
-    if (opp.avenirStatus) return opp.avenirStatus;
-    return opp.canonicalStage || '';
-  };
+const normalizeTenderName = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
+
+const getOpportunityTimestamp = (opp: Opportunity) => {
+  const dateCandidates = [opp.tenderSubmittedDate, opp.dateTenderReceived, opp.tenderPlannedSubmissionDate];
+
+  for (const candidate of dateCandidates) {
+    if (!candidate) continue;
+    const parsed = Date.parse(candidate);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
+  return 0;
+};
+
+const sumDedupedTenderValues = (data: Opportunity[], statuses: string[]) => {
+  const allowedStatuses = new Set(statuses.map((status) => String(status || '').trim().toUpperCase()));
+  const uniqueTenders = new Map<string, Opportunity>();
+  let untitledIndex = 0;
+
+  data.forEach((opp) => {
+    if (!allowedStatuses.has(getMergedStatus(opp))) return;
+
+    const normalizedName = normalizeTenderName(opp.tenderName);
+    const key = normalizedName || `__untitled__${opp.id || untitledIndex++}`;
+    const current = uniqueTenders.get(key);
+
+    if (!current || getOpportunityTimestamp(opp) >= getOpportunityTimestamp(current)) {
+      uniqueTenders.set(key, opp);
+    }
+  });
+
+  return Array.from(uniqueTenders.values()).reduce((sum, opp) => sum + Number(opp.opportunityValue || 0), 0);
+};
+
+export function calculateSummaryStats(data: Opportunity[], options?: { quotedValueStatuses?: string[] }) {
+
+  const quotedValueStatuses = options?.quotedValueStatuses?.length ? options.quotedValueStatuses : ['SUBMITTED'];
 
   const activeOpps = data.filter(o => 
     ['WORKING', 'SUBMITTED', 'AWARDED'].includes(o.canonicalStage)
   );
   const awardedOpps = data.filter(o => o.canonicalStage === 'AWARDED');
-  const totalActiveValue = data
-    .filter((o) => getMergedStatus(o) === 'AWARDED')
-    .reduce((sum, o) => sum + o.opportunityValue, 0);
+  const totalActiveValue = sumDedupedTenderValues(data, quotedValueStatuses);
   const awardedCount = awardedOpps.length;
-  const awardedValue = totalActiveValue;
+  const awardedValue = sumDedupedTenderValues(data, ['AWARDED']);
 
   const lostOpps = data.filter(o => o.tenderResult === 'LOST');
   const lostCount = lostOpps.length;
@@ -235,7 +269,9 @@ export function calculateDataHealth(data: Opportunity[]) {
   let completedFields = 0;
   let missingFieldCount = 0;
   const missingRows: Array<{ id: string; refNo: string; missingFields: string[] }> = [];
+  const duplicateTenderRows: Array<{ id: string; refNo: string; tenderName: string; duplicateCount: number }> = [];
   let imputedCount = 0;
+  const tenderNameGroups = new Map<string, Opportunity[]>();
   
   data.forEach(o => {
     const missing: string[] = [];
@@ -269,20 +305,41 @@ export function calculateDataHealth(data: Opportunity[]) {
     if (o.probability_imputed) imputedCount++;
     if (o.tenderPlannedSubmissionDate_imputed) imputedCount++;
     if (o.lastContactDate_imputed) imputedCount++;
+
+    const tenderKey = normalizeTenderName(o.tenderName);
+    if (tenderKey) {
+      if (!tenderNameGroups.has(tenderKey)) tenderNameGroups.set(tenderKey, []);
+      tenderNameGroups.get(tenderKey)!.push(o);
+    }
     
     if (missing.length > 0) {
       missingFieldCount += missing.length;
       missingRows.push({ id: o.id, refNo: o.opportunityRefNo, missingFields: missing });
     }
   });
+
+  tenderNameGroups.forEach((rows) => {
+    if (rows.length < 2) return;
+    const latest = [...rows].sort((a, b) => getOpportunityTimestamp(b) - getOpportunityTimestamp(a))[0];
+    duplicateTenderRows.push({
+      id: latest.id,
+      refNo: latest.opportunityRefNo,
+      tenderName: latest.tenderName,
+      duplicateCount: rows.length,
+    });
+  });
   
   return {
     healthScore: totalFields > 0 ? Math.round((completedFields / totalFields) * 100) : 100,
     missingRows: missingRows.slice(0, 20),
+    duplicateTenderRows: duplicateTenderRows
+      .sort((a, b) => b.duplicateCount - a.duplicateCount || a.tenderName.localeCompare(b.tenderName))
+      .slice(0, 20),
     missingFieldCount,
     imputedCount,
     totalRecords: data.length,
     completeRecords: data.length - missingRows.length,
+    duplicateTenderCount: duplicateTenderRows.length,
   };
 }
 
