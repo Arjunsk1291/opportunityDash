@@ -84,15 +84,15 @@ export default function TenderUpdates() {
   const [addDate, setAddDate] = useState('');
   const [addDueDate, setAddDueDate] = useState('');
   const [addDetails, setAddDetails] = useState('');
-  const [panelDirection, setPanelDirection] = useState<'horizontal' | 'vertical'>('horizontal');
+  const [useDesktopSplit, setUseDesktopSplit] = useState(false);
 
   useEffect(() => {
-    const updateDirection = () => {
-      setPanelDirection(window.innerWidth < 1024 ? 'vertical' : 'horizontal');
+    const updateLayout = () => {
+      setUseDesktopSplit(window.innerWidth >= 1280);
     };
-    updateDirection();
-    window.addEventListener('resize', updateDirection);
-    return () => window.removeEventListener('resize', updateDirection);
+    updateLayout();
+    window.addEventListener('resize', updateLayout);
+    return () => window.removeEventListener('resize', updateLayout);
   }, []);
 
   useEffect(() => {
@@ -317,10 +317,87 @@ export default function TenderUpdates() {
     safe: 'border-border bg-card/30',
   };
 
+  const renderTenderList = () => (
+    <Card className="flex h-full min-h-[18rem] flex-col bg-card/80 p-4 backdrop-blur-sm">
+      <div className="mb-3 text-xs uppercase tracking-wider text-muted-foreground">Tender List</div>
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+        {filteredTenders.map((opp) => {
+          const mergedStatus = opp.tenderResult || opp.avenirStatus || opp.canonicalStage || '';
+          const next = getNextDueDate(opp.id, updates);
+          const dueBadge = next ? dueStatusStyles[next.status] : 'bg-muted text-muted-foreground';
+          return (
+            <button
+              key={opp.id}
+              type="button"
+              onClick={() => setSelectedId(opp.id)}
+              className={cn(
+                "w-full border-b border-border px-3 py-3 text-left transition-colors hover:bg-muted/40",
+                selectedId === opp.id && 'border-l-4 border-primary bg-primary/5',
+              )}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">{opp.tenderName}</p>
+                  <p className="font-mono text-xs text-muted-foreground">{opp.opportunityRefNo}</p>
+                </div>
+                <Badge className="max-w-full shrink-0 bg-info/10 text-info">{opp.groupClassification || '—'}</Badge>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="truncate">{opp.internalLead || 'Unassigned'}</span>
+                <Badge variant="secondary" className="max-w-full">{mergedStatus}</Badge>
+                <Badge className={cn("max-w-full", dueBadge)}>{next ? `Due ${next.date}` : 'No due date'}</Badge>
+                <Badge variant="outline" className="max-w-full">{(updatesByOpportunity.get(opp.id) || []).length} updates</Badge>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </Card>
+  );
+
+  const renderTenderDetail = () => (
+    <Card className="flex h-full min-h-[22rem] flex-col bg-card/80 p-4 backdrop-blur-sm">
+      {selectedTender ? (
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="truncate text-lg font-semibold">{selectedTender.tenderName}</p>
+              <p className="truncate text-xs text-muted-foreground">{selectedTender.opportunityRefNo} • {selectedTender.clientName}</p>
+            </div>
+            <Button
+              className="w-full gap-2 bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-lg hover:from-primary/90 hover:to-primary sm:w-auto"
+              onClick={() => setAddOpen(true)}
+              disabled={!canEdit}
+            >
+              <Sparkles className="h-4 w-4" />
+              Add Update
+            </Button>
+          </div>
+          <Separator className="my-4" />
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1 scrollbar-thin sm:pr-2">
+            <UpdateTimeline
+              updates={selectedUpdates}
+              canEdit={canEdit}
+              onDelete={(id) => {
+                if (!canEdit) return;
+                deleteTenderUpdate(id);
+                refreshUpdates();
+              }}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="flex h-full items-center justify-center text-muted-foreground">
+          Select a tender to view updates.
+        </div>
+      )}
+    </Card>
+  );
+
   return (
-    <div className="flex min-h-0 flex-col gap-4 pb-4">
+    <div className="space-y-4 sm:space-y-6">
       <Card className="p-4 sm:p-6 bg-card/80 backdrop-blur-sm">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
             <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
               <Sparkles className="h-6 w-6 text-primary" />
@@ -353,98 +430,102 @@ export default function TenderUpdates() {
         </div>
       </Card>
 
-      <Card className="p-4 sm:p-5 bg-card/80 backdrop-blur-sm">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-          <div className="relative min-w-0 flex-1 xl:min-w-[280px]">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search tenders, clients, ref numbers..."
-              className="pl-9"
-            />
-            {search && (
-              <button
-                type="button"
-                className="absolute right-3 top-2.5 text-xs text-muted-foreground"
-                onClick={() => setSearch('')}
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start xl:w-auto">
-            <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen} className="w-full">
-              <CollapsibleTrigger asChild>
-                <Button variant="outline" className="w-full justify-between gap-2 sm:w-auto">
-                  <Filter className="h-4 w-4" />
-                  <span className="flex items-center gap-2">
-                    Filters
-                    {activeFilters.length > 0 && <Badge variant="secondary">{activeFilters.length}</Badge>}
-                  </span>
-                  <ChevronDown className={cn("h-4 w-4 transition-transform", filtersOpen && 'rotate-180')} />
+      <div className="sticky top-14 z-40 -mx-3 border-b bg-background/95 px-3 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/60 sm:-mx-4 sm:px-4 sm:py-4 lg:-mx-6 lg:px-6">
+        <Card className="p-4 sm:p-5 bg-card/80 backdrop-blur-sm">
+          <div className="flex flex-col gap-3 sm:gap-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="relative min-w-0 flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search tenders, clients, ref numbers..."
+                  className="pl-9"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    className="absolute right-3 top-2.5 text-xs text-muted-foreground"
+                    onClick={() => setSearch('')}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:shrink-0">
+                <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen} className="w-full">
+                  <CollapsibleTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between gap-2 sm:w-auto">
+                      <Filter className="h-4 w-4" />
+                      <span className="flex items-center gap-2">
+                        Filters
+                        {activeFilters.length > 0 && <Badge variant="secondary">{activeFilters.length}</Badge>}
+                      </span>
+                      <ChevronDown className={cn("h-4 w-4 transition-transform", filtersOpen && 'rotate-180')} />
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <Select value={groupFilter} onValueChange={setGroupFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Group" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ALL">All Groups</SelectItem>
+                          {groups.map((group) => (
+                            <SelectItem key={group} value={group}>{group}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={statusFilter} onValueChange={setStatusFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ALL">All Statuses</SelectItem>
+                          {statuses.map((status) => (
+                            <SelectItem key={status} value={status}>{status}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={leadFilter} onValueChange={setLeadFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Lead" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ALL">All Leads</SelectItem>
+                          {leads.map((lead) => (
+                            <SelectItem key={lead} value={lead}>{lead}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
+                        <Switch checked={urgentOnly} onCheckedChange={setUrgentOnly} />
+                        <span className="text-xs text-muted-foreground">Urgent only</span>
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+                <Button variant="ghost" size="icon" className="self-end sm:self-auto" onClick={() => refreshUpdates()}>
+                  <RefreshCw className="h-4 w-4" />
                 </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-                  <Select value={groupFilter} onValueChange={setGroupFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Group" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">All Groups</SelectItem>
-                      {groups.map((group) => (
-                        <SelectItem key={group} value={group}>{group}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">All Statuses</SelectItem>
-                      {statuses.map((status) => (
-                        <SelectItem key={status} value={status}>{status}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={leadFilter} onValueChange={setLeadFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Lead" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">All Leads</SelectItem>
-                      {leads.map((lead) => (
-                        <SelectItem key={lead} value={lead}>{lead}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
-                    <Switch checked={urgentOnly} onCheckedChange={setUrgentOnly} />
-                    <span className="text-xs text-muted-foreground">Urgent only</span>
-                  </div>
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-            <Button variant="ghost" size="icon" className="self-end sm:self-auto" onClick={() => refreshUpdates()}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+              </div>
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      </div>
 
       <Card className="p-4 bg-card/80 backdrop-blur-sm">
         <Collapsible open={dueOpen} onOpenChange={setDueOpen}>
-          <CollapsibleTrigger className="flex w-full items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider">
-              <CalendarClock className="h-4 w-4 text-warning" />
-              Due Dates Tracker
+          <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 text-left">
+            <div className="flex min-w-0 items-center gap-2 text-sm font-semibold uppercase tracking-wider">
+              <CalendarClock className="h-4 w-4 shrink-0 text-warning" />
+              <span className="truncate">Due Dates Tracker</span>
               {dueCards.some((c) => c.status === 'overdue' || c.status === 'urgent') && (
-                <span className="h-2 w-2 rounded-full bg-destructive" />
+                <span className="h-2 w-2 shrink-0 rounded-full bg-destructive" />
               )}
             </div>
-            <ChevronDown className={cn("h-4 w-4 transition-transform", dueOpen && 'rotate-180')} />
+            <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", dueOpen && 'rotate-180')} />
           </CollapsibleTrigger>
           <CollapsibleContent>
             <div className="mt-4 space-y-3">
@@ -460,7 +541,7 @@ export default function TenderUpdates() {
                   </Button>
                 ))}
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {dueCards.length === 0 && (
                   <p className="text-sm text-muted-foreground">No upcoming due dates in the selected window.</p>
                 )}
@@ -486,107 +567,24 @@ export default function TenderUpdates() {
         </Collapsible>
       </Card>
 
-      <PanelGroup
-        direction={panelDirection}
-        className={cn(
-          "min-h-0 flex-1",
-          panelDirection === 'vertical'
-            ? "flex-col gap-4"
-            : "min-h-[clamp(44rem,72vh,58rem)]",
-        )}
-      >
-        <Panel
-          defaultSize={42}
-          minSize={panelDirection === 'vertical' ? 32 : 25}
-          className="min-h-0"
-        >
-          <Card className="flex h-full min-h-[18rem] flex-col p-4 bg-card/80 backdrop-blur-sm">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground mb-3">Tender List</div>
-            <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
-              {filteredTenders.map((opp) => {
-                const mergedStatus = opp.tenderResult || opp.avenirStatus || opp.canonicalStage || '';
-                const next = getNextDueDate(opp.id, updates);
-                const dueBadge = next ? dueStatusStyles[next.status] : 'bg-muted text-muted-foreground';
-                return (
-                  <button
-                    key={opp.id}
-                    type="button"
-                    onClick={() => setSelectedId(opp.id)}
-                    className={cn(
-                      "w-full text-left px-3 py-3 border-b border-border transition-colors hover:bg-muted/40",
-                      selectedId === opp.id && 'border-l-4 border-primary bg-primary/5',
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-semibold truncate">{opp.tenderName}</p>
-                        <p className="font-mono text-xs text-muted-foreground">{opp.opportunityRefNo}</p>
-                      </div>
-                      <Badge className="max-w-full shrink-0 bg-info/10 text-info">{opp.groupClassification || '—'}</Badge>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <span className="truncate">{opp.internalLead || 'Unassigned'}</span>
-                      <Badge variant="secondary" className="max-w-full">{mergedStatus}</Badge>
-                      <Badge className={cn("max-w-full", dueBadge)}>{next ? `Due ${next.date}` : 'No due date'}</Badge>
-                      <Badge variant="outline" className="max-w-full">{(updatesByOpportunity.get(opp.id) || []).length} updates</Badge>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </Card>
-        </Panel>
-        <PanelResizeHandle
-          className={cn(
-            "flex items-center justify-center",
-            panelDirection === 'vertical' ? "h-3" : "w-2",
-          )}
-        >
-          <div className={cn("rounded-full bg-border", panelDirection === 'vertical' ? "h-1 w-12" : "h-12 w-1")} />
-        </PanelResizeHandle>
-        <Panel
-          defaultSize={58}
-          minSize={panelDirection === 'vertical' ? 36 : 30}
-          className="min-h-0"
-        >
-          <Card className="flex h-full min-h-[22rem] flex-col p-4 bg-card/80 backdrop-blur-sm">
-            {selectedTender ? (
-              <div className="flex min-h-0 flex-col h-full">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-lg">{selectedTender.tenderName}</p>
-                    <p className="truncate text-xs text-muted-foreground">{selectedTender.opportunityRefNo} • {selectedTender.clientName}</p>
-                  </div>
-                  <Button
-                    className="w-full gap-2 bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-lg hover:from-primary/90 hover:to-primary sm:w-auto"
-                    onClick={() => setAddOpen(true)}
-                    disabled={!canEdit}
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    Add Update
-                  </Button>
-                </div>
-                <Separator className="my-4" />
-                <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin pr-1 sm:pr-2">
-                  <UpdateTimeline
-                    updates={selectedUpdates}
-                    canEdit={canEdit}
-                    onDelete={(id) => {
-                      if (!canEdit) return;
-                      deleteTenderUpdate(id);
-                      refreshUpdates();
-                    }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="flex h-full items-center justify-center text-muted-foreground">
-                Select a tender to view updates.
-              </div>
-            )}
-          </Card>
-        </Panel>
-      </PanelGroup>
+      {useDesktopSplit ? (
+        <PanelGroup direction="horizontal" className="min-h-[clamp(46rem,74vh,60rem)]">
+          <Panel defaultSize={40} minSize={28} className="min-h-0">
+            {renderTenderList()}
+          </Panel>
+          <PanelResizeHandle className="flex w-2 items-center justify-center">
+            <div className="h-12 w-1 rounded-full bg-border" />
+          </PanelResizeHandle>
+          <Panel defaultSize={60} minSize={34} className="min-h-0">
+            {renderTenderDetail()}
+          </Panel>
+        </PanelGroup>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]">
+          <div className="min-h-0">{renderTenderList()}</div>
+          <div className="min-h-0">{renderTenderDetail()}</div>
+        </div>
+      )}
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-lg">
