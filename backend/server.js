@@ -99,14 +99,20 @@ const mapIdField = (doc) => {
   };
 };
 
+const getMergedReportStatus = (item = {}) => {
+  const rawStatus = item.tenderResult || item.avenirStatus || item.canonicalStage || item.status || '';
+  return String(rawStatus || '').trim().toUpperCase();
+};
+
 const calculateSummaryStats = (data = []) => {
-  const awardedCount = data.filter((item) => item.status === 'Awarded').length;
-  const lostCount = data.filter((item) => item.status === 'Lost').length;
-  const regrettedCount = data.filter((item) => item.status === 'Regretted').length;
-  const workingCount = data.filter((item) => item.status === 'Working').length;
-  const toStartCount = data.filter((item) => item.status === 'To Start').length;
-  const atRiskCount = data.filter((item) => item.atRisk).length;
-  const totalActive = workingCount + toStartCount;
+  const canonicalStage = (item) => String(item?.canonicalStage || '').trim().toUpperCase();
+  const awardedCount = data.filter((item) => canonicalStage(item) === 'AWARDED').length;
+  const lostCount = data.filter((item) => getMergedReportStatus(item) === 'LOST').length;
+  const regrettedCount = data.filter((item) => canonicalStage(item) === 'REGRETTED').length;
+  const workingCount = data.filter((item) => canonicalStage(item) === 'WORKING').length;
+  const toStartCount = data.filter((item) => canonicalStage(item) === 'TO START').length;
+  const atRiskCount = data.filter((item) => Boolean(item?.isAtRisk || item?.atRisk)).length;
+  const totalActive = data.filter((item) => ['WORKING', 'SUBMITTED', 'AWARDED'].includes(canonicalStage(item))).length;
 
   return {
     awardedCount,
@@ -120,35 +126,28 @@ const calculateSummaryStats = (data = []) => {
   };
 };
 
-const calculateFunnelData = (data = []) => {
-  const stages = ['To Start', 'Working', 'Awarded', 'Lost', 'Regretted'];
-  return stages.map((stage) => {
-    const stageItems = data.filter((item) => item.status === stage);
-    const value = stageItems.reduce((sum, item) => sum + Number(item.submittedValue || item.opportunityValue || 0), 0);
-
-    return {
-      stage,
-      count: stageItems.length,
-      value,
-    };
-  });
+const getRecentTenderData = (data = []) => {
+  return [...data]
+    .sort((a, b) => {
+      const aTime = parseDateValue(a?.dateTenderReceived || a?.createdAt)?.getTime() || 0;
+      const bTime = parseDateValue(b?.dateTenderReceived || b?.createdAt)?.getTime() || 0;
+      return bTime - aTime;
+    })
+    .map((item) => ({
+      refNo: item?.opportunityRefNo || item?.tenderNo || '—',
+      tenderName: item?.tenderName || 'Untitled Tender',
+      clientName: item?.clientName || '—',
+      receivedDate: item?.dateTenderReceived || item?.createdAt || '',
+      status: getMergedReportStatus(item) || 'UNSPECIFIED',
+      lead: item?.internalLead || '—',
+    }))
+    .slice(0, 10);
 };
 
-const getClientData = (data = []) => {
-  const byClient = data.reduce((acc, item) => {
-    const name = item.clientName || 'Unknown Client';
-    if (!acc[name]) {
-      acc[name] = { name, count: 0, value: 0 };
-    }
-
-    acc[name].count += 1;
-    acc[name].value += Number(item.submittedValue || item.opportunityValue || 0);
-    return acc;
-  }, {});
-
-  return Object.values(byClient)
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 10);
+const formatDateForReport = (value) => {
+  const parsed = parseDateValue(value);
+  if (!parsed) return String(value || '—');
+  return parsed.toLocaleDateString('en-GB');
 };
 
 const buildTroubleshootingFromMessage = (message = '') => {
@@ -2720,8 +2719,7 @@ app.post('/api/generate-report', async (req, res) => {
     const filters = body.filters || {};
 
     const summary = calculateSummaryStats(data);
-    const funnel = calculateFunnelData(data);
-    const clients = getClientData(data);
+    const recentTenders = getRecentTenderData(data);
 
     const totalOpportunities = data.length;
     const generatedAt = new Date().toLocaleString();
@@ -2820,45 +2818,26 @@ app.post('/api/generate-report', async (req, res) => {
         ],
       }),
       new Paragraph({ text: '', spacing: { after: 300 } }),
-      new Paragraph({ text: 'Sales Funnel Analysis', heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 200 } }),
+      new Paragraph({ text: 'Recent 10 Tenders', heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 200 } }),
       new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },
         rows: [
           new TableRow({
             children: [
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Pipeline Stage' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Opportunities' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Total Value' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Ref No' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Tender Name' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Client' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Received' })] }),
+              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Status' })] }),
             ],
           }),
-          ...funnel.map((row) => new TableRow({
+          ...recentTenders.map((row) => new TableRow({
             children: [
-              new TableCell({ borders, children: [new Paragraph({ text: row.stage })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: String(row.count) })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: `$${(row.value / 1000000).toFixed(2)}M` })] }),
-            ],
-          })),
-        ],
-      }),
-      new Paragraph({ text: '', spacing: { after: 300 } }),
-      new Paragraph({ text: 'Top 10 Clients by Pipeline Value', heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 200 } }),
-      new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        rows: [
-          new TableRow({
-            children: [
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Client Name' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Opportunities' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Submitted Value' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Ranking' })] }),
-            ],
-          }),
-          ...clients.map((row, i) => new TableRow({
-            children: [
-              new TableCell({ borders, children: [new Paragraph({ text: row.name })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: String(row.count) })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: `$${(row.value / 1000000).toFixed(2)}M` })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: `#${i + 1}` })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: row.refNo })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: row.tenderName })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: row.clientName })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: row.receivedDate ? formatDateForReport(row.receivedDate) : '—' })] }),
+              new TableCell({ borders, children: [new Paragraph({ text: row.status })] }),
             ],
           })),
         ],
