@@ -185,8 +185,8 @@ export function InteractiveGraph({ tenderName, tenderRef, updates }: Interactive
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[240px] flex-1">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+        <div className="relative min-w-0 flex-1 lg:min-w-[240px]">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             value={search}
@@ -195,16 +195,18 @@ export function InteractiveGraph({ tenderName, tenderRef, updates }: Interactive
             className="pl-9"
           />
         </div>
-        <Button variant="outline" size="icon" onClick={() => setScale((prev) => Math.min(2.4, prev + 0.1))}>
-          <ZoomIn className="h-4 w-4" />
-        </Button>
-        <Button variant="outline" size="icon" onClick={() => setScale((prev) => Math.max(0.4, prev - 0.1))}>
-          <ZoomOut className="h-4 w-4" />
-        </Button>
-        <Button variant="outline" size="icon" onClick={fitToScreen}>
-          <Maximize2 className="h-4 w-4" />
-        </Button>
-        <span className="ml-auto truncate text-xs text-muted-foreground">{tenderName}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="icon" onClick={() => setScale((prev) => Math.min(2.4, prev + 0.1))}>
+            <ZoomIn className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => setScale((prev) => Math.max(0.4, prev - 0.1))}>
+            <ZoomOut className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="icon" onClick={fitToScreen}>
+            <Maximize2 className="h-4 w-4" />
+          </Button>
+          <span className="max-w-full text-xs text-muted-foreground lg:ml-auto">{tenderName}</span>
+        </div>
       </div>
 
       <div

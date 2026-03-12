@@ -318,9 +318,9 @@ export default function TenderUpdates() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-h-0 flex-col gap-4 pb-4">
       <Card className="p-4 sm:p-6 bg-card/80 backdrop-blur-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-start gap-3">
             <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
               <Sparkles className="h-6 w-6 text-primary" />
@@ -332,20 +332,20 @@ export default function TenderUpdates() {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="gap-2" size="sm" disabled={!selectedTender} onClick={() => setGraphOpen(true)}>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+            <Button variant="outline" className="w-full gap-2 sm:w-auto" size="sm" disabled={!selectedTender} onClick={() => setGraphOpen(true)}>
               <Maximize2 className="h-4 w-4" />
               <span className="hidden sm:inline">Fullscreen Tree</span>
             </Button>
-            <Button variant="outline" className="gap-2" size="sm" disabled={!selectedTender} onClick={() => setMermaidOpen(true)}>
+            <Button variant="outline" className="w-full gap-2 sm:w-auto" size="sm" disabled={!selectedTender} onClick={() => setMermaidOpen(true)}>
               <Wand2 className="h-4 w-4" />
               <span className="hidden sm:inline">Mermaid Preview</span>
             </Button>
-            <Button variant="outline" className="gap-2" size="sm" onClick={exportExcel}>
+            <Button variant="outline" className="w-full gap-2 sm:w-auto" size="sm" onClick={exportExcel}>
               <FileSpreadsheet className="h-4 w-4" />
               <span className="hidden sm:inline">Excel</span>
             </Button>
-            <Button variant="outline" className="gap-2" size="sm" onClick={exportWord}>
+            <Button variant="outline" className="w-full gap-2 sm:w-auto" size="sm" onClick={exportWord}>
               <FileDown className="h-4 w-4" />
               <span className="hidden sm:inline">Word export</span>
             </Button>
@@ -354,8 +354,8 @@ export default function TenderUpdates() {
       </Card>
 
       <Card className="p-4 sm:p-5 bg-card/80 backdrop-blur-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="relative flex-1 min-w-[240px]">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div className="relative min-w-0 flex-1 xl:min-w-[280px]">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               value={search}
@@ -373,18 +373,20 @@ export default function TenderUpdates() {
               </button>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start xl:w-auto">
+            <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen} className="w-full">
               <CollapsibleTrigger asChild>
-                <Button variant="outline" className="gap-2">
+                <Button variant="outline" className="w-full justify-between gap-2 sm:w-auto">
                   <Filter className="h-4 w-4" />
-                  Filters
-                  {activeFilters.length > 0 && <Badge variant="secondary">{activeFilters.length}</Badge>}
+                  <span className="flex items-center gap-2">
+                    Filters
+                    {activeFilters.length > 0 && <Badge variant="secondary">{activeFilters.length}</Badge>}
+                  </span>
                   <ChevronDown className={cn("h-4 w-4 transition-transform", filtersOpen && 'rotate-180')} />
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <div className="mt-3 grid gap-3 md:grid-cols-4">
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                   <Select value={groupFilter} onValueChange={setGroupFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="Group" />
@@ -425,7 +427,7 @@ export default function TenderUpdates() {
                 </div>
               </CollapsibleContent>
             </Collapsible>
-            <Button variant="ghost" size="icon" onClick={() => refreshUpdates()}>
+            <Button variant="ghost" size="icon" className="self-end sm:self-auto" onClick={() => refreshUpdates()}>
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
@@ -458,7 +460,7 @@ export default function TenderUpdates() {
                   </Button>
                 ))}
               </div>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
                 {dueCards.length === 0 && (
                   <p className="text-sm text-muted-foreground">No upcoming due dates in the selected window.</p>
                 )}
@@ -484,11 +486,23 @@ export default function TenderUpdates() {
         </Collapsible>
       </Card>
 
-      <PanelGroup direction={panelDirection} className="flex-1">
-        <Panel defaultSize={42} minSize={25}>
-          <Card className="h-full p-4 bg-card/80 backdrop-blur-sm">
+      <PanelGroup
+        direction={panelDirection}
+        className={cn(
+          "min-h-0 flex-1",
+          panelDirection === 'vertical'
+            ? "flex-col gap-4"
+            : "min-h-[clamp(44rem,72vh,58rem)]",
+        )}
+      >
+        <Panel
+          defaultSize={42}
+          minSize={panelDirection === 'vertical' ? 32 : 25}
+          className="min-h-0"
+        >
+          <Card className="flex h-full min-h-[18rem] flex-col p-4 bg-card/80 backdrop-blur-sm">
             <div className="text-xs uppercase tracking-wider text-muted-foreground mb-3">Tender List</div>
-            <div className="overflow-y-auto max-h-[560px] scrollbar-thin">
+            <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
               {filteredTenders.map((opp) => {
                 const mergedStatus = opp.tenderResult || opp.avenirStatus || opp.canonicalStage || '';
                 const next = getNextDueDate(opp.id, updates);
@@ -508,13 +522,13 @@ export default function TenderUpdates() {
                         <p className="font-semibold truncate">{opp.tenderName}</p>
                         <p className="font-mono text-xs text-muted-foreground">{opp.opportunityRefNo}</p>
                       </div>
-                      <Badge className="bg-info/10 text-info">{opp.groupClassification || '—'}</Badge>
+                      <Badge className="max-w-full shrink-0 bg-info/10 text-info">{opp.groupClassification || '—'}</Badge>
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                      <span>{opp.internalLead || 'Unassigned'}</span>
-                      <Badge variant="secondary">{mergedStatus}</Badge>
-                      <Badge className={dueBadge}>{next ? `Due ${next.date}` : 'No due date'}</Badge>
-                      <Badge variant="outline">{(updatesByOpportunity.get(opp.id) || []).length} updates</Badge>
+                      <span className="truncate">{opp.internalLead || 'Unassigned'}</span>
+                      <Badge variant="secondary" className="max-w-full">{mergedStatus}</Badge>
+                      <Badge className={cn("max-w-full", dueBadge)}>{next ? `Due ${next.date}` : 'No due date'}</Badge>
+                      <Badge variant="outline" className="max-w-full">{(updatesByOpportunity.get(opp.id) || []).length} updates</Badge>
                     </div>
                   </button>
                 );
@@ -522,20 +536,29 @@ export default function TenderUpdates() {
             </div>
           </Card>
         </Panel>
-        <PanelResizeHandle className="w-2 flex items-center justify-center">
-          <div className="h-12 w-1 rounded-full bg-border" />
+        <PanelResizeHandle
+          className={cn(
+            "flex items-center justify-center",
+            panelDirection === 'vertical' ? "h-3" : "w-2",
+          )}
+        >
+          <div className={cn("rounded-full bg-border", panelDirection === 'vertical' ? "h-1 w-12" : "h-12 w-1")} />
         </PanelResizeHandle>
-        <Panel defaultSize={58} minSize={30}>
-          <Card className="h-full p-4 bg-card/80 backdrop-blur-sm">
+        <Panel
+          defaultSize={58}
+          minSize={panelDirection === 'vertical' ? 36 : 30}
+          className="min-h-0"
+        >
+          <Card className="flex h-full min-h-[22rem] flex-col p-4 bg-card/80 backdrop-blur-sm">
             {selectedTender ? (
-              <div className="flex flex-col h-full">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-lg">{selectedTender.tenderName}</p>
-                    <p className="text-xs text-muted-foreground">{selectedTender.opportunityRefNo} • {selectedTender.clientName}</p>
+              <div className="flex min-h-0 flex-col h-full">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-lg">{selectedTender.tenderName}</p>
+                    <p className="truncate text-xs text-muted-foreground">{selectedTender.opportunityRefNo} • {selectedTender.clientName}</p>
                   </div>
                   <Button
-                    className="gap-2 bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-lg hover:from-primary/90 hover:to-primary"
+                    className="w-full gap-2 bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-lg hover:from-primary/90 hover:to-primary sm:w-auto"
                     onClick={() => setAddOpen(true)}
                     disabled={!canEdit}
                   >
@@ -544,7 +567,7 @@ export default function TenderUpdates() {
                   </Button>
                 </div>
                 <Separator className="my-4" />
-                <div className="flex-1 overflow-y-auto scrollbar-thin pr-2">
+                <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin pr-1 sm:pr-2">
                   <UpdateTimeline
                     updates={selectedUpdates}
                     canEdit={canEdit}
@@ -629,14 +652,14 @@ export default function TenderUpdates() {
       </Dialog>
 
       <Dialog open={graphOpen} onOpenChange={setGraphOpen}>
-        <DialogContent className="w-[99vw] max-w-none h-[97vh] p-0 gap-0 sm:w-[98vw] sm:h-[96vh]">
+        <DialogContent className="grid h-[100dvh] w-[100vw] max-w-none translate-x-[-50%] translate-y-[-50%] grid-rows-[auto_1fr] gap-0 rounded-none border-0 p-0 sm:h-[97vh] sm:w-[99vw] sm:rounded-lg sm:border">
           <DialogHeader>
             <div className="px-6 pt-6">
               <DialogTitle>Interactive Tender Tree</DialogTitle>
               <DialogDescription>Selected tender updates in a focused tree view.</DialogDescription>
             </div>
           </DialogHeader>
-          <div className="min-h-0 flex-1 px-4 pb-4 sm:px-6 sm:pb-6">
+          <div className="min-h-0 px-3 pb-3 sm:px-6 sm:pb-6">
             {selectedTender ? (
               <InteractiveGraph
                 tenderName={selectedTender.tenderName}

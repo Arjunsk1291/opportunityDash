@@ -28,7 +28,7 @@ export function UpdateTimeline({ updates, canEdit, onDelete }: UpdateTimelinePro
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid gap-4 xl:grid-cols-2 2xl:gap-6">
       <TimelineLane
         title="Subcontractor"
         count={laneUpdates.subcontractor.length}
@@ -72,13 +72,13 @@ type TimelineLaneProps = {
 
 function TimelineLane({ title, count, icon, className, lineClassName, accentClassName, badgeClassName, updates, canEdit, onDelete }: TimelineLaneProps) {
   return (
-    <div className="rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4">
-      <div className="flex items-center justify-between">
-        <div className={cn("flex items-center gap-2 text-sm font-semibold uppercase tracking-wider", className)}>
+    <div className="rounded-xl border border-border bg-card/80 p-3 backdrop-blur-sm sm:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className={cn("flex min-w-0 items-center gap-2 text-sm font-semibold uppercase tracking-wider", className)}>
           <span>{icon}</span>
-          <span>{title}</span>
+          <span className="truncate">{title}</span>
         </div>
-        <Badge variant="outline" className={cn("text-xs", badgeClassName)}>{count} updates</Badge>
+        <Badge variant="outline" className={cn("shrink-0 text-xs", badgeClassName)}>{count} updates</Badge>
       </div>
       <Separator className="my-3" />
       <div className={cn("relative pl-6 space-y-4 border-l-2", lineClassName)}>
@@ -109,16 +109,16 @@ function TimelineLane({ title, count, icon, className, lineClassName, accentClas
                     <Badge className="bg-warning/15 text-warning text-[11px]">Due {update.dueDate}</Badge>
                   )}
                 </div>
-                <div className="mt-2 flex items-center gap-2 text-sm font-medium">
-                  <span>{update.actor}</span>
-                  <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-muted-foreground">{update.subType}</span>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-medium">
+                  <span className="break-words">{update.actor}</span>
+                  <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <span className="break-words text-muted-foreground">{update.subType}</span>
                 </div>
                 <details className="mt-2 text-xs text-muted-foreground">
                   <summary className="cursor-pointer text-[11px] uppercase tracking-wider">Details</summary>
-                  <p className="mt-2 text-sm text-foreground">{update.details}</p>
+                  <p className="mt-2 break-words text-sm text-foreground">{update.details}</p>
                   <p className="mt-2 text-[11px] uppercase tracking-wider text-muted-foreground">Created by</p>
-                  <p className="text-xs">{update.createdBy} • {update.createdAt.slice(0, 10)}</p>
+                  <p className="break-words text-xs">{update.createdBy} • {update.createdAt.slice(0, 10)}</p>
                   {canEdit && (
                     <Button
                       variant="ghost"
