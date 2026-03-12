@@ -47,7 +47,7 @@ export default function UserRolesPanel() {
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {isMaster && u.role !== 'Master' ? (
+                {isMaster ? (
                   <>
                     <Select
                       value={u.role}
@@ -57,6 +57,7 @@ export default function UserRolesPanel() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="Master">Master</SelectItem>
                         <SelectItem value="Admin">Admin</SelectItem>
                         <SelectItem value="ProposalHead">Tender Manager</SelectItem>
                         <SelectItem value="SVP">SVP</SelectItem>

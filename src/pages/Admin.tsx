@@ -1399,9 +1399,7 @@ export default function Admin() {
                       <TableRow key={u._id}>
                         <TableCell className="font-mono text-sm">{u.email}</TableCell>
                         <TableCell>
-                          {u.role === 'Master' ? (
-                            <Badge variant="outline">Master</Badge>
-                          ) : (
+                          {isMaster || u.role !== 'Master' ? (
                             <>
                               <Select
                                 value={u.role}
@@ -1418,6 +1416,7 @@ export default function Admin() {
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
+                                  {isMaster && <SelectItem value="Master">Master</SelectItem>}
                                   <SelectItem value="Admin">Admin</SelectItem>
                                   <SelectItem value="ProposalHead">Tender Manager</SelectItem>
                                   <SelectItem value="SVP">SVP</SelectItem>
@@ -1441,6 +1440,8 @@ export default function Admin() {
                                 </Select>
                               )}
                             </>
+                          ) : (
+                            <Badge variant="outline">Master</Badge>
                           )}
                         </TableCell>
                         <TableCell>

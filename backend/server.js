@@ -1360,9 +1360,6 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
     if (!validRoles.includes(newRole)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
-    if (newRole === 'Master' || newRole === 'MASTER') {
-      return res.status(403).json({ error: 'Assigning Master is not allowed' });
-    }
 
     if (newRole === 'SVP' && !assignedGroup) {
       return res.status(400).json({ error: 'assignedGroup is required for SVP users' });
@@ -1377,8 +1374,16 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
     if (!existing) {
       return res.status(404).json({ error: 'User not found' });
     }
-    if (existing.role === 'Master' || existing.role === 'MASTER') {
-      return res.status(403).json({ error: 'Modifying Master users is not allowed' });
+    const targetIsMaster = existing.role === 'Master' || existing.role === 'MASTER';
+    const requesterIsMaster = req.user.role === 'Master' || req.user.role === 'MASTER';
+    const nextRoleIsMaster = newRole === 'Master' || newRole === 'MASTER';
+
+    if ((targetIsMaster || nextRoleIsMaster) && !requesterIsMaster) {
+      return res.status(403).json({ error: 'Only Master users can assign or modify Master users' });
+    }
+
+    if (targetIsMaster && existing.email === req.user.email && !nextRoleIsMaster) {
+      return res.status(403).json({ error: 'Master users cannot change their own role' });
     }
 
     const update = { role: newRole, assignedGroup: newRole === 'SVP' ? normalizedGroup : null };
