@@ -6,6 +6,8 @@ export type ActionKey =
   | 'approvals_svp'
   | 'approvals_bulk_revert'
   | 'approvals_revert'
+  | 'vendors_write'
+  | 'vendors_import'
   | 'clients_write'
   | 'clients_import'
   | 'clients_seed'
@@ -24,6 +26,8 @@ export const ACTION_LABELS: Record<ActionKey, string> = {
   approvals_svp: 'SVP Approval Writes',
   approvals_bulk_revert: 'Bulk Revert Approval Writes',
   approvals_revert: 'Single Revert Approval Writes',
+  vendors_write: 'Create / Update Vendors',
+  vendors_import: 'Import Vendors',
   clients_write: 'Create / Update Clients',
   clients_import: 'Import Clients',
   clients_seed: 'Seed Clients from Opportunities',
@@ -43,6 +47,8 @@ export const ACTION_DESCRIPTIONS: Record<ActionKey, string> = {
   approvals_svp: 'Writes SVP approval state into MongoDB.',
   approvals_bulk_revert: 'Bulk approval revert operations.',
   approvals_revert: 'Single-tender approval revert operations.',
+  vendors_write: 'Create or update vendor directory records.',
+  vendors_import: 'Bulk import vendor directory records.',
   clients_write: 'Create or update client records.',
   clients_import: 'Bulk import client records.',
   clients_seed: 'Seed clients from synced opportunity data.',
@@ -62,6 +68,8 @@ export const DEFAULT_ACTION_ROLE_ACCESS: Record<ActionKey, UserRole[]> = {
   approvals_svp: ['Master', 'SVP'],
   approvals_bulk_revert: ['Master', 'ProposalHead'],
   approvals_revert: ['Master'],
+  vendors_write: ['Master', 'Admin'],
+  vendors_import: ['Master', 'Admin'],
   clients_write: ['Master', 'Admin', 'ProposalHead'],
   clients_import: ['Master', 'Admin'],
   clients_seed: ['Master', 'Admin'],

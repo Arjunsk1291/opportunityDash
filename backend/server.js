@@ -10,6 +10,7 @@ import SyncedOpportunity from './models/SyncedOpportunity.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import Client from './models/Client.js';
+import Vendor from './models/Vendor.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig } from './services/graphExcelService.js';
@@ -206,6 +207,151 @@ const normalizeCompanyName = (name = '') => {
 };
 
 const normalizeCompanyKey = (name = '') => normalizeCompanyName(name).toLowerCase();
+
+const splitStringList = (value = []) => {
+  const list = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(list.map((entry) => String(entry || '').trim()).filter(Boolean))];
+};
+
+const normalizeAgreementStatus = (value = '') => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'nda') return 'NDA';
+  if (normalized === 'association agreement' || normalized === 'association') return 'Association Agreement';
+  return 'Pending';
+};
+
+const buildVendorPayload = (input = {}) => {
+  const companyName = normalizeCompanyName(input.companyName || '');
+  return {
+    companyName,
+    companyKey: normalizeCompanyKey(companyName),
+    primaryIndustries: splitStringList(input.primaryIndustries),
+    confirmedServices: splitStringList(input.confirmedServices),
+    confirmedTechStack: splitStringList(input.confirmedTechStack),
+    nonSpecializedTechStack: splitStringList(input.nonSpecializedTechStack),
+    sampleProjects: splitStringList(input.sampleProjects),
+    certifications: splitStringList(input.certifications),
+    partners: splitStringList(input.partners),
+    companySize: String(input.companySize || '').trim(),
+    sources: splitStringList(input.sources),
+    focusArea: String(input.focusArea || '').trim(),
+    agreementStatus: normalizeAgreementStatus(input.agreementStatus),
+    agreementDocuments: splitStringList(input.agreementDocuments),
+    contactPerson: String(input.contactPerson || '').trim(),
+    emails: splitStringList(input.emails).map((email) => email.toLowerCase()),
+  };
+};
+
+const VENDOR_SEEDS = [
+  {
+    companyName: 'Blue Ridge Analytics',
+    primaryIndustries: ['Utilities', 'District Cooling', 'Smart Infrastructure'],
+    confirmedServices: ['Data Engineering', 'Predictive Analytics', 'Dashboard Delivery'],
+    confirmedTechStack: ['Python', 'AWS', 'Snowflake', 'Power BI', 'dbt'],
+    nonSpecializedTechStack: ['React', 'Node.js'],
+    sampleProjects: ['Cooling demand forecasting suite', 'Executive operations command center'],
+    certifications: ['ISO 27001', 'AWS Advanced Tier'],
+    partners: ['AWS', 'Snowflake'],
+    companySize: '51-200',
+    sources: ['https://example.com/blue-ridge'],
+    focusArea: 'Analytics',
+    agreementStatus: 'NDA',
+    agreementDocuments: ['NDA-2025-BRA.pdf'],
+    contactPerson: 'Sara Mitchell',
+    emails: ['sara.mitchell@blueridge.example'],
+  },
+  {
+    companyName: 'Northstar Systems',
+    primaryIndustries: ['Building Automation', 'Energy Management'],
+    confirmedServices: ['SCADA Integration', 'IoT Enablement', 'Managed Support'],
+    confirmedTechStack: ['Azure', 'C#', '.NET', 'MQTT', 'PostgreSQL'],
+    nonSpecializedTechStack: ['Angular', 'Docker'],
+    sampleProjects: ['BMS modernization across 12 sites', 'Telemetry bridge for utility assets'],
+    certifications: ['ISO 9001', 'Microsoft Solutions Partner'],
+    partners: ['Microsoft', 'Schneider Electric'],
+    companySize: '201-500',
+    sources: ['https://example.com/northstar'],
+    focusArea: 'Controls & IoT',
+    agreementStatus: 'Association Agreement',
+    agreementDocuments: ['Assoc-2025-Northstar.pdf'],
+    contactPerson: 'Daniel Cho',
+    emails: ['daniel.cho@northstar.example', 'alliances@northstar.example'],
+  },
+  {
+    companyName: 'Crescent Cyber Labs',
+    primaryIndustries: ['Critical Infrastructure', 'Government'],
+    confirmedServices: ['Security Assessments', 'SOC Advisory', 'Compliance Readiness'],
+    confirmedTechStack: ['Splunk', 'Azure Sentinel', 'Python', 'Terraform'],
+    nonSpecializedTechStack: ['Go', 'Kubernetes'],
+    sampleProjects: ['OT security review for utility operator', 'ISO 27001 readiness program'],
+    certifications: ['ISO 27001', 'CREST', 'CISSP'],
+    partners: ['Microsoft'],
+    companySize: '11-50',
+    sources: ['https://example.com/crescent-cyber'],
+    focusArea: 'Cybersecurity',
+    agreementStatus: 'Pending',
+    agreementDocuments: ['Pending-NDA-Crescent.msg'],
+    contactPerson: 'Nadia Karim',
+    emails: ['nadia.karim@crescent.example'],
+  },
+  {
+    companyName: 'Vertex Automation Works',
+    primaryIndustries: ['Manufacturing', 'Utilities'],
+    confirmedServices: ['Automation Design', 'PLC Programming', 'Commissioning'],
+    confirmedTechStack: ['Siemens PCS7', 'TIA Portal', 'Azure', 'SQL Server'],
+    nonSpecializedTechStack: ['Power Apps'],
+    sampleProjects: ['Packaged plant automation retrofit', 'Remote commissioning dashboard'],
+    certifications: ['ISO 45001', 'ISO 9001'],
+    partners: ['Siemens'],
+    companySize: '51-200',
+    sources: ['https://example.com/vertex-automation'],
+    focusArea: 'Industrial Automation',
+    agreementStatus: 'NDA',
+    agreementDocuments: ['NDA-2024-Vertex.pdf'],
+    contactPerson: 'Hassan Elamin',
+    emails: ['h.elamin@vertex.example'],
+  },
+  {
+    companyName: 'Helix Cloud Engineering',
+    primaryIndustries: ['Healthcare', 'Infrastructure', 'Enterprise Platforms'],
+    confirmedServices: ['Platform Engineering', 'DevOps', 'Application Modernization'],
+    confirmedTechStack: ['AWS', 'Kubernetes', 'Terraform', 'Python', 'React'],
+    nonSpecializedTechStack: ['Java', 'GraphQL'],
+    sampleProjects: ['Cloud landing zone rollout', 'Container platform for asset analytics'],
+    certifications: ['ISO 27001', 'SOC 2', 'AWS Well-Architected Partner'],
+    partners: ['AWS', 'HashiCorp'],
+    companySize: '201-500',
+    sources: ['https://example.com/helix-cloud'],
+    focusArea: 'Cloud Platforms',
+    agreementStatus: 'Association Agreement',
+    agreementDocuments: ['Alliance-Helix-2025.pdf'],
+    contactPerson: 'Priya Nair',
+    emails: ['priya.nair@helix.example'],
+  },
+  {
+    companyName: 'Atlas GIS Solutions',
+    primaryIndustries: ['Utilities', 'Urban Planning'],
+    confirmedServices: ['GIS Implementation', 'Digital Twin Modeling', 'Field Mobility'],
+    confirmedTechStack: ['ArcGIS', 'Azure', 'Python', 'PostgreSQL'],
+    nonSpecializedTechStack: ['QGIS', 'Flutter'],
+    sampleProjects: ['Utility corridor digital twin', 'Field asset inspection application'],
+    certifications: ['Esri Partner Network'],
+    partners: ['Esri', 'Microsoft'],
+    companySize: '11-50',
+    sources: ['https://example.com/atlas-gis'],
+    focusArea: 'GIS & Digital Twin',
+    agreementStatus: 'Pending',
+    agreementDocuments: ['Legal-review-atlas.docx'],
+    contactPerson: 'Omar Siddiqui',
+    emails: ['omar@atlasgis.example'],
+  },
+];
+
+const ensureVendorSeeds = async () => {
+  const count = await Vendor.estimatedDocumentCount();
+  if (count > 0) return;
+  await Vendor.insertMany(VENDOR_SEEDS.map((seed) => buildVendorPayload(seed)));
+};
 
 const contactKey = (contact = {}) => {
   const first = String(contact.firstName || '').trim().toLowerCase();
@@ -1731,6 +1877,7 @@ const PAGE_KEYS = [
   'dashboard',
   'opportunities',
   'tender_updates',
+  'vendor_directory',
   'clients',
   'analytics',
   'master',
@@ -1746,6 +1893,8 @@ const ACTION_KEYS = [
   'approvals_svp',
   'approvals_bulk_revert',
   'approvals_revert',
+  'vendors_write',
+  'vendors_import',
   'clients_write',
   'clients_import',
   'clients_seed',
@@ -1762,6 +1911,7 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
   dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   master: ['Master', 'Admin'],
@@ -1776,6 +1926,8 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   approvals_svp: ['Master', 'SVP'],
   approvals_bulk_revert: ['Master', 'ProposalHead'],
   approvals_revert: ['Master'],
+  vendors_write: ['Master', 'Admin'],
+  vendors_import: ['Master', 'Admin'],
   clients_write: ['Master', 'Admin', 'ProposalHead'],
   clients_import: ['Master', 'Admin'],
   clients_seed: ['Master', 'Admin'],
@@ -2443,6 +2595,82 @@ app.get('/api/opportunities', async (req, res) => {
     const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
     const mapped = opportunities.map(opp => mapIdField(opp));
     res.json(mapped);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/vendors', async (_req, res) => {
+  try {
+    await ensureVendorSeeds();
+    const vendors = await Vendor.find().sort({ updatedAt: -1, companyName: 1 }).lean();
+    res.json(vendors.map((vendor) => mapIdField(vendor)));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/vendors', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'vendors_write')) return;
+    const payload = buildVendorPayload(req.body || {});
+    if (!payload.companyName) return res.status(400).json({ error: 'Company name is required' });
+
+    const existing = await Vendor.findOne({ companyKey: payload.companyKey });
+    if (!existing) {
+      const created = await Vendor.create(payload);
+      return res.json(mapIdField(created.toObject()));
+    }
+
+    Object.assign(existing, payload);
+    await existing.save();
+    return res.json(mapIdField(existing.toObject()));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/vendors/:id', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'vendors_write')) return;
+    const existing = await Vendor.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Vendor not found' });
+
+    const payload = buildVendorPayload({ ...existing.toObject(), ...(req.body || {}) });
+    if (!payload.companyName) return res.status(400).json({ error: 'Company name is required' });
+    const duplicate = await Vendor.findOne({ companyKey: payload.companyKey, _id: { $ne: existing._id } });
+    if (duplicate) return res.status(409).json({ error: 'Another vendor already uses that company name' });
+
+    Object.assign(existing, payload);
+    await existing.save();
+    return res.json(mapIdField(existing.toObject()));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/vendors/import', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'vendors_import')) return;
+    const inputs = Array.isArray(req.body?.vendors) ? req.body.vendors : [];
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    for (const input of inputs) {
+      const payload = buildVendorPayload(input || {});
+      if (!payload.companyName) continue;
+      const existing = await Vendor.findOne({ companyKey: payload.companyKey });
+      if (!existing) {
+        await Vendor.create(payload);
+        createdCount += 1;
+      } else {
+        Object.assign(existing, payload);
+        await existing.save();
+        updatedCount += 1;
+      }
+    }
+
+    res.json({ success: true, created: createdCount, updated: updatedCount, imported: createdCount + updatedCount });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

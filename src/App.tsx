@@ -8,6 +8,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import Opportunities from "./pages/Opportunities";
 import TenderUpdates from "./pages/TenderUpdates";
+import VendorDirectory from "./pages/VendorDirectory";
 import Clients from "./pages/Clients";
 import Analytics from "./pages/Analytics";
 import Admin from "./pages/Admin";
@@ -78,6 +79,7 @@ function AppRoutes() {
             <Route index element={<PageAccessRoute pageKey="dashboard"><Dashboard /></PageAccessRoute>} />
             <Route path="opportunities" element={<PageAccessRoute pageKey="opportunities"><Opportunities /></PageAccessRoute>} />
             <Route path="tender-updates" element={<PageAccessRoute pageKey="tender_updates"><TenderUpdates /></PageAccessRoute>} />
+            <Route path="vendors" element={<PageAccessRoute pageKey="vendor_directory"><VendorDirectory /></PageAccessRoute>} />
             <Route path="clients" element={<PageAccessRoute pageKey="clients"><Clients /></PageAccessRoute>} />
             <Route path="analytics" element={<PageAccessRoute pageKey="analytics"><Analytics /></PageAccessRoute>} />
             <Route path="master" element={<PageAccessRoute pageKey="master"><Admin /></PageAccessRoute>} />

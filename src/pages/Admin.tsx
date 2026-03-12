@@ -14,7 +14,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
-import { DEFAULT_PAGE_ROLE_ACCESS, PAGE_LABELS, PageKey } from '@/config/navigation';
+import { DEFAULT_PAGE_ROLE_ACCESS, PAGE_GROUPS, PAGE_LABELS, PageKey } from '@/config/navigation';
 import { UserRole } from '@/contexts/AuthContext';
 import { ACTION_DESCRIPTIONS, ACTION_LABELS, ActionKey, DEFAULT_ACTION_ROLE_ACCESS } from '@/config/actionPermissions';
 import { RecipientBlockSelector } from '@/components/Admin/RecipientBlockSelector';
@@ -1208,19 +1208,26 @@ export default function Admin() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(Object.keys(PAGE_LABELS) as PageKey[]).map((pageKey) => (
-                      <tr key={pageKey} className="border-b">
-                        <td className="py-2 pr-3 font-medium">{PAGE_LABELS[pageKey]}</td>
-                        {ROLE_OPTIONS.map((role) => (
-                          <td key={role} className="text-center py-2 px-3">
-                            <Checkbox
-                              checked={(draftPagePermissions[pageKey] || []).includes(role)}
-                              onCheckedChange={(checked) => togglePagePermission(pageKey, role, Boolean(checked))}
-                              disabled={!isMaster}
-                            />
+                    {PAGE_GROUPS.map((group) => (
+                      group.pages.map((pageKey, index) => (
+                        <tr key={pageKey} className="border-b">
+                          <td className="py-2 pr-3">
+                            {index === 0 && (
+                              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{group.label}</div>
+                            )}
+                            <div className="font-medium">{PAGE_LABELS[pageKey]}</div>
                           </td>
-                        ))}
-                      </tr>
+                          {ROLE_OPTIONS.map((role) => (
+                            <td key={role} className="text-center py-2 px-3">
+                              <Checkbox
+                                checked={(draftPagePermissions[pageKey] || []).includes(role)}
+                                onCheckedChange={(checked) => togglePagePermission(pageKey, role, Boolean(checked))}
+                                disabled={!isMaster}
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      ))
                     ))}
                   </tbody>
                 </table>
