@@ -30,7 +30,10 @@ export function ThemeToggle() {
 
     const doc = document as DocumentWithTransition;
     const button = buttonRef.current;
-    if (!doc.startViewTransition || !button) {
+    const pathname = window.location.pathname;
+    const shouldSkipViewTransition = pathname === '/' || pathname.startsWith('/opportunities');
+
+    if (!doc.startViewTransition || !button || shouldSkipViewTransition) {
       applyTheme();
       return;
     }
@@ -60,8 +63,8 @@ export function ThemeToggle() {
           ],
         },
         {
-          duration: 550,
-          easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+          duration: 240,
+          easing: "ease-out",
           pseudoElement: "::view-transition-new(root)",
         },
       );

@@ -242,115 +242,24 @@ const buildVendorPayload = (input = {}) => {
   };
 };
 
-const VENDOR_SEEDS = [
-  {
-    companyName: 'Blue Ridge Analytics',
-    primaryIndustries: ['Utilities', 'District Cooling', 'Smart Infrastructure'],
-    confirmedServices: ['Data Engineering', 'Predictive Analytics', 'Dashboard Delivery'],
-    confirmedTechStack: ['Python', 'AWS', 'Snowflake', 'Power BI', 'dbt'],
-    nonSpecializedTechStack: ['React', 'Node.js'],
-    sampleProjects: ['Cooling demand forecasting suite', 'Executive operations command center'],
-    certifications: ['ISO 27001', 'AWS Advanced Tier'],
-    partners: ['AWS', 'Snowflake'],
-    companySize: '51-200',
-    sources: ['https://example.com/blue-ridge'],
-    focusArea: 'Analytics',
-    agreementStatus: 'NDA',
-    agreementDocuments: ['NDA-2025-BRA.pdf'],
-    contactPerson: 'Sara Mitchell',
-    emails: ['sara.mitchell@blueridge.example'],
-  },
-  {
-    companyName: 'Northstar Systems',
-    primaryIndustries: ['Building Automation', 'Energy Management'],
-    confirmedServices: ['SCADA Integration', 'IoT Enablement', 'Managed Support'],
-    confirmedTechStack: ['Azure', 'C#', '.NET', 'MQTT', 'PostgreSQL'],
-    nonSpecializedTechStack: ['Angular', 'Docker'],
-    sampleProjects: ['BMS modernization across 12 sites', 'Telemetry bridge for utility assets'],
-    certifications: ['ISO 9001', 'Microsoft Solutions Partner'],
-    partners: ['Microsoft', 'Schneider Electric'],
-    companySize: '201-500',
-    sources: ['https://example.com/northstar'],
-    focusArea: 'Controls & IoT',
-    agreementStatus: 'Association Agreement',
-    agreementDocuments: ['Assoc-2025-Northstar.pdf'],
-    contactPerson: 'Daniel Cho',
-    emails: ['daniel.cho@northstar.example', 'alliances@northstar.example'],
-  },
-  {
-    companyName: 'Crescent Cyber Labs',
-    primaryIndustries: ['Critical Infrastructure', 'Government'],
-    confirmedServices: ['Security Assessments', 'SOC Advisory', 'Compliance Readiness'],
-    confirmedTechStack: ['Splunk', 'Azure Sentinel', 'Python', 'Terraform'],
-    nonSpecializedTechStack: ['Go', 'Kubernetes'],
-    sampleProjects: ['OT security review for utility operator', 'ISO 27001 readiness program'],
-    certifications: ['ISO 27001', 'CREST', 'CISSP'],
-    partners: ['Microsoft'],
-    companySize: '11-50',
-    sources: ['https://example.com/crescent-cyber'],
-    focusArea: 'Cybersecurity',
-    agreementStatus: 'Pending',
-    agreementDocuments: ['Pending-NDA-Crescent.msg'],
-    contactPerson: 'Nadia Karim',
-    emails: ['nadia.karim@crescent.example'],
-  },
-  {
-    companyName: 'Vertex Automation Works',
-    primaryIndustries: ['Manufacturing', 'Utilities'],
-    confirmedServices: ['Automation Design', 'PLC Programming', 'Commissioning'],
-    confirmedTechStack: ['Siemens PCS7', 'TIA Portal', 'Azure', 'SQL Server'],
-    nonSpecializedTechStack: ['Power Apps'],
-    sampleProjects: ['Packaged plant automation retrofit', 'Remote commissioning dashboard'],
-    certifications: ['ISO 45001', 'ISO 9001'],
-    partners: ['Siemens'],
-    companySize: '51-200',
-    sources: ['https://example.com/vertex-automation'],
-    focusArea: 'Industrial Automation',
-    agreementStatus: 'NDA',
-    agreementDocuments: ['NDA-2024-Vertex.pdf'],
-    contactPerson: 'Hassan Elamin',
-    emails: ['h.elamin@vertex.example'],
-  },
-  {
-    companyName: 'Helix Cloud Engineering',
-    primaryIndustries: ['Healthcare', 'Infrastructure', 'Enterprise Platforms'],
-    confirmedServices: ['Platform Engineering', 'DevOps', 'Application Modernization'],
-    confirmedTechStack: ['AWS', 'Kubernetes', 'Terraform', 'Python', 'React'],
-    nonSpecializedTechStack: ['Java', 'GraphQL'],
-    sampleProjects: ['Cloud landing zone rollout', 'Container platform for asset analytics'],
-    certifications: ['ISO 27001', 'SOC 2', 'AWS Well-Architected Partner'],
-    partners: ['AWS', 'HashiCorp'],
-    companySize: '201-500',
-    sources: ['https://example.com/helix-cloud'],
-    focusArea: 'Cloud Platforms',
-    agreementStatus: 'Association Agreement',
-    agreementDocuments: ['Alliance-Helix-2025.pdf'],
-    contactPerson: 'Priya Nair',
-    emails: ['priya.nair@helix.example'],
-  },
-  {
-    companyName: 'Atlas GIS Solutions',
-    primaryIndustries: ['Utilities', 'Urban Planning'],
-    confirmedServices: ['GIS Implementation', 'Digital Twin Modeling', 'Field Mobility'],
-    confirmedTechStack: ['ArcGIS', 'Azure', 'Python', 'PostgreSQL'],
-    nonSpecializedTechStack: ['QGIS', 'Flutter'],
-    sampleProjects: ['Utility corridor digital twin', 'Field asset inspection application'],
-    certifications: ['Esri Partner Network'],
-    partners: ['Esri', 'Microsoft'],
-    companySize: '11-50',
-    sources: ['https://example.com/atlas-gis'],
-    focusArea: 'GIS & Digital Twin',
-    agreementStatus: 'Pending',
-    agreementDocuments: ['Legal-review-atlas.docx'],
-    contactPerson: 'Omar Siddiqui',
-    emails: ['omar@atlasgis.example'],
-  },
+const DUMMY_VENDOR_KEYS = [
+  'blue ridge analytics',
+  'northstar systems',
+  'crescent cyber labs',
+  'vertex automation works',
+  'helix cloud engineering',
+  'atlas gis solutions',
 ];
 
-const ensureVendorSeeds = async () => {
-  const count = await Vendor.estimatedDocumentCount();
-  if (count > 0) return;
-  await Vendor.insertMany(VENDOR_SEEDS.map((seed) => buildVendorPayload(seed)));
+let vendorCleanupPromise = null;
+const cleanupDummyVendors = async () => {
+  if (!vendorCleanupPromise) {
+    vendorCleanupPromise = Vendor.deleteMany({ companyKey: { $in: DUMMY_VENDOR_KEYS } }).catch((error) => {
+      vendorCleanupPromise = null;
+      throw error;
+    });
+  }
+  return vendorCleanupPromise;
 };
 
 const contactKey = (contact = {}) => {
@@ -2602,7 +2511,7 @@ app.get('/api/opportunities', async (req, res) => {
 
 app.get('/api/vendors', async (_req, res) => {
   try {
-    await ensureVendorSeeds();
+    await cleanupDummyVendors();
     const vendors = await Vendor.find().sort({ updatedAt: -1, companyName: 1 }).lean();
     res.json(vendors.map((vendor) => mapIdField(vendor)));
   } catch (error) {
