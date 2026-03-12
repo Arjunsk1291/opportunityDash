@@ -16,11 +16,11 @@ export function AuthScene({ title, children, footer, cardClassName }: AuthSceneP
       <AuthBackdrop />
 
       <div className="relative z-10 flex min-h-screen">
-        <aside className="hidden w-[46%] flex-col justify-between px-12 py-14 lg:flex xl:px-16">
+        <aside className="pointer-events-none absolute inset-y-0 left-0 hidden w-[46%] px-12 py-14 lg:block xl:px-16">
           <div />
         </aside>
 
-        <div className="flex w-full items-center justify-center px-6 py-10 lg:w-[54%] lg:px-10">
+        <div className="flex w-full items-center justify-center px-6 py-10 lg:px-10">
           <div className="w-full max-w-xl">
             <div
               className={cn(
