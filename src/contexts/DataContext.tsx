@@ -3,6 +3,7 @@ import { Opportunity } from '@/data/opportunityData';
 import { isSubmissionWithinDays } from '@/lib/submissionDate';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+const LIVE_REFRESH_INTERVAL = 60 * 1000;
 
 type OpportunityApiRecord = Partial<Opportunity> & {
   _id?: string;
@@ -26,6 +27,7 @@ interface DataContextType {
   error: string | null;
   refreshData: () => Promise<void>;
   lastSyncTime: Date | null;
+  isLiveRefreshActive: boolean;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -35,6 +37,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [isLiveRefreshActive, setIsLiveRefreshActive] = useState(true);
 
   const refreshData = useCallback(async () => {
     setIsLoading(true);
@@ -87,6 +90,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
     refreshData();
   }, [refreshData]);
 
+  React.useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      refreshData();
+    }, LIVE_REFRESH_INTERVAL);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    setIsLiveRefreshActive(true);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      setIsLiveRefreshActive(false);
+    };
+  }, [refreshData]);
+
   return (
     <DataContext.Provider 
       value={{ 
@@ -95,6 +120,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         error,
         refreshData,
         lastSyncTime,
+        isLiveRefreshActive,
       }}
     >
       {children}
