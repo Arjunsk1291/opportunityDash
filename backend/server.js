@@ -141,7 +141,7 @@ const getRecentTenderData = (data = []) => {
       status: getMergedReportStatus(item) || 'UNSPECIFIED',
       lead: item?.internalLead || '—',
     }))
-    .slice(0, 10);
+    .slice(0, 5);
 };
 
 const formatDateForReport = (value) => {
@@ -149,6 +149,30 @@ const formatDateForReport = (value) => {
   if (!parsed) return String(value || '—');
   return parsed.toLocaleDateString('en-GB');
 };
+
+const REPORT_COLORS = {
+  navy: '0f172a',
+  blue: '1d4ed8',
+  blueSoft: 'dbeafe',
+  slate: 'e2e8f0',
+  slateSoft: 'f8fafc',
+  greenSoft: 'dcfce7',
+  amberSoft: 'fef3c7',
+  redSoft: 'fee2e2',
+  white: 'ffffff',
+};
+
+const createReportHeaderCell = (text, fill = REPORT_COLORS.slate) => new TableCell({
+  borders,
+  shading: { fill, type: ShadingType.CLEAR },
+  children: [new Paragraph({ text })],
+});
+
+const createReportValueCell = (text, fill) => new TableCell({
+  borders,
+  ...(fill ? { shading: { fill, type: ShadingType.CLEAR } } : {}),
+  children: [new Paragraph({ text: String(text) })],
+});
 
 const buildTroubleshootingFromMessage = (message = '') => {
   const text = String(message || '').toLowerCase();
@@ -2745,7 +2769,9 @@ app.post('/api/generate-report', async (req, res) => {
         text: 'SALES PIPELINE ANALYTICS REPORT',
         heading: HeadingLevel.HEADING_1,
         alignment: AlignmentType.CENTER,
-        spacing: { after: 200 },
+        shading: { fill: REPORT_COLORS.navy, type: ShadingType.CLEAR },
+        thematicBreak: true,
+        spacing: { after: 200, before: 120 },
       }),
       new Paragraph({
         text: 'Comprehensive Sales Intelligence & Market Insights',
@@ -2776,20 +2802,20 @@ app.post('/api/generate-report', async (req, res) => {
         rows: [
           new TableRow({
             children: [
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Total Opportunities' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Won' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Lost' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'At Risk' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Active Pipeline' })] }),
+              createReportHeaderCell('Total Opportunities', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Won', REPORT_COLORS.greenSoft),
+              createReportHeaderCell('Lost', REPORT_COLORS.redSoft),
+              createReportHeaderCell('At Risk', REPORT_COLORS.amberSoft),
+              createReportHeaderCell('Active Pipeline', REPORT_COLORS.blueSoft),
             ],
           }),
           new TableRow({
             children: [
-              new TableCell({ borders, children: [new Paragraph({ text: String(totalOpportunities) })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: String(summary.wonCount) })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: String(summary.lostCount) })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: String(summary.atRiskCount) })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: String(summary.totalActive) })] }),
+              createReportValueCell(totalOpportunities, REPORT_COLORS.slateSoft),
+              createReportValueCell(summary.wonCount, REPORT_COLORS.slateSoft),
+              createReportValueCell(summary.lostCount, REPORT_COLORS.slateSoft),
+              createReportValueCell(summary.atRiskCount, REPORT_COLORS.slateSoft),
+              createReportValueCell(summary.totalActive, REPORT_COLORS.slateSoft),
             ],
           }),
         ],
@@ -2809,40 +2835,40 @@ app.post('/api/generate-report', async (req, res) => {
         rows: [
           new TableRow({
             children: [
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Status' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Count' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Description' })] }),
+              createReportHeaderCell('Status', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Count', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Description', REPORT_COLORS.blueSoft),
             ],
           }),
-          new TableRow({ children: [new TableCell({ borders, children: [new Paragraph({ text: '✅ Working' })] }), new TableCell({ borders, children: [new Paragraph({ text: String(summary.workingCount) })] }), new TableCell({ borders, children: [new Paragraph({ text: 'Active Negotiations' })] })] }),
-          new TableRow({ children: [new TableCell({ borders, children: [new Paragraph({ text: '🏆 Awarded' })] }), new TableCell({ borders, children: [new Paragraph({ text: String(summary.awardedCount) })] }), new TableCell({ borders, children: [new Paragraph({ text: 'Won Deals' })] })] }),
-          new TableRow({ children: [new TableCell({ borders, children: [new Paragraph({ text: '❌ Lost' })] }), new TableCell({ borders, children: [new Paragraph({ text: String(summary.lostCount) })] }), new TableCell({ borders, children: [new Paragraph({ text: 'Lost Opportunities' })] })] }),
-          new TableRow({ children: [new TableCell({ borders, children: [new Paragraph({ text: '📋 Regretted' })] }), new TableCell({ borders, children: [new Paragraph({ text: String(summary.regrettedCount) })] }), new TableCell({ borders, children: [new Paragraph({ text: 'Declined Bids' })] })] }),
-          new TableRow({ children: [new TableCell({ borders, children: [new Paragraph({ text: '🚀 To Start' })] }), new TableCell({ borders, children: [new Paragraph({ text: String(summary.toStartCount) })] }), new TableCell({ borders, children: [new Paragraph({ text: 'Pipeline Queue' })] })] }),
-          new TableRow({ children: [new TableCell({ borders, children: [new Paragraph({ text: '⏱️ At Risk' })] }), new TableCell({ borders, children: [new Paragraph({ text: String(summary.atRiskCount) })] }), new TableCell({ borders, children: [new Paragraph({ text: 'Urgent Action' })] })] }),
+          new TableRow({ children: [createReportValueCell('✅ Working', REPORT_COLORS.slateSoft), createReportValueCell(summary.workingCount, REPORT_COLORS.slateSoft), createReportValueCell('Working on bid submission', REPORT_COLORS.slateSoft)] }),
+          new TableRow({ children: [createReportValueCell('🏆 Awarded', REPORT_COLORS.slateSoft), createReportValueCell(summary.awardedCount, REPORT_COLORS.slateSoft), createReportValueCell('Won deals', REPORT_COLORS.slateSoft)] }),
+          new TableRow({ children: [createReportValueCell('❌ Lost', REPORT_COLORS.slateSoft), createReportValueCell(summary.lostCount, REPORT_COLORS.slateSoft), createReportValueCell('Lost opportunities', REPORT_COLORS.slateSoft)] }),
+          new TableRow({ children: [createReportValueCell('📋 Regretted', REPORT_COLORS.slateSoft), createReportValueCell(summary.regrettedCount, REPORT_COLORS.slateSoft), createReportValueCell('Declined bids', REPORT_COLORS.slateSoft)] }),
+          new TableRow({ children: [createReportValueCell('🚀 To Start', REPORT_COLORS.slateSoft), createReportValueCell(summary.toStartCount, REPORT_COLORS.slateSoft), createReportValueCell('To start working on the bid', REPORT_COLORS.slateSoft)] }),
+          new TableRow({ children: [createReportValueCell('⏱️ At Risk', REPORT_COLORS.slateSoft), createReportValueCell(summary.atRiskCount, REPORT_COLORS.slateSoft), createReportValueCell('Urgent action required', REPORT_COLORS.slateSoft)] }),
         ],
       }),
       new Paragraph({ text: '', spacing: { after: 300 } }),
-      new Paragraph({ text: 'Recent 10 Tenders', heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 200 } }),
+      new Paragraph({ text: 'Recent 5 Tenders', heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 200 } }),
       new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },
         rows: [
           new TableRow({
             children: [
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Ref No' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Tender Name' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Client' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Received' })] }),
-              new TableCell({ borders, shading: { fill: 'f1f5f9', type: ShadingType.CLEAR }, children: [new Paragraph({ text: 'Status' })] }),
+              createReportHeaderCell('Ref No', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Tender Name', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Client', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Received', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Status', REPORT_COLORS.blueSoft),
             ],
           }),
           ...recentTenders.map((row) => new TableRow({
             children: [
-              new TableCell({ borders, children: [new Paragraph({ text: row.refNo })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: row.tenderName })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: row.clientName })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: row.receivedDate ? formatDateForReport(row.receivedDate) : '—' })] }),
-              new TableCell({ borders, children: [new Paragraph({ text: row.status })] }),
+              createReportValueCell(row.refNo, REPORT_COLORS.slateSoft),
+              createReportValueCell(row.tenderName, REPORT_COLORS.slateSoft),
+              createReportValueCell(row.clientName, REPORT_COLORS.slateSoft),
+              createReportValueCell(row.receivedDate ? formatDateForReport(row.receivedDate) : '—', REPORT_COLORS.slateSoft),
+              createReportValueCell(row.status, REPORT_COLORS.slateSoft),
             ],
           })),
         ],
