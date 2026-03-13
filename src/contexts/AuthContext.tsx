@@ -177,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const getAllUsers = useCallback(() => allUsers, [allUsers]);
 
   const fetchUsers = useCallback(async () => {
-    if (!token || user?.role !== 'Master') return;
+    if (!token || !user || !['Master', 'Admin'].includes(user.role)) return;
     const response = await fetch(API_URL + '/users/authorized', { headers: authHeaders() });
     if (!response.ok) return;
     const data = await response.json();

@@ -26,8 +26,8 @@ export function AppSidebar() {
     return location.pathname.startsWith(path);
   };
 
-  const visibleMainItems = NAV_ITEMS.filter((item) => item.pageKey !== 'master' && canAccessPage(item.pageKey));
-  const visibleAdminItems = NAV_ITEMS.filter((item) => item.pageKey === 'master' && canAccessPage(item.pageKey));
+  const visibleMainItems = NAV_ITEMS.filter((item) => (item.section ?? 'main') === 'main' && canAccessPage(item.pageKey));
+  const visibleAdminItems = NAV_ITEMS.filter((item) => (item.section ?? 'main') === 'admin' && canAccessPage(item.pageKey));
 
   return (
     <Sidebar collapsible="icon">

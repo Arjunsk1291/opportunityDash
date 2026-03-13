@@ -12,6 +12,7 @@ import VendorDirectory from "./pages/VendorDirectory";
 import Clients from "./pages/Clients";
 import Analytics from "./pages/Analytics";
 import Admin from "./pages/Admin";
+import MailScheduler from "./pages/MailScheduler";
 import PendingApproval from "./pages/PendingApproval";
 import NotFound from "./pages/NotFound";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -82,6 +83,7 @@ function AppRoutes() {
             <Route path="vendors" element={<PageAccessRoute pageKey="vendor_directory"><VendorDirectory /></PageAccessRoute>} />
             <Route path="clients" element={<PageAccessRoute pageKey="clients"><Clients /></PageAccessRoute>} />
             <Route path="analytics" element={<PageAccessRoute pageKey="analytics"><Analytics /></PageAccessRoute>} />
+            <Route path="mail-scheduler" element={<PageAccessRoute pageKey="mail_scheduler"><MailScheduler /></PageAccessRoute>} />
             <Route path="master" element={<PageAccessRoute pageKey="master"><Admin /></PageAccessRoute>} />
 
             <Route path="status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />
