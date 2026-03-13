@@ -79,6 +79,17 @@ export const PROBABILITY_BY_STAGE: Record<string, number> = {
 
 const normalizeTenderName = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
 
+const getMergedStatus = (opp: Opportunity) => {
+  const merged = String(opp.tenderResult || opp.avenirStatus || opp.canonicalStage || '').trim().toUpperCase();
+  return merged;
+};
+
+const isQuotedValueStatus = (opp: Opportunity) => {
+  const mergedStatus = getMergedStatus(opp);
+  if (!mergedStatus) return true;
+  return mergedStatus === 'AWARDED' || mergedStatus === 'SUBMITTED' || !(mergedStatus in STATUS_MAPPING);
+};
+
 const getOpportunityTimestamp = (opp: Opportunity) => {
   const dateCandidates = [opp.tenderSubmittedDate, opp.dateTenderReceived, opp.tenderPlannedSubmissionDate];
 
@@ -91,13 +102,32 @@ const getOpportunityTimestamp = (opp: Opportunity) => {
   return 0;
 };
 
+const sumQuotedValueWithDedup = (data: Opportunity[]) => {
+  const uniqueTenders = new Map<string, Opportunity>();
+  let untitledIndex = 0;
+
+  data.forEach((opp) => {
+    if (!isQuotedValueStatus(opp)) return;
+
+    const normalizedName = normalizeTenderName(opp.tenderName);
+    const key = normalizedName || `__untitled__${opp.id || untitledIndex++}`;
+    const current = uniqueTenders.get(key);
+
+    if (!current || getOpportunityTimestamp(opp) >= getOpportunityTimestamp(current)) {
+      uniqueTenders.set(key, opp);
+    }
+  });
+
+  return Array.from(uniqueTenders.values()).reduce((sum, opp) => sum + Number(opp.opportunityValue || 0), 0);
+};
+
 export function calculateSummaryStats(data: Opportunity[]) {
 
   const activeOpps = data.filter(o => 
     ['WORKING', 'SUBMITTED', 'AWARDED'].includes(o.canonicalStage)
   );
   const awardedOpps = data.filter(o => o.canonicalStage === 'AWARDED');
-  const totalActiveValue = data.reduce((sum, o) => sum + Number(o.opportunityValue || 0), 0);
+  const totalActiveValue = sumQuotedValueWithDedup(data);
   const awardedCount = awardedOpps.length;
   const awardedValue = awardedOpps.reduce((sum, o) => sum + Number(o.opportunityValue || 0), 0);
 
