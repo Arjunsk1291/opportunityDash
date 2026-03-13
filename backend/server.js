@@ -1245,8 +1245,9 @@ const downloadWorkbookFile = async ({ driveId, fileId, accessToken }) => {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) {
-    const payload = await res.text().catch(() => '');
-    throw new Error(payload || `Failed to download workbook (status ${res.status})`);
+    const payload = await res.json().catch(() => ({}));
+    const message = payload?.error?.message || `Failed to download workbook (status ${res.status})`;
+    throw new Error(message);
   }
   const arrayBuffer = await res.arrayBuffer();
   const filenameHeader = res.headers.get('content-disposition') || '';
@@ -1255,7 +1256,7 @@ const downloadWorkbookFile = async ({ driveId, fileId, accessToken }) => {
   return { buffer: Buffer.from(arrayBuffer), filename };
 };
 
-const buildScheduleAttachments = async ({ schedule, opportunities, filters, accessToken }) => {
+const buildScheduleAttachments = async ({ schedule, opportunities, filters, fileAccessToken }) => {
   const attachmentBlocks = normalizeAttachmentBlocks(schedule?.attachments, schedule);
   const attachments = [];
   let needsFullCopy = false;
@@ -1311,10 +1312,13 @@ const buildScheduleAttachments = async ({ schedule, opportunities, filters, acce
     if (!graphConfig?.driveId || !graphConfig?.fileId) {
       throw new Error('Graph config is incomplete. Please configure Drive ID and File ID.');
     }
+    if (!fileAccessToken) {
+      throw new Error('Graph access token missing for workbook download');
+    }
     const { buffer, filename } = await downloadWorkbookFile({
       driveId: graphConfig.driveId,
       fileId: graphConfig.fileId,
-      accessToken,
+      accessToken: fileAccessToken,
     });
     attachments.push({
       '@odata.type': '#microsoft.graph.fileAttachment',
@@ -1329,12 +1333,16 @@ const buildScheduleAttachments = async ({ schedule, opportunities, filters, acce
 
 const dispatchMailSchedule = async (schedule) => {
   const config = await getSystemConfig();
-  const graphRefreshTokenEnc = config.telecastGraphRefreshTokenEnc || config.graphRefreshTokenEnc || config.mailRefreshTokenEnc || '';
-  if (!graphRefreshTokenEnc) {
+  const mailRefreshTokenEnc = config.telecastGraphRefreshTokenEnc || config.graphRefreshTokenEnc || config.mailRefreshTokenEnc || '';
+  if (!mailRefreshTokenEnc) {
     throw new Error('Mail service is not configured');
   }
 
-  const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc });
+  const { accessToken: mailAccessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc: mailRefreshTokenEnc });
+  const fileRefreshTokenEnc = config.graphRefreshTokenEnc || config.telecastGraphRefreshTokenEnc || config.mailRefreshTokenEnc || '';
+  const { accessToken: fileAccessToken } = fileRefreshTokenEnc
+    ? await getAccessTokenWithConfig({ graphRefreshTokenEnc: fileRefreshTokenEnc })
+    : { accessToken: '' };
   const filters = schedule?.filters || {};
   const opportunities = await SyncedOpportunity.find().lean();
   const attachmentBlocks = normalizeAttachmentBlocks(schedule?.attachments, schedule);
@@ -1349,12 +1357,12 @@ const dispatchMailSchedule = async (schedule) => {
   const subject = renderTemplate(schedule?.subject || schedule?.name || 'Scheduled Update', templateValues);
   const body = renderTemplate(schedule?.body || '', templateValues);
   const html = buildScheduleMailHtml({ subject, body });
-  const attachments = await buildScheduleAttachments({ schedule, opportunities, filters, accessToken });
+  const attachments = await buildScheduleAttachments({ schedule, opportunities, filters, fileAccessToken });
 
   const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${mailAccessToken}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
