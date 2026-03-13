@@ -31,11 +31,13 @@ interface AuthContextType {
   updateUserRole: (userId: string, newRole: UserRole, assignedGroup?: string) => Promise<void>;
   refreshCurrentUser: () => Promise<void>;
   pagePermissions: Record<PageKey, UserRole[]>;
+  pageEmailPermissions: Record<PageKey, string[]>;
   canAccessPage: (pageKey: PageKey) => boolean;
-  updatePagePermissions: (permissions: Record<PageKey, UserRole[]>) => Promise<void>;
+  updatePagePermissions: (permissions: Record<PageKey, UserRole[]>, emailPermissions?: Record<PageKey, string[]>) => Promise<void>;
   actionPermissions: Record<ActionKey, UserRole[]>;
+  actionEmailPermissions: Record<ActionKey, string[]>;
   canPerformAction: (actionKey: ActionKey) => boolean;
-  updateActionPermissions: (permissions: Record<ActionKey, UserRole[]>) => Promise<void>;
+  updateActionPermissions: (permissions: Record<ActionKey, UserRole[]>, emailPermissions?: Record<ActionKey, string[]>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -58,7 +60,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [pagePermissions, setPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
+  const [pageEmailPermissions, setPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
   const [actionPermissions, setActionPermissions] = useState<Record<ActionKey, UserRole[]>>(DEFAULT_ACTION_ROLE_ACCESS as Record<ActionKey, UserRole[]>);
+  const [actionEmailPermissions, setActionEmailPermissions] = useState<Record<ActionKey, string[]>>({} as Record<ActionKey, string[]>);
 
   const authHeaders = useCallback(
     () => token ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token } : { 'Content-Type': 'application/json' },
@@ -200,6 +204,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data?.permissions) {
         setPagePermissions(data.permissions);
       }
+      if (data?.emailPermissions) {
+        setPageEmailPermissions(data.emailPermissions);
+      }
     } catch (error) {
       console.error('Failed to load page permissions', error);
     }
@@ -218,6 +225,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data?.permissions) {
         setActionPermissions(data.permissions);
       }
+      if (data?.emailPermissions) {
+        setActionEmailPermissions(data.emailPermissions);
+      }
     } catch (error) {
       console.error('Failed to load action permissions', error);
     }
@@ -227,7 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loadActionPermissions();
   }, [loadActionPermissions]);
 
-  const updatePagePermissions = useCallback(async (permissions: Record<PageKey, UserRole[]>) => {
+  const updatePagePermissions = useCallback(async (permissions: Record<PageKey, UserRole[]>, emailPermissions?: Record<PageKey, string[]>) => {
     if (!token || user?.role !== 'Master') {
       throw new Error('Only Master users can update page permissions');
     }
@@ -235,7 +245,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const response = await fetch(API_URL + '/navigation/permissions', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ permissions }),
+      body: JSON.stringify({ permissions, emailPermissions: emailPermissions || pageEmailPermissions }),
     });
 
     const data = await response.json();
@@ -244,7 +254,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (data?.permissions) setPagePermissions(data.permissions);
-  }, [authHeaders, token, user?.role]);
+    if (data?.emailPermissions) setPageEmailPermissions(data.emailPermissions);
+  }, [authHeaders, pageEmailPermissions, token, user?.role]);
 
   const updateUserRole = useCallback(async (userId: string, newRole: UserRole, assignedGroup?: string) => {
     if (!token || user?.role !== 'Master') {
@@ -277,16 +288,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const canAccessPage = useCallback((pageKey: PageKey) => {
     if (!user || user.status !== 'approved') return false;
     const allowedRoles = pagePermissions[pageKey] || [];
-    return allowedRoles.includes(user.role);
-  }, [pagePermissions, user]);
+    const allowedEmails = pageEmailPermissions[pageKey] || [];
+    const email = String(user.email || '').trim().toLowerCase();
+    return allowedRoles.includes(user.role) || allowedEmails.includes(email);
+  }, [pageEmailPermissions, pagePermissions, user]);
 
   const canPerformAction = useCallback((actionKey: ActionKey) => {
     if (!user || user.status !== 'approved') return false;
     const allowedRoles = actionPermissions[actionKey] || [];
-    return allowedRoles.includes(user.role);
-  }, [actionPermissions, user]);
+    const allowedEmails = actionEmailPermissions[actionKey] || [];
+    const email = String(user.email || '').trim().toLowerCase();
+    return allowedRoles.includes(user.role) || allowedEmails.includes(email);
+  }, [actionEmailPermissions, actionPermissions, user]);
 
-  const updateActionPermissions = useCallback(async (permissions: Record<ActionKey, UserRole[]>) => {
+  const updateActionPermissions = useCallback(async (permissions: Record<ActionKey, UserRole[]>, emailPermissions?: Record<ActionKey, string[]>) => {
     if (!token || user?.role !== 'Master') {
       throw new Error('Only Master users can update action permissions');
     }
@@ -294,7 +309,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const response = await fetch(API_URL + '/action-permissions', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ permissions }),
+      body: JSON.stringify({ permissions, emailPermissions: emailPermissions || actionEmailPermissions }),
     });
 
     const data = await response.json();
@@ -303,7 +318,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (data?.permissions) setActionPermissions(data.permissions);
-  }, [authHeaders, token, user?.role]);
+    if (data?.emailPermissions) setActionEmailPermissions(data.emailPermissions);
+  }, [actionEmailPermissions, authHeaders, token, user?.role]);
 
   const isAuthenticated = user !== null && token !== null;
   const isMaster = user?.role === 'Master' && user?.status === 'approved';
@@ -329,9 +345,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateUserRole,
         refreshCurrentUser,
         pagePermissions,
+        pageEmailPermissions,
         canAccessPage,
         updatePagePermissions,
         actionPermissions,
+        actionEmailPermissions,
         canPerformAction,
         updateActionPermissions,
       }}

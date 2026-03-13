@@ -14,6 +14,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { DEFAULT_PAGE_ROLE_ACCESS, PAGE_GROUPS, PAGE_LABELS, PageKey } from '@/config/navigation';
 import { UserRole } from '@/contexts/AuthContext';
 import { ACTION_DESCRIPTIONS, ACTION_LABELS, ActionKey, DEFAULT_ACTION_ROLE_ACCESS } from '@/config/actionPermissions';
@@ -172,7 +173,7 @@ const renderTemplatePreview = (template: string, values: Record<string, string>)
   Object.entries(values).reduce((output, [key, value]) => output.split(`{{${key}}}`).join(value), String(template || ''));
 
 export default function Admin() {
-  const { user, isMaster, token, pagePermissions, updatePagePermissions, canAccessPage, actionPermissions, updateActionPermissions } = useAuth();
+  const { user, isMaster, token, pagePermissions, pageEmailPermissions, updatePagePermissions, canAccessPage, actionPermissions, actionEmailPermissions, updateActionPermissions } = useAuth();
   const canAccessPanel = isMaster || user?.role === 'Admin';
   const navigate = useNavigate();
   const [users, setUsers] = useState<AuthorizedUser[]>([]);
@@ -230,6 +231,11 @@ export default function Admin() {
   const [telecastTemplateBody, setTelecastTemplateBody] = useState('A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
   const [telecastTemplateStyle, setTelecastTemplateStyle] = useState(DEFAULT_TELECAST_TEMPLATE_STYLE.key);
   const [telecastTemplateStyles, setTelecastTemplateStyles] = useState<TelecastTemplateStyle[]>([DEFAULT_TELECAST_TEMPLATE_STYLE]);
+  const [approvalAlertEnabled, setApprovalAlertEnabled] = useState(false);
+  const [approvalTemplateSubject, setApprovalTemplateSubject] = useState('Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}');
+  const [approvalTemplateBody, setApprovalTemplateBody] = useState('A tender has been approved by the Tender Manager and is ready for SVP review.');
+  const [approvalTemplateStyle, setApprovalTemplateStyle] = useState(DEFAULT_TELECAST_TEMPLATE_STYLE.key);
+  const [approvalTemplateSending, setApprovalTemplateSending] = useState(false);
   const [issueReportTemplateStyle, setIssueReportTemplateStyle] = useState(DEFAULT_TELECAST_TEMPLATE_STYLE.key);
   const [issueReportTemplateStyles, setIssueReportTemplateStyles] = useState<TelecastTemplateStyle[]>([DEFAULT_TELECAST_TEMPLATE_STYLE]);
   const [telecastKeywords, setTelecastKeywords] = useState<string[]>([]);
@@ -246,7 +252,9 @@ export default function Admin() {
   });
   const [activeTab, setActiveTab] = useState('general');
   const [draftPagePermissions, setDraftPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
+  const [draftPageEmailPermissions, setDraftPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
   const [draftActionPermissions, setDraftActionPermissions] = useState<Record<ActionKey, UserRole[]>>(DEFAULT_ACTION_ROLE_ACCESS as Record<ActionKey, UserRole[]>);
+  const [draftActionEmailPermissions, setDraftActionEmailPermissions] = useState<Record<ActionKey, string[]>>({} as Record<ActionKey, string[]>);
 
   const tabConfig = useMemo(
     () => ([
@@ -286,8 +294,16 @@ export default function Admin() {
   }, [pagePermissions]);
 
   useEffect(() => {
+    setDraftPageEmailPermissions((pageEmailPermissions || {}) as Record<PageKey, string[]>);
+  }, [pageEmailPermissions]);
+
+  useEffect(() => {
     setDraftActionPermissions((actionPermissions || DEFAULT_ACTION_ROLE_ACCESS) as Record<ActionKey, UserRole[]>);
   }, [actionPermissions]);
+
+  useEffect(() => {
+    setDraftActionEmailPermissions((actionEmailPermissions || {}) as Record<ActionKey, string[]>);
+  }, [actionEmailPermissions]);
 
   useEffect(() => {
     if (!allowedTabs.length) return;
@@ -317,6 +333,11 @@ export default function Admin() {
     [issueReportTemplateStyle, issueReportTemplateStyles],
   );
 
+  const selectedApprovalTemplateStyle = useMemo(
+    () => telecastTemplateStyles.find((style) => style.key === approvalTemplateStyle) || DEFAULT_TELECAST_TEMPLATE_STYLE,
+    [approvalTemplateStyle, telecastTemplateStyles],
+  );
+
   const telecastPreviewSubject = useMemo(
     () => renderTemplatePreview(telecastTemplateSubject, SAMPLE_TELECAST_VALUES),
     [telecastTemplateSubject],
@@ -325,6 +346,16 @@ export default function Admin() {
   const telecastPreviewBody = useMemo(
     () => renderTemplatePreview(telecastTemplateBody, SAMPLE_TELECAST_VALUES),
     [telecastTemplateBody],
+  );
+
+  const approvalPreviewSubject = useMemo(
+    () => renderTemplatePreview(approvalTemplateSubject, SAMPLE_TELECAST_VALUES),
+    [approvalTemplateSubject],
+  );
+
+  const approvalPreviewBody = useMemo(
+    () => renderTemplatePreview(approvalTemplateBody, SAMPLE_TELECAST_VALUES),
+    [approvalTemplateBody],
   );
 
   const normalizeRecipientList = (value: unknown): string[] => {
@@ -489,6 +520,10 @@ export default function Admin() {
       setTelecastTemplateSubject(data.templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
       setTelecastTemplateBody(data.templateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
       setTelecastTemplateStyle(data.templateStyle || DEFAULT_TELECAST_TEMPLATE_STYLE.key);
+      setApprovalAlertEnabled(Boolean(data.approvalAlertEnabled));
+      setApprovalTemplateSubject(data.approvalTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}');
+      setApprovalTemplateBody(data.approvalTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.');
+      setApprovalTemplateStyle(data.approvalTemplateStyle || DEFAULT_TELECAST_TEMPLATE_STYLE.key);
       setTelecastTemplateStyles(Array.isArray(data.templateStyles) && data.templateStyles.length ? data.templateStyles : [DEFAULT_TELECAST_TEMPLATE_STYLE]);
       setTelecastKeywords(Array.isArray(data.keywords) ? data.keywords : []);
       setTelecastGroupRecipients({
@@ -915,9 +950,16 @@ export default function Admin() {
     });
   };
 
+  const updatePageEmailPermission = (pageKey: PageKey, rawValue: string) => {
+    setDraftPageEmailPermissions((prev) => ({
+      ...prev,
+      [pageKey]: normalizeRecipientList(rawValue),
+    }));
+  };
+
   const savePagePermissions = async () => {
     try {
-      await updatePagePermissions(draftPagePermissions);
+      await updatePagePermissions(draftPagePermissions, draftPageEmailPermissions);
       setMessage({ type: 'success', text: '✅ Page visibility permissions updated' });
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
@@ -935,9 +977,16 @@ export default function Admin() {
     });
   };
 
+  const updateActionEmailPermission = (actionKey: ActionKey, rawValue: string) => {
+    setDraftActionEmailPermissions((prev) => ({
+      ...prev,
+      [actionKey]: normalizeRecipientList(rawValue),
+    }));
+  };
+
   const saveActionPermissions = async () => {
     try {
-      await updateActionPermissions(draftActionPermissions);
+      await updateActionPermissions(draftActionPermissions, draftActionEmailPermissions);
       setMessage({ type: 'success', text: '✅ Action permissions updated' });
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
@@ -1010,6 +1059,10 @@ export default function Admin() {
           templateSubject: telecastTemplateSubject,
           templateBody: telecastTemplateBody,
           templateStyle: telecastTemplateStyle,
+          approvalAlertEnabled,
+          approvalTemplateSubject,
+          approvalTemplateBody,
+          approvalTemplateStyle,
           groupRecipients: {
             GES: normalizeRecipientList(telecastGroupRecipients.GES),
             GDS: normalizeRecipientList(telecastGroupRecipients.GDS),
@@ -1187,6 +1240,33 @@ export default function Admin() {
     }
   };
 
+  const sendApprovalTestMail = async () => {
+    if (!token) return;
+    if (!telecastRecipientEmail.trim()) {
+      toast.error('Recipient email is required');
+      return;
+    }
+
+    setApprovalTemplateSending(true);
+    try {
+      const response = await fetch(API_URL + '/telecast/test-approval-mail', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ recipientEmail: telecastRecipientEmail.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to send approval alert preview'));
+      toast.success(data.message || `Approval alert preview sent to ${telecastRecipientEmail.trim()}`);
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setApprovalTemplateSending(false);
+    }
+  };
+
   const markAllTelecastAlerted = async () => {
     if (!token) return;
     setTelecastBulkUpdating(true);
@@ -1355,6 +1435,7 @@ export default function Admin() {
                       {ROLE_OPTIONS.map((role) => (
                         <th key={role} className="text-center py-2 px-3">{role}</th>
                       ))}
+                      <th className="text-left py-2 pl-3 min-w-[260px]">Custom Emails</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1376,6 +1457,15 @@ export default function Admin() {
                               />
                             </td>
                           ))}
+                          <td className="py-2 pl-3">
+                            <Input
+                              value={(draftPageEmailPermissions[pageKey] || []).join(', ')}
+                              onChange={(e) => updatePageEmailPermission(pageKey, e.target.value)}
+                              placeholder="user1@company.com, user2@company.com"
+                              disabled={!isMaster}
+                              className="h-9 text-xs"
+                            />
+                          </td>
                         </tr>
                       ))
                     ))}
@@ -1404,6 +1494,7 @@ export default function Admin() {
                       {ROLE_OPTIONS.map((role) => (
                         <th key={role} className="text-center py-2 px-3">{role}</th>
                       ))}
+                      <th className="text-left py-2 pl-3 min-w-[260px]">Custom Emails</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1422,6 +1513,15 @@ export default function Admin() {
                             />
                           </td>
                         ))}
+                        <td className="py-2 pl-3">
+                          <Input
+                            value={(draftActionEmailPermissions[actionKey] || []).join(', ')}
+                            onChange={(e) => updateActionEmailPermission(actionKey, e.target.value)}
+                            placeholder="user1@company.com, user2@company.com"
+                            disabled={!isMaster}
+                            className="h-9 text-xs"
+                          />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -2235,6 +2335,109 @@ export default function Admin() {
                   <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${telecastSending ? 'animate-pulse' : ''}`} />
                   {telecastSending ? 'Sending...' : 'Send Template Preview'}
                 </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Approval Telecast</CardTitle>
+                <CardDescription>When enabled, sends the group SVP an automated alert as soon as the Tender Manager approves a tender.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl border p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Enable Approval Alert</p>
+                    <p className="text-xs text-muted-foreground">Disabled means no SVP approval alert will be sent after Tender Manager approval.</p>
+                  </div>
+                  <Switch checked={approvalAlertEnabled} onCheckedChange={setApprovalAlertEnabled} disabled={configSaving} />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Message Style</p>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    {telecastTemplateStyles.map((style) => (
+                      <button
+                        key={style.key}
+                        type="button"
+                        onClick={() => setApprovalTemplateStyle(style.key)}
+                        className={`rounded-xl border text-left transition-all overflow-hidden ${approvalTemplateStyle === style.key ? 'border-primary ring-2 ring-primary/20 shadow-sm' : 'border-border hover:border-primary/40'}`}
+                      >
+                        <div className="h-20 px-4 py-3 text-white" style={{ background: style.colors.headerGradient }}>
+                          <p className="text-[11px] uppercase tracking-[0.2em] opacity-80">Avenir Approval Telecast</p>
+                          <p className="mt-2 text-base font-semibold">{style.label}</p>
+                        </div>
+                        <div className="p-4 space-y-2" style={{ backgroundColor: style.colors.pageBg }}>
+                          <div className="rounded-lg border px-3 py-2 text-xs" style={{ backgroundColor: style.colors.summaryBg, borderColor: style.colors.summaryBorder, color: style.colors.summaryText }}>
+                            Approval summary preview
+                          </div>
+                          <p className="text-xs text-muted-foreground">{style.description}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Subject Template</p>
+                  <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" value={approvalTemplateSubject} onChange={(e) => setApprovalTemplateSubject(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Body Template</p>
+                  <Textarea rows={6} className="text-xs sm:text-sm md:text-base" value={approvalTemplateBody} onChange={(e) => setApprovalTemplateBody(e.target.value)} />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Live Preview</p>
+                  <div className="rounded-2xl border overflow-hidden" style={{ borderColor: selectedApprovalTemplateStyle.colors.cardBorder, backgroundColor: selectedApprovalTemplateStyle.colors.pageBg }}>
+                    <div className="px-5 py-4 text-white" style={{ background: selectedApprovalTemplateStyle.colors.headerGradient }}>
+                      <p className="text-[11px] uppercase tracking-[0.18em] opacity-80">Avenir Approval Telecast</p>
+                      <p className="mt-2 text-lg font-semibold">✅ {approvalPreviewSubject}</p>
+                    </div>
+                    <div className="p-5 space-y-4">
+                      <div className="text-sm text-slate-600 whitespace-pre-line">{approvalPreviewBody}</div>
+                      <div className="rounded-xl border px-4 py-3" style={{ backgroundColor: selectedApprovalTemplateStyle.colors.summaryBg, borderColor: selectedApprovalTemplateStyle.colors.summaryBorder, color: selectedApprovalTemplateStyle.colors.summaryText }}>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">Summary</p>
+                        <div className="mt-3 rounded-lg border overflow-hidden bg-white">
+                          <div className="grid grid-cols-[180px_minmax(0,1fr)] text-xs">
+                            {[
+                              ['Tender Ref', SAMPLE_TELECAST_VALUES.TENDER_NO],
+                              ['Tender Name', SAMPLE_TELECAST_VALUES.TENDER_NAME],
+                              ['Client', SAMPLE_TELECAST_VALUES.CLIENT],
+                              ['Group', SAMPLE_TELECAST_VALUES.GROUP],
+                              ['Tender Type', SAMPLE_TELECAST_VALUES.TENDER_TYPE],
+                              ['Date Received', SAMPLE_TELECAST_VALUES.DATE_TENDER_RECD],
+                              ['Lead', SAMPLE_TELECAST_VALUES.LEAD],
+                            ].map(([label, value], index) => (
+                              <div key={label} className="contents">
+                                <div className="px-3 py-2 font-semibold uppercase tracking-[0.14em] border-b" style={{ backgroundColor: selectedApprovalTemplateStyle.colors.tableHeaderBg, color: selectedApprovalTemplateStyle.colors.tableHeaderText }}>
+                                  {label}
+                                </div>
+                                <div className="px-3 py-2 border-b text-slate-900" style={{ backgroundColor: index % 2 === 0 ? '#ffffff' : selectedApprovalTemplateStyle.colors.tableRowAlt }}>
+                                  {value}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Button onClick={saveTelecastConfig} disabled={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
+                    Save Approval Alert
+                  </Button>
+                  <Button
+                    onClick={sendApprovalTestMail}
+                    disabled={approvalTemplateSending || !telecastAuthStatus.hasRefreshToken || !telecastRecipientEmail}
+                    variant="outline"
+                    className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto"
+                  >
+                    <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${approvalTemplateSending ? 'animate-pulse' : ''}`} />
+                    {approvalTemplateSending ? 'Sending...' : 'Send Approval Template Preview'}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 

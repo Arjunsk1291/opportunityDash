@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
+import Approval from './models/Approval.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import Client from './models/Client.js';
@@ -736,6 +737,110 @@ const buildIssueReportEmailHtml = ({
       </div>
     </div>
   `;
+};
+
+const buildApprovalAlertEmailHtml = ({ values, renderedBody = '', styleKey = 'avenir_blue' }) => {
+  const style = getTelecastTemplateStyle(styleKey);
+  const colors = style.colors;
+  const rows = [
+    ['Tender Ref', values.TENDER_NO || '—'],
+    ['Tender Name', values.TENDER_NAME || '—'],
+    ['Client', values.CLIENT || '—'],
+    ['Group', values.GROUP || '—'],
+    ['Tender Type', values.TENDER_TYPE || '—'],
+    ['Date Received', values.DATE_TENDER_RECD || '—'],
+    ['Lead', values.LEAD || '—'],
+  ];
+
+  return `
+    <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
+      <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+        <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Approval Telecast</div>
+          <h1 style="margin:0;font-size:24px;line-height:1.2;">✅ Tender Manager Approval Alert</h1>
+          <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">A tender has been approved by the Tender Manager and is ready for SVP review.</p>
+        </div>
+        <div style="padding:24px 28px;">
+          ${renderedBody ? `<div style="margin-bottom:18px;font-size:14px;line-height:1.7;color:#334155;">${nl2br(renderedBody)}</div>` : ''}
+          <div style="margin-bottom:18px;padding:16px 18px;border-radius:14px;background:${colors.summaryBg};border:1px solid ${colors.summaryBorder};color:${colors.summaryText};">
+            <strong style="display:block;margin-bottom:10px;">Summary</strong>
+            <table style="width:100%;border-collapse:collapse;border-spacing:0;overflow:hidden;border:1px solid ${colors.summaryBorder};border-radius:12px;background:#ffffff;">
+              <tbody>
+                ${rows.map(([label, value], index) => `
+                  <tr style="background:${index % 2 === 0 ? '#ffffff' : colors.tableRowAlt};">
+                    <th style="width:32%;padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};background:${colors.tableHeaderBg};border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(label)}</th>
+                    <td style="padding:10px 12px;font-size:14px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(value)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' }) => {
+  const config = await getSystemConfig();
+  if (!config.approvalAlertEnabled) {
+    return { success: true, skipped: 'disabled' };
+  }
+
+  const group = getGroupFromOpportunity(opportunity);
+  if (!group) {
+    return { success: true, skipped: 'no_group' };
+  }
+
+  const recipients = await AuthorizedUser.find({
+    role: { $in: ['SVP'] },
+    status: 'approved',
+    assignedGroup: group,
+  }).lean();
+  const recipientEmails = normalizeEmailList(recipients.map((user) => user.email));
+  if (!recipientEmails.length) {
+    return { success: true, skipped: 'no_recipients' };
+  }
+
+  const graphRefreshTokenEnc = config.telecastGraphRefreshTokenEnc || config.graphRefreshTokenEnc || config.mailRefreshTokenEnc || '';
+  if (!graphRefreshTokenEnc) {
+    return { success: true, skipped: 'mail_not_configured' };
+  }
+
+  const values = {
+    ...getTemplateValues(opportunity),
+    COMMENTS: approvedBy ? `Approved by Tender Manager: ${approvedBy}` : getTemplateValues(opportunity).COMMENTS,
+  };
+  const subjectTemplate = config.approvalAlertTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}';
+  const bodyTemplate = config.approvalAlertTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.';
+  const style = getTelecastTemplateStyle(config.approvalAlertTemplateStyle);
+  const subject = renderTemplate(subjectTemplate, values);
+  const renderedBody = renderTemplate(bodyTemplate, values);
+  const html = buildApprovalAlertEmailHtml({ values, renderedBody, styleKey: style.key });
+  const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc });
+
+  const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: {
+        subject,
+        body: { contentType: 'HTML', content: html },
+        toRecipients: recipientEmails.map((email) => ({ emailAddress: { address: email } })),
+      },
+      saveToSentItems: true,
+    }),
+  });
+
+  if (!graphResponse.ok) {
+    const payload = await graphResponse.json().catch(() => ({}));
+    throw new Error(payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`);
+  }
+
+  return { success: true, recipients: recipientEmails.length };
 };
 
 
@@ -1608,7 +1713,18 @@ app.post('/api/approvals/approve-proposal-head', verifyToken, async (req, res) =
       return res.status(400).json({ error: 'opportunityRefNo is required' });
     }
 
+    const existingApproval = await Approval.findOne({ opportunityRefNo }).lean();
     const result = await approvalDb.approveAsProposalHead(opportunityRefNo, req.user.displayName, req.user.role);
+    if (!existingApproval?.proposalHeadApproved) {
+      try {
+        const opportunity = await SyncedOpportunity.findOne({ opportunityRefNo }).lean();
+        if (opportunity) {
+          await sendApprovalAlertForOpportunity({ opportunity, approvedBy: req.user.displayName || req.user.email });
+        }
+      } catch (approvalAlertError) {
+        console.error('[approval.alert.dispatch.error]', approvalAlertError?.message || approvalAlertError);
+      }
+    }
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1659,7 +1775,17 @@ app.post('/api/approvals/bulk-approve', verifyToken, async (req, res) => {
     const refs = scoped.map((opp) => opp.opportunityRefNo).filter(Boolean);
 
     if (action === 'proposal_head') {
+      const existingApprovals = await Approval.find({ opportunityRefNo: { $in: refs }, proposalHeadApproved: true }, { opportunityRefNo: 1 }).lean();
+      const alreadyApprovedRefs = new Set(existingApprovals.map((item) => item.opportunityRefNo));
       const result = await approvalDb.bulkApproveAsProposalHead(refs, req.user.displayName, req.user.role);
+      try {
+        for (const opportunity of scoped) {
+          if (alreadyApprovedRefs.has(opportunity.opportunityRefNo)) continue;
+          await sendApprovalAlertForOpportunity({ opportunity, approvedBy: req.user.displayName || req.user.email });
+        }
+      } catch (approvalAlertError) {
+        console.error('[approval.alert.bulk-dispatch.error]', approvalAlertError?.message || approvalAlertError);
+      }
       return res.json({ success: true, updated: result.updatedCount || 0, approvals: result.approvals, approvalStates: result.approvalStates, approvalLogs: result.approvalLogs });
     }
 
@@ -2017,12 +2143,28 @@ const sanitizePageRoleAccess = (input = {}) => {
   return normalized;
 };
 
+const sanitizePageEmailAccess = (input = {}) => {
+  const normalized = {};
+  for (const page of PAGE_KEYS) {
+    normalized[page] = normalizeEmailList(input?.[page] || []);
+  }
+  return normalized;
+};
+
 const sanitizeActionRoleAccess = (input = {}) => {
   const normalized = {};
   for (const action of ACTION_KEYS) {
     const list = Array.isArray(input?.[action]) ? input[action] : DEFAULT_ACTION_ROLE_ACCESS[action];
     normalized[action] = [...new Set(list.filter((role) => ROLE_KEYS.includes(role)))];
     if (!normalized[action].length) normalized[action] = [...DEFAULT_ACTION_ROLE_ACCESS[action]];
+  }
+  return normalized;
+};
+
+const sanitizeActionEmailAccess = (input = {}) => {
+  const normalized = {};
+  for (const action of ACTION_KEYS) {
+    normalized[action] = normalizeEmailList(input?.[action] || []);
   }
   return normalized;
 };
@@ -2036,17 +2178,25 @@ const getSystemConfig = async () => {
 const getActionPermissions = async () => {
   const config = await getSystemConfig();
   const permissions = sanitizeActionRoleAccess(config.actionRoleAccess || {});
+  const emailPermissions = sanitizeActionEmailAccess(config.actionEmailAccess || {});
   if (!config.actionRoleAccess || Object.keys(config.actionRoleAccess).length === 0) {
     config.actionRoleAccess = permissions;
+  }
+  if (!config.actionEmailAccess || Object.keys(config.actionEmailAccess).length === 0) {
+    config.actionEmailAccess = emailPermissions;
+  }
+  if (config.isModified('actionRoleAccess') || config.isModified('actionEmailAccess')) {
     await config.save();
   }
-  return { config, permissions };
+  return { config, permissions, emailPermissions };
 };
 
 const requireActionPermission = async (req, res, actionKey) => {
-  const { config, permissions } = await getActionPermissions();
+  const { config, permissions, emailPermissions } = await getActionPermissions();
   const allowedRoles = permissions[actionKey] || [];
-  if (!allowedRoles.includes(req.user.role)) {
+  const allowedEmails = emailPermissions[actionKey] || [];
+  const userEmail = String(req.user?.email || '').trim().toLowerCase();
+  if (!allowedRoles.includes(req.user.role) && !allowedEmails.includes(userEmail)) {
     res.status(403).json({ error: `Role ${req.user.role} is not allowed to perform ${actionKey}` });
     return null;
   }
@@ -2070,11 +2220,17 @@ app.get('/api/navigation/permissions', verifyToken, async (req, res) => {
   try {
     const config = await getSystemConfig();
     const permissions = sanitizePageRoleAccess(config.pageRoleAccess || {});
+    const emailPermissions = sanitizePageEmailAccess(config.pageEmailAccess || {});
     if (!config.pageRoleAccess || Object.keys(config.pageRoleAccess).length === 0) {
       config.pageRoleAccess = permissions;
+    }
+    if (!config.pageEmailAccess || Object.keys(config.pageEmailAccess).length === 0) {
+      config.pageEmailAccess = emailPermissions;
+    }
+    if (config.isModified('pageRoleAccess') || config.isModified('pageEmailAccess')) {
       await config.save();
     }
-    res.json({ success: true, permissions });
+    res.json({ success: true, permissions, emailPermissions });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2085,12 +2241,14 @@ app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
     if (!await requireActionPermission(req, res, 'navigation_permissions_write')) return;
 
     const permissions = sanitizePageRoleAccess(req.body?.permissions || {});
+    const emailPermissions = sanitizePageEmailAccess(req.body?.emailPermissions || {});
     const config = await getSystemConfig();
     config.pageRoleAccess = permissions;
+    config.pageEmailAccess = emailPermissions;
     config.updatedBy = req.user.email;
     await config.save();
 
-    res.json({ success: true, permissions });
+    res.json({ success: true, permissions, emailPermissions });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2098,8 +2256,8 @@ app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
 
 app.get('/api/action-permissions', verifyToken, async (_req, res) => {
   try {
-    const { permissions } = await getActionPermissions();
-    res.json({ success: true, permissions });
+    const { permissions, emailPermissions } = await getActionPermissions();
+    res.json({ success: true, permissions, emailPermissions });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2110,12 +2268,14 @@ app.post('/api/action-permissions', verifyToken, async (req, res) => {
     if (!await requireActionPermission(req, res, 'navigation_permissions_write')) return;
 
     const permissions = sanitizeActionRoleAccess(req.body?.permissions || {});
+    const emailPermissions = sanitizeActionEmailAccess(req.body?.emailPermissions || {});
     const config = await getSystemConfig();
     config.actionRoleAccess = permissions;
+    config.actionEmailAccess = emailPermissions;
     config.updatedBy = req.user.email;
     await config.save();
 
-    res.json({ success: true, permissions });
+    res.json({ success: true, permissions, emailPermissions });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2138,6 +2298,10 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
       templateSubject: config.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}',
       templateBody: config.telecastTemplateBody || '',
       templateStyle: getTelecastTemplateStyle(config.telecastTemplateStyle).key,
+      approvalAlertEnabled: Boolean(config.approvalAlertEnabled),
+      approvalTemplateSubject: config.approvalAlertTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}',
+      approvalTemplateBody: config.approvalAlertTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.',
+      approvalTemplateStyle: getTelecastTemplateStyle(config.approvalAlertTemplateStyle).key,
       templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
         key: style.key,
         label: style.label,
@@ -2160,6 +2324,10 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     const templateSubject = String(req.body?.templateSubject || '').trim();
     const templateBody = String(req.body?.templateBody || '').trim();
     const templateStyle = getTelecastTemplateStyle(req.body?.templateStyle);
+    const approvalAlertEnabled = Boolean(req.body?.approvalAlertEnabled);
+    const approvalTemplateSubject = String(req.body?.approvalTemplateSubject || '').trim();
+    const approvalTemplateBody = String(req.body?.approvalTemplateBody || '').trim();
+    const approvalTemplateStyle = getTelecastTemplateStyle(req.body?.approvalTemplateStyle);
     const groupRecipientsInput = req.body?.groupRecipients || {};
     const groupRecipients = {
       GES: normalizeEmailList(groupRecipientsInput.GES || []),
@@ -2171,6 +2339,10 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     config.telecastTemplateSubject = templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
     config.telecastTemplateBody = templateBody || 'New row detected for {{TENDER_NO}}';
     config.telecastTemplateStyle = templateStyle.key;
+    config.approvalAlertEnabled = approvalAlertEnabled;
+    config.approvalAlertTemplateSubject = approvalTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}';
+    config.approvalAlertTemplateBody = approvalTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.';
+    config.approvalAlertTemplateStyle = approvalTemplateStyle.key;
     config.telecastGroupRecipients = groupRecipients;
     config.telecastKeywordHelp = TELECAST_TEMPLATE_KEYWORDS;
     config.updatedBy = req.user.email;
@@ -2181,6 +2353,10 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
       templateSubject: config.telecastTemplateSubject,
       templateBody: config.telecastTemplateBody,
       templateStyle: config.telecastTemplateStyle,
+      approvalAlertEnabled: config.approvalAlertEnabled,
+      approvalTemplateSubject: config.approvalAlertTemplateSubject,
+      approvalTemplateBody: config.approvalAlertTemplateBody,
+      approvalTemplateStyle: config.approvalAlertTemplateStyle,
       templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
         key: style.key,
         label: style.label,
@@ -2548,6 +2724,71 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
     res.json({ success: true, message: `Template preview mail sent to ${recipientEmail}`, subject: renderedSubject });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to send test mail' });
+  }
+});
+
+app.post('/api/telecast/test-approval-mail', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can send approval alert test mail' });
+    }
+
+    const recipientEmail = String(req.body?.recipientEmail || '').trim();
+    if (!recipientEmail) {
+      return res.status(400).json({ error: 'recipientEmail is required' });
+    }
+
+    const config = await getSystemConfig();
+    const graphRefreshTokenEnc = config.telecastGraphRefreshTokenEnc || config.graphRefreshTokenEnc || config.mailRefreshTokenEnc || '';
+    if (!graphRefreshTokenEnc) {
+      return res.status(400).json({ error: 'Mail service is not configured' });
+    }
+
+    const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc });
+    const values = {
+      TENDER_NO: `AVR-APR-${String(Math.floor(Math.random() * 900) + 100)}`,
+      TENDER_NAME: 'District Cooling Plant Expansion',
+      CLIENT: 'Avenir Demo Client',
+      GROUP: 'GDS',
+      TENDER_TYPE: 'Proposal',
+      DATE_TENDER_RECD: new Date().toISOString().slice(0, 10),
+      YEAR: String(new Date().getFullYear()),
+      LEAD: 'tender.manager@avenirengineering.com',
+      OPPORTUNITY_ID: `approval-preview-${Date.now()}`,
+      COMMENTS: `Approved by Tender Manager: ${req.user.displayName || req.user.email || 'Avenir'}`,
+    };
+    const subjectTemplate = config.approvalAlertTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}';
+    const bodyTemplate = config.approvalAlertTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.';
+    const style = getTelecastTemplateStyle(config.approvalAlertTemplateStyle);
+    const subject = renderTemplate(subjectTemplate, values);
+    const renderedBody = renderTemplate(bodyTemplate, values);
+    const html = buildApprovalAlertEmailHtml({ values, renderedBody, styleKey: style.key });
+
+    const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: { contentType: 'HTML', content: html },
+          toRecipients: [{ emailAddress: { address: recipientEmail } }],
+        },
+        saveToSentItems: true,
+      }),
+    });
+
+    if (!graphResponse.ok) {
+      const payload = await graphResponse.json().catch(() => ({}));
+      const message = payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`;
+      return res.status(500).json({ error: message });
+    }
+
+    res.json({ success: true, message: `Approval alert preview mail sent to ${recipientEmail}`, subject });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to send approval alert test mail' });
   }
 });
 
