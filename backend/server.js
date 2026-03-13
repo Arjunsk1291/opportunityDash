@@ -781,6 +781,62 @@ const buildApprovalAlertEmailHtml = ({ values, renderedBody = '', styleKey = 'av
   `;
 };
 
+const formatIsoDate = (value) => {
+  const parsed = parseDateValue(value);
+  return parsed ? parsed.toISOString().slice(0, 10) : '—';
+};
+
+const buildBulkApprovalAlertEmailHtml = ({ group = '', opportunities = [], summaryText = '', styleKey = 'avenir_blue' }) => {
+  const style = getTelecastTemplateStyle(styleKey);
+  const colors = style.colors;
+  const rows = opportunities.map((opp) => ({
+    tenderNo: opp?.opportunityRefNo || opp?.rawGraphData?.rowSnapshot?.['TENDER NO'] || '—',
+    tenderName: opp?.tenderName || opp?.rawGraphData?.rowSnapshot?.['TENDER NAME'] || '—',
+    client: opp?.clientName || opp?.rawGraphData?.rowSnapshot?.CLIENT || '—',
+    lead: opp?.internalLead || opp?.rawGraphData?.rowSnapshot?.LEAD || '—',
+    received: formatIsoDate(getTenderReceivedDate(opp)),
+  }));
+
+  return `
+    <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
+      <div style="max-width:780px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+        <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Approval Telecast</div>
+          <h1 style="margin:0;font-size:24px;line-height:1.2;">✅ Tender Manager Bulk Approval</h1>
+          <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">${summaryText || `Tenders approved for ${escapeHtml(group || 'Group')}`}</p>
+        </div>
+        <div style="padding:24px 28px;">
+          <div style="margin-bottom:18px;padding:16px 18px;border-radius:14px;background:${colors.summaryBg};border:1px solid ${colors.summaryBorder};color:${colors.summaryText};">
+            <strong style="display:block;margin-bottom:12px;">Approved Tenders (${rows.length})</strong>
+            <table style="width:100%;border-collapse:collapse;border-spacing:0;overflow:hidden;border:1px solid ${colors.summaryBorder};border-radius:12px;background:#ffffff;">
+              <thead>
+                <tr>
+                  <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Tender Ref</th>
+                  <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Tender Name</th>
+                  <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Client</th>
+                  <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Lead</th>
+                  <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Date Received</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map((row, index) => `
+                  <tr style="background:${index % 2 === 0 ? '#ffffff' : colors.tableRowAlt};">
+                    <td style="padding:10px 12px;font-size:14px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(row.tenderNo)}</td>
+                    <td style="padding:10px 12px;font-size:14px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(row.tenderName)}</td>
+                    <td style="padding:10px 12px;font-size:14px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(row.client)}</td>
+                    <td style="padding:10px 12px;font-size:14px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(row.lead)}</td>
+                    <td style="padding:10px 12px;font-size:14px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(row.received)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
 const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' }) => {
   const config = await getSystemConfig();
   if (!config.approvalAlertEnabled) {
@@ -841,6 +897,112 @@ const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' })
   }
 
   return { success: true, recipients: recipientEmails.length };
+};
+
+const buildDateRangeForOpportunities = (opportunities = [], filters = {}) => {
+  const explicitFrom = parseDateValue(filters?.dateFrom);
+  const explicitTo = parseDateValue(filters?.dateTo);
+  const receivedDates = opportunities
+    .map((opp) => getTenderReceivedDate(opp))
+    .filter((d) => d instanceof Date && !Number.isNaN(d.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  const start = explicitFrom || receivedDates[0] || null;
+  const end = explicitTo || (receivedDates.length ? receivedDates[receivedDates.length - 1] : null);
+  const format = (value) => (value ? value.toISOString().slice(0, 10) : '—');
+
+  return {
+    start,
+    end,
+    text: start || end ? `${format(start)} to ${format(end || start)}` : 'recent period',
+  };
+};
+
+const sendBulkApprovalAlerts = async ({ opportunities = [], approvedBy = '', filters = {} }) => {
+  if (!opportunities.length) return { success: true, skipped: 'no_new_opportunities' };
+
+  const config = await getSystemConfig();
+  if (!config.approvalAlertEnabled) {
+    return { success: true, skipped: 'disabled' };
+  }
+
+  const graphRefreshTokenEnc = config.telecastGraphRefreshTokenEnc || config.graphRefreshTokenEnc || config.mailRefreshTokenEnc || '';
+  if (!graphRefreshTokenEnc) {
+    return { success: true, skipped: 'mail_not_configured' };
+  }
+
+  const grouped = opportunities.reduce((acc, opp) => {
+    const group = getGroupFromOpportunity(opp);
+    if (!group || group === 'UNKNOWN') return acc;
+    if (!acc[group]) acc[group] = [];
+    acc[group].push(opp);
+    return acc;
+  }, {});
+
+  const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc });
+  const style = getTelecastTemplateStyle(config.approvalAlertTemplateStyle);
+  const results = {};
+
+  for (const [group, groupOpps] of Object.entries(grouped)) {
+    const recipients = await AuthorizedUser.find({
+      role: { $in: ['SVP'] },
+      status: 'approved',
+      assignedGroup: group,
+    }).lean();
+    const recipientEmails = normalizeEmailList(recipients.map((user) => user.email));
+    if (!recipientEmails.length) {
+      results[group] = { success: true, skipped: 'no_recipients' };
+      continue;
+    }
+
+    const { text: rangeText } = buildDateRangeForOpportunities(groupOpps, filters);
+    const count = groupOpps.length;
+    const subject = `Tender Manager Bulk Approval: ${group} (${count} tenders)`;
+
+    let html;
+    if (count > 10) {
+      const summary = `${approvedBy || 'Tender Manager'} approved ${count} tenders for ${group} (received ${rangeText}).`;
+      html = `
+        <div style="margin:0;padding:24px;background:${style.colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
+          <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid ${style.colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+            <div style="padding:24px 28px;background-color:${style.colors.headerBg};background:${style.colors.headerGradient};color:#ffffff;">
+              <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Approval Telecast</div>
+              <h1 style="margin:0;font-size:24px;line-height:1.2;">✅ Tender Manager Bulk Approval</h1>
+            </div>
+            <div style="padding:24px 28px;font-size:15px;line-height:1.7;color:#334155;">${escapeHtml(summary)}</div>
+          </div>
+        </div>
+      `;
+    } else {
+      const summaryText = `${approvedBy || 'Tender Manager'} approved ${count} tender${count === 1 ? '' : 's'} for ${group} (received ${rangeText}).`;
+      html = buildBulkApprovalAlertEmailHtml({ group, opportunities: groupOpps, summaryText, styleKey: style.key });
+    }
+
+    const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: { contentType: 'HTML', content: html },
+          toRecipients: recipientEmails.map((email) => ({ emailAddress: { address: email } })),
+        },
+        saveToSentItems: true,
+      }),
+    });
+
+    if (!graphResponse.ok) {
+      const payload = await graphResponse.json().catch(() => ({}));
+      throw new Error(payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`);
+    }
+
+    results[group] = { success: true, recipients: recipientEmails.length, tenders: count };
+  }
+
+  return { success: true, results };
 };
 
 
@@ -1779,9 +1941,9 @@ app.post('/api/approvals/bulk-approve', verifyToken, async (req, res) => {
       const alreadyApprovedRefs = new Set(existingApprovals.map((item) => item.opportunityRefNo));
       const result = await approvalDb.bulkApproveAsProposalHead(refs, req.user.displayName, req.user.role);
       try {
-        for (const opportunity of scoped) {
-          if (alreadyApprovedRefs.has(opportunity.opportunityRefNo)) continue;
-          await sendApprovalAlertForOpportunity({ opportunity, approvedBy: req.user.displayName || req.user.email });
+        const newlyApproved = scoped.filter((opportunity) => !alreadyApprovedRefs.has(opportunity.opportunityRefNo));
+        if (newlyApproved.length) {
+          await sendBulkApprovalAlerts({ opportunities: newlyApproved, approvedBy: req.user.displayName || req.user.email, filters });
         }
       } catch (approvalAlertError) {
         console.error('[approval.alert.bulk-dispatch.error]', approvalAlertError?.message || approvalAlertError);
