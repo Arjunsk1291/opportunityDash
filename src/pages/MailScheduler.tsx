@@ -10,9 +10,22 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 type AttachmentMode = 'filtered_extract' | 'full_sheet_copy';
+
+type AttachmentBlock = {
+  id: string;
+  label: string;
+  mode: AttachmentMode;
+  filters: {
+    group?: string;
+    lead?: string;
+    client?: string;
+    status?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  };
+};
 
 type Schedule = {
   _id: string;
@@ -27,8 +40,10 @@ type Schedule = {
   timezone: string;
   attachmentMode: AttachmentMode;
   filters: Record<string, string>;
+  attachments?: AttachmentBlock[];
   recipients: string[];
   enabled: boolean;
+  archived?: boolean;
   lastRunAt?: string;
   nextRunAt?: string;
 };
@@ -64,6 +79,14 @@ const parseDateValue = (value?: string | null) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const renderTemplate = (template: string, values: Record<string, string>) => {
+  let output = template || '';
+  Object.entries(values).forEach(([key, value]) => {
+    output = output.split(`{{${key}}}`).join(value);
+  });
+  return output;
+};
+
 const MailScheduler = () => {
   const { opportunities } = useData();
   const { getAllUsers, user, token } = useAuth();
@@ -91,12 +114,16 @@ const MailScheduler = () => {
   const [recipients, setRecipients] = useState<string[]>([]);
   const [manualRecipient, setManualRecipient] = useState('');
 
-  const [filterGroup, setFilterGroup] = useState('all');
-  const [filterLead, setFilterLead] = useState('all');
-  const [filterClient, setFilterClient] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterDateFrom, setFilterDateFrom] = useState('');
-  const [filterDateTo, setFilterDateTo] = useState('');
+  const [attachments, setAttachments] = useState<AttachmentBlock[]>([
+    {
+      id: 'filter-1',
+      label: 'Filtered',
+      mode: 'filtered_extract',
+      filters: {},
+    },
+  ]);
+  const [testRecipient, setTestRecipient] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
 
   const groups = useMemo(() => {
     const values = new Set<string>();
@@ -134,9 +161,21 @@ const MailScheduler = () => {
     return Array.from(values).sort();
   }, [opportunities]);
 
+  const primaryFilters = useMemo(() => {
+    const first = attachments.find((block) => block.mode === 'filtered_extract') || attachments[0];
+    return {
+      group: first?.filters?.group || 'all',
+      lead: first?.filters?.lead || 'all',
+      client: first?.filters?.client || 'all',
+      status: first?.filters?.status || 'all',
+      dateFrom: first?.filters?.dateFrom || '',
+      dateTo: first?.filters?.dateTo || '',
+    };
+  }, [attachments]);
+
   const filteredOpportunities = useMemo(() => {
-    const fromDate = parseDateValue(filterDateFrom);
-    const toDate = parseDateValue(filterDateTo);
+    const fromDate = parseDateValue(primaryFilters.dateFrom);
+    const toDate = parseDateValue(primaryFilters.dateTo);
     return opportunities.filter((opp) => {
       const group = normalizeValue((opp as any).groupClassification);
       const lead = normalizeValue((opp as any).internalLead);
@@ -145,20 +184,42 @@ const MailScheduler = () => {
       const receivedRaw = (opp as any).dateTenderReceived || (opp as any).createdAt || '';
       const receivedDate = parseDateValue(receivedRaw);
 
-      if (filterGroup !== 'all' && group !== filterGroup) return false;
-      if (filterLead !== 'all' && lead !== filterLead) return false;
-      if (filterClient !== 'all' && client !== filterClient) return false;
-      if (filterStatus !== 'all' && status !== filterStatus) return false;
+      if (primaryFilters.group !== 'all' && group !== primaryFilters.group) return false;
+      if (primaryFilters.lead !== 'all' && lead !== primaryFilters.lead) return false;
+      if (primaryFilters.client !== 'all' && client !== primaryFilters.client) return false;
+      if (primaryFilters.status !== 'all' && status !== primaryFilters.status) return false;
       if ((fromDate || toDate) && !receivedDate) return false;
       if (fromDate && receivedDate && receivedDate < fromDate) return false;
       if (toDate && receivedDate && receivedDate > toDate) return false;
       return true;
     });
-  }, [opportunities, filterGroup, filterLead, filterClient, filterStatus, filterDateFrom, filterDateTo]);
+  }, [opportunities, primaryFilters]);
 
-  const selectedUsers = useMemo(
-    () => allUsers.filter((person) => recipients.includes(person.email.toLowerCase())),
-    [allUsers, recipients],
+  const dateRangeLabel = useMemo(() => {
+    if (!filteredOpportunities.length) return 'recent period';
+    const dates = filteredOpportunities
+      .map((opp) => parseDateValue((opp as any).dateTenderReceived || (opp as any).createdAt))
+      .filter((d): d is Date => Boolean(d))
+      .sort((a, b) => a.getTime() - b.getTime());
+    if (!dates.length) return 'recent period';
+    const format = (d: Date) => d.toISOString().slice(0, 10);
+    return `${format(dates[0])} to ${format(dates[dates.length - 1])}`;
+  }, [filteredOpportunities]);
+
+  const templateValues = useMemo(() => ({
+    SCHEDULE_NAME: scheduleName || 'Scheduled Update',
+    DATE_RANGE: dateRangeLabel,
+    COUNT: String(filteredOpportunities.length),
+    OWNER: user?.displayName || user?.email || 'Unknown',
+  }), [scheduleName, dateRangeLabel, filteredOpportunities.length, user?.displayName, user?.email]);
+
+  const renderedSubject = useMemo(
+    () => renderTemplate(subject, templateValues),
+    [subject, templateValues],
+  );
+  const renderedBody = useMemo(
+    () => renderTemplate(body, templateValues),
+    [body, templateValues],
   );
 
   const loadSchedules = async () => {
@@ -204,15 +265,23 @@ const MailScheduler = () => {
     setSendTime(schedule.sendTime);
     setTimezone(schedule.timezone);
     setAttachmentMode(schedule.attachmentMode);
+    if (schedule.attachments && schedule.attachments.length > 0) {
+      setAttachments(schedule.attachments.map((block, index) => ({
+        id: block.id || `filter-${index}`,
+        label: block.label || `Filter ${index + 1}`,
+        mode: block.mode || 'filtered_extract',
+        filters: block.filters || {},
+      })));
+    } else {
+      setAttachments([{
+        id: 'filter-1',
+        label: 'Filtered',
+        mode: schedule.attachmentMode || 'filtered_extract',
+        filters: schedule.filters || {},
+      }]);
+    }
     setRecipients(schedule.recipients || []);
     setEnabled(Boolean(schedule.enabled));
-    const filters = schedule.filters || {};
-    setFilterGroup(filters.group || 'all');
-    setFilterLead(filters.lead || 'all');
-    setFilterClient(filters.client || 'all');
-    setFilterStatus(filters.status || 'all');
-    setFilterDateFrom(filters.dateFrom || '');
-    setFilterDateTo(filters.dateTo || '');
     loadRuns(schedule._id);
   };
 
@@ -236,9 +305,116 @@ const MailScheduler = () => {
     }
   };
 
+  const archiveSchedule = async (id: string) => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_URL}/mail-schedules/${id}/archive`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to archive schedule');
+      toast.success('Schedule archived.');
+      await loadSchedules();
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to archive schedule');
+    }
+  };
+
+  const restoreSchedule = async (id: string) => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${API_URL}/mail-schedules/${id}/restore`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to restore schedule');
+      toast.success('Schedule restored.');
+      await loadSchedules();
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to restore schedule');
+    }
+  };
+
+  const toggleScheduleEnabled = async (schedule: Schedule) => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/mail-schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({
+          id: schedule._id,
+          name: schedule.name,
+          templateKey: schedule.templateKey,
+          subject: schedule.subject,
+          body: schedule.body,
+          frequency: schedule.frequency,
+          weekday: schedule.weekday,
+          monthDay: schedule.monthDay,
+          sendTime: schedule.sendTime,
+          timezone: schedule.timezone,
+          attachmentMode: schedule.attachmentMode,
+          attachments: schedule.attachments || [],
+          recipients: schedule.recipients,
+          enabled: !schedule.enabled,
+          archived: schedule.archived || false,
+          filters: schedule.filters || {},
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to update schedule');
+      await loadSchedules();
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to update schedule');
+    }
+  };
+
+  const sendTestMail = async () => {
+    if (!token) return;
+    if (!testRecipient.trim()) {
+      toast.error('Enter a test recipient email.');
+      return;
+    }
+    setIsRunningNow(true);
+    try {
+      const response = await fetch(`${API_URL}/mail-schedules/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({
+          name: scheduleName.trim(),
+          templateKey,
+          subject,
+          body,
+          frequency,
+          weekday,
+          monthDay,
+          sendTime,
+          timezone,
+          attachmentMode: attachments[0]?.mode || attachmentMode,
+          attachments,
+          filters: primaryFilters,
+          testRecipient: testRecipient.trim(),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to send test mail');
+      toast.success('Test mail sent.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to send test mail');
+    } finally {
+      setIsRunningNow(false);
+    }
+  };
+
   useEffect(() => {
     loadSchedules();
   }, []);
+
+  const filteredSchedules = useMemo(
+    () => schedules.filter((schedule) => showArchived ? Boolean(schedule.archived) : !schedule.archived),
+    [schedules, showArchived],
+  );
 
   const addRecipient = (email: string) => {
     const normalized = email.trim().toLowerCase();
@@ -256,6 +432,38 @@ const MailScheduler = () => {
       removeRecipient(normalized);
     } else {
       addRecipient(normalized);
+    }
+  };
+
+  const updateAttachment = (id: string, patch: Partial<AttachmentBlock>) => {
+    setAttachments((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  };
+
+  const updateAttachmentFilters = (id: string, patch: AttachmentBlock['filters']) => {
+    setAttachments((prev) => prev.map((item) => (item.id === id ? { ...item, filters: { ...item.filters, ...patch } } : item)));
+  };
+
+  const addAttachmentBlock = () => {
+    setAttachments((prev) => [
+      ...prev,
+      {
+        id: `filter-${Date.now()}`,
+        label: `Filter ${prev.length + 1}`,
+        mode: 'filtered_extract',
+        filters: {},
+      },
+    ]);
+  };
+
+  const removeAttachmentBlock = (id: string) => {
+    setAttachments((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const insertToken = (token: string, target: 'subject' | 'body') => {
+    if (target === 'subject') {
+      setSubject((prev) => (prev ? `${prev} ${token}` : token));
+    } else {
+      setBody((prev) => (prev ? `${prev}\n${token}` : token));
     }
   };
 
@@ -284,16 +492,18 @@ const MailScheduler = () => {
           monthDay,
           sendTime,
           timezone,
-          attachmentMode,
+          attachmentMode: attachments[0]?.mode || attachmentMode,
+          attachments,
           recipients,
           enabled,
+          archived: false,
           filters: {
-            group: filterGroup === 'all' ? '' : filterGroup,
-            lead: filterLead === 'all' ? '' : filterLead,
-            client: filterClient === 'all' ? '' : filterClient,
-            status: filterStatus === 'all' ? '' : filterStatus,
-            dateFrom: filterDateFrom || '',
-            dateTo: filterDateTo || '',
+            group: primaryFilters.group === 'all' ? '' : primaryFilters.group,
+            lead: primaryFilters.lead === 'all' ? '' : primaryFilters.lead,
+            client: primaryFilters.client === 'all' ? '' : primaryFilters.client,
+            status: primaryFilters.status === 'all' ? '' : primaryFilters.status,
+            dateFrom: primaryFilters.dateFrom || '',
+            dateTo: primaryFilters.dateTo || '',
           },
         }),
       });
@@ -413,77 +623,46 @@ const MailScheduler = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Filters</CardTitle>
-              <CardDescription>Only matching tenders will be included in the Excel attachment.</CardDescription>
+              <CardTitle>Template Variables</CardTitle>
+              <CardDescription>Insert tokens and preview the rendered email.</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label>Group</Label>
-                  <Select value={filterGroup} onValueChange={setFilterGroup}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All groups" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      {groups.map((group) => (
-                        <SelectItem key={group} value={group}>{group}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Lead</Label>
-                  <Select value={filterLead} onValueChange={setFilterLead}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All leads" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      {leads.map((lead) => (
-                        <SelectItem key={lead} value={lead}>{lead}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Client</Label>
-                  <Select value={filterClient} onValueChange={setFilterClient}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All clients" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      {clients.map((client) => (
-                        <SelectItem key={client} value={client}>{client}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Status</Label>
-                  <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      {statuses.map((status) => (
-                        <SelectItem key={status} value={status}>{status}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {['{{SCHEDULE_NAME}}', '{{DATE_RANGE}}', '{{COUNT}}', '{{OWNER}}'].map((token) => (
+                  <Badge key={token} variant="secondary" className="cursor-pointer" onClick={() => insertToken(token, 'body')}>
+                    {token}
+                  </Badge>
+                ))}
               </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label>Date Received From</Label>
-                  <Input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Date Received To</Label>
-                  <Input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} />
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span>Click a token to insert into the body. Use buttons below to insert into subject/body.</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {['{{SCHEDULE_NAME}}', '{{DATE_RANGE}}', '{{COUNT}}', '{{OWNER}}'].map((token) => (
+                  <Button key={token} variant="outline" size="sm" onClick={() => insertToken(token, 'subject')}>
+                    Insert {token} in subject
+                  </Button>
+                ))}
+              </div>
+              <div className="rounded-lg border p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">Live Subject Preview</p>
+                <p className="text-sm font-medium">{renderedSubject || '—'}</p>
+              </div>
+              <div className="rounded-lg border p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">Live Body Preview</p>
+                <p className="text-sm whitespace-pre-wrap">{renderedBody || '—'}</p>
+              </div>
+              <div className="grid gap-2">
+                <Label>Test Recipient</Label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    placeholder="name@company.com"
+                    value={testRecipient}
+                    onChange={(e) => setTestRecipient(e.target.value)}
+                  />
+                  <Button type="button" variant="secondary" onClick={sendTestMail} disabled={isRunningNow || !testRecipient.trim()}>
+                    {isRunningNow ? 'Sending...' : 'Send Test Mail'}
+                  </Button>
                 </div>
               </div>
             </CardContent>
@@ -491,26 +670,111 @@ const MailScheduler = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Attachment Mode</CardTitle>
-              <CardDescription>Choose how the Excel data should be attached.</CardDescription>
+              <CardTitle>Attachments & Filters</CardTitle>
+              <CardDescription>Add multiple filter sets or a full sheet copy.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <RadioGroup value={attachmentMode} onValueChange={(value) => setAttachmentMode(value as AttachmentMode)} className="space-y-3">
-                <div className="flex items-start gap-3 rounded-lg border p-3">
-                  <RadioGroupItem value="filtered_extract" id="filtered_extract" />
-                  <div className="space-y-1">
-                    <Label htmlFor="filtered_extract">Filtered Excel Extract</Label>
-                    <p className="text-xs text-muted-foreground">Only rows matching the filters above are exported into a new sheet.</p>
+            <CardContent className="space-y-4">
+              {attachments.map((block, index) => (
+                <div key={block.id} className="rounded-lg border p-3 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      value={block.label}
+                      onChange={(e) => updateAttachment(block.id, { label: e.target.value })}
+                      placeholder={`Filter ${index + 1}`}
+                      className="flex-1 min-w-[200px]"
+                    />
+                    <Select value={block.mode} onValueChange={(value) => updateAttachment(block.id, { mode: value as AttachmentMode })}>
+                      <SelectTrigger className="w-[200px]">
+                        <SelectValue placeholder="Attachment type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="filtered_extract">Filtered Extract</SelectItem>
+                        <SelectItem value="full_sheet_copy">Full Sheet Copy</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {attachments.length > 1 && (
+                      <Button variant="ghost" size="sm" onClick={() => removeAttachmentBlock(block.id)}>
+                        Remove
+                      </Button>
+                    )}
                   </div>
+
+                  {block.mode === 'filtered_extract' ? (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="grid gap-2">
+                        <Label>Group</Label>
+                        <Select value={block.filters.group || 'all'} onValueChange={(value) => updateAttachmentFilters(block.id, { group: value })}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="All groups" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All</SelectItem>
+                            {groups.map((group) => (
+                              <SelectItem key={group} value={group}>{group}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Lead</Label>
+                        <Select value={block.filters.lead || 'all'} onValueChange={(value) => updateAttachmentFilters(block.id, { lead: value })}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="All leads" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All</SelectItem>
+                            {leads.map((lead) => (
+                              <SelectItem key={lead} value={lead}>{lead}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Client</Label>
+                        <Select value={block.filters.client || 'all'} onValueChange={(value) => updateAttachmentFilters(block.id, { client: value })}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="All clients" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All</SelectItem>
+                            {clients.map((client) => (
+                              <SelectItem key={client} value={client}>{client}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Status</Label>
+                        <Select value={block.filters.status || 'all'} onValueChange={(value) => updateAttachmentFilters(block.id, { status: value })}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="All statuses" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All</SelectItem>
+                            {statuses.map((status) => (
+                              <SelectItem key={status} value={status}>{status}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Date Received From</Label>
+                        <Input type="date" value={block.filters.dateFrom || ''} onChange={(e) => updateAttachmentFilters(block.id, { dateFrom: e.target.value })} />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Date Received To</Label>
+                        <Input type="date" value={block.filters.dateTo || ''} onChange={(e) => updateAttachmentFilters(block.id, { dateTo: e.target.value })} />
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">The original workbook will be attached as-is.</p>
+                  )}
                 </div>
-                <div className="flex items-start gap-3 rounded-lg border p-3">
-                  <RadioGroupItem value="full_sheet_copy" id="full_sheet_copy" />
-                  <div className="space-y-1">
-                    <Label htmlFor="full_sheet_copy">Attach Full Sheet Copy</Label>
-                    <p className="text-xs text-muted-foreground">Attach the original Excel sheet copy along with the email.</p>
-                  </div>
-                </div>
-              </RadioGroup>
+              ))}
+
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" onClick={addAttachmentBlock}>Add Attachment</Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -522,10 +786,19 @@ const MailScheduler = () => {
               <CardDescription>Manage or run saved schedules.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {schedules.length === 0 ? (
+              <div className="flex flex-wrap gap-2">
+                <Button variant={showArchived ? 'outline' : 'secondary'} size="sm" onClick={() => setShowArchived(false)}>
+                  Active
+                </Button>
+                <Button variant={showArchived ? 'secondary' : 'outline'} size="sm" onClick={() => setShowArchived(true)}>
+                  Archived
+                </Button>
+              </div>
+
+              {filteredSchedules.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No schedules saved yet.</p>
               ) : (
-                schedules.map((schedule) => (
+                filteredSchedules.map((schedule) => (
                   <button
                     key={schedule._id}
                     type="button"
@@ -537,10 +810,55 @@ const MailScheduler = () => {
                         <p className="text-sm font-medium">{schedule.name}</p>
                         <p className="text-xs text-muted-foreground">{schedule.frequency} · {schedule.sendTime} · {schedule.timezone}</p>
                       </div>
-                      <Badge variant={schedule.enabled ? 'secondary' : 'outline'}>{schedule.enabled ? 'Enabled' : 'Disabled'}</Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={schedule.enabled ? 'secondary' : 'outline'}>{schedule.enabled ? 'Enabled' : 'Disabled'}</Badge>
+                        {!schedule.archived && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              toggleScheduleEnabled(schedule);
+                            }}
+                          >
+                            {schedule.enabled ? 'Disable' : 'Enable'}
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     <div className="mt-2 text-xs text-muted-foreground">
                       Next: {schedule.nextRunAt ? new Date(schedule.nextRunAt).toLocaleString() : 'Not scheduled'}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {!schedule.archived ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            archiveSchedule(schedule._id);
+                          }}
+                        >
+                          Archive
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            restoreSchedule(schedule._id);
+                          }}
+                        >
+                          Restore
+                        </Button>
+                      )}
                     </div>
                   </button>
                 ))
@@ -652,7 +970,7 @@ const MailScheduler = () => {
               <p><span className="font-medium">Time:</span> {sendTime} ({timezone})</p>
               <p><span className="font-medium">Template:</span> {TEMPLATE_OPTIONS.find((t) => t.key === templateKey)?.label}</p>
               <p><span className="font-medium">Matching Tenders:</span> {filteredOpportunities.length}</p>
-              <p><span className="font-medium">Attachment:</span> {attachmentMode === 'full_sheet_copy' ? 'Full sheet copy' : 'Filtered extract'}</p>
+              <p><span className="font-medium">Attachments:</span> {attachments.length} block{attachments.length === 1 ? '' : 's'}</p>
               <p><span className="font-medium">Recipients:</span> {recipients.length}</p>
               <p><span className="font-medium">Status:</span> {enabled ? 'Enabled' : 'Disabled'}</p>
             </CardContent>

@@ -1083,6 +1083,29 @@ const MAIL_SCHEDULE_TEMPLATE_KEYS = [
 
 const normalizeRecipientList = (value) => normalizeEmailList(value);
 
+const normalizeAttachmentBlocks = (input = [], fallback) => {
+  const blocks = Array.isArray(input) ? input : [];
+  const normalized = blocks
+    .map((block, index) => ({
+      id: block?.id || `${index}`,
+      label: String(block?.label || `Filter ${index + 1}`),
+      mode: block?.mode === 'full_sheet_copy' ? 'full_sheet_copy' : 'filtered_extract',
+      filters: block?.filters || {},
+    }))
+    .filter((block) => block.mode === 'filtered_extract' || block.mode === 'full_sheet_copy');
+
+  if (normalized.length) return normalized;
+  if (fallback) {
+    return [{
+      id: 'default',
+      label: 'Filtered',
+      mode: fallback.attachmentMode === 'full_sheet_copy' ? 'full_sheet_copy' : 'filtered_extract',
+      filters: fallback.filters || {},
+    }];
+  }
+  return [];
+};
+
 const parseSendTime = (value = '') => {
   const [h, m] = String(value || '').split(':').map((part) => Number(part));
   const hours = Number.isFinite(h) ? Math.min(Math.max(h, 0), 23) : 0;
@@ -1233,7 +1256,57 @@ const downloadWorkbookFile = async ({ driveId, fileId, accessToken }) => {
 };
 
 const buildScheduleAttachments = async ({ schedule, opportunities, filters, accessToken }) => {
-  if (schedule?.attachmentMode === 'full_sheet_copy') {
+  const attachmentBlocks = normalizeAttachmentBlocks(schedule?.attachments, schedule);
+  const attachments = [];
+  let needsFullCopy = false;
+
+  if (!attachmentBlocks.length) {
+    const buffer = buildFilteredExcelBuffer(opportunities);
+    return [{
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: `filtered-tenders-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      contentBytes: Buffer.from(buffer).toString('base64'),
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }];
+  }
+
+  const workbook = XLSX.utils.book_new();
+  let addedSheet = false;
+
+  attachmentBlocks.forEach((block) => {
+    if (block.mode === 'full_sheet_copy') {
+      needsFullCopy = true;
+      return;
+    }
+    const scoped = filterOpportunitiesForBulkApprove(opportunities, block.filters || filters || {});
+    const rows = scoped.map((opp) => ({
+      'Tender Ref': opp?.opportunityRefNo || '',
+      'Tender Name': opp?.tenderName || '',
+      Client: opp?.clientName || '',
+      Group: opp?.groupClassification || '',
+      Lead: opp?.internalLead || '',
+      'Tender Type': opp?.opportunityClassification || '',
+      'Date Received': opp?.dateTenderReceived || '',
+      Status: getMergedReportStatus(opp) || '',
+      Value: opp?.value || '',
+    }));
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    const sheetName = String(block.label || 'Filtered').slice(0, 31) || `Filter ${workbook.SheetNames.length + 1}`;
+    XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
+    addedSheet = true;
+  });
+
+  if (addedSheet) {
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    attachments.push({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name: `filtered-tenders-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      contentBytes: Buffer.from(buffer).toString('base64'),
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+  }
+
+  if (needsFullCopy) {
     const graphConfig = await getGraphConfig();
     if (!graphConfig?.driveId || !graphConfig?.fileId) {
       throw new Error('Graph config is incomplete. Please configure Drive ID and File ID.');
@@ -1243,21 +1316,15 @@ const buildScheduleAttachments = async ({ schedule, opportunities, filters, acce
       fileId: graphConfig.fileId,
       accessToken,
     });
-    return [{
+    attachments.push({
       '@odata.type': '#microsoft.graph.fileAttachment',
       name: filename || 'workbook.xlsx',
       contentBytes: buffer.toString('base64'),
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    }];
+    });
   }
 
-  const buffer = buildFilteredExcelBuffer(opportunities);
-  return [{
-    '@odata.type': '#microsoft.graph.fileAttachment',
-    name: `filtered-tenders-${new Date().toISOString().slice(0, 10)}.xlsx`,
-    contentBytes: Buffer.from(buffer).toString('base64'),
-    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  }];
+  return attachments;
 };
 
 const dispatchMailSchedule = async (schedule) => {
@@ -1270,17 +1337,19 @@ const dispatchMailSchedule = async (schedule) => {
   const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc });
   const filters = schedule?.filters || {};
   const opportunities = await SyncedOpportunity.find().lean();
-  const scoped = filterOpportunitiesForBulkApprove(opportunities, filters);
+  const attachmentBlocks = normalizeAttachmentBlocks(schedule?.attachments, schedule);
+  const primaryFilters = attachmentBlocks.find((block) => block.mode === 'filtered_extract')?.filters || filters;
+  const scoped = filterOpportunitiesForBulkApprove(opportunities, primaryFilters);
   const recipients = normalizeRecipientList(schedule?.recipients || []);
   if (!recipients.length) {
     throw new Error('No recipients configured for schedule');
   }
 
-  const templateValues = buildMailScheduleTemplateValues(schedule, scoped, filters);
+  const templateValues = buildMailScheduleTemplateValues(schedule, scoped, primaryFilters);
   const subject = renderTemplate(schedule?.subject || schedule?.name || 'Scheduled Update', templateValues);
   const body = renderTemplate(schedule?.body || '', templateValues);
   const html = buildScheduleMailHtml({ subject, body });
-  const attachments = await buildScheduleAttachments({ schedule, opportunities: scoped, filters, accessToken });
+  const attachments = await buildScheduleAttachments({ schedule, opportunities, filters, accessToken });
 
   const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
     method: 'POST',
@@ -2969,8 +3038,10 @@ app.post('/api/mail-schedules', verifyToken, async (req, res) => {
       timezone: String(payload?.timezone || 'Asia/Dubai'),
       attachmentMode: String(payload?.attachmentMode || 'filtered_extract'),
       filters: payload?.filters || {},
+      attachments: normalizeAttachmentBlocks(payload?.attachments || [], payload),
       recipients: normalizeRecipientList(payload?.recipients || []),
       enabled: payload?.enabled !== false,
+      archived: Boolean(payload?.archived),
       updatedBy: req.user.email,
     };
 
@@ -3030,6 +3101,67 @@ app.get('/api/mail-schedules/:id/runs', verifyToken, async (req, res) => {
     res.json({ runs });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to load schedule runs' });
+  }
+});
+
+app.post('/api/mail-schedules/:id/archive', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'mail_scheduler_write')) return;
+    const schedule = await MailSchedule.findOneAndUpdate(
+      { _id: req.params.id },
+      { $set: { archived: true, enabled: false, updatedBy: req.user.email } },
+      { new: true }
+    );
+    if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
+    res.json({ success: true, schedule });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to archive schedule' });
+  }
+});
+
+app.post('/api/mail-schedules/:id/restore', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'mail_scheduler_write')) return;
+    const schedule = await MailSchedule.findOneAndUpdate(
+      { _id: req.params.id },
+      { $set: { archived: false, updatedBy: req.user.email } },
+      { new: true }
+    );
+    if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
+    res.json({ success: true, schedule });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to restore schedule' });
+  }
+});
+
+app.post('/api/mail-schedules/test', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'mail_scheduler_write')) return;
+    const payload = req.body || {};
+    const testRecipient = String(payload?.testRecipient || '').trim().toLowerCase();
+    if (!testRecipient) return res.status(400).json({ error: 'Test recipient is required' });
+
+    const schedule = {
+      name: String(payload?.name || 'Scheduled Update'),
+      templateKey: String(payload?.templateKey || 'weekly_pipeline'),
+      subject: String(payload?.subject || ''),
+      body: String(payload?.body || ''),
+      frequency: String(payload?.frequency || 'weekly'),
+      weekday: String(payload?.weekday || 'Monday'),
+      monthDay: Number(payload?.monthDay || 1),
+      sendTime: String(payload?.sendTime || '08:30'),
+      timezone: String(payload?.timezone || 'Asia/Dubai'),
+      attachmentMode: String(payload?.attachmentMode || 'filtered_extract'),
+      filters: payload?.filters || {},
+      attachments: normalizeAttachmentBlocks(payload?.attachments || [], payload),
+      recipients: [testRecipient],
+      createdBy: req.user.email,
+    };
+
+    const dispatchResult = await dispatchMailSchedule(schedule);
+    res.json({ success: true, dispatch: dispatchResult });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to send test mail' });
   }
 });
 
