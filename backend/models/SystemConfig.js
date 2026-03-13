@@ -32,6 +32,7 @@ const systemConfigSchema = new mongoose.Schema(
     telecastAlertSeededCount: { type: Number, default: 0 },
     telecastTemplateSubject: { type: String, default: 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}' },
     telecastTemplateBody: { type: String, default: 'A new tender row was detected.\nRef: {{TENDER_NO}}\nTender: {{TENDER_NAME}}\nClient: {{CLIENT}}\nGroup: {{GROUP}}\nType: {{TENDER_TYPE}}\nDate Received: {{DATE_TENDER_RECD}}\nValue: {{VALUE}}' },
+    telecastTemplateStyle: { type: String, default: 'avenir_blue' },
     telecastGroupRecipients: {
       type: Object,
       default: {

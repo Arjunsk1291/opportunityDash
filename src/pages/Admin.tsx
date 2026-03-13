@@ -87,6 +87,23 @@ interface TelecastAuthStatus {
   tokenUpdatedAt?: string | null;
 }
 
+interface TelecastTemplateStyle {
+  key: string;
+  label: string;
+  description: string;
+  colors: {
+    pageBg: string;
+    cardBorder: string;
+    headerGradient: string;
+    summaryBg: string;
+    summaryBorder: string;
+    summaryText: string;
+    tableHeaderBg: string;
+    tableHeaderText: string;
+    tableRowAlt: string;
+  };
+}
+
 interface WeeklyTelecastStat {
   weekKey: string;
   startDate: string;
@@ -120,6 +137,39 @@ interface NotificationSyncStatus {
   lastNewRowsPreview?: NotificationRowPreview[];
   telecastEligibleRowsPreview?: NotificationRowPreview[];
 }
+
+const DEFAULT_TELECAST_TEMPLATE_STYLE: TelecastTemplateStyle = {
+  key: 'avenir_blue',
+  label: 'Avenir Blue',
+  description: 'Deep navy header with blue summary styling.',
+  colors: {
+    pageBg: '#f8fafc',
+    cardBorder: '#dbeafe',
+    headerGradient: 'linear-gradient(135deg,#0f172a 0%,#1d4ed8 100%)',
+    summaryBg: '#eff6ff',
+    summaryBorder: '#bfdbfe',
+    summaryText: '#1e3a8a',
+    tableHeaderBg: '#f8fafc',
+    tableHeaderText: '#475569',
+    tableRowAlt: '#f8fafc',
+  },
+};
+
+const SAMPLE_TELECAST_VALUES = {
+  TENDER_NO: 'AVR-TEST-368',
+  TENDER_NAME: 'District Cooling Plant Expansion',
+  CLIENT: 'Avenir Demo Client',
+  GROUP: 'GDS',
+  TENDER_TYPE: 'Proposal',
+  DATE_TENDER_RECD: '2026-03-11',
+  YEAR: '2026',
+  LEAD: 'arjun.s@avenirengineering.com',
+  OPPORTUNITY_ID: 'telecast-preview',
+  COMMENTS: 'Sample values inserted for preview.',
+};
+
+const renderTemplatePreview = (template: string, values: Record<string, string>) =>
+  Object.entries(values).reduce((output, [key, value]) => output.split(`{{${key}}}`).join(value), String(template || ''));
 
 export default function Admin() {
   const { user, isMaster, token, pagePermissions, updatePagePermissions, canAccessPage, actionPermissions, updateActionPermissions } = useAuth();
@@ -177,6 +227,8 @@ export default function Admin() {
   const [telecastSending, setTelecastSending] = useState(false);
   const [telecastTemplateSubject, setTelecastTemplateSubject] = useState('New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
   const [telecastTemplateBody, setTelecastTemplateBody] = useState('A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
+  const [telecastTemplateStyle, setTelecastTemplateStyle] = useState(DEFAULT_TELECAST_TEMPLATE_STYLE.key);
+  const [telecastTemplateStyles, setTelecastTemplateStyles] = useState<TelecastTemplateStyle[]>([DEFAULT_TELECAST_TEMPLATE_STYLE]);
   const [telecastKeywords, setTelecastKeywords] = useState<string[]>([]);
   const [telecastWeeklyStats, setTelecastWeeklyStats] = useState<WeeklyTelecastStat[]>([]);
   const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string[]>>({ GES: [], GDS: [], GTS: [] });
@@ -249,6 +301,21 @@ export default function Admin() {
       assignedGroup: candidate.assignedGroup,
     })),
     [users],
+  );
+
+  const selectedTelecastTemplateStyle = useMemo(
+    () => telecastTemplateStyles.find((style) => style.key === telecastTemplateStyle) || DEFAULT_TELECAST_TEMPLATE_STYLE,
+    [telecastTemplateStyle, telecastTemplateStyles],
+  );
+
+  const telecastPreviewSubject = useMemo(
+    () => renderTemplatePreview(telecastTemplateSubject, SAMPLE_TELECAST_VALUES),
+    [telecastTemplateSubject],
+  );
+
+  const telecastPreviewBody = useMemo(
+    () => renderTemplatePreview(telecastTemplateBody, SAMPLE_TELECAST_VALUES),
+    [telecastTemplateBody],
   );
 
   const normalizeRecipientList = (value: unknown): string[] => {
@@ -412,6 +479,8 @@ export default function Admin() {
       const data = await response.json();
       setTelecastTemplateSubject(data.templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
       setTelecastTemplateBody(data.templateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
+      setTelecastTemplateStyle(data.templateStyle || DEFAULT_TELECAST_TEMPLATE_STYLE.key);
+      setTelecastTemplateStyles(Array.isArray(data.templateStyles) && data.templateStyles.length ? data.templateStyles : [DEFAULT_TELECAST_TEMPLATE_STYLE]);
       setTelecastKeywords(Array.isArray(data.keywords) ? data.keywords : []);
       setTelecastGroupRecipients({
         GES: normalizeRecipientList(data.groupRecipients?.GES),
@@ -913,6 +982,7 @@ export default function Admin() {
         body: JSON.stringify({
           templateSubject: telecastTemplateSubject,
           templateBody: telecastTemplateBody,
+          templateStyle: telecastTemplateStyle,
           groupRecipients: {
             GES: normalizeRecipientList(telecastGroupRecipients.GES),
             GDS: normalizeRecipientList(telecastGroupRecipients.GDS),
@@ -1974,9 +2044,33 @@ export default function Admin() {
             <Card>
               <CardHeader>
                 <CardTitle>Template & Recipients for New Rows</CardTitle>
-                <CardDescription>Use keywords in template and map recipients by group. New-row emails are sent to the recipients of the detected row group.</CardDescription>
+                <CardDescription>Use keywords in template, choose a visual message style, and map recipients by group. New-row emails are sent to the recipients of the detected row group.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Message Style</p>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    {telecastTemplateStyles.map((style) => (
+                      <button
+                        key={style.key}
+                        type="button"
+                        onClick={() => setTelecastTemplateStyle(style.key)}
+                        className={`rounded-xl border text-left transition-all overflow-hidden ${telecastTemplateStyle === style.key ? 'border-primary ring-2 ring-primary/20 shadow-sm' : 'border-border hover:border-primary/40'}`}
+                      >
+                        <div className="h-20 px-4 py-3 text-white" style={{ background: style.colors.headerGradient }}>
+                          <p className="text-[11px] uppercase tracking-[0.2em] opacity-80">Avenir Telecast</p>
+                          <p className="mt-2 text-base font-semibold">{style.label}</p>
+                        </div>
+                        <div className="p-4 space-y-2" style={{ backgroundColor: style.colors.pageBg }}>
+                          <div className="rounded-lg border px-3 py-2 text-xs" style={{ backgroundColor: style.colors.summaryBg, borderColor: style.colors.summaryBorder, color: style.colors.summaryText }}>
+                            Summary block preview
+                          </div>
+                          <p className="text-xs text-muted-foreground">{style.description}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="space-y-1">
                   <p className="text-sm font-medium">Subject Template</p>
                   <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" value={telecastTemplateSubject} onChange={(e) => setTelecastTemplateSubject(e.target.value)} />
@@ -1984,6 +2078,49 @@ export default function Admin() {
                 <div className="space-y-1">
                   <p className="text-sm font-medium">Body Template</p>
                   <Textarea rows={8} className="text-xs sm:text-sm md:text-base" value={telecastTemplateBody} onChange={(e) => setTelecastTemplateBody(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Live Preview</p>
+                  <div className="rounded-2xl border overflow-hidden" style={{ borderColor: selectedTelecastTemplateStyle.colors.cardBorder, backgroundColor: selectedTelecastTemplateStyle.colors.pageBg }}>
+                    <div className="px-5 py-4 text-white" style={{ background: selectedTelecastTemplateStyle.colors.headerGradient }}>
+                      <p className="text-[11px] uppercase tracking-[0.18em] opacity-80">Avenir Telecast</p>
+                      <p className="mt-2 text-lg font-semibold">{telecastPreviewSubject}</p>
+                    </div>
+                    <div className="p-5 space-y-4">
+                      <div className="rounded-xl border px-4 py-3" style={{ backgroundColor: selectedTelecastTemplateStyle.colors.summaryBg, borderColor: selectedTelecastTemplateStyle.colors.summaryBorder, color: selectedTelecastTemplateStyle.colors.summaryText }}>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">Summary</p>
+                        <p className="mt-2 whitespace-pre-line text-sm">{telecastPreviewBody}</p>
+                      </div>
+                      <div className="rounded-xl border overflow-hidden bg-white">
+                        <div className="grid grid-cols-[180px_minmax(0,1fr)] text-xs">
+                          {[
+                            ['Tender Ref', SAMPLE_TELECAST_VALUES.TENDER_NO],
+                            ['Tender Name', SAMPLE_TELECAST_VALUES.TENDER_NAME],
+                            ['Client', SAMPLE_TELECAST_VALUES.CLIENT],
+                            ['Group', SAMPLE_TELECAST_VALUES.GROUP],
+                            ['Tender Type', SAMPLE_TELECAST_VALUES.TENDER_TYPE],
+                            ['Date Received', SAMPLE_TELECAST_VALUES.DATE_TENDER_RECD],
+                            ['Lead', SAMPLE_TELECAST_VALUES.LEAD],
+                          ].map(([label, value], index) => (
+                            <div key={label} className="contents">
+                              <div
+                                className="px-3 py-2 font-semibold uppercase tracking-[0.14em] border-b"
+                                style={{ backgroundColor: selectedTelecastTemplateStyle.colors.tableHeaderBg, color: selectedTelecastTemplateStyle.colors.tableHeaderText }}
+                              >
+                                {label}
+                              </div>
+                              <div
+                                className="px-3 py-2 border-b"
+                                style={{ backgroundColor: index % 2 === 0 ? '#ffffff' : selectedTelecastTemplateStyle.colors.tableRowAlt }}
+                              >
+                                {value}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-2 sm:gap-3 md:gap-4">
                   {(['GES', 'GDS', 'GTS'] as const).map((group) => (

@@ -77,12 +77,6 @@ export const PROBABILITY_BY_STAGE: Record<string, number> = {
   'HOLD / CLOSED': 20,
 };
 
-const getMergedStatus = (opp: Opportunity) => {
-  if (opp.tenderResult) return String(opp.tenderResult).trim().toUpperCase();
-  if (opp.avenirStatus) return String(opp.avenirStatus).trim().toUpperCase();
-  return String(opp.canonicalStage || '').trim().toUpperCase();
-};
-
 const normalizeTenderName = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
 
 const getOpportunityTimestamp = (opp: Opportunity) => {
@@ -97,37 +91,15 @@ const getOpportunityTimestamp = (opp: Opportunity) => {
   return 0;
 };
 
-const sumDedupedTenderValues = (data: Opportunity[], statuses: string[]) => {
-  const allowedStatuses = new Set(statuses.map((status) => String(status || '').trim().toUpperCase()));
-  const uniqueTenders = new Map<string, Opportunity>();
-  let untitledIndex = 0;
-
-  data.forEach((opp) => {
-    if (!allowedStatuses.has(getMergedStatus(opp))) return;
-
-    const normalizedName = normalizeTenderName(opp.tenderName);
-    const key = normalizedName || `__untitled__${opp.id || untitledIndex++}`;
-    const current = uniqueTenders.get(key);
-
-    if (!current || getOpportunityTimestamp(opp) >= getOpportunityTimestamp(current)) {
-      uniqueTenders.set(key, opp);
-    }
-  });
-
-  return Array.from(uniqueTenders.values()).reduce((sum, opp) => sum + Number(opp.opportunityValue || 0), 0);
-};
-
-export function calculateSummaryStats(data: Opportunity[], options?: { quotedValueStatuses?: string[] }) {
-
-  const quotedValueStatuses = options?.quotedValueStatuses?.length ? options.quotedValueStatuses : ['SUBMITTED'];
+export function calculateSummaryStats(data: Opportunity[]) {
 
   const activeOpps = data.filter(o => 
     ['WORKING', 'SUBMITTED', 'AWARDED'].includes(o.canonicalStage)
   );
   const awardedOpps = data.filter(o => o.canonicalStage === 'AWARDED');
-  const totalActiveValue = sumDedupedTenderValues(data, quotedValueStatuses);
+  const totalActiveValue = data.reduce((sum, o) => sum + Number(o.opportunityValue || 0), 0);
   const awardedCount = awardedOpps.length;
-  const awardedValue = sumDedupedTenderValues(data, ['AWARDED']);
+  const awardedValue = awardedOpps.reduce((sum, o) => sum + Number(o.opportunityValue || 0), 0);
 
   const lostOpps = data.filter(o => o.tenderResult === 'LOST');
   const lostCount = lostOpps.length;

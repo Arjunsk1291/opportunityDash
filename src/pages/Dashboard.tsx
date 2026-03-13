@@ -29,14 +29,7 @@ const Dashboard = () => {
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
-  const quotedValueStatuses = useMemo(
-    () => (filters.statuses.length > 0 ? filters.statuses : ['SUBMITTED']),
-    [filters.statuses]
-  );
-  const stats = useMemo(
-    () => calculateSummaryStats(filteredData, { quotedValueStatuses }),
-    [filteredData, quotedValueStatuses]
-  );
+  const stats = useMemo(() => calculateSummaryStats(filteredData), [filteredData]);
   const funnelData = useMemo(() => calculateFunnelData(filteredData), [filteredData]);
   const clientData = useMemo(() => getClientData(filteredData), [filteredData]);
   const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
@@ -52,7 +45,7 @@ const Dashboard = () => {
         case 'quoted':
           return {
             ...prevFilters,
-            statuses: ['SUBMITTED'],
+            statuses: [],
           };
         case 'awarded':
           return {

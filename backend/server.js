@@ -570,7 +570,63 @@ const escapeHtml = (value = '') => String(value)
 
 const nl2br = (value = '') => escapeHtml(value).replace(/\n/g, '<br />');
 
-const buildTelecastEmailHtml = ({ values, renderedBody = '' }) => {
+const TELECAST_TEMPLATE_STYLES = {
+  avenir_blue: {
+    key: 'avenir_blue',
+    label: 'Avenir Blue',
+    description: 'Deep navy header with blue summary styling.',
+    colors: {
+      pageBg: '#f8fafc',
+      cardBorder: '#dbeafe',
+      headerGradient: 'linear-gradient(135deg,#0f172a 0%,#1d4ed8 100%)',
+      summaryBg: '#eff6ff',
+      summaryBorder: '#bfdbfe',
+      summaryText: '#1e3a8a',
+      tableHeaderBg: '#f8fafc',
+      tableHeaderText: '#475569',
+      tableRowAlt: '#f8fafc',
+    },
+  },
+  emerald_signal: {
+    key: 'emerald_signal',
+    label: 'Emerald Signal',
+    description: 'Green alert palette for softer operational notifications.',
+    colors: {
+      pageBg: '#f0fdf4',
+      cardBorder: '#bbf7d0',
+      headerGradient: 'linear-gradient(135deg,#14532d 0%,#059669 100%)',
+      summaryBg: '#ecfdf5',
+      summaryBorder: '#86efac',
+      summaryText: '#166534',
+      tableHeaderBg: '#f0fdf4',
+      tableHeaderText: '#166534',
+      tableRowAlt: '#f7fee7',
+    },
+  },
+  sunset_alert: {
+    key: 'sunset_alert',
+    label: 'Sunset Alert',
+    description: 'Warm amber/orange palette for high-visibility tender alerts.',
+    colors: {
+      pageBg: '#fff7ed',
+      cardBorder: '#fed7aa',
+      headerGradient: 'linear-gradient(135deg,#7c2d12 0%,#ea580c 100%)',
+      summaryBg: '#ffedd5',
+      summaryBorder: '#fdba74',
+      summaryText: '#9a3412',
+      tableHeaderBg: '#fff7ed',
+      tableHeaderText: '#9a3412',
+      tableRowAlt: '#fffaf0',
+    },
+  },
+};
+
+const getTelecastTemplateStyle = (styleKey = '') =>
+  TELECAST_TEMPLATE_STYLES[String(styleKey || '').trim()] || TELECAST_TEMPLATE_STYLES.avenir_blue;
+
+const buildTelecastEmailHtml = ({ values, renderedBody = '', styleKey = 'avenir_blue' }) => {
+  const style = getTelecastTemplateStyle(styleKey);
+  const colors = style.colors;
   const rows = [
     ['Tender Ref', values.TENDER_NO || '—'],
     ['Tender Name', values.TENDER_NAME || '—'],
@@ -582,23 +638,23 @@ const buildTelecastEmailHtml = ({ values, renderedBody = '' }) => {
   ];
 
   return `
-    <div style="margin:0;padding:24px;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a;">
-      <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #dbeafe;border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
-        <div style="padding:24px 28px;background:linear-gradient(135deg,#0f172a 0%,#1d4ed8 100%);color:#ffffff;">
+    <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
+      <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+        <div style="padding:24px 28px;background:${colors.headerGradient};color:#ffffff;">
           <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Telecast</div>
           <h1 style="margin:0;font-size:24px;line-height:1.2;">New Tender Alert</h1>
           <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">A new tender row was detected and matched your telecast rules.</p>
         </div>
         <div style="padding:24px 28px;">
-          <div style="margin-bottom:18px;padding:16px 18px;border-radius:14px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;">
+          <div style="margin-bottom:18px;padding:16px 18px;border-radius:14px;background:${colors.summaryBg};border:1px solid ${colors.summaryBorder};color:${colors.summaryText};">
             <strong style="display:block;margin-bottom:6px;">Summary</strong>
             <div style="font-size:14px;line-height:1.7;">${nl2br(renderedBody)}</div>
           </div>
           <table style="width:100%;border-collapse:collapse;border-spacing:0;overflow:hidden;border:1px solid #e2e8f0;border-radius:14px;">
             <tbody>
               ${rows.map(([label, value], index) => `
-                <tr style="background:${index % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-                  <th style="width:32%;padding:12px 14px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#475569;background:#f8fafc;border-bottom:1px solid #e2e8f0;">${escapeHtml(label)}</th>
+                <tr style="background:${index % 2 === 0 ? '#ffffff' : colors.tableRowAlt};">
+                  <th style="width:32%;padding:12px 14px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};background:${colors.tableHeaderBg};border-bottom:1px solid #e2e8f0;">${escapeHtml(label)}</th>
                   <td style="padding:12px 14px;font-size:14px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${escapeHtml(value)}</td>
                 </tr>
               `).join('')}
@@ -720,6 +776,7 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
   const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc: systemConfig.telecastGraphRefreshTokenEnc });
   const subjectTemplate = systemConfig.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
   const bodyTemplate = systemConfig.telecastTemplateBody || 'New row detected for {{TENDER_NO}}';
+  const templateStyle = getTelecastTemplateStyle(systemConfig.telecastTemplateStyle);
   const staleCount = 0;
   let sent = 0;
   let skippedNoRecipients = 0;
@@ -737,7 +794,7 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
     const values = getTemplateValues(row);
     const subject = renderTemplate(subjectTemplate, values);
     const content = renderTemplate(bodyTemplate, values);
-    const htmlContent = buildTelecastEmailHtml({ values, renderedBody: content });
+    const htmlContent = buildTelecastEmailHtml({ values, renderedBody: content, styleKey: templateStyle.key });
 
     const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
       method: 'POST',
@@ -2008,6 +2065,13 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
       success: true,
       templateSubject: config.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}',
       templateBody: config.telecastTemplateBody || '',
+      templateStyle: getTelecastTemplateStyle(config.telecastTemplateStyle).key,
+      templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
+        key: style.key,
+        label: style.label,
+        description: style.description,
+        colors: style.colors,
+      })),
       groupRecipients,
       keywords: TELECAST_TEMPLATE_KEYWORDS,
       weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
@@ -2023,6 +2087,7 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
 
     const templateSubject = String(req.body?.templateSubject || '').trim();
     const templateBody = String(req.body?.templateBody || '').trim();
+    const templateStyle = getTelecastTemplateStyle(req.body?.templateStyle);
     const groupRecipientsInput = req.body?.groupRecipients || {};
     const groupRecipients = {
       GES: normalizeEmailList(groupRecipientsInput.GES || []),
@@ -2033,12 +2098,26 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     const config = await getSystemConfig();
     config.telecastTemplateSubject = templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
     config.telecastTemplateBody = templateBody || 'New row detected for {{TENDER_NO}}';
+    config.telecastTemplateStyle = templateStyle.key;
     config.telecastGroupRecipients = groupRecipients;
     config.telecastKeywordHelp = TELECAST_TEMPLATE_KEYWORDS;
     config.updatedBy = req.user.email;
     await config.save();
 
-    res.json({ success: true, templateSubject: config.telecastTemplateSubject, templateBody: config.telecastTemplateBody, groupRecipients, keywords: TELECAST_TEMPLATE_KEYWORDS });
+    res.json({
+      success: true,
+      templateSubject: config.telecastTemplateSubject,
+      templateBody: config.telecastTemplateBody,
+      templateStyle: config.telecastTemplateStyle,
+      templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
+        key: style.key,
+        label: style.label,
+        description: style.description,
+        colors: style.colors,
+      })),
+      groupRecipients,
+      keywords: TELECAST_TEMPLATE_KEYWORDS,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2303,6 +2382,7 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
     const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc: config.telecastGraphRefreshTokenEnc });
     const subjectTemplate = config.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
     const bodyTemplate = config.telecastTemplateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.';
+    const templateStyle = getTelecastTemplateStyle(config.telecastTemplateStyle);
     const testValues = {
       TENDER_NO: `AVR-TEST-${String(Math.floor(Math.random() * 900) + 100)}`,
       TENDER_NAME: 'District Cooling Plant Expansion',
@@ -2320,6 +2400,7 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
     const testHtml = buildTelecastEmailHtml({
       values: testValues,
       renderedBody,
+      styleKey: templateStyle.key,
     });
     const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
       method: 'POST',
