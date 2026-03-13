@@ -41,7 +41,65 @@ const PORT = process.env.PORT || 3001;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
 console.log('Debug flags:', { MAIL_DEBUG: String(process.env.MAIL_DEBUG || '').toLowerCase() === 'true', NOTIFICATION_DEBUG: String(process.env.NOTIFICATION_DEBUG || '').toLowerCase() === 'true', GRAPH_TOKEN_DEBUG: String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true' });
 
-app.use(cors());
+const DEFAULT_CORS_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://opportunitydash.onrender.com',
+];
+const configuredCorsOrigins = String(process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const allowedCorsOrigins = configuredCorsOrigins.length ? configuredCorsOrigins : DEFAULT_CORS_ORIGINS;
+
+const isCorsOriginAllowed = (origin, req) => {
+  if (!origin) return true; // Non-browser clients or same-origin requests without Origin header.
+  if (allowedCorsOrigins.includes(origin)) return true;
+  const host = req.headers.host;
+  if (host && (origin === `https://${host}` || origin === `http://${host}`)) return true;
+  return false;
+};
+
+app.use(cors((req, callback) => {
+  const origin = req.header('Origin');
+  const allowed = isCorsOriginAllowed(origin, req);
+  callback(null, { origin: allowed });
+}));
+
+const createRateLimiter = ({ windowMs, max, keyPrefix }) => {
+  const hits = new Map();
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = `${keyPrefix}:${req.ip}`;
+    const entry = hits.get(key);
+    if (!entry || now - entry.start >= windowMs) {
+      hits.set(key, { start: now, count: 1 });
+      return next();
+    }
+    entry.count += 1;
+    if (entry.count > max) {
+      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    }
+    if (Math.random() < 0.01) {
+      for (const [storedKey, stored] of hits.entries()) {
+        if (now - stored.start >= windowMs) hits.delete(storedKey);
+      }
+    }
+    return next();
+  };
+};
+
+const authRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 20, keyPrefix: 'auth' });
+const privilegedRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 120, keyPrefix: 'priv' });
+
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api/')) return next();
+  if (req.path.startsWith('/api/auth/')) return next();
+  if (req.path.startsWith('/api/health') || req.path.startsWith('/healthz')) return next();
+  if (req.method === 'GET') return next();
+  return privilegedRateLimiter(req, res, next);
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -1522,7 +1580,7 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
-app.post('/api/auth/verify-token', async (req, res) => {
+app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
   const requestMeta = {
     endpoint: '/api/auth/verify-token',
     method: req.method,
@@ -1611,7 +1669,7 @@ app.post('/api/auth/verify-token', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login', verifyToken, async (req, res) => {
+app.post('/api/auth/login', authRateLimiter, verifyToken, async (req, res) => {
   try {
     const loginLog = new LoginLog({
       email: req.user.email,
