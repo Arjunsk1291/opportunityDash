@@ -578,6 +578,7 @@ const TELECAST_TEMPLATE_STYLES = {
     colors: {
       pageBg: '#f8fafc',
       cardBorder: '#dbeafe',
+      headerBg: '#0f172a',
       headerGradient: 'linear-gradient(135deg,#0f172a 0%,#1d4ed8 100%)',
       summaryBg: '#eff6ff',
       summaryBorder: '#bfdbfe',
@@ -594,6 +595,7 @@ const TELECAST_TEMPLATE_STYLES = {
     colors: {
       pageBg: '#f0fdf4',
       cardBorder: '#bbf7d0',
+      headerBg: '#14532d',
       headerGradient: 'linear-gradient(135deg,#14532d 0%,#059669 100%)',
       summaryBg: '#ecfdf5',
       summaryBorder: '#86efac',
@@ -610,6 +612,7 @@ const TELECAST_TEMPLATE_STYLES = {
     colors: {
       pageBg: '#fff7ed',
       cardBorder: '#fed7aa',
+      headerBg: '#7c2d12',
       headerGradient: 'linear-gradient(135deg,#7c2d12 0%,#ea580c 100%)',
       summaryBg: '#ffedd5',
       summaryBorder: '#fdba74',
@@ -640,7 +643,7 @@ const buildTelecastEmailHtml = ({ values, renderedBody = '', styleKey = 'avenir_
   return `
     <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
       <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
-        <div style="padding:24px 28px;background:${colors.headerGradient};color:#ffffff;">
+        <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
           <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Telecast</div>
           <h1 style="margin:0;font-size:24px;line-height:1.2;">&#9888; Tender Alert</h1>
           <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">A new tender row was detected and matched your telecast rules.</p>
@@ -685,7 +688,7 @@ const buildIssueReportEmailHtml = ({
   return `
     <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
       <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
-        <div style="padding:24px 28px;background:${colors.headerGradient};color:#ffffff;">
+        <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
           <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Reporting</div>
           <h2 style="margin:0;font-size:24px;line-height:1.2;">Issue Report</h2>
           <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">A new issue report was submitted from the dashboard.</p>
