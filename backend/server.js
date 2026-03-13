@@ -642,23 +642,92 @@ const buildTelecastEmailHtml = ({ values, renderedBody = '', styleKey = 'avenir_
       <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
         <div style="padding:24px 28px;background:${colors.headerGradient};color:#ffffff;">
           <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Telecast</div>
-          <h1 style="margin:0;font-size:24px;line-height:1.2;">New Tender Alert</h1>
+          <h1 style="margin:0;font-size:24px;line-height:1.2;">&#9888; Tender Alert</h1>
           <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">A new tender row was detected and matched your telecast rules.</p>
         </div>
         <div style="padding:24px 28px;">
+          ${renderedBody ? `<div style="margin-bottom:18px;font-size:14px;line-height:1.7;color:#334155;">${nl2br(renderedBody)}</div>` : ''}
           <div style="margin-bottom:18px;padding:16px 18px;border-radius:14px;background:${colors.summaryBg};border:1px solid ${colors.summaryBorder};color:${colors.summaryText};">
-            <strong style="display:block;margin-bottom:6px;">Summary</strong>
-            <div style="font-size:14px;line-height:1.7;">${nl2br(renderedBody)}</div>
+            <strong style="display:block;margin-bottom:10px;">Summary</strong>
+            <table style="width:100%;border-collapse:collapse;border-spacing:0;overflow:hidden;border:1px solid ${colors.summaryBorder};border-radius:12px;background:#ffffff;">
+              <tbody>
+                ${rows.map(([label, value], index) => `
+                  <tr style="background:${index % 2 === 0 ? '#ffffff' : colors.tableRowAlt};">
+                    <th style="width:32%;padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};background:${colors.tableHeaderBg};border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(label)}</th>
+                    <td style="padding:10px 12px;font-size:14px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(value)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
           </div>
-          <table style="width:100%;border-collapse:collapse;border-spacing:0;overflow:hidden;border:1px solid #e2e8f0;border-radius:14px;">
-            <tbody>
-              ${rows.map(([label, value], index) => `
-                <tr style="background:${index % 2 === 0 ? '#ffffff' : colors.tableRowAlt};">
-                  <th style="width:32%;padding:12px 14px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};background:${colors.tableHeaderBg};border-bottom:1px solid #e2e8f0;">${escapeHtml(label)}</th>
-                  <td style="padding:12px 14px;font-size:14px;color:#0f172a;border-bottom:1px solid #e2e8f0;">${escapeHtml(value)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+const buildIssueReportEmailHtml = ({
+  styleKey = 'avenir_blue',
+  reporter = '',
+  role = '',
+  email = '',
+  page = '',
+  reportedAt = '',
+  issueTypes = '',
+  feature = '',
+  summary = '',
+  steps = '',
+  comments = '',
+}) => {
+  const style = getTelecastTemplateStyle(styleKey);
+  const colors = style.colors;
+
+  return `
+    <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
+      <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+        <div style="padding:24px 28px;background:${colors.headerGradient};color:#ffffff;">
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Reporting</div>
+          <h2 style="margin:0;font-size:24px;line-height:1.2;">Issue Report</h2>
+          <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">A new issue report was submitted from the dashboard.</p>
+        </div>
+        <div style="padding:24px 28px;">
+          <table style="border-collapse:collapse;width:100%;max-width:704px;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+            <tr>
+              <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border:1px solid ${colors.cardBorder};">Reporter</th>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;">${reporter} (${role})</td>
+            </tr>
+            <tr>
+              <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border:1px solid ${colors.cardBorder};">Email</th>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;">${email}</td>
+            </tr>
+            <tr>
+              <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border:1px solid ${colors.cardBorder};">Page</th>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;">${page}</td>
+            </tr>
+            <tr>
+              <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border:1px solid ${colors.cardBorder};">Time (UTC)</th>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;">${reportedAt}</td>
+            </tr>
+            <tr>
+              <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border:1px solid ${colors.cardBorder};">Issue Type(s)</th>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;">${issueTypes}</td>
+            </tr>
+            <tr>
+              <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border:1px solid ${colors.cardBorder};">Feature</th>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;">${feature}</td>
+            </tr>
+            ${summary ? `<tr>
+              <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border:1px solid ${colors.cardBorder};">Summary</th>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;">${summary}</td>
+            </tr>` : ''}
+            ${steps ? `<tr>
+              <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border:1px solid ${colors.cardBorder};">Steps to Reproduce</th>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;"><div style="white-space:pre-wrap;line-height:1.7;">${steps}</div></td>
+            </tr>` : ''}
+            <tr>
+              <th style="text-align:left;padding:10px 12px;background:${colors.tableHeaderBg};color:${colors.tableHeaderText};border:1px solid ${colors.cardBorder};">Comments</th>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;"><div style="white-space:pre-wrap;line-height:1.7;">${comments}</div></td>
+            </tr>
           </table>
         </div>
       </div>
@@ -2123,6 +2192,52 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
   }
 });
 
+app.get('/api/reporting/config', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can view reporting config' });
+    }
+    const config = await getSystemConfig();
+    res.json({
+      success: true,
+      templateStyle: getTelecastTemplateStyle(config.issueReportTemplateStyle).key,
+      templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
+        key: style.key,
+        label: style.label,
+        description: style.description,
+        colors: style.colors,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/reporting/config', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'telecast_config_write')) return;
+
+    const templateStyle = getTelecastTemplateStyle(req.body?.templateStyle);
+    const config = await getSystemConfig();
+    config.issueReportTemplateStyle = templateStyle.key;
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({
+      success: true,
+      templateStyle: config.issueReportTemplateStyle,
+      templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
+        key: style.key,
+        label: style.label,
+        description: style.description,
+        colors: style.colors,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/telecast/auth/status', verifyToken, async (req, res) => {
   try {
     if (!['Master', 'Admin'].includes(req.user.role)) {
@@ -2433,6 +2548,71 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
   }
 });
 
+app.post('/api/reporting/test-mail', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can send reporting test mail' });
+    }
+
+    const recipientEmail = String(req.body?.recipientEmail || '').trim();
+    if (!recipientEmail) {
+      return res.status(400).json({ error: 'recipientEmail is required' });
+    }
+
+    const config = await getSystemConfig();
+    const graphRefreshTokenEnc = config.telecastGraphRefreshTokenEnc || config.graphRefreshTokenEnc || config.mailRefreshTokenEnc || '';
+    if (!graphRefreshTokenEnc) {
+      return res.status(400).json({ error: 'Mail service is not configured' });
+    }
+
+    const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc });
+    const reportedAt = new Date().toISOString();
+    const subject = 'Issue report preview: Dashboard · data mismatch';
+    const html = buildIssueReportEmailHtml({
+      styleKey: config.issueReportTemplateStyle,
+      reporter: escapeHtml(req.user.displayName || req.user.email || 'Unknown'),
+      role: escapeHtml(req.user.role || 'Unknown'),
+      email: escapeHtml(req.user.email || 'Unknown'),
+      page: '/dashboard',
+      reportedAt: escapeHtml(reportedAt),
+      issueTypes: 'data mismatch, not working properly',
+      feature: 'Dashboard',
+      summary: 'Sample preview of the configured issue reporting email style.',
+      steps: '1. Open the dashboard\n2. Apply a filter\n3. Compare totals against the visible rows',
+      comments: 'This is a style preview sent from Admin > Issue Reporting Template Style.',
+    });
+
+    const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: {
+            contentType: 'HTML',
+            content: html,
+          },
+          toRecipients: [{ emailAddress: { address: recipientEmail } }],
+        },
+        saveToSentItems: true,
+      }),
+    });
+
+    if (!graphResponse.ok) {
+      const payload = await graphResponse.json().catch(() => ({}));
+      const message = payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`;
+      return res.status(500).json({ error: message });
+    }
+
+    res.json({ success: true, message: `Issue reporting preview mail sent to ${recipientEmail}`, subject });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to send reporting test mail' });
+  }
+});
+
 app.post('/api/issue-reports', verifyToken, async (req, res) => {
   try {
     const issueTypes = Array.isArray(req.body?.issueTypes) ? req.body.issueTypes.filter(Boolean) : [];
@@ -2485,57 +2665,19 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
     const safeSummary = escapeHtml(summary);
     const safeSteps = escapeHtml(steps);
     const safeComments = escapeHtml(comments);
-    const html = `
-      <div style="margin:0;padding:24px;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a;">
-        <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
-          <div style="padding:24px 28px;background:linear-gradient(135deg,#0f172a 0%,#2563eb 100%);color:#ffffff;">
-            <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Reporting</div>
-            <h2 style="margin:0;font-size:24px;line-height:1.2;">Issue Report</h2>
-            <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">A new issue report was submitted from the dashboard.</p>
-          </div>
-          <div style="padding:24px 28px;">
-            <table style="border-collapse:collapse;width:100%;max-width:704px;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
-              <tr>
-                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Reporter</th>
-                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safeReporter} (${safeRole})</td>
-              </tr>
-              <tr>
-                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Email</th>
-                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safeEmail}</td>
-              </tr>
-              <tr>
-                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Page</th>
-                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safePage}</td>
-              </tr>
-              <tr>
-                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Time (UTC)</th>
-                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safeTime}</td>
-              </tr>
-              <tr>
-                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Issue Type(s)</th>
-                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safeIssueTypes}</td>
-              </tr>
-              <tr>
-                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Feature</th>
-                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safeFeature}</td>
-              </tr>
-              ${summary ? `<tr>
-                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Summary</th>
-                <td style="padding:10px 12px;border:1px solid #e2e8f0;">${safeSummary}</td>
-              </tr>` : ''}
-              ${steps ? `<tr>
-                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Steps to Reproduce</th>
-                <td style="padding:10px 12px;border:1px solid #e2e8f0;"><div style="white-space:pre-wrap;line-height:1.7;">${safeSteps}</div></td>
-              </tr>` : ''}
-              <tr>
-                <th style="text-align:left;padding:10px 12px;background:#eff6ff;border:1px solid #dbeafe;">Comments</th>
-                <td style="padding:10px 12px;border:1px solid #e2e8f0;"><div style="white-space:pre-wrap;line-height:1.7;">${safeComments}</div></td>
-              </tr>
-            </table>
-          </div>
-        </div>
-      </div>
-    `;
+    const html = buildIssueReportEmailHtml({
+      styleKey: config.issueReportTemplateStyle,
+      reporter: safeReporter,
+      role: safeRole,
+      email: safeEmail,
+      page: safePage,
+      reportedAt: safeTime,
+      issueTypes: safeIssueTypes,
+      feature: safeFeature,
+      summary: safeSummary,
+      steps: safeSteps,
+      comments: safeComments,
+    });
 
     const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
       method: 'POST',

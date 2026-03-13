@@ -225,10 +225,13 @@ export default function Admin() {
   const [telecastUsername, setTelecastUsername] = useState(DEFAULT_SERVICE_ACCOUNT);
   const [telecastPassword, setTelecastPassword] = useState('');
   const [telecastSending, setTelecastSending] = useState(false);
+  const [reportingTemplateSending, setReportingTemplateSending] = useState(false);
   const [telecastTemplateSubject, setTelecastTemplateSubject] = useState('New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
   const [telecastTemplateBody, setTelecastTemplateBody] = useState('A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
   const [telecastTemplateStyle, setTelecastTemplateStyle] = useState(DEFAULT_TELECAST_TEMPLATE_STYLE.key);
   const [telecastTemplateStyles, setTelecastTemplateStyles] = useState<TelecastTemplateStyle[]>([DEFAULT_TELECAST_TEMPLATE_STYLE]);
+  const [issueReportTemplateStyle, setIssueReportTemplateStyle] = useState(DEFAULT_TELECAST_TEMPLATE_STYLE.key);
+  const [issueReportTemplateStyles, setIssueReportTemplateStyles] = useState<TelecastTemplateStyle[]>([DEFAULT_TELECAST_TEMPLATE_STYLE]);
   const [telecastKeywords, setTelecastKeywords] = useState<string[]>([]);
   const [telecastWeeklyStats, setTelecastWeeklyStats] = useState<WeeklyTelecastStat[]>([]);
   const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string[]>>({ GES: [], GDS: [], GTS: [] });
@@ -272,6 +275,7 @@ export default function Admin() {
       loadGraphAuthStatus();
       loadTelecastAuthStatus();
       loadTelecastConfig();
+      loadReportingConfig();
       loadNotificationStatus();
       fetchConsentUrl();
     }
@@ -306,6 +310,11 @@ export default function Admin() {
   const selectedTelecastTemplateStyle = useMemo(
     () => telecastTemplateStyles.find((style) => style.key === telecastTemplateStyle) || DEFAULT_TELECAST_TEMPLATE_STYLE,
     [telecastTemplateStyle, telecastTemplateStyles],
+  );
+
+  const selectedIssueReportTemplateStyle = useMemo(
+    () => issueReportTemplateStyles.find((style) => style.key === issueReportTemplateStyle) || DEFAULT_TELECAST_TEMPLATE_STYLE,
+    [issueReportTemplateStyle, issueReportTemplateStyles],
   );
 
   const telecastPreviewSubject = useMemo(
@@ -490,6 +499,24 @@ export default function Admin() {
       setTelecastWeeklyStats(Array.isArray(data.weeklyStats) ? data.weeklyStats : []);
     } catch (error) {
       console.error('Failed to load telecast config:', error);
+    }
+  };
+
+  const loadReportingConfig = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/reporting/config', {
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setIssueReportTemplateStyle(data.templateStyle || DEFAULT_TELECAST_TEMPLATE_STYLE.key);
+      setIssueReportTemplateStyles(Array.isArray(data.templateStyles) && data.templateStyles.length ? data.templateStyles : [DEFAULT_TELECAST_TEMPLATE_STYLE]);
+    } catch (error) {
+      console.error('Failed to load reporting config:', error);
     }
   };
 
@@ -1001,6 +1028,31 @@ export default function Admin() {
     }
   };
 
+  const saveReportingConfig = async () => {
+    if (!token) return;
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/reporting/config', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ templateStyle: issueReportTemplateStyle }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to save reporting template'));
+
+      toast.success('Issue reporting template saved.');
+      await loadReportingConfig();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
   const cleanupLogs = async () => {
     if (!token || !confirm('Delete login logs older than 15 days?')) return;
     try {
@@ -1104,6 +1156,34 @@ export default function Admin() {
       toast.error((error as Error).message);
     } finally {
       setTelecastSending(false);
+    }
+  };
+
+  const sendReportingTestMail = async () => {
+    if (!token) return;
+    if (!telecastRecipientEmail.trim()) {
+      toast.error('Recipient email is required');
+      return;
+    }
+
+    setReportingTemplateSending(true);
+    try {
+      const response = await fetch(API_URL + '/reporting/test-mail', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ recipientEmail: telecastRecipientEmail.trim() }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to send reporting template preview'));
+      toast.success(data.message || `Issue reporting preview sent to ${telecastRecipientEmail.trim()}`);
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setReportingTemplateSending(false);
     }
   };
 
@@ -2084,39 +2164,39 @@ export default function Admin() {
                   <div className="rounded-2xl border overflow-hidden" style={{ borderColor: selectedTelecastTemplateStyle.colors.cardBorder, backgroundColor: selectedTelecastTemplateStyle.colors.pageBg }}>
                     <div className="px-5 py-4 text-white" style={{ background: selectedTelecastTemplateStyle.colors.headerGradient }}>
                       <p className="text-[11px] uppercase tracking-[0.18em] opacity-80">Avenir Telecast</p>
-                      <p className="mt-2 text-lg font-semibold">{telecastPreviewSubject}</p>
+                      <p className="mt-2 text-lg font-semibold">⚠ {telecastPreviewSubject}</p>
                     </div>
                     <div className="p-5 space-y-4">
+                      <div className="text-sm text-slate-600 whitespace-pre-line">{telecastPreviewBody}</div>
                       <div className="rounded-xl border px-4 py-3" style={{ backgroundColor: selectedTelecastTemplateStyle.colors.summaryBg, borderColor: selectedTelecastTemplateStyle.colors.summaryBorder, color: selectedTelecastTemplateStyle.colors.summaryText }}>
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">Summary</p>
-                        <p className="mt-2 whitespace-pre-line text-sm">{telecastPreviewBody}</p>
-                      </div>
-                      <div className="rounded-xl border overflow-hidden bg-white">
-                        <div className="grid grid-cols-[180px_minmax(0,1fr)] text-xs">
-                          {[
-                            ['Tender Ref', SAMPLE_TELECAST_VALUES.TENDER_NO],
-                            ['Tender Name', SAMPLE_TELECAST_VALUES.TENDER_NAME],
-                            ['Client', SAMPLE_TELECAST_VALUES.CLIENT],
-                            ['Group', SAMPLE_TELECAST_VALUES.GROUP],
-                            ['Tender Type', SAMPLE_TELECAST_VALUES.TENDER_TYPE],
-                            ['Date Received', SAMPLE_TELECAST_VALUES.DATE_TENDER_RECD],
-                            ['Lead', SAMPLE_TELECAST_VALUES.LEAD],
-                          ].map(([label, value], index) => (
-                            <div key={label} className="contents">
-                              <div
-                                className="px-3 py-2 font-semibold uppercase tracking-[0.14em] border-b"
-                                style={{ backgroundColor: selectedTelecastTemplateStyle.colors.tableHeaderBg, color: selectedTelecastTemplateStyle.colors.tableHeaderText }}
-                              >
-                                {label}
+                        <div className="mt-3 rounded-lg border overflow-hidden bg-white">
+                          <div className="grid grid-cols-[180px_minmax(0,1fr)] text-xs">
+                            {[
+                              ['Tender Ref', SAMPLE_TELECAST_VALUES.TENDER_NO],
+                              ['Tender Name', SAMPLE_TELECAST_VALUES.TENDER_NAME],
+                              ['Client', SAMPLE_TELECAST_VALUES.CLIENT],
+                              ['Group', SAMPLE_TELECAST_VALUES.GROUP],
+                              ['Tender Type', SAMPLE_TELECAST_VALUES.TENDER_TYPE],
+                              ['Date Received', SAMPLE_TELECAST_VALUES.DATE_TENDER_RECD],
+                              ['Lead', SAMPLE_TELECAST_VALUES.LEAD],
+                            ].map(([label, value], index) => (
+                              <div key={label} className="contents">
+                                <div
+                                  className="px-3 py-2 font-semibold uppercase tracking-[0.14em] border-b"
+                                  style={{ backgroundColor: selectedTelecastTemplateStyle.colors.tableHeaderBg, color: selectedTelecastTemplateStyle.colors.tableHeaderText }}
+                                >
+                                  {label}
+                                </div>
+                                <div
+                                  className="px-3 py-2 border-b text-slate-900"
+                                  style={{ backgroundColor: index % 2 === 0 ? '#ffffff' : selectedTelecastTemplateStyle.colors.tableRowAlt }}
+                                >
+                                  {value}
+                                </div>
                               </div>
-                              <div
-                                className="px-3 py-2 border-b"
-                                style={{ backgroundColor: index % 2 === 0 ? '#ffffff' : selectedTelecastTemplateStyle.colors.tableRowAlt }}
-                              >
-                                {value}
-                              </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -2154,6 +2234,85 @@ export default function Admin() {
                 <Button onClick={sendTelecastTestMail} disabled={telecastSending || !telecastAuthStatus.hasRefreshToken} className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
                   <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${telecastSending ? 'animate-pulse' : ''}`} />
                   {telecastSending ? 'Sending...' : 'Send Template Preview'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Issue Reporting Template Style</CardTitle>
+                <CardDescription>Choose the visual theme used for dashboard issue-report emails sent to Master users.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                  {issueReportTemplateStyles.map((style) => (
+                    <button
+                      key={style.key}
+                      type="button"
+                      onClick={() => setIssueReportTemplateStyle(style.key)}
+                      className={`rounded-xl border text-left transition-all overflow-hidden ${issueReportTemplateStyle === style.key ? 'border-primary ring-2 ring-primary/20 shadow-sm' : 'border-border hover:border-primary/40'}`}
+                    >
+                      <div className="h-20 px-4 py-3 text-white" style={{ background: style.colors.headerGradient }}>
+                        <p className="text-[11px] uppercase tracking-[0.2em] opacity-80">Avenir Reporting</p>
+                        <p className="mt-2 text-base font-semibold">{style.label}</p>
+                      </div>
+                      <div className="p-4 space-y-2" style={{ backgroundColor: style.colors.pageBg }}>
+                        <div className="rounded-lg border px-3 py-2 text-xs" style={{ backgroundColor: style.colors.tableHeaderBg, borderColor: style.colors.cardBorder, color: style.colors.tableHeaderText }}>
+                          Issue report table preview
+                        </div>
+                        <p className="text-xs text-muted-foreground">{style.description}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="rounded-2xl border overflow-hidden" style={{ borderColor: selectedIssueReportTemplateStyle.colors.cardBorder, backgroundColor: selectedIssueReportTemplateStyle.colors.pageBg }}>
+                  <div className="px-5 py-4 text-white" style={{ background: selectedIssueReportTemplateStyle.colors.headerGradient }}>
+                    <p className="text-[11px] uppercase tracking-[0.18em] opacity-80">Avenir Reporting</p>
+                    <p className="mt-2 text-lg font-semibold">Issue Report</p>
+                  </div>
+                  <div className="p-5">
+                    <div className="rounded-xl border overflow-hidden bg-white">
+                      <div className="grid grid-cols-[180px_minmax(0,1fr)] text-xs">
+                        {[
+                          ['Reporter', 'Avenir User (Admin)'],
+                          ['Email', 'user@avenirengineering.com'],
+                          ['Page', '/dashboard'],
+                          ['Issue Type(s)', 'Data mismatch, Not working properly'],
+                          ['Feature', 'Dashboard'],
+                          ['Comments', 'KPI count does not match the filtered table output.'],
+                        ].map(([label, value], index) => (
+                          <div key={label} className="contents">
+                            <div
+                              className="px-3 py-2 font-semibold uppercase tracking-[0.14em] border-b"
+                              style={{ backgroundColor: selectedIssueReportTemplateStyle.colors.tableHeaderBg, color: selectedIssueReportTemplateStyle.colors.tableHeaderText }}
+                            >
+                              {label}
+                            </div>
+                            <div
+                              className="px-3 py-2 border-b"
+                              style={{ backgroundColor: index % 2 === 0 ? '#ffffff' : selectedIssueReportTemplateStyle.colors.tableRowAlt }}
+                            >
+                              {value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <Button onClick={saveReportingConfig} disabled={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
+                  Save Issue Reporting Style
+                </Button>
+                <Button
+                  onClick={sendReportingTestMail}
+                  disabled={reportingTemplateSending || !telecastAuthStatus.hasRefreshToken || !telecastRecipientEmail}
+                  variant="outline"
+                  className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto"
+                >
+                  <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${reportingTemplateSending ? 'animate-pulse' : ''}`} />
+                  {reportingTemplateSending ? 'Sending...' : 'Send Issue Template Preview'}
                 </Button>
               </CardContent>
             </Card>
