@@ -18,8 +18,7 @@ export type ActionKey =
   | 'telecast_config_write'
   | 'telecast_auth_write'
   | 'notification_alert_flags_write'
-  | 'logs_cleanup'
-  | 'mail_scheduler_write';
+  | 'logs_cleanup';
 
 export const ACTION_LABELS: Record<ActionKey, string> = {
   opportunities_sync: 'Sync Opportunities to MongoDB',
@@ -40,7 +39,6 @@ export const ACTION_LABELS: Record<ActionKey, string> = {
   telecast_auth_write: 'Save Telecast Auth Tokens',
   notification_alert_flags_write: 'Update Telecast Alert Flags',
   logs_cleanup: 'Cleanup Login Logs',
-  mail_scheduler_write: 'Save Mail Schedules',
 };
 
 export const ACTION_DESCRIPTIONS: Record<ActionKey, string> = {
@@ -62,7 +60,6 @@ export const ACTION_DESCRIPTIONS: Record<ActionKey, string> = {
   telecast_auth_write: 'Persist delegated Graph auth for telecast.',
   notification_alert_flags_write: 'Persist telecast alert flag updates on synced tenders.',
   logs_cleanup: 'Delete old login logs.',
-  mail_scheduler_write: 'Create or update scheduled mail jobs.',
 };
 
 export const DEFAULT_ACTION_ROLE_ACCESS: Record<ActionKey, UserRole[]> = {
@@ -84,5 +81,4 @@ export const DEFAULT_ACTION_ROLE_ACCESS: Record<ActionKey, UserRole[]> = {
   telecast_auth_write: ['Master'],
   notification_alert_flags_write: ['Master', 'Admin'],
   logs_cleanup: ['Master'],
-  mail_scheduler_write: ['Master', 'Admin'],
 };

@@ -5,7 +5,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
-import XLSX from 'xlsx';
 import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import Approval from './models/Approval.js';
@@ -13,8 +12,6 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
-import MailSchedule from './models/MailSchedule.js';
-import MailScheduleRun from './models/MailScheduleRun.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig } from './services/graphExcelService.js';
@@ -143,7 +140,6 @@ mongoose.connect(MONGODB_URI)
     await initializeBootSync();
     await scheduleGraphAutoSync();
     scheduleDailyNotificationCheck();
-    scheduleMailDispatch();
   })
   .catch(err => {
     console.error('[mongo.connect.failure]', JSON.stringify({
@@ -1074,318 +1070,6 @@ const sendBulkApprovalAlerts = async ({ opportunities = [], approvedBy = '', fil
   return { success: true, results };
 };
 
-const MAIL_SCHEDULE_TEMPLATE_KEYS = [
-  '{{SCHEDULE_NAME}}',
-  '{{DATE_RANGE}}',
-  '{{COUNT}}',
-  '{{OWNER}}',
-];
-
-const normalizeRecipientList = (value) => normalizeEmailList(value);
-
-const normalizeAttachmentBlocks = (input = [], fallback) => {
-  const blocks = Array.isArray(input) ? input : [];
-  const normalized = blocks
-    .map((block, index) => ({
-      id: block?.id || `${index}`,
-      label: String(block?.label || `Filter ${index + 1}`),
-      mode: block?.mode === 'full_sheet_copy' ? 'full_sheet_copy' : 'filtered_extract',
-      filters: block?.filters || {},
-    }))
-    .filter((block) => block.mode === 'filtered_extract' || block.mode === 'full_sheet_copy');
-
-  if (normalized.length) return normalized;
-  if (fallback) {
-    return [{
-      id: 'default',
-      label: 'Filtered',
-      mode: fallback.attachmentMode === 'full_sheet_copy' ? 'full_sheet_copy' : 'filtered_extract',
-      filters: fallback.filters || {},
-    }];
-  }
-  return [];
-};
-
-const parseSendTime = (value = '') => {
-  const [h, m] = String(value || '').split(':').map((part) => Number(part));
-  const hours = Number.isFinite(h) ? Math.min(Math.max(h, 0), 23) : 0;
-  const minutes = Number.isFinite(m) ? Math.min(Math.max(m, 0), 59) : 0;
-  return { hours, minutes };
-};
-
-const weekdayIndex = (weekday = '') => {
-  const normalized = String(weekday || '').trim().toLowerCase();
-  const lookup = {
-    sunday: 0,
-    monday: 1,
-    tuesday: 2,
-    wednesday: 3,
-    thursday: 4,
-    friday: 5,
-    saturday: 6,
-  };
-  return lookup[normalized] ?? 1;
-};
-
-const getZonedParts = (date, timezone) => {
-  const formatter = new Intl.DateTimeFormat('en-GB', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-  const parts = formatter.formatToParts(date);
-  const lookup = {};
-  parts.forEach((part) => {
-    if (part.type !== 'literal') lookup[part.type] = part.value;
-  });
-  return {
-    year: Number(lookup.year),
-    month: Number(lookup.month),
-    day: Number(lookup.day),
-    hour: Number(lookup.hour),
-    minute: Number(lookup.minute),
-    second: Number(lookup.second),
-  };
-};
-
-const zonedDateToUtc = (parts) => new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second || 0));
-
-const computeNextRunAt = (schedule, fromDate = new Date()) => {
-  const timezone = String(schedule?.timezone || 'Asia/Dubai');
-  const { hours, minutes } = parseSendTime(schedule?.sendTime);
-  const baseParts = getZonedParts(fromDate, timezone);
-  const baseZonedUtc = zonedDateToUtc(baseParts);
-  const candidateParts = { ...baseParts, hour: hours, minute: minutes, second: 0 };
-  let candidateUtc = zonedDateToUtc(candidateParts);
-
-  if (schedule?.frequency === 'daily') {
-    if (candidateUtc <= baseZonedUtc) {
-      candidateParts.day += 1;
-      candidateUtc = zonedDateToUtc(candidateParts);
-    }
-    return candidateUtc;
-  }
-
-  if (schedule?.frequency === 'monthly') {
-    const day = Math.min(Math.max(Number(schedule?.monthDay || 1), 1), 31);
-    candidateParts.day = day;
-    candidateUtc = zonedDateToUtc(candidateParts);
-    if (candidateUtc <= baseZonedUtc) {
-      candidateParts.month += 1;
-      if (candidateParts.month > 12) {
-        candidateParts.month = 1;
-        candidateParts.year += 1;
-      }
-      const maxDay = new Date(Date.UTC(candidateParts.year, candidateParts.month, 0)).getUTCDate();
-      candidateParts.day = Math.min(day, maxDay);
-      candidateUtc = zonedDateToUtc(candidateParts);
-    }
-    return candidateUtc;
-  }
-
-  const targetDay = weekdayIndex(schedule?.weekday);
-  const baseDay = new Date(Date.UTC(baseParts.year, baseParts.month - 1, baseParts.day)).getUTCDay();
-  let diff = (targetDay - baseDay + 7) % 7;
-  if (diff === 0 && candidateUtc <= baseZonedUtc) diff = 7;
-  candidateParts.day += diff;
-  return zonedDateToUtc(candidateParts);
-};
-
-const buildMailScheduleTemplateValues = (schedule, opportunities, filters) => {
-  const { text: rangeText } = buildDateRangeForOpportunities(opportunities, filters);
-  return {
-    SCHEDULE_NAME: String(schedule?.name || ''),
-    DATE_RANGE: rangeText,
-    COUNT: String(opportunities.length),
-    OWNER: String(schedule?.createdBy || ''),
-  };
-};
-
-const buildScheduleMailHtml = ({ subject, body }) => {
-  const safeSubject = escapeHtml(subject || '');
-  const safeBody = nl2br(body || '');
-  return `
-    <div style="margin:0;padding:24px;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a;">
-      <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
-        <div style="padding:24px 28px;background:linear-gradient(135deg,#0f172a 0%,#1d4ed8 100%);color:#ffffff;">
-          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Scheduled Mail</div>
-          <h1 style="margin:0;font-size:22px;line-height:1.3;">${safeSubject || 'Scheduled Update'}</h1>
-        </div>
-        <div style="padding:24px 28px;font-size:14px;line-height:1.7;color:#334155;">${safeBody}</div>
-      </div>
-    </div>
-  `;
-};
-
-const buildFilteredExcelBuffer = (opportunities = []) => {
-  const rows = opportunities.map((opp) => ({
-    'Tender Ref': opp?.opportunityRefNo || '',
-    'Tender Name': opp?.tenderName || '',
-    Client: opp?.clientName || '',
-    Group: opp?.groupClassification || '',
-    Lead: opp?.internalLead || '',
-    'Tender Type': opp?.opportunityClassification || '',
-    'Date Received': opp?.dateTenderReceived || '',
-    Status: getMergedReportStatus(opp) || '',
-    Value: opp?.value || '',
-  }));
-  const worksheet = XLSX.utils.json_to_sheet(rows);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Filtered');
-  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-};
-
-const downloadWorkbookFile = async ({ driveId, fileId, accessToken }) => {
-  const res = await fetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/content`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) {
-    const payload = await res.json().catch(() => ({}));
-    const message = payload?.error?.message || `Failed to download workbook (status ${res.status})`;
-    throw new Error(message);
-  }
-  const arrayBuffer = await res.arrayBuffer();
-  const filenameHeader = res.headers.get('content-disposition') || '';
-  const nameMatch = filenameHeader.match(/filename\\*?=(?:UTF-8''|\"?)([^\";]+)/i);
-  const filename = nameMatch ? decodeURIComponent(nameMatch[1].replace(/\"/g, '')) : 'workbook.xlsx';
-  return { buffer: Buffer.from(arrayBuffer), filename };
-};
-
-const buildScheduleAttachments = async ({ schedule, opportunities, filters, fileAccessToken }) => {
-  const attachmentBlocks = normalizeAttachmentBlocks(schedule?.attachments, schedule);
-  const attachments = [];
-  let needsFullCopy = false;
-
-  if (!attachmentBlocks.length) {
-    const buffer = buildFilteredExcelBuffer(opportunities);
-    return [{
-      '@odata.type': '#microsoft.graph.fileAttachment',
-      name: `filtered-tenders-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      contentBytes: Buffer.from(buffer).toString('base64'),
-      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    }];
-  }
-
-  const workbook = XLSX.utils.book_new();
-  let addedSheet = false;
-
-  attachmentBlocks.forEach((block) => {
-    if (block.mode === 'full_sheet_copy') {
-      needsFullCopy = true;
-      return;
-    }
-    const scoped = filterOpportunitiesForBulkApprove(opportunities, block.filters || filters || {});
-    const rows = scoped.map((opp) => ({
-      'Tender Ref': opp?.opportunityRefNo || '',
-      'Tender Name': opp?.tenderName || '',
-      Client: opp?.clientName || '',
-      Group: opp?.groupClassification || '',
-      Lead: opp?.internalLead || '',
-      'Tender Type': opp?.opportunityClassification || '',
-      'Date Received': opp?.dateTenderReceived || '',
-      Status: getMergedReportStatus(opp) || '',
-      Value: opp?.value || '',
-    }));
-    const sheet = XLSX.utils.json_to_sheet(rows);
-    const sheetName = String(block.label || 'Filtered').slice(0, 31) || `Filter ${workbook.SheetNames.length + 1}`;
-    XLSX.utils.book_append_sheet(workbook, sheet, sheetName);
-    addedSheet = true;
-  });
-
-  if (addedSheet) {
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-    attachments.push({
-      '@odata.type': '#microsoft.graph.fileAttachment',
-      name: `filtered-tenders-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      contentBytes: Buffer.from(buffer).toString('base64'),
-      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-  }
-
-  if (needsFullCopy) {
-    const graphConfig = await getGraphConfig();
-    if (!graphConfig?.driveId || !graphConfig?.fileId) {
-      throw new Error('Graph config is incomplete. Please configure Drive ID and File ID.');
-    }
-    if (!fileAccessToken) {
-      throw new Error('Graph access token missing for workbook download');
-    }
-    const { buffer, filename } = await downloadWorkbookFile({
-      driveId: graphConfig.driveId,
-      fileId: graphConfig.fileId,
-      accessToken: fileAccessToken,
-    });
-    attachments.push({
-      '@odata.type': '#microsoft.graph.fileAttachment',
-      name: filename || 'workbook.xlsx',
-      contentBytes: buffer.toString('base64'),
-      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-  }
-
-  return attachments;
-};
-
-const dispatchMailSchedule = async (schedule) => {
-  const config = await getSystemConfig();
-  const mailRefreshTokenEnc = config.telecastGraphRefreshTokenEnc || config.graphRefreshTokenEnc || config.mailRefreshTokenEnc || '';
-  if (!mailRefreshTokenEnc) {
-    throw new Error('Mail service is not configured');
-  }
-
-  const { accessToken: mailAccessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc: mailRefreshTokenEnc });
-  const fileRefreshTokenEnc = config.graphRefreshTokenEnc || config.telecastGraphRefreshTokenEnc || config.mailRefreshTokenEnc || '';
-  const { accessToken: fileAccessToken } = fileRefreshTokenEnc
-    ? await getAccessTokenWithConfig({ graphRefreshTokenEnc: fileRefreshTokenEnc })
-    : { accessToken: '' };
-  const filters = schedule?.filters || {};
-  const opportunities = await SyncedOpportunity.find().lean();
-  const attachmentBlocks = normalizeAttachmentBlocks(schedule?.attachments, schedule);
-  const primaryFilters = attachmentBlocks.find((block) => block.mode === 'filtered_extract')?.filters || filters;
-  const scoped = filterOpportunitiesForBulkApprove(opportunities, primaryFilters);
-  const recipients = normalizeRecipientList(schedule?.recipients || []);
-  if (!recipients.length) {
-    throw new Error('No recipients configured for schedule');
-  }
-
-  const templateValues = buildMailScheduleTemplateValues(schedule, scoped, primaryFilters);
-  const subject = renderTemplate(schedule?.subject || schedule?.name || 'Scheduled Update', templateValues);
-  const body = renderTemplate(schedule?.body || '', templateValues);
-  const html = buildScheduleMailHtml({ subject, body });
-  const attachments = await buildScheduleAttachments({ schedule, opportunities, filters, fileAccessToken });
-
-  const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${mailAccessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      message: {
-        subject,
-        body: { contentType: 'HTML', content: html },
-        toRecipients: recipients.map((email) => ({ emailAddress: { address: email } })),
-        attachments,
-      },
-      saveToSentItems: true,
-    }),
-  });
-
-  if (!graphResponse.ok) {
-    const payload = await graphResponse.json().catch(() => ({}));
-    throw new Error(payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`);
-  }
-
-  return { sent: recipients.length, count: scoped.length };
-};
-
-
-
 const border = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' };
 const borders = { top: border, bottom: border, left: border, right: border };
 
@@ -1838,61 +1522,6 @@ const scheduleDailyNotificationCheck = () => {
   }, 60 * 1000);
 
   console.log('⏰ Daily notification check scheduler active (17:00 server time).');
-};
-
-let mailScheduleTimer = null;
-let mailScheduleRunLock = false;
-const scheduleMailDispatch = () => {
-  if (mailScheduleTimer) clearInterval(mailScheduleTimer);
-  mailScheduleTimer = setInterval(async () => {
-    if (mailScheduleRunLock) return;
-    mailScheduleRunLock = true;
-    const now = new Date();
-    try {
-      const dueSchedules = await MailSchedule.find({
-        enabled: true,
-        nextRunAt: { $lte: now },
-      }).lean();
-
-      for (const schedule of dueSchedules) {
-        try {
-          const dispatchResult = await dispatchMailSchedule(schedule);
-          const nextRunAt = computeNextRunAt(schedule, new Date());
-          await MailSchedule.updateOne(
-            { _id: schedule._id },
-            { $set: { lastRunAt: now, nextRunAt } },
-          );
-          await MailScheduleRun.create({
-            scheduleId: schedule._id,
-            scheduleName: schedule.name,
-            runAt: now,
-            status: 'success',
-            sentCount: dispatchResult.sent || 0,
-            tenderCount: dispatchResult.count || 0,
-          });
-        } catch (scheduleError) {
-          console.error('[mail.schedule.dispatch.error]', scheduleError?.message || scheduleError);
-          const nextRunAt = computeNextRunAt(schedule, new Date());
-          await MailSchedule.updateOne(
-            { _id: schedule._id },
-            { $set: { lastRunAt: now, nextRunAt } },
-          );
-          await MailScheduleRun.create({
-            scheduleId: schedule._id,
-            scheduleName: schedule.name,
-            runAt: now,
-            status: 'failed',
-            error: String(scheduleError?.message || scheduleError),
-          });
-        }
-      }
-    } catch (error) {
-      console.error('[mail.schedule.tick.error]', error?.message || error);
-    } finally {
-      mailScheduleRunLock = false;
-    }
-  }, 60 * 1000);
-  console.log('⏱️ Mail schedule dispatcher active (every 1 minute).');
 };
 
 const getUsernameFromRequest = (req) => {
@@ -2668,7 +2297,6 @@ const PAGE_KEYS = [
   'vendor_directory',
   'clients',
   'analytics',
-  'mail_scheduler',
   'master',
   'master_general',
   'master_users',
@@ -2695,7 +2323,6 @@ const ACTION_KEYS = [
   'telecast_auth_write',
   'notification_alert_flags_write',
   'logs_cleanup',
-  'mail_scheduler_write',
 ];
 const DEFAULT_PAGE_ROLE_ACCESS = {
   dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
@@ -2704,7 +2331,6 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
   vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  mail_scheduler: ['Master', 'Admin'],
   master: ['Master', 'Admin'],
   master_general: ['Master', 'Admin'],
   master_users: ['Master', 'Admin'],
@@ -2730,7 +2356,6 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   telecast_auth_write: ['Master'],
   notification_alert_flags_write: ['Master', 'Admin'],
   logs_cleanup: ['Master'],
-  mail_scheduler_write: ['Master', 'Admin'],
 };
 
 const sanitizePageRoleAccess = (input = {}) => {
@@ -3014,162 +2639,6 @@ app.post('/api/reporting/config', verifyToken, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/mail-schedules', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'mail_scheduler_write')) return;
-    const schedules = await MailSchedule.find().sort({ createdAt: -1 }).lean();
-    res.json({ schedules, templateKeywords: MAIL_SCHEDULE_TEMPLATE_KEYS });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to load schedules' });
-  }
-});
-
-app.post('/api/mail-schedules', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'mail_scheduler_write')) return;
-    const payload = req.body || {};
-    const name = String(payload?.name || '').trim();
-    if (!name) return res.status(400).json({ error: 'Schedule name is required' });
-
-    const scheduleInput = {
-      name,
-      templateKey: String(payload?.templateKey || 'weekly_pipeline'),
-      subject: String(payload?.subject || ''),
-      body: String(payload?.body || ''),
-      frequency: String(payload?.frequency || 'weekly'),
-      weekday: String(payload?.weekday || 'Monday'),
-      monthDay: Number(payload?.monthDay || 1),
-      sendTime: String(payload?.sendTime || '08:30'),
-      timezone: String(payload?.timezone || 'Asia/Dubai'),
-      attachmentMode: String(payload?.attachmentMode || 'filtered_extract'),
-      filters: payload?.filters || {},
-      attachments: normalizeAttachmentBlocks(payload?.attachments || [], payload),
-      recipients: normalizeRecipientList(payload?.recipients || []),
-      enabled: payload?.enabled !== false,
-      archived: Boolean(payload?.archived),
-      updatedBy: req.user.email,
-    };
-
-    const baseSchedule = { ...scheduleInput, createdBy: payload?.createdBy || req.user.email };
-    const nextRunAt = computeNextRunAt(baseSchedule, new Date());
-    const update = { ...scheduleInput, nextRunAt };
-
-    let schedule;
-    if (payload?.id) {
-      schedule = await MailSchedule.findOneAndUpdate(
-        { _id: payload.id },
-        { $set: update },
-        { new: true }
-      );
-    } else {
-      schedule = await MailSchedule.create({ ...baseSchedule, nextRunAt });
-    }
-
-    res.json({ success: true, schedule });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to save schedule' });
-  }
-});
-
-app.post('/api/mail-schedules/:id/run', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'mail_scheduler_write')) return;
-    const schedule = await MailSchedule.findById(req.params.id).lean();
-    if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
-
-    const dispatchResult = await dispatchMailSchedule(schedule);
-    const now = new Date();
-    const nextRunAt = computeNextRunAt(schedule, now);
-    await MailSchedule.updateOne({ _id: schedule._id }, { $set: { lastRunAt: now, nextRunAt } });
-    await MailScheduleRun.create({
-      scheduleId: schedule._id,
-      scheduleName: schedule.name,
-      runAt: now,
-      status: 'success',
-      sentCount: dispatchResult.sent || 0,
-      tenderCount: dispatchResult.count || 0,
-    });
-    res.json({ success: true, dispatch: dispatchResult, nextRunAt });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to run schedule' });
-  }
-});
-
-app.get('/api/mail-schedules/:id/runs', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'mail_scheduler_write')) return;
-    const limit = Math.min(Math.max(Number(req.query?.limit || 20), 1), 100);
-    const runs = await MailScheduleRun.find({ scheduleId: req.params.id })
-      .sort({ runAt: -1 })
-      .limit(limit)
-      .lean();
-    res.json({ runs });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to load schedule runs' });
-  }
-});
-
-app.post('/api/mail-schedules/:id/archive', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'mail_scheduler_write')) return;
-    const schedule = await MailSchedule.findOneAndUpdate(
-      { _id: req.params.id },
-      { $set: { archived: true, enabled: false, updatedBy: req.user.email } },
-      { new: true }
-    );
-    if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
-    res.json({ success: true, schedule });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to archive schedule' });
-  }
-});
-
-app.post('/api/mail-schedules/:id/restore', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'mail_scheduler_write')) return;
-    const schedule = await MailSchedule.findOneAndUpdate(
-      { _id: req.params.id },
-      { $set: { archived: false, updatedBy: req.user.email } },
-      { new: true }
-    );
-    if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
-    res.json({ success: true, schedule });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to restore schedule' });
-  }
-});
-
-app.post('/api/mail-schedules/test', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'mail_scheduler_write')) return;
-    const payload = req.body || {};
-    const testRecipient = String(payload?.testRecipient || '').trim().toLowerCase();
-    if (!testRecipient) return res.status(400).json({ error: 'Test recipient is required' });
-
-    const schedule = {
-      name: String(payload?.name || 'Scheduled Update'),
-      templateKey: String(payload?.templateKey || 'weekly_pipeline'),
-      subject: String(payload?.subject || ''),
-      body: String(payload?.body || ''),
-      frequency: String(payload?.frequency || 'weekly'),
-      weekday: String(payload?.weekday || 'Monday'),
-      monthDay: Number(payload?.monthDay || 1),
-      sendTime: String(payload?.sendTime || '08:30'),
-      timezone: String(payload?.timezone || 'Asia/Dubai'),
-      attachmentMode: String(payload?.attachmentMode || 'filtered_extract'),
-      filters: payload?.filters || {},
-      attachments: normalizeAttachmentBlocks(payload?.attachments || [], payload),
-      recipients: [testRecipient],
-      createdBy: req.user.email,
-    };
-
-    const dispatchResult = await dispatchMailSchedule(schedule);
-    res.json({ success: true, dispatch: dispatchResult });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to send test mail' });
   }
 });
 
