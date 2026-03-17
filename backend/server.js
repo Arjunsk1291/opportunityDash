@@ -594,6 +594,39 @@ const normalizeLeadValue = (value = '') => String(value || '')
 
 const normalizeLeadKey = (value = '') => normalizeLeadValue(value).replace(/\s+/g, ' ').trim();
 
+const buildLeadEmailDirectory = (users = []) => {
+  const directory = new Map();
+  users.forEach((user) => {
+    const email = String(user?.email || '').trim().toLowerCase();
+    if (!email) return;
+    const displayKey = normalizeLeadKey(user.displayName || '');
+    if (displayKey && !directory.has(displayKey)) {
+      directory.set(displayKey, email);
+    }
+    const emailLocal = String(email.split('@')[0] || '').replace(/[._-]+/g, ' ');
+    const emailKey = normalizeLeadKey(emailLocal);
+    if (emailKey && !directory.has(emailKey)) {
+      directory.set(emailKey, email);
+    }
+  });
+  return directory;
+};
+
+const resolveLeadEmailForOpportunity = (opportunity, leadDirectory = null) => {
+  const direct = String(opportunity?.leadEmail || '').trim().toLowerCase();
+  if (direct) {
+    return { email: direct, source: 'opportunity' };
+  }
+  if (!leadDirectory) {
+    return { email: '', source: 'missing' };
+  }
+  const leadKey = normalizeLeadKey(opportunity?.internalLead || '');
+  if (leadKey && leadDirectory.has(leadKey)) {
+    return { email: leadDirectory.get(leadKey), source: 'user_directory' };
+  }
+  return { email: '', source: 'missing' };
+};
+
 const buildLeadNameRegex = (leadName = '') => {
   const normalized = normalizeLeadKey(leadName);
   if (!normalized) return null;
@@ -1059,12 +1092,12 @@ const shouldSendDeadlineAlert = (opportunity, now = new Date()) => {
   return { shouldSend: true, deadlineKey };
 };
 
-const sendDeadlineAlertForOpportunity = async ({ opportunity, config }) => {
+const sendDeadlineAlertForOpportunity = async ({ opportunity, config, leadDirectory }) => {
   if (!config.deadlineAlertEnabled) {
     return { success: true, skipped: 'disabled' };
   }
 
-  const leadEmail = String(opportunity?.leadEmail || '').trim().toLowerCase();
+  const { email: leadEmail, source: leadEmailSource } = resolveLeadEmailForOpportunity(opportunity, leadDirectory);
   if (!leadEmail) {
     return { success: true, skipped: 'no_lead_email' };
   }
@@ -1118,7 +1151,7 @@ const sendDeadlineAlertForOpportunity = async ({ opportunity, config }) => {
     throw new Error(payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`);
   }
 
-  return { success: true, deadlineKey, leadEmail };
+  return { success: true, deadlineKey, leadEmail, leadEmailSource };
 };
 
 const buildDateRangeForOpportunities = (opportunities = [], filters = {}) => {
@@ -1233,16 +1266,29 @@ const sendDeadlineAlerts = async () => {
     return { success: true, skipped: 'disabled' };
   }
 
+  const approvedUsers = await AuthorizedUser.find({ status: 'approved' }).lean();
+  const leadDirectory = buildLeadEmailDirectory(approvedUsers);
   const opportunities = await SyncedOpportunity.find({
-    leadEmail: { $exists: true, $ne: '' },
+    $or: [
+      { leadEmail: { $exists: true, $ne: '' } },
+      { internalLead: { $exists: true, $ne: '' } },
+    ],
   }).lean();
 
   let sent = 0;
   let skipped = 0;
   for (const opportunity of opportunities) {
     try {
-      const result = await sendDeadlineAlertForOpportunity({ opportunity, config });
+      const result = await sendDeadlineAlertForOpportunity({ opportunity, config, leadDirectory });
       if (result?.success && result.deadlineKey) {
+        const leadEmailUpdate = result.leadEmailSource === 'user_directory' && !opportunity.leadEmail
+          ? {
+            leadEmail: result.leadEmail,
+            leadEmailSource: 'directory',
+            leadEmailAssignedBy: 'system',
+            leadEmailAssignedAt: new Date(),
+          }
+          : {};
         await SyncedOpportunity.updateOne(
           { _id: opportunity._id },
           {
@@ -1250,6 +1296,7 @@ const sendDeadlineAlerts = async () => {
               deadlineAlerted: true,
               deadlineAlertedAt: new Date(),
               deadlineAlertedDateKey: result.deadlineKey,
+              ...leadEmailUpdate,
             },
           }
         );
@@ -3565,6 +3612,8 @@ app.get('/api/telecast/deadline-status', verifyToken, async (req, res) => {
     const selectedClients = Array.isArray(config.deadlineAlertClients) ? config.deadlineAlertClients : [];
     const clientSet = new Set(selectedClients.map((client) => String(client || '').trim().toLowerCase()).filter(Boolean));
 
+    const approvedUsers = await AuthorizedUser.find({ status: 'approved' }).lean();
+    const leadDirectory = buildLeadEmailDirectory(approvedUsers);
     const opportunities = await SyncedOpportunity.find(
       {},
       {
@@ -3585,7 +3634,8 @@ app.get('/api/telecast/deadline-status', verifyToken, async (req, res) => {
         const submissionKey = getDateKeyLocal(submissionDate);
         if (!submissionKey || submissionKey !== tomorrowKey) return null;
         const clientName = String(opp.clientName || '').trim().toLowerCase();
-        const leadEmail = String(opp.leadEmail || '').trim().toLowerCase();
+        const resolvedLead = resolveLeadEmailForOpportunity(opp, leadDirectory);
+        const leadEmail = String(resolvedLead.email || '').trim().toLowerCase();
         let reason = 'pending';
         if (String(opp.deadlineAlertedDateKey || '') === tomorrowKey) {
           reason = 'sent';
@@ -3599,7 +3649,7 @@ app.get('/api/telecast/deadline-status', verifyToken, async (req, res) => {
           tenderName: opp.tenderName || '',
           clientName: opp.clientName || '',
           leadName: opp.internalLead || '',
-          leadEmail: opp.leadEmail || '',
+          leadEmail: resolvedLead.email || '',
           submissionDate: submissionDate || '',
           sent: String(opp.deadlineAlertedDateKey || '') === tomorrowKey,
           reason,
