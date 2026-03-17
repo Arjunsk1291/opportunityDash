@@ -3549,6 +3549,68 @@ app.post('/api/telecast/test-deadline-mail', verifyToken, async (req, res) => {
   }
 });
 
+app.get('/api/telecast/deadline-status', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can view deadline status' });
+    }
+
+    const config = await getSystemConfig();
+    const now = new Date();
+    const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+    const tomorrowKey = tomorrow.toISOString().slice(0, 10);
+    const selectedClients = Array.isArray(config.deadlineAlertClients) ? config.deadlineAlertClients : [];
+    const clientSet = new Set(selectedClients.map((client) => String(client || '').trim().toLowerCase()).filter(Boolean));
+
+    const opportunities = await SyncedOpportunity.find(
+      {
+        leadEmail: { $exists: true, $ne: '' },
+      },
+      {
+        opportunityRefNo: 1,
+        tenderName: 1,
+        clientName: 1,
+        internalLead: 1,
+        leadEmail: 1,
+        tenderPlannedSubmissionDate: 1,
+        tenderSubmittedDate: 1,
+        deadlineAlertedDateKey: 1,
+      }
+    ).lean();
+
+    const rows = opportunities
+      .map((opp) => {
+        const submissionDate = getSubmissionDate(opp);
+        const submissionKey = getDateKeyUtc(submissionDate);
+        if (!submissionKey || submissionKey !== tomorrowKey) return null;
+        if (clientSet.size) {
+          const clientName = String(opp.clientName || '').trim().toLowerCase();
+          if (!clientSet.has(clientName)) return null;
+        }
+        return {
+          refNo: opp.opportunityRefNo || '',
+          tenderName: opp.tenderName || '',
+          clientName: opp.clientName || '',
+          leadName: opp.internalLead || '',
+          leadEmail: opp.leadEmail || '',
+          submissionDate: submissionDate || '',
+          sent: String(opp.deadlineAlertedDateKey || '') === tomorrowKey,
+        };
+      })
+      .filter(Boolean);
+
+    res.json({
+      success: true,
+      tomorrow: tomorrowKey,
+      enabled: Boolean(config.deadlineAlertEnabled),
+      count: rows.length,
+      rows,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to load deadline status' });
+  }
+});
+
 app.post('/api/telecast/test-approval-mail', verifyToken, async (req, res) => {
   try {
     if (!['Master', 'Admin'].includes(req.user.role)) {

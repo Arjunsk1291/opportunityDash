@@ -284,6 +284,17 @@ export default function Admin() {
   const [deadlineAlertClients, setDeadlineAlertClients] = useState<string[]>([]);
   const [deadlineClientQuery, setDeadlineClientQuery] = useState('');
   const [deadlineTestSending, setDeadlineTestSending] = useState(false);
+  const [deadlineStatusRows, setDeadlineStatusRows] = useState<Array<{
+    refNo: string;
+    tenderName: string;
+    clientName: string;
+    leadName: string;
+    leadEmail: string;
+    submissionDate: string;
+    sent: boolean;
+  }>>([]);
+  const [deadlineStatusDate, setDeadlineStatusDate] = useState('');
+  const [deadlineStatusLoading, setDeadlineStatusLoading] = useState(false);
   const [issueReportTemplateStyle, setIssueReportTemplateStyle] = useState(DEFAULT_TELECAST_TEMPLATE_STYLE.key);
   const [issueReportTemplateStyles, setIssueReportTemplateStyles] = useState<TelecastTemplateStyle[]>([DEFAULT_TELECAST_TEMPLATE_STYLE]);
   const [telecastKeywords, setTelecastKeywords] = useState<string[]>([]);
@@ -355,6 +366,7 @@ export default function Admin() {
     if (!canAccessPanel) return;
     if (activeTab === 'telecast') {
       loadClients();
+      loadDeadlineStatus();
     }
   }, [activeTab, canAccessPanel]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -770,6 +782,29 @@ export default function Admin() {
       setAvailableClients([...new Set(names)].sort((a, b) => a.localeCompare(b)));
     } catch (error) {
       console.error('Failed to load clients:', error);
+    }
+  };
+
+  const loadDeadlineStatus = async () => {
+    if (!token) return;
+    setDeadlineStatusLoading(true);
+    try {
+      const response = await fetch(API_URL + '/telecast/deadline-status', {
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load deadline status');
+      }
+      const data = await response.json();
+      setDeadlineStatusDate(String(data?.tomorrow || ''));
+      setDeadlineStatusRows(Array.isArray(data?.rows) ? data.rows : []);
+    } catch (error) {
+      console.error('Failed to load deadline status:', error);
+    } finally {
+      setDeadlineStatusLoading(false);
     }
   };
 
@@ -2942,7 +2977,18 @@ export default function Admin() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium">Client Filters</p>
-                    <p className="text-xs text-muted-foreground">{deadlineAlertClients.length} selected</p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{deadlineAlertClients.length} selected</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeadlineAlertClients([])}
+                        disabled={!deadlineAlertClients.length}
+                      >
+                        Clear all
+                      </Button>
+                    </div>
                   </div>
                   <Input
                     placeholder="Search clients..."
@@ -2986,6 +3032,60 @@ export default function Admin() {
                     <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${deadlineTestSending ? 'animate-pulse' : ''}`} />
                     {deadlineTestSending ? 'Sending...' : 'Send Deadline Template Preview'}
                   </Button>
+                  <Button
+                    onClick={loadDeadlineStatus}
+                    variant="ghost"
+                    className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto"
+                    disabled={deadlineStatusLoading}
+                  >
+                    {deadlineStatusLoading ? 'Refreshing...' : 'Refresh Deadline Status'}
+                  </Button>
+                </div>
+
+                <div className="rounded-lg border p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Tomorrow’s Deadlines</p>
+                    <span className="text-xs text-muted-foreground">{deadlineStatusDate || '—'}</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Ref No</TableHead>
+                          <TableHead>Tender</TableHead>
+                          <TableHead>Client</TableHead>
+                          <TableHead>Lead</TableHead>
+                          <TableHead>Lead Email</TableHead>
+                          <TableHead>Submission</TableHead>
+                          <TableHead>Sent</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {deadlineStatusRows.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                              No deadlines for tomorrow.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        {deadlineStatusRows.map((row) => (
+                          <TableRow key={`${row.refNo}-${row.leadEmail}`}>
+                            <TableCell className="font-mono text-xs">{row.refNo || '—'}</TableCell>
+                            <TableCell className="max-w-[220px] truncate">{row.tenderName || '—'}</TableCell>
+                            <TableCell className="max-w-[160px] truncate">{row.clientName || '—'}</TableCell>
+                            <TableCell className="max-w-[140px] truncate">{row.leadName || '—'}</TableCell>
+                            <TableCell className="font-mono text-xs">{row.leadEmail || '—'}</TableCell>
+                            <TableCell className="text-xs">{row.submissionDate || '—'}</TableCell>
+                            <TableCell>
+                              <Badge variant={row.sent ? 'default' : 'secondary'}>
+                                {row.sent ? 'Sent' : 'Pending'}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
               </CardContent>
             </Card>
