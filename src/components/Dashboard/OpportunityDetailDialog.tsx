@@ -31,6 +31,10 @@ export function OpportunityDetailDialog({
     return 'bg-slate-700';
   };
 
+  const getSubmissionDisplay = () => {
+    return opportunity.tenderSubmittedDate || opportunity.tenderPlannedSubmissionDate || '—';
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden border-none bg-white">
@@ -59,7 +63,7 @@ export function OpportunityDetailDialog({
               label="RFP Received" 
               value={opportunity.dateTenderReceived || opportunity.rawGraphData?.rfpReceivedDisplay || '—'} 
             />
-            <DetailRow label="Submission" value={opportunity.tenderPlannedSubmissionDate || '—'} />
+            <DetailRow label="Submission" value={getSubmissionDisplay()} />
             <DetailRow label="Lead" value={opportunity.internalLead || '—'} />
             <DetailRow label="Status" value={opportunity.avenirStatus || '—'} />
             <DetailRow label="Remarks" value={opportunity.remarksReason || '—'} />
