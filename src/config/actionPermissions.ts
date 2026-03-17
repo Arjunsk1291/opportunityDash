@@ -18,7 +18,6 @@ export type ActionKey =
   | 'telecast_config_write'
   | 'telecast_auth_write'
   | 'notification_alert_flags_write'
-  | 'lead_email_manage'
   | 'logs_cleanup';
 
 export const ACTION_LABELS: Record<ActionKey, string> = {
@@ -39,7 +38,6 @@ export const ACTION_LABELS: Record<ActionKey, string> = {
   telecast_config_write: 'Save Telecast Config',
   telecast_auth_write: 'Save Telecast Auth Tokens',
   notification_alert_flags_write: 'Update Telecast Alert Flags',
-  lead_email_manage: 'Manage Lead Email Assignments',
   logs_cleanup: 'Cleanup Login Logs',
 };
 
@@ -61,7 +59,6 @@ export const ACTION_DESCRIPTIONS: Record<ActionKey, string> = {
   telecast_config_write: 'Persist telecast templates and recipients.',
   telecast_auth_write: 'Persist delegated Graph auth for telecast.',
   notification_alert_flags_write: 'Persist telecast alert flag updates on synced tenders.',
-  lead_email_manage: 'Approve or assign lead email addresses for opportunities.',
   logs_cleanup: 'Delete old login logs.',
 };
 
@@ -83,6 +80,5 @@ export const DEFAULT_ACTION_ROLE_ACCESS: Record<ActionKey, UserRole[]> = {
   telecast_config_write: ['Master'],
   telecast_auth_write: ['Master'],
   notification_alert_flags_write: ['Master', 'Admin'],
-  lead_email_manage: ['Master'],
   logs_cleanup: ['Master'],
 };

@@ -53,22 +53,6 @@ interface AuthorizedUser {
   approvedAt?: Date;
 }
 
-interface LeadEmailSuggestion {
-  _id: string;
-  opportunityRefNo: string;
-  tenderName: string;
-  leadName: string;
-  leadNameKey?: string;
-  tenderCount?: number;
-  suggestedEmail: string;
-  score?: number;
-  suggestedBy?: 'auto' | 'manual';
-  status: 'pending' | 'approved' | 'rejected';
-  createdAt?: string;
-  approvedAt?: string;
-}
-
-
 interface CollectionStats {
   totalTenders: number;
   totalValue: number;
@@ -311,19 +295,6 @@ export default function Admin() {
     assignedGroup: 'GES',
     status: 'approved',
   });
-  const [leadEmailSuggestions, setLeadEmailSuggestions] = useState<LeadEmailSuggestion[]>([]);
-  const [leadEmailLoading, setLeadEmailLoading] = useState(false);
-  const [leadEmailScanning, setLeadEmailScanning] = useState(false);
-  const [assignedLeadEmails, setAssignedLeadEmails] = useState<Array<{
-    leadName: string;
-    leadEmail: string;
-    count: number;
-    tenders: Array<{ refNo: string; tenderName: string }>;
-  }>>([]);
-  const [assignedLeadLoading, setAssignedLeadLoading] = useState(false);
-  const [manualLeadRefNo, setManualLeadRefNo] = useState('');
-  const [manualLeadName, setManualLeadName] = useState('');
-  const [manualLeadEmail, setManualLeadEmail] = useState('');
   const [activeTab, setActiveTab] = useState('general');
   const [draftPagePermissions, setDraftPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
   const [draftPageEmailPermissions, setDraftPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
@@ -362,14 +333,6 @@ export default function Admin() {
       fetchConsentUrl();
     }
   }, [canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!canAccessPanel || !token) return;
-    if (activeTab === 'users') {
-      loadLeadEmailSuggestions();
-      loadAssignedLeadEmails();
-    }
-  }, [activeTab, canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!canAccessPanel) return;
@@ -475,8 +438,6 @@ export default function Admin() {
     return [...new Set(list.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean))];
   };
 
-  const canManageLeadEmails = canPerformAction('lead_email_manage');
-
   const loadUsers = async () => {
     if (!token) return;
     setLoading(true);
@@ -500,153 +461,6 @@ export default function Admin() {
       setMessage({ type: 'error', text: 'Failed to load users: ' + (error as Error).message });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadLeadEmailSuggestions = async () => {
-    if (!token) return;
-    setLeadEmailLoading(true);
-    try {
-      const response = await fetch(API_URL + '/opportunities/lead-email/suggestions?status=pending', {
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!response.ok) {
-        throw new Error('Failed to load lead email suggestions');
-      }
-      const data = await response.json();
-      setLeadEmailSuggestions(data);
-    } catch (error) {
-      console.error('❌ Error loading lead email suggestions:', error);
-      toast.error((error as Error).message || 'Failed to load lead email suggestions');
-    } finally {
-      setLeadEmailLoading(false);
-    }
-  };
-
-  const loadAssignedLeadEmails = async () => {
-    if (!token) return;
-    setAssignedLeadLoading(true);
-    try {
-      const response = await fetch(API_URL + '/opportunities/lead-email/assigned', {
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!response.ok) {
-        throw new Error('Failed to load assigned lead emails');
-      }
-      const data = await response.json();
-      setAssignedLeadEmails(Array.isArray(data?.leads) ? data.leads : []);
-    } catch (error) {
-      console.error('❌ Error loading assigned lead emails:', error);
-      toast.error((error as Error).message || 'Failed to load assigned lead emails');
-    } finally {
-      setAssignedLeadLoading(false);
-    }
-  };
-
-  const scanLeadEmailSuggestions = async () => {
-    if (!token) return;
-    setLeadEmailScanning(true);
-    try {
-      const response = await fetch(API_URL + '/opportunities/lead-email/suggestions/scan', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || 'Lead email scan failed');
-      }
-      toast.success(`Created ${data.created || 0} new lead email suggestion(s).`);
-      await loadLeadEmailSuggestions();
-      await loadAssignedLeadEmails();
-    } catch (error) {
-      toast.error((error as Error).message || 'Lead email scan failed');
-    } finally {
-      setLeadEmailScanning(false);
-    }
-  };
-
-  const approveLeadEmailSuggestion = async (id: string) => {
-    if (!token) return;
-    try {
-      const response = await fetch(`${API_URL}/opportunities/lead-email/suggestions/${id}/approve`, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || 'Approval failed');
-      }
-      toast.success('Lead email approved and assigned.');
-      await loadLeadEmailSuggestions();
-      await loadAssignedLeadEmails();
-    } catch (error) {
-      toast.error((error as Error).message || 'Approval failed');
-    }
-  };
-
-  const rejectLeadEmailSuggestion = async (id: string) => {
-    if (!token) return;
-    try {
-      const response = await fetch(`${API_URL}/opportunities/lead-email/suggestions/${id}/reject`, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || 'Reject failed');
-      }
-      toast.success('Lead email suggestion rejected.');
-      await loadLeadEmailSuggestions();
-    } catch (error) {
-      toast.error((error as Error).message || 'Reject failed');
-    }
-  };
-
-  const assignLeadEmailManual = async () => {
-    if (!token) return;
-    const ref = manualLeadRefNo.trim();
-    const leadName = manualLeadName.trim();
-    const email = manualLeadEmail.trim().toLowerCase();
-    if (!email || (!ref && !leadName)) {
-      toast.error('Lead name or opportunity ref no and email are required.');
-      return;
-    }
-    try {
-      const response = await fetch(`${API_URL}/opportunities/lead-email/manual`, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ opportunityRefNo: ref, leadName, email }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || 'Manual assignment failed');
-      }
-      toast.success('Lead email assigned.');
-      setManualLeadRefNo('');
-      setManualLeadName('');
-      setManualLeadEmail('');
-      await loadLeadEmailSuggestions();
-      await loadAssignedLeadEmails();
-    } catch (error) {
-      toast.error((error as Error).message || 'Manual assignment failed');
     }
   };
 
@@ -2157,181 +1971,6 @@ export default function Admin() {
             </CardContent>
           </Card>
 
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>Lead Email Assignments</CardTitle>
-              <CardDescription>Auto-suggest and approve lead emails for opportunities. Approved emails are stored on each opportunity.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="default"
-                    onClick={scanLeadEmailSuggestions}
-                    disabled={!canManageLeadEmails || leadEmailScanning}
-                    className="gap-2"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${leadEmailScanning ? 'animate-spin' : ''}`} />
-                    Scan for Matches
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={loadLeadEmailSuggestions}
-                    disabled={!canManageLeadEmails || leadEmailLoading}
-                    className="gap-2"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${leadEmailLoading ? 'animate-spin' : ''}`} />
-                    Refresh
-                  </Button>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Pending suggestions: {leadEmailSuggestions.length}
-                </div>
-              </div>
-
-              <div className="grid gap-2 md:grid-cols-[1fr,1fr,1fr,auto]">
-                <Input
-                  placeholder="Lead Name (preferred)"
-                  value={manualLeadName}
-                  onChange={(e) => setManualLeadName(e.target.value)}
-                  disabled={!canManageLeadEmails}
-                />
-                <Input
-                  placeholder="Opportunity Ref No."
-                  value={manualLeadRefNo}
-                  onChange={(e) => setManualLeadRefNo(e.target.value)}
-                  disabled={!canManageLeadEmails}
-                />
-                <Input
-                  placeholder="Lead Email"
-                  value={manualLeadEmail}
-                  onChange={(e) => setManualLeadEmail(e.target.value)}
-                  disabled={!canManageLeadEmails}
-                />
-                <Button
-                  onClick={assignLeadEmailManual}
-                  disabled={!canManageLeadEmails || !manualLeadEmail.trim() || (!manualLeadName.trim() && !manualLeadRefNo.trim())}
-                >
-                  Assign & Approve
-                </Button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Lead</TableHead>
-                      <TableHead>Suggested Email</TableHead>
-                      <TableHead>Tenders</TableHead>
-                      <TableHead>Score</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {leadEmailSuggestions.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
-                          No pending lead email suggestions.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    {leadEmailSuggestions.map((suggestion) => (
-                      <TableRow key={suggestion._id}>
-                        <TableCell className="max-w-[180px] truncate">{suggestion.leadName || '—'}</TableCell>
-                        <TableCell className="font-mono text-xs">{suggestion.suggestedEmail}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{suggestion.tenderCount ?? '—'}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{suggestion.score ?? '—'}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{suggestion.suggestedBy || 'auto'}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => approveLeadEmailSuggestion(suggestion._id)}
-                              disabled={!canManageLeadEmails}
-                            >
-                              Approve
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => rejectLeadEmailSuggestion(suggestion._id)}
-                              disabled={!canManageLeadEmails}
-                            >
-                              Reject
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              <div className="border-t pt-4 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium">Assigned Lead Emails</p>
-                    <p className="text-xs text-muted-foreground">Shows where lead email assignments are reflected on opportunities.</p>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span>{assignedLeadEmails.length} leads</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={loadAssignedLeadEmails}
-                      disabled={!canManageLeadEmails || assignedLeadLoading}
-                      className="gap-2"
-                    >
-                      <RefreshCw className={`h-3 w-3 ${assignedLeadLoading ? 'animate-spin' : ''}`} />
-                      Refresh Assigned
-                    </Button>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Lead</TableHead>
-                        <TableHead>Lead Email</TableHead>
-                        <TableHead>Tenders</TableHead>
-                        <TableHead>Sample Tenders</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {assignedLeadEmails.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
-                            No assigned lead emails found.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                      {assignedLeadEmails.map((row) => (
-                        <TableRow key={`${row.leadName}-${row.leadEmail}`}>
-                          <TableCell className="max-w-[200px] truncate">{row.leadName || '—'}</TableCell>
-                          <TableCell className="font-mono text-xs">{row.leadEmail || '—'}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{row.count ?? '—'}</Badge>
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {Array.isArray(row.tenders) && row.tenders.length
-                              ? row.tenders.map((tender) => tender.refNo).filter(Boolean).join(', ')
-                              : '—'}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
         )}
 
