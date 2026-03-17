@@ -308,7 +308,7 @@ export default function TenderUpdates() {
   };
 
   const renderTenderList = () => (
-    <Card className="flex h-full min-h-[18rem] flex-col bg-card/80 p-4 backdrop-blur-sm">
+    <Card className="flex h-full min-h-[18rem] min-w-0 flex-col overflow-x-hidden bg-card/80 p-4 backdrop-blur-sm">
       <div className="mb-3 text-xs uppercase tracking-wider text-muted-foreground">Tender List</div>
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
         {filteredTenders.map((opp) => {
@@ -321,22 +321,22 @@ export default function TenderUpdates() {
               type="button"
               onClick={() => setSelectedId(opp.id)}
               className={cn(
-                "w-full border-b border-border px-3 py-3 text-left transition-colors hover:bg-muted/40",
+                "w-full min-w-0 border-b border-border px-3 py-3 text-left transition-colors hover:bg-muted/40",
                 selectedId === opp.id && 'border-l-4 border-primary bg-primary/5',
               )}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold">{opp.tenderName}</p>
+              <div className="flex min-w-0 items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-2 break-words font-semibold">{opp.tenderName}</p>
                   <p className="font-mono text-xs text-muted-foreground">{opp.opportunityRefNo}</p>
                 </div>
-                <Badge className="max-w-full shrink-0 bg-info/10 text-info">{opp.groupClassification || '—'}</Badge>
+                <Badge className="max-w-[5.5rem] shrink-0 truncate bg-info/10 text-info">{opp.groupClassification || '—'}</Badge>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span className="truncate">{opp.internalLead || 'Unassigned'}</span>
-                <Badge variant="secondary" className="max-w-full">{mergedStatus}</Badge>
-                <Badge className={cn("max-w-full", dueBadge)}>{next ? `Due ${next.date}` : 'No due date'}</Badge>
-                <Badge variant="outline" className="max-w-full">{(updatesByOpportunity.get(opp.id) || []).length} updates</Badge>
+              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="min-w-0 flex-1 truncate">{opp.internalLead || 'Unassigned'}</span>
+                <Badge variant="secondary" className="max-w-[9rem] truncate">{mergedStatus}</Badge>
+                <Badge className={cn("max-w-[9rem] truncate", dueBadge)}>{next ? `Due ${next.date}` : 'No due date'}</Badge>
+                <Badge variant="outline" className="max-w-[8rem] truncate">{(updatesByOpportunity.get(opp.id) || []).length} updates</Badge>
               </div>
             </button>
           );
@@ -346,7 +346,7 @@ export default function TenderUpdates() {
   );
 
   const renderTenderDetail = () => (
-    <Card className="flex h-full min-h-[22rem] flex-col bg-card/80 p-4 backdrop-blur-sm">
+    <Card className="flex h-full min-h-[22rem] min-w-0 flex-col overflow-x-hidden bg-card/80 p-4 backdrop-blur-sm">
       {selectedTender ? (
         <div className="flex h-full min-h-0 flex-col">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -385,7 +385,7 @@ export default function TenderUpdates() {
   );
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="w-full overflow-x-hidden space-y-4 sm:space-y-6">
       <Card className="p-4 sm:p-6 bg-card/80 backdrop-blur-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
