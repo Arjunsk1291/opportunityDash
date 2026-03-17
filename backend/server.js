@@ -1039,18 +1039,21 @@ const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' })
   return { success: true, recipients: recipientEmails.length };
 };
 
-const getDateKeyUtc = (value) => {
+const getDateKeyLocal = (value) => {
   if (!value) return '';
   const d = value instanceof Date ? value : parseDateValue(value);
   if (!d || Number.isNaN(d.getTime())) return '';
-  return d.toISOString().slice(0, 10);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const shouldSendDeadlineAlert = (opportunity, now = new Date()) => {
-  const deadlineKey = getDateKeyUtc(getSubmissionDate(opportunity));
+  const deadlineKey = getDateKeyLocal(getSubmissionDate(opportunity));
   if (!deadlineKey) return { shouldSend: false };
-  const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-  const tomorrowKey = tomorrow.toISOString().slice(0, 10);
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const tomorrowKey = getDateKeyLocal(tomorrow);
   if (deadlineKey !== tomorrowKey) return { shouldSend: false };
   if (String(opportunity?.deadlineAlertedDateKey || '') === deadlineKey) return { shouldSend: false };
   return { shouldSend: true, deadlineKey };
@@ -3557,15 +3560,13 @@ app.get('/api/telecast/deadline-status', verifyToken, async (req, res) => {
 
     const config = await getSystemConfig();
     const now = new Date();
-    const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-    const tomorrowKey = tomorrow.toISOString().slice(0, 10);
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const tomorrowKey = getDateKeyLocal(tomorrow);
     const selectedClients = Array.isArray(config.deadlineAlertClients) ? config.deadlineAlertClients : [];
     const clientSet = new Set(selectedClients.map((client) => String(client || '').trim().toLowerCase()).filter(Boolean));
 
     const opportunities = await SyncedOpportunity.find(
-      {
-        leadEmail: { $exists: true, $ne: '' },
-      },
+      {},
       {
         opportunityRefNo: 1,
         tenderName: 1,
@@ -3581,11 +3582,17 @@ app.get('/api/telecast/deadline-status', verifyToken, async (req, res) => {
     const rows = opportunities
       .map((opp) => {
         const submissionDate = getSubmissionDate(opp);
-        const submissionKey = getDateKeyUtc(submissionDate);
+        const submissionKey = getDateKeyLocal(submissionDate);
         if (!submissionKey || submissionKey !== tomorrowKey) return null;
-        if (clientSet.size) {
-          const clientName = String(opp.clientName || '').trim().toLowerCase();
-          if (!clientSet.has(clientName)) return null;
+        const clientName = String(opp.clientName || '').trim().toLowerCase();
+        const leadEmail = String(opp.leadEmail || '').trim().toLowerCase();
+        let reason = 'pending';
+        if (String(opp.deadlineAlertedDateKey || '') === tomorrowKey) {
+          reason = 'sent';
+        } else if (!leadEmail) {
+          reason = 'missing_lead_email';
+        } else if (clientSet.size && !clientSet.has(clientName)) {
+          reason = 'client_filtered';
         }
         return {
           refNo: opp.opportunityRefNo || '',
@@ -3595,6 +3602,7 @@ app.get('/api/telecast/deadline-status', verifyToken, async (req, res) => {
           leadEmail: opp.leadEmail || '',
           submissionDate: submissionDate || '',
           sent: String(opp.deadlineAlertedDateKey || '') === tomorrowKey,
+          reason,
         };
       })
       .filter(Boolean);

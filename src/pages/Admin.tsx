@@ -292,6 +292,7 @@ export default function Admin() {
     leadEmail: string;
     submissionDate: string;
     sent: boolean;
+    reason: string;
   }>>([]);
   const [deadlineStatusDate, setDeadlineStatusDate] = useState('');
   const [deadlineStatusLoading, setDeadlineStatusLoading] = useState(false);
@@ -800,7 +801,14 @@ export default function Admin() {
       }
       const data = await response.json();
       setDeadlineStatusDate(String(data?.tomorrow || ''));
-      setDeadlineStatusRows(Array.isArray(data?.rows) ? data.rows : []);
+      setDeadlineStatusRows(
+        Array.isArray(data?.rows)
+          ? data.rows.map((row: any) => ({
+            ...row,
+            reason: row?.reason || 'pending',
+          }))
+          : []
+      );
     } catch (error) {
       console.error('Failed to load deadline status:', error);
     } finally {
@@ -1623,6 +1631,20 @@ export default function Admin() {
       toast.error((error as Error).message);
     } finally {
       setTelecastBulkUpdating(false);
+    }
+  };
+
+  const getDeadlineReasonBadge = (reason: string) => {
+    switch (reason) {
+      case 'sent':
+        return { label: 'Already sent', variant: 'default' as const };
+      case 'missing_lead_email':
+        return { label: 'Missing lead email', variant: 'secondary' as const };
+      case 'client_filtered':
+        return { label: 'Client filtered', variant: 'outline' as const };
+      case 'pending':
+      default:
+        return { label: 'Pending', variant: 'secondary' as const };
     }
   };
 
@@ -3058,31 +3080,38 @@ export default function Admin() {
                           <TableHead>Lead Email</TableHead>
                           <TableHead>Submission</TableHead>
                           <TableHead>Sent</TableHead>
+                          <TableHead>Reason</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {deadlineStatusRows.length === 0 && (
                           <TableRow>
-                            <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                            <TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
                               No deadlines for tomorrow.
                             </TableCell>
                           </TableRow>
                         )}
-                        {deadlineStatusRows.map((row) => (
-                          <TableRow key={`${row.refNo}-${row.leadEmail}`}>
-                            <TableCell className="font-mono text-xs">{row.refNo || '—'}</TableCell>
-                            <TableCell className="max-w-[220px] truncate">{row.tenderName || '—'}</TableCell>
-                            <TableCell className="max-w-[160px] truncate">{row.clientName || '—'}</TableCell>
-                            <TableCell className="max-w-[140px] truncate">{row.leadName || '—'}</TableCell>
-                            <TableCell className="font-mono text-xs">{row.leadEmail || '—'}</TableCell>
-                            <TableCell className="text-xs">{row.submissionDate || '—'}</TableCell>
-                            <TableCell>
-                              <Badge variant={row.sent ? 'default' : 'secondary'}>
-                                {row.sent ? 'Sent' : 'Pending'}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {deadlineStatusRows.map((row) => {
+                          const reasonBadge = getDeadlineReasonBadge(row.reason);
+                          return (
+                            <TableRow key={`${row.refNo}-${row.leadEmail}`}>
+                              <TableCell className="font-mono text-xs">{row.refNo || '—'}</TableCell>
+                              <TableCell className="max-w-[220px] truncate">{row.tenderName || '—'}</TableCell>
+                              <TableCell className="max-w-[160px] truncate">{row.clientName || '—'}</TableCell>
+                              <TableCell className="max-w-[140px] truncate">{row.leadName || '—'}</TableCell>
+                              <TableCell className="font-mono text-xs">{row.leadEmail || '—'}</TableCell>
+                              <TableCell className="text-xs">{row.submissionDate || '—'}</TableCell>
+                              <TableCell>
+                                <Badge variant={row.sent ? 'default' : 'secondary'}>
+                                  {row.sent ? 'Sent' : 'Pending'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={reasonBadge.variant}>{reasonBadge.label}</Badge>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
