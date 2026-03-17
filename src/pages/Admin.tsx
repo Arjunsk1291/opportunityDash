@@ -64,6 +64,7 @@ interface LeadEmailSuggestion {
 
 interface LeadEmailAssigned {
   leadName: string;
+  leadNameKey?: string;
   leadEmail: string;
   count: number;
   tenders: Array<{ refNo: string; tenderName: string }>;
@@ -317,6 +318,9 @@ export default function Admin() {
   const [leadEmailApproving, setLeadEmailApproving] = useState(false);
   const [assignedLeadEmails, setAssignedLeadEmails] = useState<LeadEmailAssigned[]>([]);
   const [assignedLeadLoading, setAssignedLeadLoading] = useState(false);
+  const [leadEmailEditKey, setLeadEmailEditKey] = useState<string | null>(null);
+  const [leadEmailEditValue, setLeadEmailEditValue] = useState('');
+  const [leadEmailSaving, setLeadEmailSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
   const [draftPagePermissions, setDraftPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
   const [draftPageEmailPermissions, setDraftPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
@@ -576,6 +580,52 @@ export default function Admin() {
     }
   };
 
+  const startLeadEmailEdit = (row: LeadEmailAssigned) => {
+    setLeadEmailEditKey(row.leadNameKey || row.leadName);
+    setLeadEmailEditValue(row.leadEmail || '');
+  };
+
+  const cancelLeadEmailEdit = () => {
+    setLeadEmailEditKey(null);
+    setLeadEmailEditValue('');
+  };
+
+  const saveLeadEmailEdit = async (row: LeadEmailAssigned) => {
+    if (!token) return;
+    const email = String(leadEmailEditValue || '').trim().toLowerCase();
+    if (!email) {
+      toast.error('Lead email is required.');
+      return;
+    }
+    setLeadEmailSaving(true);
+    try {
+      const response = await fetch(`${API_URL}/opportunities/lead-email/approve`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          leadName: row.leadName,
+          leadNameKey: row.leadNameKey || row.leadName,
+          email,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Update failed');
+      }
+      toast.success('Lead email updated.');
+      cancelLeadEmailEdit();
+      await loadAssignedLeadEmails();
+      await loadLeadEmailSuggestions();
+    } catch (error) {
+      toast.error((error as Error).message || 'Update failed');
+    } finally {
+      setLeadEmailSaving(false);
+    }
+  };
+
   const loadCollectionStats = async () => {
     if (!token) return;
     try {
@@ -715,7 +765,8 @@ export default function Admin() {
       setDeadlineTemplateBody(data.deadlineTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.');
       setDeadlineTemplateStyle(data.deadlineTemplateStyle || 'sunset_alert');
       setDeadlineAlertClients(Array.isArray(data.deadlineAlertClients) ? data.deadlineAlertClients : []);
-      setTelecastSendDelayMinutes(Number(data.telecastSendDelayMinutes) || 10);
+      const delayValue = Number(data.telecastSendDelayMinutes);
+      setTelecastSendDelayMinutes(Number.isFinite(delayValue) ? delayValue : 10);
       setTelecastTemplateStyles(Array.isArray(data.templateStyles) && data.templateStyles.length ? data.templateStyles : [DEFAULT_TELECAST_TEMPLATE_STYLE]);
       setTelecastKeywords(Array.isArray(data.keywords) ? data.keywords : []);
       setTelecastGroupRecipients({
@@ -1862,30 +1913,75 @@ export default function Admin() {
                         <TableHead>Lead Email</TableHead>
                         <TableHead>Tenders</TableHead>
                         <TableHead>Sample Tenders</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {assignedLeadEmails.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                          <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
                             No approved lead emails yet.
                           </TableCell>
                         </TableRow>
                       )}
-                      {assignedLeadEmails.map((row) => (
-                        <TableRow key={`${row.leadName}-${row.leadEmail}`}>
-                          <TableCell className="max-w-[200px] truncate">{row.leadName || '—'}</TableCell>
-                          <TableCell className="font-mono text-xs">{row.leadEmail || '—'}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{row.count ?? '—'}</Badge>
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {Array.isArray(row.tenders) && row.tenders.length
-                              ? row.tenders.map((tender) => tender.refNo).filter(Boolean).join(', ')
-                              : '—'}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {assignedLeadEmails.map((row) => {
+                        const isEditing = leadEmailEditKey === (row.leadNameKey || row.leadName);
+                        return (
+                          <TableRow key={row.leadNameKey || row.leadName}>
+                            <TableCell className="max-w-[200px] truncate">{row.leadName || '—'}</TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {isEditing ? (
+                                <Input
+                                  value={leadEmailEditValue}
+                                  onChange={(e) => setLeadEmailEditValue(e.target.value)}
+                                  className="h-8 text-xs font-mono"
+                                  placeholder="lead@company.com"
+                                />
+                              ) : (
+                                row.leadEmail || '—'
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{row.count ?? '—'}</Badge>
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {Array.isArray(row.tenders) && row.tenders.length
+                                ? row.tenders.map((tender) => tender.refNo).filter(Boolean).join(', ')
+                                : '—'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {isEditing ? (
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => saveLeadEmailEdit(row)}
+                                    disabled={!canManageLeadEmails || leadEmailSaving}
+                                  >
+                                    Save
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={cancelLeadEmailEdit}
+                                    disabled={leadEmailSaving}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => startLeadEmailEdit(row)}
+                                  disabled={!canManageLeadEmails}
+                                >
+                                  Edit
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>

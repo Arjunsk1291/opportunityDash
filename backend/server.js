@@ -1781,11 +1781,23 @@ const scheduleDailyNotificationCheck = () => {
       if (lastCheckedAt && (Date.now() - lastCheckedAt.getTime()) < (60 * 60 * 1000)) {
         return;
       }
-      const syncResult = await syncFromConfiguredGraph({ source: 'hourly_notification' });
+
+      let syncResult = { insertedCount: 0, newRowsCount: 0, skipped: 'sync_not_run' };
+      try {
+        syncResult = await syncFromConfiguredGraph({ source: 'hourly_notification' });
+      } catch (syncError) {
+        console.error('[notification.daily-check.sync-failure]', JSON.stringify({
+          runKey: new Date().toISOString(),
+          message: syncError?.message || String(syncError),
+        }));
+      }
+
       const deadlineResult = await sendDeadlineAlerts();
       const runKey = new Date().toISOString();
+      const syncStatus = syncResult?.skipped === 'sync_not_run' ? 'failed' : 'ok';
       console.log('[notification.daily-check.success]', JSON.stringify({
         runKey,
+        syncStatus,
         insertedCount: syncResult.insertedCount,
         newRowsCount: syncResult.newRowsCount,
         deadlineSent: deadlineResult?.sent || 0,
@@ -2336,6 +2348,7 @@ app.get('/api/opportunities/lead-email/assigned', verifyToken, async (req, res) 
       });
       return {
         leadName: mapping.leadNameDisplay || mapping.leadNameKey || '',
+        leadNameKey: mapping.leadNameKey || '',
         leadEmail: mapping.leadEmail || '',
         count,
         tenders,
@@ -2976,7 +2989,9 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
       deadlineTemplateBody: config.deadlineAlertTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.',
       deadlineTemplateStyle: getTelecastTemplateStyle(config.deadlineAlertTemplateStyle).key,
       deadlineAlertClients: Array.isArray(config.deadlineAlertClients) ? config.deadlineAlertClients : [],
-      telecastSendDelayMinutes: Number(config.telecastSendDelayMinutes) || 10,
+      telecastSendDelayMinutes: Number.isFinite(Number(config.telecastSendDelayMinutes))
+        ? Number(config.telecastSendDelayMinutes)
+        : 10,
       templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
         key: style.key,
         label: style.label,
