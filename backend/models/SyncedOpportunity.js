@@ -16,6 +16,10 @@ const syncedOpportunitySchema = new mongoose.Schema(
     tenderPlannedSubmissionDate: String,
     tenderSubmittedDate: String,
     country: String,
+    leadEmail: { type: String, default: '' },
+    leadEmailSource: { type: String, default: '' },
+    leadEmailAssignedBy: { type: String, default: '' },
+    leadEmailAssignedAt: { type: Date, default: null },
     probability: { type: Number, default: 0 },
     avenirStatus: String,  // ✅ NEW: AVENIR STATUS from Google Sheets
     tenderResult: String,  // ✅ NEW: TENDER RESULT from Google Sheets

@@ -9,6 +9,7 @@ import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import Approval from './models/Approval.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
+import LeadEmailSuggestion from './models/LeadEmailSuggestion.js';
 import LoginLog from './models/LoginLog.js';
 import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
@@ -582,6 +583,59 @@ const normalizeEmailList = (value) => {
   if (!value) return [];
   const parts = Array.isArray(value) ? value : String(value).split(/[\n,;]+/g);
   return [...new Set(parts.map((v) => String(v || '').trim().toLowerCase()).filter(Boolean))];
+};
+
+const normalizeLeadValue = (value = '') => String(value || '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim();
+
+const tokenizeLeadValue = (value = '') => normalizeLeadValue(value).split(' ').filter(Boolean);
+
+const scoreLeadEmailMatch = (leadName = '', user = {}) => {
+  const leadNorm = normalizeLeadValue(leadName);
+  if (!leadNorm) return 0;
+
+  const displayNorm = normalizeLeadValue(user.displayName || '');
+  const emailLocal = normalizeLeadValue(String(user.email || '').split('@')[0].replace(/[._-]+/g, ' '));
+
+  if (leadNorm && displayNorm && leadNorm === displayNorm) return 100;
+  if (leadNorm && emailLocal && leadNorm === emailLocal) return 95;
+
+  const leadTokens = tokenizeLeadValue(leadNorm);
+  if (!leadTokens.length) return 0;
+
+  const overlapScore = (candidate) => {
+    const candidateTokens = tokenizeLeadValue(candidate);
+    if (!candidateTokens.length) return 0;
+    let matches = 0;
+    leadTokens.forEach((token) => {
+      if (candidateTokens.includes(token)) matches += 1;
+    });
+    return matches / leadTokens.length;
+  };
+
+  const displayScore = overlapScore(displayNorm);
+  const emailScore = overlapScore(emailLocal);
+  const maxScore = Math.max(displayScore, emailScore);
+
+  if (!maxScore) return 0;
+  const baseScore = Math.round(85 * maxScore);
+  const includesBonus = (displayNorm.includes(leadNorm) || emailLocal.includes(leadNorm)) ? 5 : 0;
+  return Math.min(90, baseScore + includesBonus);
+};
+
+const findBestLeadEmailMatch = (leadName = '', users = []) => {
+  let best = null;
+  let bestScore = 0;
+  users.forEach((user) => {
+    const score = scoreLeadEmailMatch(leadName, user);
+    if (score > bestScore) {
+      bestScore = score;
+      best = user;
+    }
+  });
+  return { best, score: bestScore };
 };
 
 const getGroupFromOpportunity = (opportunity) => {
@@ -1358,9 +1412,20 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     telecastDispatch = { ...telecastDispatch, sent: 0, skipped: 'error' };
   }
 
+  const existingLeadEmailRows = await SyncedOpportunity.find(
+    { leadEmail: { $exists: true, $ne: '' } },
+    { opportunityRefNo: 1, leadEmail: 1, leadEmailSource: 1, leadEmailAssignedAt: 1, leadEmailAssignedBy: 1 }
+  ).lean();
+  const leadEmailByRef = new Map(
+    existingLeadEmailRows
+      .map((row) => [normalizeRefNo(row?.opportunityRefNo || ''), row])
+      .filter(([ref]) => Boolean(ref))
+  );
+
   const opportunitiesForInsert = opportunities.map((opportunity) => {
     const key = buildNotificationKey(opportunity);
     const ref = getTenderRefNo(opportunity);
+    const leadEmailSnapshot = ref ? leadEmailByRef.get(normalizeRefNo(ref)) : null;
     const previousState = key ? existingTelecastState.keyState.get(key) : null;
     const isDispatchedNow = Boolean(key && telecastDispatch.dispatchedKeys.includes(key));
     const isAlerted = seededAlertBaseline || isDispatchedNow || Boolean(previousState?.telecastAlerted) || Boolean(key && alertedKeySet.has(key));
@@ -1376,6 +1441,10 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
 
     return {
       ...opportunity,
+      leadEmail: leadEmailSnapshot?.leadEmail || opportunity?.leadEmail || '',
+      leadEmailSource: leadEmailSnapshot?.leadEmailSource || opportunity?.leadEmailSource || '',
+      leadEmailAssignedAt: leadEmailSnapshot?.leadEmailAssignedAt || opportunity?.leadEmailAssignedAt || null,
+      leadEmailAssignedBy: leadEmailSnapshot?.leadEmailAssignedBy || opportunity?.leadEmailAssignedBy || '',
       telecastAlerted: isAlerted,
       telecastAlertedAt,
       telecastAlertedKey: key || '',
@@ -1907,6 +1976,164 @@ app.delete('/api/users/remove', verifyToken, async (req, res) => {
   }
 });
 
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+app.get('/api/opportunities/lead-email/suggestions', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'lead_email_manage')) return;
+    const status = String(req.query?.status || '').trim().toLowerCase();
+    const query = ['pending', 'approved', 'rejected'].includes(status) ? { status } : {};
+    const suggestions = await LeadEmailSuggestion.find(query).sort({ createdAt: -1 }).lean();
+    res.json(suggestions.map(mapIdField));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/opportunities/lead-email/suggestions/scan', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'lead_email_manage')) return;
+
+    const approvedUsers = await AuthorizedUser.find({ status: 'approved' }).lean();
+    const opportunities = await SyncedOpportunity.find({
+      internalLead: { $exists: true, $ne: '' },
+      $or: [
+        { leadEmail: { $exists: false } },
+        { leadEmail: '' },
+        { leadEmail: null },
+      ],
+    }).lean();
+
+    const existingSuggestions = await LeadEmailSuggestion.find(
+      { status: { $in: ['pending', 'approved'] } },
+      { opportunityRefNo: 1, suggestedEmail: 1 }
+    ).lean();
+    const existingSet = new Set(
+      existingSuggestions.map((row) => `${normalizeRefNo(row?.opportunityRefNo || '')}|${String(row?.suggestedEmail || '').toLowerCase()}`)
+    );
+
+    const threshold = 70;
+    const toInsert = [];
+    opportunities.forEach((opportunity) => {
+      const leadName = String(opportunity.internalLead || '').trim();
+      if (!leadName) return;
+      const { best, score } = findBestLeadEmailMatch(leadName, approvedUsers);
+      if (!best || score < threshold) return;
+      const ref = normalizeRefNo(opportunity.opportunityRefNo || '');
+      const email = String(best.email || '').toLowerCase();
+      if (!ref || !email) return;
+      const key = `${ref}|${email}`;
+      if (existingSet.has(key)) return;
+      existingSet.add(key);
+      toInsert.push({
+        opportunityRefNo: opportunity.opportunityRefNo || '',
+        tenderName: opportunity.tenderName || '',
+        leadName,
+        suggestedEmail: email,
+        score,
+        suggestedBy: 'auto',
+        status: 'pending',
+        createdBy: req.user.email,
+      });
+    });
+
+    if (!toInsert.length) {
+      return res.json({ success: true, created: 0, totalScanned: opportunities.length });
+    }
+
+    const inserted = await LeadEmailSuggestion.insertMany(toInsert);
+    res.json({ success: true, created: inserted.length, totalScanned: opportunities.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/opportunities/lead-email/manual', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'lead_email_manage')) return;
+    const opportunityRefNo = String(req.body?.opportunityRefNo || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!opportunityRefNo || !email) {
+      return res.status(400).json({ error: 'opportunityRefNo and email are required' });
+    }
+
+    const refPattern = new RegExp(`^${escapeRegex(opportunityRefNo)}$`, 'i');
+    const opportunity = await SyncedOpportunity.findOne({ opportunityRefNo: refPattern });
+    if (!opportunity) {
+      return res.status(404).json({ error: 'Opportunity not found' });
+    }
+
+    const now = new Date();
+    opportunity.leadEmail = email;
+    opportunity.leadEmailSource = 'manual';
+    opportunity.leadEmailAssignedBy = req.user.email;
+    opportunity.leadEmailAssignedAt = now;
+    await opportunity.save();
+
+    const suggestion = await LeadEmailSuggestion.create({
+      opportunityRefNo: opportunity.opportunityRefNo || opportunityRefNo,
+      tenderName: opportunity.tenderName || '',
+      leadName: opportunity.internalLead || '',
+      suggestedEmail: email,
+      score: 100,
+      suggestedBy: 'manual',
+      status: 'approved',
+      createdBy: req.user.email,
+      approvedBy: req.user.email,
+      approvedAt: now,
+    });
+
+    res.json({ success: true, suggestion: mapIdField(suggestion.toObject()), opportunity: mapIdField(opportunity.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/opportunities/lead-email/suggestions/:id/approve', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'lead_email_manage')) return;
+    const suggestion = await LeadEmailSuggestion.findById(req.params.id);
+    if (!suggestion) return res.status(404).json({ error: 'Suggestion not found' });
+
+    const opportunity = await SyncedOpportunity.findOne({ opportunityRefNo: suggestion.opportunityRefNo });
+    if (!opportunity) return res.status(404).json({ error: 'Opportunity not found' });
+
+    const now = new Date();
+    opportunity.leadEmail = suggestion.suggestedEmail;
+    opportunity.leadEmailSource = suggestion.suggestedBy || 'auto';
+    opportunity.leadEmailAssignedBy = req.user.email;
+    opportunity.leadEmailAssignedAt = now;
+    await opportunity.save();
+
+    suggestion.status = 'approved';
+    suggestion.approvedBy = req.user.email;
+    suggestion.approvedAt = now;
+    await suggestion.save();
+
+    res.json({ success: true, suggestion: mapIdField(suggestion.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/opportunities/lead-email/suggestions/:id/reject', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'lead_email_manage')) return;
+    const suggestion = await LeadEmailSuggestion.findById(req.params.id);
+    if (!suggestion) return res.status(404).json({ error: 'Suggestion not found' });
+
+    const now = new Date();
+    suggestion.status = 'rejected';
+    suggestion.rejectedBy = req.user.email;
+    suggestion.rejectedAt = now;
+    await suggestion.save();
+
+    res.json({ success: true, suggestion: mapIdField(suggestion.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/logs/cleanup', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'logs_cleanup')) return;
@@ -2322,6 +2549,7 @@ const ACTION_KEYS = [
   'telecast_config_write',
   'telecast_auth_write',
   'notification_alert_flags_write',
+  'lead_email_manage',
   'logs_cleanup',
 ];
 const DEFAULT_PAGE_ROLE_ACCESS = {
@@ -2355,6 +2583,7 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   telecast_config_write: ['Master'],
   telecast_auth_write: ['Master'],
   notification_alert_flags_write: ['Master', 'Admin'],
+  lead_email_manage: ['Master'],
   logs_cleanup: ['Master'],
 };
 

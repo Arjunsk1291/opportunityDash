@@ -27,6 +27,10 @@ export interface Opportunity {
   tenderPlannedSubmissionDate_imputed: boolean;
   tenderPlannedSubmissionDate_imputation_reason: string;
   tenderSubmittedDate: string | null;
+  leadEmail?: string;
+  leadEmailSource?: string;
+  leadEmailAssignedBy?: string;
+  leadEmailAssignedAt?: string | null;
   lastContactDate: string | null;
   lastContactDate_imputed: boolean;
   lastContactDate_imputation_reason: string;
