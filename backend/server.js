@@ -585,12 +585,22 @@ const normalizeEmailList = (value) => {
   return [...new Set(parts.map((v) => String(v || '').trim().toLowerCase()).filter(Boolean))];
 };
 
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const normalizeLeadValue = (value = '') => String(value || '')
   .toLowerCase()
   .replace(/[^a-z0-9]+/g, ' ')
   .trim();
 
 const normalizeLeadKey = (value = '') => normalizeLeadValue(value).replace(/\s+/g, ' ').trim();
+
+const buildLeadNameRegex = (leadName = '') => {
+  const normalized = normalizeLeadKey(leadName);
+  if (!normalized) return null;
+  const tokens = normalized.split(' ').map((token) => escapeRegex(token));
+  const pattern = `^\\s*${tokens.join('\\s+')}\\s*$`;
+  return new RegExp(pattern, 'i');
+};
 
 const tokenizeLeadValue = (value = '') => normalizeLeadValue(value).split(' ').filter(Boolean);
 
@@ -2120,8 +2130,6 @@ app.delete('/api/users/remove', verifyToken, async (req, res) => {
   }
 });
 
-const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
 app.get('/api/opportunities/lead-email/suggestions', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'lead_email_manage')) return;
@@ -2213,7 +2221,10 @@ app.post('/api/opportunities/lead-email/manual', verifyToken, async (req, res) =
     const now = new Date();
     let opportunities = [];
     if (leadName) {
-      const leadPattern = new RegExp(`^${escapeRegex(leadName)}$`, 'i');
+      const leadPattern = buildLeadNameRegex(leadName);
+      if (!leadPattern) {
+        return res.status(400).json({ error: 'leadName is invalid' });
+      }
       opportunities = await SyncedOpportunity.find({
         internalLead: leadPattern,
         $or: [
@@ -2275,8 +2286,8 @@ app.post('/api/opportunities/lead-email/suggestions/:id/approve', verifyToken, a
     if (!suggestion) return res.status(404).json({ error: 'Suggestion not found' });
     const leadName = String(suggestion.leadName || '').trim();
     if (!leadName) return res.status(400).json({ error: 'Suggestion missing leadName' });
-
-    const leadPattern = new RegExp(`^${escapeRegex(leadName)}$`, 'i');
+    const leadPattern = buildLeadNameRegex(leadName);
+    if (!leadPattern) return res.status(400).json({ error: 'Suggestion leadName is invalid' });
     const now = new Date();
     const updateResult = await SyncedOpportunity.updateMany(
       {

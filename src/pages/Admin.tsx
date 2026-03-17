@@ -186,6 +186,30 @@ const SAMPLE_TELECAST_VALUES = {
   COMMENTS: 'Sample values inserted for preview.',
 };
 
+const DEADLINE_TEMPLATE_PRESETS = [
+  {
+    key: 'concise',
+    label: 'Concise Reminder',
+    subject: 'Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}',
+    body: 'Quick reminder that {{TENDER_NAME}} ({{TENDER_NO}}) is due tomorrow ({{SUBMISSION_DATE}}) for {{CLIENT}}.',
+    style: 'sunset_alert',
+  },
+  {
+    key: 'action',
+    label: 'Action Required',
+    subject: 'Action Required: {{TENDER_NAME}} Due {{SUBMISSION_DATE}}',
+    body: 'Please finalize submission for {{CLIENT}}. Tender {{TENDER_NO}} is due on {{SUBMISSION_DATE}}. Reply with any blockers.',
+    style: 'emerald_signal',
+  },
+  {
+    key: 'ops',
+    label: 'Ops Snapshot',
+    subject: 'Submission Due Tomorrow: {{TENDER_NO}}',
+    body: 'Upcoming deadline alert for {{TENDER_NAME}} ({{TENDER_NO}}). Client: {{CLIENT}}. Due: {{SUBMISSION_DATE}}.',
+    style: 'avenir_blue',
+  },
+];
+
 const renderTemplatePreview = (template: string, values: Record<string, string>) =>
   Object.entries(values).reduce((output, [key, value]) => output.split(`{{${key}}}`).join(value), String(template || ''));
 
@@ -2816,6 +2840,27 @@ export default function Admin() {
                     <p className="text-xs text-muted-foreground">Alerts are sent only when a lead email is assigned and the deadline is tomorrow.</p>
                   </div>
                   <Switch checked={deadlineAlertEnabled} onCheckedChange={setDeadlineAlertEnabled} disabled={configSaving} />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Out-of-the-box Templates</p>
+                  <div className="flex flex-wrap gap-2">
+                    {DEADLINE_TEMPLATE_PRESETS.map((preset) => (
+                      <Button
+                        key={preset.key}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setDeadlineTemplateSubject(preset.subject);
+                          setDeadlineTemplateBody(preset.body);
+                          setDeadlineTemplateStyle(preset.style);
+                        }}
+                      >
+                        {preset.label}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="space-y-2">

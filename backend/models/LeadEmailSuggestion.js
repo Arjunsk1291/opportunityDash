@@ -20,6 +20,6 @@ const leadEmailSuggestionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-leadEmailSuggestionSchema.index({ opportunityRefNo: 1, suggestedEmail: 1, status: 1 });
+leadEmailSuggestionSchema.index({ leadNameKey: 1, suggestedEmail: 1, status: 1 });
 
 export default mongoose.model('LeadEmailSuggestion', leadEmailSuggestionSchema);
