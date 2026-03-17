@@ -2965,7 +2965,7 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   telecast_config_write: ['Master'],
   telecast_auth_write: ['Master'],
   notification_alert_flags_write: ['Master', 'Admin'],
-  lead_email_manage: ['Master'],
+  lead_email_manage: ['Master', 'Admin'],
   logs_cleanup: ['Master'],
 };
 
