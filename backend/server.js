@@ -678,6 +678,8 @@ const resolveLeadEmailForOpportunity = (opportunity, leadDirectory = null) => {
   return { email: '', source: 'missing' };
 };
 
+const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const getGroupFromOpportunity = (opportunity) => {
   const raw = String(opportunity?.groupClassification || opportunity?.rawGraphData?.rowSnapshot?.['GDS/GES'] || '').toUpperCase().trim();
   if (raw.includes('GES')) return 'GES';
@@ -1417,13 +1419,16 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
   const subjectTemplate = systemConfig.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
   const bodyTemplate = systemConfig.telecastTemplateBody || 'New row detected for {{TENDER_NO}}';
   const templateStyle = getTelecastTemplateStyle(systemConfig.telecastTemplateStyle);
+  const delayMinutes = Math.max(0, Number(systemConfig.telecastSendDelayMinutes) || 0);
+  const delayMs = delayMinutes * 60 * 1000;
   const staleCount = 0;
   let sent = 0;
   let skippedNoRecipients = 0;
   const dispatchedKeys = [];
   const dispatchedRefNos = [];
 
-  for (const row of rowsToSend) {
+  for (let index = 0; index < rowsToSend.length; index += 1) {
+    const row = rowsToSend[index];
     const group = getGroupFromOpportunity(row);
     const recipients = groupRecipients[group] || [];
     if (!recipients.length) {
@@ -1458,6 +1463,10 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
       if (key) dispatchedKeys.push(key);
       const refNo = getTenderRefNo(row);
       if (refNo) dispatchedRefNos.push(refNo);
+    }
+
+    if (delayMs > 0 && index < rowsToSend.length - 1) {
+      await sleep(delayMs);
     }
   }
 
@@ -2967,6 +2976,7 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
       deadlineTemplateBody: config.deadlineAlertTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.',
       deadlineTemplateStyle: getTelecastTemplateStyle(config.deadlineAlertTemplateStyle).key,
       deadlineAlertClients: Array.isArray(config.deadlineAlertClients) ? config.deadlineAlertClients : [],
+      telecastSendDelayMinutes: Number(config.telecastSendDelayMinutes) || 10,
       templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
         key: style.key,
         label: style.label,
@@ -3000,6 +3010,7 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     const deadlineAlertClients = Array.isArray(req.body?.deadlineAlertClients)
       ? req.body.deadlineAlertClients.map((client) => String(client || '').trim()).filter(Boolean)
       : [];
+    const telecastSendDelayMinutes = Math.max(0, Number(req.body?.telecastSendDelayMinutes) || 0);
     const groupRecipientsInput = req.body?.groupRecipients || {};
     const groupRecipients = {
       GES: normalizeEmailList(groupRecipientsInput.GES || []),
@@ -3020,6 +3031,7 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     config.deadlineAlertTemplateBody = deadlineTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.';
     config.deadlineAlertTemplateStyle = deadlineTemplateStyle.key;
     config.deadlineAlertClients = deadlineAlertClients;
+    config.telecastSendDelayMinutes = telecastSendDelayMinutes || 0;
     config.telecastGroupRecipients = groupRecipients;
     config.telecastKeywordHelp = TELECAST_TEMPLATE_KEYWORDS;
     config.updatedBy = req.user.email;
@@ -3039,6 +3051,7 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
       deadlineTemplateBody: config.deadlineAlertTemplateBody,
       deadlineTemplateStyle: config.deadlineAlertTemplateStyle,
       deadlineAlertClients: config.deadlineAlertClients || [],
+      telecastSendDelayMinutes: config.telecastSendDelayMinutes || 0,
       templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
         key: style.key,
         label: style.label,

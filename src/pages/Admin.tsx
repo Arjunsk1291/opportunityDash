@@ -272,6 +272,7 @@ export default function Admin() {
   const [telecastTemplateBody, setTelecastTemplateBody] = useState('A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
   const [telecastTemplateStyle, setTelecastTemplateStyle] = useState(DEFAULT_TELECAST_TEMPLATE_STYLE.key);
   const [telecastTemplateStyles, setTelecastTemplateStyles] = useState<TelecastTemplateStyle[]>([DEFAULT_TELECAST_TEMPLATE_STYLE]);
+  const [telecastSendDelayMinutes, setTelecastSendDelayMinutes] = useState(10);
   const [approvalAlertEnabled, setApprovalAlertEnabled] = useState(false);
   const [approvalTemplateSubject, setApprovalTemplateSubject] = useState('Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}');
   const [approvalTemplateBody, setApprovalTemplateBody] = useState('A tender has been approved by the Tender Manager and is ready for SVP review.');
@@ -714,6 +715,7 @@ export default function Admin() {
       setDeadlineTemplateBody(data.deadlineTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.');
       setDeadlineTemplateStyle(data.deadlineTemplateStyle || 'sunset_alert');
       setDeadlineAlertClients(Array.isArray(data.deadlineAlertClients) ? data.deadlineAlertClients : []);
+      setTelecastSendDelayMinutes(Number(data.telecastSendDelayMinutes) || 10);
       setTelecastTemplateStyles(Array.isArray(data.templateStyles) && data.templateStyles.length ? data.templateStyles : [DEFAULT_TELECAST_TEMPLATE_STYLE]);
       setTelecastKeywords(Array.isArray(data.keywords) ? data.keywords : []);
       setTelecastGroupRecipients({
@@ -1306,6 +1308,7 @@ export default function Admin() {
           deadlineTemplateBody,
           deadlineTemplateStyle,
           deadlineAlertClients,
+          telecastSendDelayMinutes,
           groupRecipients: {
             GES: normalizeRecipientList(telecastGroupRecipients.GES),
             GDS: normalizeRecipientList(telecastGroupRecipients.GDS),
@@ -2669,6 +2672,18 @@ export default function Admin() {
                 <div className="space-y-1">
                   <p className="text-sm font-medium">Body Template</p>
                   <Textarea rows={8} className="text-xs sm:text-sm md:text-base" value={telecastTemplateBody} onChange={(e) => setTelecastTemplateBody(e.target.value)} />
+                </div>
+                <div className="space-y-1 max-w-xs">
+                  <p className="text-sm font-medium">Delay Between Telecast Emails (minutes)</p>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base"
+                    value={telecastSendDelayMinutes}
+                    onChange={(e) => setTelecastSendDelayMinutes(Math.max(0, Number(e.target.value) || 0))}
+                  />
+                  <p className="text-xs text-muted-foreground">Applies between each tender alert mail.</p>
                 </div>
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Live Preview</p>
