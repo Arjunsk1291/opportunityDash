@@ -129,7 +129,7 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="w-full overflow-x-hidden space-y-4 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Sync Status Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 text-xs text-muted-foreground">
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 min-w-0">
