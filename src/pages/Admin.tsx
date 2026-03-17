@@ -68,11 +68,6 @@ interface LeadEmailSuggestion {
   approvedAt?: string;
 }
 
-interface UnassignedLeadGroup {
-  leadName: string;
-  count: number;
-  tenders: Array<{ refNo: string; tenderName: string }>;
-}
 
 interface CollectionStats {
   totalTenders: number;
@@ -184,6 +179,7 @@ const SAMPLE_TELECAST_VALUES = {
   GROUP: 'GDS',
   TENDER_TYPE: 'Proposal',
   DATE_TENDER_RECD: '2026-03-11',
+  SUBMISSION_DATE: '2026-03-18',
   YEAR: '2026',
   LEAD: 'arjun.s@avenirengineering.com',
   OPPORTUNITY_ID: 'telecast-preview',
@@ -257,6 +253,13 @@ export default function Admin() {
   const [approvalTemplateBody, setApprovalTemplateBody] = useState('A tender has been approved by the Tender Manager and is ready for SVP review.');
   const [approvalTemplateStyle, setApprovalTemplateStyle] = useState(DEFAULT_TELECAST_TEMPLATE_STYLE.key);
   const [approvalTemplateSending, setApprovalTemplateSending] = useState(false);
+  const [deadlineAlertEnabled, setDeadlineAlertEnabled] = useState(false);
+  const [deadlineTemplateSubject, setDeadlineTemplateSubject] = useState('Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}');
+  const [deadlineTemplateBody, setDeadlineTemplateBody] = useState('Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.');
+  const [deadlineTemplateStyle, setDeadlineTemplateStyle] = useState('sunset_alert');
+  const [deadlineAlertClients, setDeadlineAlertClients] = useState<string[]>([]);
+  const [deadlineClientQuery, setDeadlineClientQuery] = useState('');
+  const [deadlineTestSending, setDeadlineTestSending] = useState(false);
   const [issueReportTemplateStyle, setIssueReportTemplateStyle] = useState(DEFAULT_TELECAST_TEMPLATE_STYLE.key);
   const [issueReportTemplateStyles, setIssueReportTemplateStyles] = useState<TelecastTemplateStyle[]>([DEFAULT_TELECAST_TEMPLATE_STYLE]);
   const [telecastKeywords, setTelecastKeywords] = useState<string[]>([]);
@@ -264,6 +267,7 @@ export default function Admin() {
   const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string[]>>({ GES: [], GDS: [], GTS: [] });
   const [telecastRefNosToUnalert, setTelecastRefNosToUnalert] = useState('');
   const [telecastBulkUpdating, setTelecastBulkUpdating] = useState(false);
+  const [availableClients, setAvailableClients] = useState<string[]>([]);
   const [newAuthorizedUser, setNewAuthorizedUser] = useState<{ email: string; displayName: string; role: UserRole; assignedGroup: string; status: 'approved' | 'pending' }>({
     email: '',
     displayName: '',
@@ -277,8 +281,6 @@ export default function Admin() {
   const [manualLeadRefNo, setManualLeadRefNo] = useState('');
   const [manualLeadName, setManualLeadName] = useState('');
   const [manualLeadEmail, setManualLeadEmail] = useState('');
-  const [unassignedLeads, setUnassignedLeads] = useState<UnassignedLeadGroup[]>([]);
-  const [unassignedLoading, setUnassignedLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
   const [draftPagePermissions, setDraftPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
   const [draftPageEmailPermissions, setDraftPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
@@ -322,9 +324,15 @@ export default function Admin() {
     if (!canAccessPanel || !token) return;
     if (activeTab === 'users') {
       loadLeadEmailSuggestions();
-      loadUnassignedLeads();
     }
   }, [activeTab, canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!canAccessPanel) return;
+    if (activeTab === 'telecast') {
+      loadClients();
+    }
+  }, [activeTab, canAccessPanel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setDraftPagePermissions((pagePermissions || DEFAULT_PAGE_ROLE_ACCESS) as Record<PageKey, UserRole[]>);
@@ -375,6 +383,11 @@ export default function Admin() {
     [approvalTemplateStyle, telecastTemplateStyles],
   );
 
+  const selectedDeadlineTemplateStyle = useMemo(
+    () => telecastTemplateStyles.find((style) => style.key === deadlineTemplateStyle) || DEFAULT_TELECAST_TEMPLATE_STYLE,
+    [deadlineTemplateStyle, telecastTemplateStyles],
+  );
+
   const telecastPreviewSubject = useMemo(
     () => renderTemplatePreview(telecastTemplateSubject, SAMPLE_TELECAST_VALUES),
     [telecastTemplateSubject],
@@ -394,6 +407,22 @@ export default function Admin() {
     () => renderTemplatePreview(approvalTemplateBody, SAMPLE_TELECAST_VALUES),
     [approvalTemplateBody],
   );
+
+  const deadlinePreviewSubject = useMemo(
+    () => renderTemplatePreview(deadlineTemplateSubject, SAMPLE_TELECAST_VALUES),
+    [deadlineTemplateSubject],
+  );
+
+  const deadlinePreviewBody = useMemo(
+    () => renderTemplatePreview(deadlineTemplateBody, SAMPLE_TELECAST_VALUES),
+    [deadlineTemplateBody],
+  );
+
+  const filteredDeadlineClients = useMemo(() => {
+    const query = deadlineClientQuery.trim().toLowerCase();
+    if (!query) return availableClients;
+    return availableClients.filter((client) => client.toLowerCase().includes(query));
+  }, [availableClients, deadlineClientQuery]);
 
   const normalizeRecipientList = (value: unknown): string[] => {
     if (!value) return [];
@@ -449,29 +478,6 @@ export default function Admin() {
       toast.error((error as Error).message || 'Failed to load lead email suggestions');
     } finally {
       setLeadEmailLoading(false);
-    }
-  };
-
-  const loadUnassignedLeads = async () => {
-    if (!token) return;
-    setUnassignedLoading(true);
-    try {
-      const response = await fetch(API_URL + '/opportunities/lead-email/unassigned', {
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!response.ok) {
-        throw new Error('Failed to load unassigned leads');
-      }
-      const data = await response.json();
-      setUnassignedLeads(Array.isArray(data?.leads) ? data.leads : []);
-    } catch (error) {
-      console.error('❌ Error loading unassigned leads:', error);
-      toast.error((error as Error).message || 'Failed to load unassigned leads');
-    } finally {
-      setUnassignedLoading(false);
     }
   };
 
@@ -568,7 +574,6 @@ export default function Admin() {
       setManualLeadName('');
       setManualLeadEmail('');
       await loadLeadEmailSuggestions();
-      await loadUnassignedLeads();
     } catch (error) {
       toast.error((error as Error).message || 'Manual assignment failed');
     }
@@ -708,6 +713,11 @@ export default function Admin() {
       setApprovalTemplateSubject(data.approvalTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}');
       setApprovalTemplateBody(data.approvalTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.');
       setApprovalTemplateStyle(data.approvalTemplateStyle || DEFAULT_TELECAST_TEMPLATE_STYLE.key);
+      setDeadlineAlertEnabled(Boolean(data.deadlineAlertEnabled));
+      setDeadlineTemplateSubject(data.deadlineTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}');
+      setDeadlineTemplateBody(data.deadlineTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.');
+      setDeadlineTemplateStyle(data.deadlineTemplateStyle || 'sunset_alert');
+      setDeadlineAlertClients(Array.isArray(data.deadlineAlertClients) ? data.deadlineAlertClients : []);
       setTelecastTemplateStyles(Array.isArray(data.templateStyles) && data.templateStyles.length ? data.templateStyles : [DEFAULT_TELECAST_TEMPLATE_STYLE]);
       setTelecastKeywords(Array.isArray(data.keywords) ? data.keywords : []);
       setTelecastGroupRecipients({
@@ -718,6 +728,24 @@ export default function Admin() {
       setTelecastWeeklyStats(Array.isArray(data.weeklyStats) ? data.weeklyStats : []);
     } catch (error) {
       console.error('Failed to load telecast config:', error);
+    }
+  };
+
+  const loadClients = async () => {
+    try {
+      const response = await fetch(API_URL + '/clients', {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const names = Array.isArray(data)
+        ? data.map((client) => String(client?.companyName || '').trim()).filter(Boolean)
+        : [];
+      setAvailableClients([...new Set(names)].sort((a, b) => a.localeCompare(b)));
+    } catch (error) {
+      console.error('Failed to load clients:', error);
     }
   };
 
@@ -1247,6 +1275,11 @@ export default function Admin() {
           approvalTemplateSubject,
           approvalTemplateBody,
           approvalTemplateStyle,
+          deadlineAlertEnabled,
+          deadlineTemplateSubject,
+          deadlineTemplateBody,
+          deadlineTemplateStyle,
+          deadlineAlertClients,
           groupRecipients: {
             GES: normalizeRecipientList(telecastGroupRecipients.GES),
             GDS: normalizeRecipientList(telecastGroupRecipients.GDS),
@@ -1448,6 +1481,33 @@ export default function Admin() {
       toast.error((error as Error).message);
     } finally {
       setApprovalTemplateSending(false);
+    }
+  };
+
+  const sendDeadlineTestMail = async () => {
+    if (!token) return;
+    if (!telecastRecipientEmail.trim()) {
+      toast.error('Recipient email is required');
+      return;
+    }
+
+    setDeadlineTestSending(true);
+    try {
+      const response = await fetch(API_URL + '/telecast/test-deadline-mail', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ recipientEmail: telecastRecipientEmail.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to send deadline alert preview'));
+      toast.success(data.message || `Deadline alert preview sent to ${telecastRecipientEmail.trim()}`);
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setDeadlineTestSending(false);
     }
   };
 
@@ -2008,15 +2068,6 @@ export default function Admin() {
                     <RefreshCw className={`h-4 w-4 ${leadEmailLoading ? 'animate-spin' : ''}`} />
                     Refresh
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={loadUnassignedLeads}
-                    disabled={!canManageLeadEmails || unassignedLoading}
-                    className="gap-2"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${unassignedLoading ? 'animate-spin' : ''}`} />
-                    Refresh Unassigned
-                  </Button>
                 </div>
                 <div className="text-xs text-muted-foreground">
                   Pending suggestions: {leadEmailSuggestions.length}
@@ -2048,38 +2099,6 @@ export default function Admin() {
                 >
                   Assign & Approve
                 </Button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Unassigned Lead</TableHead>
-                      <TableHead>Tenders</TableHead>
-                      <TableHead>Sample Tenders</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {unassignedLeads.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
-                          No unassigned leads found.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    {unassignedLeads.map((lead) => (
-                      <TableRow key={lead.leadName}>
-                        <TableCell className="font-medium">{lead.leadName}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{lead.count}</Badge>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {lead.tenders.map((tender) => tender.refNo || tender.tenderName).filter(Boolean).join(', ') || '—'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
               </div>
 
               <div className="overflow-x-auto">
@@ -2661,7 +2680,7 @@ export default function Admin() {
                 </div>
                 <div className="rounded border p-3 text-xs">
                   <p className="font-semibold mb-1">Supported keywords (exact):</p>
-                  <p>{(telecastKeywords.length ? telecastKeywords : ['{{TENDER_NO}}','{{TENDER_NAME}}','{{CLIENT}}','{{GROUP}}','{{TENDER_TYPE}}','{{DATE_TENDER_RECD}}','{{YEAR}}','{{LEAD}}','{{OPPORTUNITY_ID}}','{{COMMENTS}}']).join(', ')}</p>
+                  <p>{(telecastKeywords.length ? telecastKeywords : ['{{TENDER_NO}}','{{TENDER_NAME}}','{{CLIENT}}','{{GROUP}}','{{TENDER_TYPE}}','{{DATE_TENDER_RECD}}','{{SUBMISSION_DATE}}','{{YEAR}}','{{LEAD}}','{{OPPORTUNITY_ID}}','{{COMMENTS}}']).join(', ')}</p>
                 </div>
                 <Button onClick={saveTelecastConfig} disabled={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">Save Template & Recipients</Button>
               </CardContent>
@@ -2780,6 +2799,147 @@ export default function Admin() {
                   >
                     <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${approvalTemplateSending ? 'animate-pulse' : ''}`} />
                     {approvalTemplateSending ? 'Sending...' : 'Send Approval Template Preview'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Deadline Alert (Team Lead)</CardTitle>
+                <CardDescription>Sends a reminder one day before the submission deadline to the assigned lead email. You can restrict which clients trigger this alert.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl border p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Enable Deadline Alerts</p>
+                    <p className="text-xs text-muted-foreground">Alerts are sent only when a lead email is assigned and the deadline is tomorrow.</p>
+                  </div>
+                  <Switch checked={deadlineAlertEnabled} onCheckedChange={setDeadlineAlertEnabled} disabled={configSaving} />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Message Style</p>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    {telecastTemplateStyles.map((style) => (
+                      <button
+                        key={style.key}
+                        type="button"
+                        onClick={() => setDeadlineTemplateStyle(style.key)}
+                        className={`rounded-xl border text-left transition-all overflow-hidden ${deadlineTemplateStyle === style.key ? 'border-primary ring-2 ring-primary/20 shadow-sm' : 'border-border hover:border-primary/40'}`}
+                      >
+                        <div className="h-20 px-4 py-3 text-white" style={{ background: style.colors.headerGradient }}>
+                          <p className="text-[11px] uppercase tracking-[0.2em] opacity-80">Deadline Alert</p>
+                          <p className="mt-2 text-base font-semibold">{style.label}</p>
+                        </div>
+                        <div className="p-4 space-y-2" style={{ backgroundColor: style.colors.pageBg }}>
+                          <div className="rounded-lg border px-3 py-2 text-xs" style={{ backgroundColor: style.colors.summaryBg, borderColor: style.colors.summaryBorder, color: style.colors.summaryText }}>
+                            Deadline preview block
+                          </div>
+                          <p className="text-xs text-muted-foreground">{style.description}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Subject Template</p>
+                  <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" value={deadlineTemplateSubject} onChange={(e) => setDeadlineTemplateSubject(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Body Template</p>
+                  <Textarea rows={6} className="text-xs sm:text-sm md:text-base" value={deadlineTemplateBody} onChange={(e) => setDeadlineTemplateBody(e.target.value)} />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Live Preview</p>
+                  <div className="rounded-2xl border overflow-hidden" style={{ borderColor: selectedDeadlineTemplateStyle.colors.cardBorder, backgroundColor: selectedDeadlineTemplateStyle.colors.pageBg }}>
+                    <div className="px-5 py-4 text-white" style={{ background: selectedDeadlineTemplateStyle.colors.headerGradient }}>
+                      <p className="text-[11px] uppercase tracking-[0.18em] opacity-80">Deadline Alert</p>
+                      <p className="mt-2 text-lg font-semibold">⏰ {deadlinePreviewSubject}</p>
+                    </div>
+                    <div className="p-5 space-y-4">
+                      <div className="text-sm text-slate-600 whitespace-pre-line">{deadlinePreviewBody}</div>
+                      <div className="rounded-xl border px-4 py-3" style={{ backgroundColor: selectedDeadlineTemplateStyle.colors.summaryBg, borderColor: selectedDeadlineTemplateStyle.colors.summaryBorder, color: selectedDeadlineTemplateStyle.colors.summaryText }}>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">Summary</p>
+                        <div className="mt-3 rounded-lg border overflow-hidden bg-white">
+                          <div className="grid grid-cols-[180px_minmax(0,1fr)] text-xs">
+                            {[
+                              ['Tender Ref', SAMPLE_TELECAST_VALUES.TENDER_NO],
+                              ['Tender Name', SAMPLE_TELECAST_VALUES.TENDER_NAME],
+                              ['Client', SAMPLE_TELECAST_VALUES.CLIENT],
+                              ['Deadline', SAMPLE_TELECAST_VALUES.SUBMISSION_DATE],
+                              ['Lead', SAMPLE_TELECAST_VALUES.LEAD],
+                            ].map(([label, value], index) => (
+                              <div key={label} className="contents">
+                                <div
+                                  className="px-3 py-2 font-semibold uppercase tracking-[0.14em] border-b"
+                                  style={{ backgroundColor: selectedDeadlineTemplateStyle.colors.tableHeaderBg, color: selectedDeadlineTemplateStyle.colors.tableHeaderText }}
+                                >
+                                  {label}
+                                </div>
+                                <div
+                                  className="px-3 py-2 border-b text-slate-900"
+                                  style={{ backgroundColor: index % 2 === 0 ? '#ffffff' : selectedDeadlineTemplateStyle.colors.tableRowAlt }}
+                                >
+                                  {value}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Client Filters</p>
+                    <p className="text-xs text-muted-foreground">{deadlineAlertClients.length} selected</p>
+                  </div>
+                  <Input
+                    placeholder="Search clients..."
+                    value={deadlineClientQuery}
+                    onChange={(e) => setDeadlineClientQuery(e.target.value)}
+                    className="h-9 text-xs sm:text-sm"
+                  />
+                  <div className="rounded-lg border p-3 max-h-48 overflow-y-auto space-y-2">
+                    {filteredDeadlineClients.length === 0 && (
+                      <p className="text-xs text-muted-foreground">No clients match your search.</p>
+                    )}
+                    {filteredDeadlineClients.map((client) => (
+                      <label key={client} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={deadlineAlertClients.includes(client)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setDeadlineAlertClients((prev) => [...prev, client]);
+                            } else {
+                              setDeadlineAlertClients((prev) => prev.filter((value) => value !== client));
+                            }
+                          }}
+                        />
+                        <span className="truncate">{client}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">If no clients are selected, all clients are eligible for deadline alerts.</p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Button onClick={saveTelecastConfig} disabled={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
+                    Save Deadline Alert
+                  </Button>
+                  <Button
+                    onClick={sendDeadlineTestMail}
+                    disabled={deadlineTestSending || !telecastAuthStatus.hasRefreshToken || !telecastRecipientEmail}
+                    variant="outline"
+                    className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto"
+                  >
+                    <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${deadlineTestSending ? 'animate-pulse' : ''}`} />
+                    {deadlineTestSending ? 'Sending...' : 'Send Deadline Template Preview'}
                   </Button>
                 </div>
               </CardContent>

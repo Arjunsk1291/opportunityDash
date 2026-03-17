@@ -576,7 +576,7 @@ const isTenderRecentForTelecast = (opportunity, now = new Date()) => {
 };
 
 const TELECAST_TEMPLATE_KEYWORDS = [
-  '{{TENDER_NO}}', '{{TENDER_NAME}}', '{{CLIENT}}', '{{GROUP}}', '{{TENDER_TYPE}}', '{{DATE_TENDER_RECD}}', '{{YEAR}}', '{{LEAD}}', '{{OPPORTUNITY_ID}}', '{{COMMENTS}}',
+  '{{TENDER_NO}}', '{{TENDER_NAME}}', '{{CLIENT}}', '{{GROUP}}', '{{TENDER_TYPE}}', '{{DATE_TENDER_RECD}}', '{{SUBMISSION_DATE}}', '{{YEAR}}', '{{LEAD}}', '{{OPPORTUNITY_ID}}', '{{COMMENTS}}',
 ];
 
 const normalizeEmailList = (value) => {
@@ -648,6 +648,13 @@ const getGroupFromOpportunity = (opportunity) => {
   return 'UNKNOWN';
 };
 
+const getSubmissionDate = (opportunity) => (
+  opportunity?.tenderSubmittedDate
+  || opportunity?.tenderPlannedSubmissionDate
+  || opportunity?.rawGraphData?.rowSnapshot?.['SUBMISSION DATE']
+  || ''
+);
+
 const getTemplateValues = (opportunity) => {
   const row = opportunity?.rawGraphData?.rowSnapshot || {};
   const tenderNo = opportunity?.opportunityRefNo || row['TENDER NO'] || '';
@@ -656,6 +663,7 @@ const getTemplateValues = (opportunity) => {
   const group = getGroupFromOpportunity(opportunity);
   const tenderType = opportunity?.opportunityClassification || row['TENDER TYPE'] || '';
   const dateTenderRecd = opportunity?.dateTenderReceived || row['DATE TENDER RECD'] || '';
+  const submissionDate = getSubmissionDate(opportunity);
   const year = row.YEAR || opportunity?.rawGraphData?.year || '';
   const lead = opportunity?.internalLead || row.LEAD || '';
   const comments = opportunity?.comments || row.COMMENTS || '';
@@ -667,6 +675,7 @@ const getTemplateValues = (opportunity) => {
     GROUP: String(group || ''),
     TENDER_TYPE: String(tenderType || ''),
     DATE_TENDER_RECD: String(dateTenderRecd || ''),
+    SUBMISSION_DATE: String(submissionDate || ''),
     YEAR: String(year || ''),
     LEAD: String(lead || ''),
     OPPORTUNITY_ID: String(opportunity?.id || ''),
@@ -1020,6 +1029,85 @@ const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' })
   return { success: true, recipients: recipientEmails.length };
 };
 
+const getDateKeyUtc = (value) => {
+  if (!value) return '';
+  const d = value instanceof Date ? value : parseDateValue(value);
+  if (!d || Number.isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+};
+
+const shouldSendDeadlineAlert = (opportunity, now = new Date()) => {
+  const deadlineKey = getDateKeyUtc(getSubmissionDate(opportunity));
+  if (!deadlineKey) return { shouldSend: false };
+  const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  const tomorrowKey = tomorrow.toISOString().slice(0, 10);
+  if (deadlineKey !== tomorrowKey) return { shouldSend: false };
+  if (String(opportunity?.deadlineAlertedDateKey || '') === deadlineKey) return { shouldSend: false };
+  return { shouldSend: true, deadlineKey };
+};
+
+const sendDeadlineAlertForOpportunity = async ({ opportunity, config }) => {
+  if (!config.deadlineAlertEnabled) {
+    return { success: true, skipped: 'disabled' };
+  }
+
+  const leadEmail = String(opportunity?.leadEmail || '').trim().toLowerCase();
+  if (!leadEmail) {
+    return { success: true, skipped: 'no_lead_email' };
+  }
+
+  const selectedClients = Array.isArray(config.deadlineAlertClients) ? config.deadlineAlertClients : [];
+  if (selectedClients.length) {
+    const normalizedClients = new Set(selectedClients.map((client) => String(client || '').trim().toLowerCase()).filter(Boolean));
+    const clientName = String(opportunity?.clientName || '').trim().toLowerCase();
+    if (!normalizedClients.has(clientName)) {
+      return { success: true, skipped: 'client_not_selected' };
+    }
+  }
+
+  const { shouldSend, deadlineKey } = shouldSendDeadlineAlert(opportunity, new Date());
+  if (!shouldSend) {
+    return { success: true, skipped: 'not_due' };
+  }
+
+  const graphRefreshTokenEnc = config.telecastGraphRefreshTokenEnc || config.graphRefreshTokenEnc || config.mailRefreshTokenEnc || '';
+  if (!graphRefreshTokenEnc) {
+    return { success: true, skipped: 'mail_not_configured' };
+  }
+
+  const values = getTemplateValues(opportunity);
+  const subjectTemplate = config.deadlineAlertTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}';
+  const bodyTemplate = config.deadlineAlertTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.';
+  const style = getTelecastTemplateStyle(config.deadlineAlertTemplateStyle || 'sunset_alert');
+  const subject = renderTemplate(subjectTemplate, values);
+  const renderedBody = renderTemplate(bodyTemplate, values);
+  const html = buildTelecastEmailHtml({ values, renderedBody, styleKey: style.key });
+  const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc });
+
+  const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: {
+        subject,
+        body: { contentType: 'HTML', content: html },
+        toRecipients: [{ emailAddress: { address: leadEmail } }],
+      },
+      saveToSentItems: true,
+    }),
+  });
+
+  if (!graphResponse.ok) {
+    const payload = await graphResponse.json().catch(() => ({}));
+    throw new Error(payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`);
+  }
+
+  return { success: true, deadlineKey, leadEmail };
+};
+
 const buildDateRangeForOpportunities = (opportunities = [], filters = {}) => {
   const explicitFrom = parseDateValue(filters?.dateFrom);
   const explicitTo = parseDateValue(filters?.dateTo);
@@ -1124,6 +1212,45 @@ const sendBulkApprovalAlerts = async ({ opportunities = [], approvedBy = '', fil
   }
 
   return { success: true, results };
+};
+
+const sendDeadlineAlerts = async () => {
+  const config = await getSystemConfig();
+  if (!config.deadlineAlertEnabled) {
+    return { success: true, skipped: 'disabled' };
+  }
+
+  const opportunities = await SyncedOpportunity.find({
+    leadEmail: { $exists: true, $ne: '' },
+  }).lean();
+
+  let sent = 0;
+  let skipped = 0;
+  for (const opportunity of opportunities) {
+    try {
+      const result = await sendDeadlineAlertForOpportunity({ opportunity, config });
+      if (result?.success && result.deadlineKey) {
+        await SyncedOpportunity.updateOne(
+          { _id: opportunity._id },
+          {
+            $set: {
+              deadlineAlerted: true,
+              deadlineAlertedAt: new Date(),
+              deadlineAlertedDateKey: result.deadlineKey,
+            },
+          }
+        );
+        sent += 1;
+      } else {
+        skipped += 1;
+      }
+    } catch (error) {
+      console.error('[deadline-alert.error]', error?.message || error);
+      skipped += 1;
+    }
+  }
+
+  return { success: true, sent, skipped };
 };
 
 const border = { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' };
@@ -1414,12 +1541,21 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     telecastDispatch = { ...telecastDispatch, sent: 0, skipped: 'error' };
   }
 
-  const existingLeadEmailRows = await SyncedOpportunity.find(
-    { leadEmail: { $exists: true, $ne: '' } },
-    { opportunityRefNo: 1, leadEmail: 1, leadEmailSource: 1, leadEmailAssignedAt: 1, leadEmailAssignedBy: 1 }
+  const existingOpportunityMeta = await SyncedOpportunity.find(
+    {},
+    {
+      opportunityRefNo: 1,
+      leadEmail: 1,
+      leadEmailSource: 1,
+      leadEmailAssignedAt: 1,
+      leadEmailAssignedBy: 1,
+      deadlineAlerted: 1,
+      deadlineAlertedAt: 1,
+      deadlineAlertedDateKey: 1,
+    }
   ).lean();
-  const leadEmailByRef = new Map(
-    existingLeadEmailRows
+  const metaByRef = new Map(
+    existingOpportunityMeta
       .map((row) => [normalizeRefNo(row?.opportunityRefNo || ''), row])
       .filter(([ref]) => Boolean(ref))
   );
@@ -1427,7 +1563,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const opportunitiesForInsert = opportunities.map((opportunity) => {
     const key = buildNotificationKey(opportunity);
     const ref = getTenderRefNo(opportunity);
-    const leadEmailSnapshot = ref ? leadEmailByRef.get(normalizeRefNo(ref)) : null;
+    const metaSnapshot = ref ? metaByRef.get(normalizeRefNo(ref)) : null;
     const previousState = key ? existingTelecastState.keyState.get(key) : null;
     const isDispatchedNow = Boolean(key && telecastDispatch.dispatchedKeys.includes(key));
     const isAlerted = seededAlertBaseline || isDispatchedNow || Boolean(previousState?.telecastAlerted) || Boolean(key && alertedKeySet.has(key));
@@ -1443,10 +1579,13 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
 
     return {
       ...opportunity,
-      leadEmail: leadEmailSnapshot?.leadEmail || opportunity?.leadEmail || '',
-      leadEmailSource: leadEmailSnapshot?.leadEmailSource || opportunity?.leadEmailSource || '',
-      leadEmailAssignedAt: leadEmailSnapshot?.leadEmailAssignedAt || opportunity?.leadEmailAssignedAt || null,
-      leadEmailAssignedBy: leadEmailSnapshot?.leadEmailAssignedBy || opportunity?.leadEmailAssignedBy || '',
+      leadEmail: metaSnapshot?.leadEmail || opportunity?.leadEmail || '',
+      leadEmailSource: metaSnapshot?.leadEmailSource || opportunity?.leadEmailSource || '',
+      leadEmailAssignedAt: metaSnapshot?.leadEmailAssignedAt || opportunity?.leadEmailAssignedAt || null,
+      leadEmailAssignedBy: metaSnapshot?.leadEmailAssignedBy || opportunity?.leadEmailAssignedBy || '',
+      deadlineAlerted: metaSnapshot?.deadlineAlerted || opportunity?.deadlineAlerted || false,
+      deadlineAlertedAt: metaSnapshot?.deadlineAlertedAt || opportunity?.deadlineAlertedAt || null,
+      deadlineAlertedDateKey: metaSnapshot?.deadlineAlertedDateKey || opportunity?.deadlineAlertedDateKey || '',
       telecastAlerted: isAlerted,
       telecastAlertedAt,
       telecastAlertedKey: key || '',
@@ -1578,11 +1717,14 @@ const scheduleDailyNotificationCheck = () => {
 
     try {
       const syncResult = await syncFromConfiguredGraph({ source: 'daily_5pm_notification' });
+      const deadlineResult = await sendDeadlineAlerts();
       lastDailyNotificationRunKey = runKey;
       console.log('[notification.daily-check.success]', JSON.stringify({
         runKey,
         insertedCount: syncResult.insertedCount,
         newRowsCount: syncResult.newRowsCount,
+        deadlineSent: deadlineResult?.sent || 0,
+        deadlineSkipped: deadlineResult?.skipped || 0,
       }));
     } catch (error) {
       console.error('[notification.daily-check.failure]', JSON.stringify({
@@ -2845,6 +2987,11 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
       approvalTemplateSubject: config.approvalAlertTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}',
       approvalTemplateBody: config.approvalAlertTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.',
       approvalTemplateStyle: getTelecastTemplateStyle(config.approvalAlertTemplateStyle).key,
+      deadlineAlertEnabled: Boolean(config.deadlineAlertEnabled),
+      deadlineTemplateSubject: config.deadlineAlertTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}',
+      deadlineTemplateBody: config.deadlineAlertTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.',
+      deadlineTemplateStyle: getTelecastTemplateStyle(config.deadlineAlertTemplateStyle).key,
+      deadlineAlertClients: Array.isArray(config.deadlineAlertClients) ? config.deadlineAlertClients : [],
       templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
         key: style.key,
         label: style.label,
@@ -2871,6 +3018,13 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     const approvalTemplateSubject = String(req.body?.approvalTemplateSubject || '').trim();
     const approvalTemplateBody = String(req.body?.approvalTemplateBody || '').trim();
     const approvalTemplateStyle = getTelecastTemplateStyle(req.body?.approvalTemplateStyle);
+    const deadlineAlertEnabled = Boolean(req.body?.deadlineAlertEnabled);
+    const deadlineTemplateSubject = String(req.body?.deadlineTemplateSubject || '').trim();
+    const deadlineTemplateBody = String(req.body?.deadlineTemplateBody || '').trim();
+    const deadlineTemplateStyle = getTelecastTemplateStyle(req.body?.deadlineTemplateStyle);
+    const deadlineAlertClients = Array.isArray(req.body?.deadlineAlertClients)
+      ? req.body.deadlineAlertClients.map((client) => String(client || '').trim()).filter(Boolean)
+      : [];
     const groupRecipientsInput = req.body?.groupRecipients || {};
     const groupRecipients = {
       GES: normalizeEmailList(groupRecipientsInput.GES || []),
@@ -2886,6 +3040,11 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     config.approvalAlertTemplateSubject = approvalTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}';
     config.approvalAlertTemplateBody = approvalTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.';
     config.approvalAlertTemplateStyle = approvalTemplateStyle.key;
+    config.deadlineAlertEnabled = deadlineAlertEnabled;
+    config.deadlineAlertTemplateSubject = deadlineTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}';
+    config.deadlineAlertTemplateBody = deadlineTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.';
+    config.deadlineAlertTemplateStyle = deadlineTemplateStyle.key;
+    config.deadlineAlertClients = deadlineAlertClients;
     config.telecastGroupRecipients = groupRecipients;
     config.telecastKeywordHelp = TELECAST_TEMPLATE_KEYWORDS;
     config.updatedBy = req.user.email;
@@ -2900,6 +3059,11 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
       approvalTemplateSubject: config.approvalAlertTemplateSubject,
       approvalTemplateBody: config.approvalAlertTemplateBody,
       approvalTemplateStyle: config.approvalAlertTemplateStyle,
+      deadlineAlertEnabled: config.deadlineAlertEnabled,
+      deadlineTemplateSubject: config.deadlineAlertTemplateSubject,
+      deadlineTemplateBody: config.deadlineAlertTemplateBody,
+      deadlineTemplateStyle: config.deadlineAlertTemplateStyle,
+      deadlineAlertClients: config.deadlineAlertClients || [],
       templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
         key: style.key,
         label: style.label,
@@ -3227,6 +3391,7 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
       GROUP: 'GDS',
       TENDER_TYPE: 'Proposal',
       DATE_TENDER_RECD: new Date().toISOString().slice(0, 10),
+      SUBMISSION_DATE: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
       YEAR: String(new Date().getFullYear()),
       LEAD: req.user.displayName || req.user.email || 'Avenir',
       OPPORTUNITY_ID: `telecast-preview-${Date.now()}`,
@@ -3267,6 +3432,79 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
     res.json({ success: true, message: `Template preview mail sent to ${recipientEmail}`, subject: renderedSubject });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to send test mail' });
+  }
+});
+
+app.post('/api/telecast/test-deadline-mail', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can send test mail' });
+    }
+
+    const recipientEmail = String(req.body?.recipientEmail || '').trim();
+    if (!recipientEmail) {
+      return res.status(400).json({ error: 'recipientEmail is required' });
+    }
+
+    const config = await getSystemConfig();
+    if (!config.telecastGraphRefreshTokenEnc) {
+      return res.status(400).json({ error: 'Telecast account not connected. Configure Telecast auth first.' });
+    }
+
+    const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc: config.telecastGraphRefreshTokenEnc });
+    const subjectTemplate = config.deadlineAlertTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}';
+    const bodyTemplate = config.deadlineAlertTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.';
+    const templateStyle = getTelecastTemplateStyle(config.deadlineAlertTemplateStyle || 'sunset_alert');
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const testValues = {
+      TENDER_NO: `AVR-DEADLINE-${String(Math.floor(Math.random() * 900) + 100)}`,
+      TENDER_NAME: 'District Cooling Plant Expansion',
+      CLIENT: 'Avenir Demo Client',
+      GROUP: 'GDS',
+      TENDER_TYPE: 'Proposal',
+      DATE_TENDER_RECD: new Date().toISOString().slice(0, 10),
+      SUBMISSION_DATE: tomorrow.toISOString().slice(0, 10),
+      YEAR: String(new Date().getFullYear()),
+      LEAD: req.user.displayName || req.user.email || 'Avenir',
+      OPPORTUNITY_ID: `deadline-preview-${Date.now()}`,
+      COMMENTS: 'Sample values inserted for deadline template preview.',
+    };
+    const renderedSubject = renderTemplate(subjectTemplate, testValues);
+    const renderedBody = renderTemplate(bodyTemplate, testValues);
+    const testHtml = buildTelecastEmailHtml({
+      values: testValues,
+      renderedBody,
+      styleKey: templateStyle.key,
+    });
+    const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: {
+          subject: renderedSubject,
+          body: {
+            contentType: 'HTML',
+            content: testHtml,
+          },
+          toRecipients: [{ emailAddress: { address: recipientEmail } }],
+        },
+        saveToSentItems: true,
+      }),
+    });
+
+    if (!graphResponse.ok) {
+      const payload = await graphResponse.json().catch(() => ({}));
+      const message = payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`;
+      return res.status(500).json({ error: message });
+    }
+
+    res.json({ success: true, message: `Deadline template preview sent to ${recipientEmail}`, subject: renderedSubject });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to send deadline test mail' });
   }
 });
 

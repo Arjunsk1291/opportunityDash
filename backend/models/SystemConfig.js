@@ -37,6 +37,11 @@ const systemConfigSchema = new mongoose.Schema(
     approvalAlertTemplateSubject: { type: String, default: 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}' },
     approvalAlertTemplateBody: { type: String, default: 'A tender has been approved by the Tender Manager and is ready for SVP review.' },
     approvalAlertTemplateStyle: { type: String, default: 'avenir_blue' },
+    deadlineAlertEnabled: { type: Boolean, default: false },
+    deadlineAlertTemplateSubject: { type: String, default: 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}' },
+    deadlineAlertTemplateBody: { type: String, default: 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.' },
+    deadlineAlertTemplateStyle: { type: String, default: 'sunset_alert' },
+    deadlineAlertClients: { type: [String], default: [] },
     issueReportTemplateStyle: { type: String, default: 'avenir_blue' },
     telecastGroupRecipients: {
       type: Object,
