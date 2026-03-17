@@ -314,6 +314,13 @@ export default function Admin() {
   const [leadEmailSuggestions, setLeadEmailSuggestions] = useState<LeadEmailSuggestion[]>([]);
   const [leadEmailLoading, setLeadEmailLoading] = useState(false);
   const [leadEmailScanning, setLeadEmailScanning] = useState(false);
+  const [assignedLeadEmails, setAssignedLeadEmails] = useState<Array<{
+    leadName: string;
+    leadEmail: string;
+    count: number;
+    tenders: Array<{ refNo: string; tenderName: string }>;
+  }>>([]);
+  const [assignedLeadLoading, setAssignedLeadLoading] = useState(false);
   const [manualLeadRefNo, setManualLeadRefNo] = useState('');
   const [manualLeadName, setManualLeadName] = useState('');
   const [manualLeadEmail, setManualLeadEmail] = useState('');
@@ -360,6 +367,7 @@ export default function Admin() {
     if (!canAccessPanel || !token) return;
     if (activeTab === 'users') {
       loadLeadEmailSuggestions();
+      loadAssignedLeadEmails();
     }
   }, [activeTab, canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -518,6 +526,29 @@ export default function Admin() {
     }
   };
 
+  const loadAssignedLeadEmails = async () => {
+    if (!token) return;
+    setAssignedLeadLoading(true);
+    try {
+      const response = await fetch(API_URL + '/opportunities/lead-email/assigned', {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load assigned lead emails');
+      }
+      const data = await response.json();
+      setAssignedLeadEmails(Array.isArray(data?.leads) ? data.leads : []);
+    } catch (error) {
+      console.error('❌ Error loading assigned lead emails:', error);
+      toast.error((error as Error).message || 'Failed to load assigned lead emails');
+    } finally {
+      setAssignedLeadLoading(false);
+    }
+  };
+
   const scanLeadEmailSuggestions = async () => {
     if (!token) return;
     setLeadEmailScanning(true);
@@ -535,6 +566,7 @@ export default function Admin() {
       }
       toast.success(`Created ${data.created || 0} new lead email suggestion(s).`);
       await loadLeadEmailSuggestions();
+      await loadAssignedLeadEmails();
     } catch (error) {
       toast.error((error as Error).message || 'Lead email scan failed');
     } finally {
@@ -558,6 +590,7 @@ export default function Admin() {
       }
       toast.success('Lead email approved and assigned.');
       await loadLeadEmailSuggestions();
+      await loadAssignedLeadEmails();
     } catch (error) {
       toast.error((error as Error).message || 'Approval failed');
     }
@@ -611,6 +644,7 @@ export default function Admin() {
       setManualLeadName('');
       setManualLeadEmail('');
       await loadLeadEmailSuggestions();
+      await loadAssignedLeadEmails();
     } catch (error) {
       toast.error((error as Error).message || 'Manual assignment failed');
     }
@@ -2238,6 +2272,63 @@ export default function Admin() {
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+
+              <div className="border-t pt-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium">Assigned Lead Emails</p>
+                    <p className="text-xs text-muted-foreground">Shows where lead email assignments are reflected on opportunities.</p>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span>{assignedLeadEmails.length} leads</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={loadAssignedLeadEmails}
+                      disabled={!canManageLeadEmails || assignedLeadLoading}
+                      className="gap-2"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${assignedLeadLoading ? 'animate-spin' : ''}`} />
+                      Refresh Assigned
+                    </Button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Lead</TableHead>
+                        <TableHead>Lead Email</TableHead>
+                        <TableHead>Tenders</TableHead>
+                        <TableHead>Sample Tenders</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {assignedLeadEmails.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                            No assigned lead emails found.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {assignedLeadEmails.map((row) => (
+                        <TableRow key={`${row.leadName}-${row.leadEmail}`}>
+                          <TableCell className="max-w-[200px] truncate">{row.leadName || '—'}</TableCell>
+                          <TableCell className="font-mono text-xs">{row.leadEmail || '—'}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{row.count ?? '—'}</Badge>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {Array.isArray(row.tenders) && row.tenders.length
+                              ? row.tenders.map((tender) => tender.refNo).filter(Boolean).join(', ')
+                              : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </CardContent>
           </Card>

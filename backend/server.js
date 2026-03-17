@@ -2438,6 +2438,66 @@ app.get('/api/opportunities/lead-email/unassigned', verifyToken, async (req, res
   }
 });
 
+app.get('/api/opportunities/lead-email/assigned', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'lead_email_manage')) return;
+    const opportunities = await SyncedOpportunity.find(
+      {
+        internalLead: { $exists: true, $ne: '' },
+        leadEmail: { $exists: true, $ne: '' },
+      },
+      { internalLead: 1, leadEmail: 1, opportunityRefNo: 1, tenderName: 1 }
+    ).lean();
+
+    const leadBuckets = new Map();
+    opportunities.forEach((opportunity) => {
+      const leadName = String(opportunity.internalLead || '').trim();
+      const leadEmail = String(opportunity.leadEmail || '').trim().toLowerCase();
+      if (!leadName || !leadEmail) return;
+      const key = normalizeLeadKey(leadName);
+      if (!key) return;
+      const bucketKey = `${key}|${leadEmail}`;
+      const bucket = leadBuckets.get(bucketKey) || {
+        leadKey: key,
+        leadEmail,
+        count: 0,
+        tenders: [],
+        nameCounts: new Map(),
+      };
+      bucket.count += 1;
+      bucket.nameCounts.set(leadName, (bucket.nameCounts.get(leadName) || 0) + 1);
+      if (bucket.tenders.length < 8) {
+        bucket.tenders.push({
+          refNo: opportunity.opportunityRefNo || '',
+          tenderName: opportunity.tenderName || '',
+        });
+      }
+      leadBuckets.set(bucketKey, bucket);
+    });
+
+    const result = Array.from(leadBuckets.values()).map((bucket) => {
+      let displayName = '';
+      let maxCount = 0;
+      bucket.nameCounts.forEach((count, name) => {
+        if (count > maxCount) {
+          maxCount = count;
+          displayName = name;
+        }
+      });
+      return {
+        leadName: displayName || '',
+        leadEmail: bucket.leadEmail,
+        count: bucket.count,
+        tenders: bucket.tenders,
+      };
+    }).sort((a, b) => b.count - a.count);
+
+    res.json({ total: opportunities.length, leads: result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/opportunities/lead-email/suggestions/:id/reject', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'lead_email_manage')) return;
