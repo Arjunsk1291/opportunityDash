@@ -1759,7 +1759,7 @@ const scheduleGraphAutoSync = async () => {
 };
 
 let dailyNotificationTimer = null;
-let lastDailyNotificationRunKey = '';
+let notificationCheckRunning = false;
 
 const scheduleDailyNotificationCheck = () => {
   if (dailyNotificationTimer) {
@@ -1768,17 +1768,18 @@ const scheduleDailyNotificationCheck = () => {
   }
 
   dailyNotificationTimer = setInterval(async () => {
-    const now = new Date();
-    const runKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-    if (now.getHours() !== 17 || now.getMinutes() !== 0 || lastDailyNotificationRunKey === runKey) {
-      return;
-    }
+    if (notificationCheckRunning) return;
+    notificationCheckRunning = true;
 
     try {
-      const syncResult = await syncFromConfiguredGraph({ source: 'daily_5pm_notification' });
+      const config = await getSystemConfig();
+      const lastCheckedAt = config?.notificationLastCheckedAt ? new Date(config.notificationLastCheckedAt) : null;
+      if (lastCheckedAt && (Date.now() - lastCheckedAt.getTime()) < (60 * 60 * 1000)) {
+        return;
+      }
+      const syncResult = await syncFromConfiguredGraph({ source: 'hourly_notification' });
       const deadlineResult = await sendDeadlineAlerts();
-      lastDailyNotificationRunKey = runKey;
+      const runKey = new Date().toISOString();
       console.log('[notification.daily-check.success]', JSON.stringify({
         runKey,
         insertedCount: syncResult.insertedCount,
@@ -1787,14 +1788,17 @@ const scheduleDailyNotificationCheck = () => {
         deadlineSkipped: deadlineResult?.skipped || 0,
       }));
     } catch (error) {
+      const runKey = new Date().toISOString();
       console.error('[notification.daily-check.failure]', JSON.stringify({
         runKey,
         message: error?.message || String(error),
       }));
+    } finally {
+      notificationCheckRunning = false;
     }
   }, 60 * 1000);
 
-  console.log('⏰ Daily notification check scheduler active (17:00 server time).');
+  console.log('⏰ Notification check scheduler active (hourly, 24/7).');
 };
 
 const getUsernameFromRequest = (req) => {
