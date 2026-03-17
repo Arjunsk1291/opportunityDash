@@ -84,16 +84,6 @@ export default function TenderUpdates() {
   const [addDate, setAddDate] = useState('');
   const [addDueDate, setAddDueDate] = useState('');
   const [addDetails, setAddDetails] = useState('');
-  const [useDesktopSplit, setUseDesktopSplit] = useState(false);
-
-  useEffect(() => {
-    const updateLayout = () => {
-      setUseDesktopSplit(window.innerWidth >= 1280);
-    };
-    updateLayout();
-    window.addEventListener('resize', updateLayout);
-    return () => window.removeEventListener('resize', updateLayout);
-  }, []);
 
   useEffect(() => {
     setUpdates(getTenderUpdates());
@@ -567,7 +557,7 @@ export default function TenderUpdates() {
         </Collapsible>
       </Card>
 
-      {useDesktopSplit ? (
+      <div className="hidden xl:block">
         <PanelGroup direction="horizontal" className="min-h-[clamp(46rem,74vh,60rem)]">
           <Panel defaultSize={40} minSize={28} className="min-h-0">
             {renderTenderList()}
@@ -579,12 +569,11 @@ export default function TenderUpdates() {
             {renderTenderDetail()}
           </Panel>
         </PanelGroup>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(20rem,24rem)_minmax(0,1fr)]">
-          <div className="min-h-0">{renderTenderList()}</div>
-          <div className="min-h-0">{renderTenderDetail()}</div>
-        </div>
-      )}
+      </div>
+      <div className="grid grid-cols-1 gap-4 xl:hidden">
+        <div className="min-h-0">{renderTenderList()}</div>
+        <div className="min-h-0">{renderTenderDetail()}</div>
+      </div>
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-lg">
