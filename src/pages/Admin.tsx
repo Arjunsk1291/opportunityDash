@@ -53,6 +53,22 @@ interface AuthorizedUser {
   approvedAt?: Date;
 }
 
+interface LeadEmailSuggestion {
+  leadName: string;
+  leadNameKey: string;
+  tenderCount: number;
+  tenders: Array<{ refNo: string; tenderName: string }>;
+  suggestedEmail: string;
+  score: number;
+}
+
+interface LeadEmailAssigned {
+  leadName: string;
+  leadEmail: string;
+  count: number;
+  tenders: Array<{ refNo: string; tenderName: string }>;
+}
+
 interface CollectionStats {
   totalTenders: number;
   totalValue: number;
@@ -295,6 +311,11 @@ export default function Admin() {
     assignedGroup: 'GES',
     status: 'approved',
   });
+  const [leadEmailSuggestions, setLeadEmailSuggestions] = useState<LeadEmailSuggestion[]>([]);
+  const [leadEmailLoading, setLeadEmailLoading] = useState(false);
+  const [leadEmailApproving, setLeadEmailApproving] = useState(false);
+  const [assignedLeadEmails, setAssignedLeadEmails] = useState<LeadEmailAssigned[]>([]);
+  const [assignedLeadLoading, setAssignedLeadLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
   const [draftPagePermissions, setDraftPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
   const [draftPageEmailPermissions, setDraftPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
@@ -341,6 +362,14 @@ export default function Admin() {
       loadDeadlineStatus();
     }
   }, [activeTab, canAccessPanel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!canAccessPanel || !token) return;
+    if (activeTab === 'users') {
+      loadLeadEmailSuggestions();
+      loadAssignedLeadEmails();
+    }
+  }, [activeTab, canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setDraftPagePermissions((pagePermissions || DEFAULT_PAGE_ROLE_ACCESS) as Record<PageKey, UserRole[]>);
@@ -438,6 +467,8 @@ export default function Admin() {
     return [...new Set(list.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean))];
   };
 
+  const canManageLeadEmails = canPerformAction('lead_email_manage');
+
   const loadUsers = async () => {
     if (!token) return;
     setLoading(true);
@@ -461,6 +492,86 @@ export default function Admin() {
       setMessage({ type: 'error', text: 'Failed to load users: ' + (error as Error).message });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadLeadEmailSuggestions = async () => {
+    if (!token) return;
+    setLeadEmailLoading(true);
+    try {
+      const response = await fetch(API_URL + '/opportunities/lead-email/suggestions', {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load lead email suggestions');
+      }
+      const data = await response.json();
+      setLeadEmailSuggestions(Array.isArray(data?.suggestions) ? data.suggestions : []);
+    } catch (error) {
+      console.error('❌ Error loading lead email suggestions:', error);
+      toast.error((error as Error).message || 'Failed to load lead email suggestions');
+    } finally {
+      setLeadEmailLoading(false);
+    }
+  };
+
+  const loadAssignedLeadEmails = async () => {
+    if (!token) return;
+    setAssignedLeadLoading(true);
+    try {
+      const response = await fetch(API_URL + '/opportunities/lead-email/assigned', {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load assigned lead emails');
+      }
+      const data = await response.json();
+      setAssignedLeadEmails(Array.isArray(data?.leads) ? data.leads : []);
+    } catch (error) {
+      console.error('❌ Error loading assigned lead emails:', error);
+      toast.error((error as Error).message || 'Failed to load assigned lead emails');
+    } finally {
+      setAssignedLeadLoading(false);
+    }
+  };
+
+  const approveLeadEmailMapping = async (suggestion: LeadEmailSuggestion) => {
+    if (!token) return;
+    if (!suggestion?.leadName || !suggestion?.suggestedEmail) {
+      toast.error('Missing lead name or suggested email.');
+      return;
+    }
+    setLeadEmailApproving(true);
+    try {
+      const response = await fetch(`${API_URL}/opportunities/lead-email/approve`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          leadName: suggestion.leadName,
+          leadNameKey: suggestion.leadNameKey,
+          email: suggestion.suggestedEmail,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Approval failed');
+      }
+      toast.success('Lead email mapping approved.');
+      await loadLeadEmailSuggestions();
+      await loadAssignedLeadEmails();
+    } catch (error) {
+      toast.error((error as Error).message || 'Approval failed');
+    } finally {
+      setLeadEmailApproving(false);
     }
   };
 
@@ -1650,6 +1761,132 @@ export default function Admin() {
                   <Button onClick={savePagePermissions}>Save Page Permissions</Button>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>Lead Email Suggestions</CardTitle>
+              <CardDescription>Review lead name to email matches and approve to apply across all matching opportunities.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={loadLeadEmailSuggestions}
+                    disabled={!canManageLeadEmails || leadEmailLoading}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${leadEmailLoading ? 'animate-spin' : ''}`} />
+                    Refresh Suggestions
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={loadAssignedLeadEmails}
+                    disabled={!canManageLeadEmails || assignedLeadLoading}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${assignedLeadLoading ? 'animate-spin' : ''}`} />
+                    Refresh Approved
+                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Pending: {leadEmailSuggestions.length}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Lead</TableHead>
+                      <TableHead>Suggested Email</TableHead>
+                      <TableHead>Score</TableHead>
+                      <TableHead>Tenders</TableHead>
+                      <TableHead>Sample Tenders</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {leadEmailSuggestions.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
+                          No pending lead email suggestions.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {leadEmailSuggestions.map((suggestion) => (
+                      <TableRow key={suggestion.leadNameKey}>
+                        <TableCell className="max-w-[180px] truncate">{suggestion.leadName || '—'}</TableCell>
+                        <TableCell className="font-mono text-xs">{suggestion.suggestedEmail || '—'}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{suggestion.score ?? 0}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{suggestion.tenderCount ?? '—'}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {Array.isArray(suggestion.tenders) && suggestion.tenders.length
+                            ? suggestion.tenders.map((tender) => tender.refNo).filter(Boolean).join(', ')
+                            : '—'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            onClick={() => approveLeadEmailMapping(suggestion)}
+                            disabled={!canManageLeadEmails || leadEmailApproving || !suggestion.suggestedEmail}
+                          >
+                            Approve & Assign
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="border-t pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Approved Lead Emails</p>
+                  <span className="text-xs text-muted-foreground">{assignedLeadEmails.length} leads</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Lead</TableHead>
+                        <TableHead>Lead Email</TableHead>
+                        <TableHead>Tenders</TableHead>
+                        <TableHead>Sample Tenders</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {assignedLeadEmails.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                            No approved lead emails yet.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {assignedLeadEmails.map((row) => (
+                        <TableRow key={`${row.leadName}-${row.leadEmail}`}>
+                          <TableCell className="max-w-[200px] truncate">{row.leadName || '—'}</TableCell>
+                          <TableCell className="font-mono text-xs">{row.leadEmail || '—'}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{row.count ?? '—'}</Badge>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {Array.isArray(row.tenders) && row.tenders.length
+                              ? row.tenders.map((tender) => tender.refNo).filter(Boolean).join(', ')
+                              : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
