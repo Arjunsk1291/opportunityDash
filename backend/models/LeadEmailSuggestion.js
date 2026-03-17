@@ -5,6 +5,8 @@ const leadEmailSuggestionSchema = new mongoose.Schema(
     opportunityRefNo: { type: String, default: '' },
     tenderName: { type: String, default: '' },
     leadName: { type: String, default: '' },
+    leadNameKey: { type: String, default: '' },
+    tenderCount: { type: Number, default: 0 },
     suggestedEmail: { type: String, default: '', lowercase: true, trim: true },
     score: { type: Number, default: 0 },
     suggestedBy: { type: String, enum: ['auto', 'manual'], default: 'auto' },

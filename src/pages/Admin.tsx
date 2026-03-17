@@ -58,12 +58,20 @@ interface LeadEmailSuggestion {
   opportunityRefNo: string;
   tenderName: string;
   leadName: string;
+  leadNameKey?: string;
+  tenderCount?: number;
   suggestedEmail: string;
   score?: number;
   suggestedBy?: 'auto' | 'manual';
   status: 'pending' | 'approved' | 'rejected';
   createdAt?: string;
   approvedAt?: string;
+}
+
+interface UnassignedLeadGroup {
+  leadName: string;
+  count: number;
+  tenders: Array<{ refNo: string; tenderName: string }>;
 }
 
 interface CollectionStats {
@@ -267,7 +275,10 @@ export default function Admin() {
   const [leadEmailLoading, setLeadEmailLoading] = useState(false);
   const [leadEmailScanning, setLeadEmailScanning] = useState(false);
   const [manualLeadRefNo, setManualLeadRefNo] = useState('');
+  const [manualLeadName, setManualLeadName] = useState('');
   const [manualLeadEmail, setManualLeadEmail] = useState('');
+  const [unassignedLeads, setUnassignedLeads] = useState<UnassignedLeadGroup[]>([]);
+  const [unassignedLoading, setUnassignedLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
   const [draftPagePermissions, setDraftPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
   const [draftPageEmailPermissions, setDraftPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
@@ -311,6 +322,7 @@ export default function Admin() {
     if (!canAccessPanel || !token) return;
     if (activeTab === 'users') {
       loadLeadEmailSuggestions();
+      loadUnassignedLeads();
     }
   }, [activeTab, canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -440,6 +452,29 @@ export default function Admin() {
     }
   };
 
+  const loadUnassignedLeads = async () => {
+    if (!token) return;
+    setUnassignedLoading(true);
+    try {
+      const response = await fetch(API_URL + '/opportunities/lead-email/unassigned', {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load unassigned leads');
+      }
+      const data = await response.json();
+      setUnassignedLeads(Array.isArray(data?.leads) ? data.leads : []);
+    } catch (error) {
+      console.error('❌ Error loading unassigned leads:', error);
+      toast.error((error as Error).message || 'Failed to load unassigned leads');
+    } finally {
+      setUnassignedLoading(false);
+    }
+  };
+
   const scanLeadEmailSuggestions = async () => {
     if (!token) return;
     setLeadEmailScanning(true);
@@ -509,9 +544,10 @@ export default function Admin() {
   const assignLeadEmailManual = async () => {
     if (!token) return;
     const ref = manualLeadRefNo.trim();
+    const leadName = manualLeadName.trim();
     const email = manualLeadEmail.trim().toLowerCase();
-    if (!ref || !email) {
-      toast.error('Opportunity ref no and email are required.');
+    if (!email || (!ref && !leadName)) {
+      toast.error('Lead name or opportunity ref no and email are required.');
       return;
     }
     try {
@@ -521,7 +557,7 @@ export default function Admin() {
           'Authorization': 'Bearer ' + token,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ opportunityRefNo: ref, email }),
+        body: JSON.stringify({ opportunityRefNo: ref, leadName, email }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -529,8 +565,10 @@ export default function Admin() {
       }
       toast.success('Lead email assigned.');
       setManualLeadRefNo('');
+      setManualLeadName('');
       setManualLeadEmail('');
       await loadLeadEmailSuggestions();
+      await loadUnassignedLeads();
     } catch (error) {
       toast.error((error as Error).message || 'Manual assignment failed');
     }
@@ -1970,13 +2008,28 @@ export default function Admin() {
                     <RefreshCw className={`h-4 w-4 ${leadEmailLoading ? 'animate-spin' : ''}`} />
                     Refresh
                   </Button>
+                  <Button
+                    variant="outline"
+                    onClick={loadUnassignedLeads}
+                    disabled={!canManageLeadEmails || unassignedLoading}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${unassignedLoading ? 'animate-spin' : ''}`} />
+                    Refresh Unassigned
+                  </Button>
                 </div>
                 <div className="text-xs text-muted-foreground">
                   Pending suggestions: {leadEmailSuggestions.length}
                 </div>
               </div>
 
-              <div className="grid gap-2 md:grid-cols-[1fr,1fr,auto]">
+              <div className="grid gap-2 md:grid-cols-[1fr,1fr,1fr,auto]">
+                <Input
+                  placeholder="Lead Name (preferred)"
+                  value={manualLeadName}
+                  onChange={(e) => setManualLeadName(e.target.value)}
+                  disabled={!canManageLeadEmails}
+                />
                 <Input
                   placeholder="Opportunity Ref No."
                   value={manualLeadRefNo}
@@ -1991,7 +2044,7 @@ export default function Admin() {
                 />
                 <Button
                   onClick={assignLeadEmailManual}
-                  disabled={!canManageLeadEmails || !manualLeadRefNo.trim() || !manualLeadEmail.trim()}
+                  disabled={!canManageLeadEmails || !manualLeadEmail.trim() || (!manualLeadName.trim() && !manualLeadRefNo.trim())}
                 >
                   Assign & Approve
                 </Button>
@@ -2001,10 +2054,41 @@ export default function Admin() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Ref No</TableHead>
-                      <TableHead>Tender</TableHead>
+                      <TableHead>Unassigned Lead</TableHead>
+                      <TableHead>Tenders</TableHead>
+                      <TableHead>Sample Tenders</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {unassignedLeads.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
+                          No unassigned leads found.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {unassignedLeads.map((lead) => (
+                      <TableRow key={lead.leadName}>
+                        <TableCell className="font-medium">{lead.leadName}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{lead.count}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {lead.tenders.map((tender) => tender.refNo || tender.tenderName).filter(Boolean).join(', ') || '—'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
                       <TableHead>Lead</TableHead>
                       <TableHead>Suggested Email</TableHead>
+                      <TableHead>Tenders</TableHead>
                       <TableHead>Score</TableHead>
                       <TableHead>Source</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -2013,17 +2097,18 @@ export default function Admin() {
                   <TableBody>
                     {leadEmailSuggestions.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                        <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
                           No pending lead email suggestions.
                         </TableCell>
                       </TableRow>
                     )}
                     {leadEmailSuggestions.map((suggestion) => (
                       <TableRow key={suggestion._id}>
-                        <TableCell className="font-mono text-xs">{suggestion.opportunityRefNo || '—'}</TableCell>
-                        <TableCell className="max-w-[220px] truncate">{suggestion.tenderName || '—'}</TableCell>
                         <TableCell className="max-w-[180px] truncate">{suggestion.leadName || '—'}</TableCell>
                         <TableCell className="font-mono text-xs">{suggestion.suggestedEmail}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{suggestion.tenderCount ?? '—'}</Badge>
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline">{suggestion.score ?? '—'}</Badge>
                         </TableCell>

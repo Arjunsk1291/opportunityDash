@@ -590,6 +590,8 @@ const normalizeLeadValue = (value = '') => String(value || '')
   .replace(/[^a-z0-9]+/g, ' ')
   .trim();
 
+const normalizeLeadKey = (value = '') => normalizeLeadValue(value).replace(/\s+/g, ' ').trim();
+
 const tokenizeLeadValue = (value = '') => normalizeLeadValue(value).split(' ').filter(Boolean);
 
 const scoreLeadEmailMatch = (leadName = '', user = {}) => {
@@ -2002,33 +2004,41 @@ app.post('/api/opportunities/lead-email/suggestions/scan', verifyToken, async (r
         { leadEmail: '' },
         { leadEmail: null },
       ],
-    }).lean();
+    }, { internalLead: 1, opportunityRefNo: 1, tenderName: 1 }).lean();
+
+    const leadBuckets = new Map();
+    opportunities.forEach((opportunity) => {
+      const leadName = String(opportunity.internalLead || '').trim();
+      if (!leadName) return;
+      const key = normalizeLeadKey(leadName);
+      if (!key) return;
+      const entry = leadBuckets.get(key) || { leadName, count: 0 };
+      entry.count += 1;
+      leadBuckets.set(key, entry);
+    });
 
     const existingSuggestions = await LeadEmailSuggestion.find(
       { status: { $in: ['pending', 'approved'] } },
-      { opportunityRefNo: 1, suggestedEmail: 1 }
+      { leadNameKey: 1, suggestedEmail: 1 }
     ).lean();
     const existingSet = new Set(
-      existingSuggestions.map((row) => `${normalizeRefNo(row?.opportunityRefNo || '')}|${String(row?.suggestedEmail || '').toLowerCase()}`)
+      existingSuggestions.map((row) => `${String(row?.leadNameKey || '')}|${String(row?.suggestedEmail || '').toLowerCase()}`)
     );
 
     const threshold = 70;
     const toInsert = [];
-    opportunities.forEach((opportunity) => {
-      const leadName = String(opportunity.internalLead || '').trim();
-      if (!leadName) return;
-      const { best, score } = findBestLeadEmailMatch(leadName, approvedUsers);
+    leadBuckets.forEach((bucket, leadKey) => {
+      const { best, score } = findBestLeadEmailMatch(bucket.leadName, approvedUsers);
       if (!best || score < threshold) return;
-      const ref = normalizeRefNo(opportunity.opportunityRefNo || '');
       const email = String(best.email || '').toLowerCase();
-      if (!ref || !email) return;
-      const key = `${ref}|${email}`;
-      if (existingSet.has(key)) return;
-      existingSet.add(key);
+      if (!leadKey || !email) return;
+      const existingKey = `${leadKey}|${email}`;
+      if (existingSet.has(existingKey)) return;
+      existingSet.add(existingKey);
       toInsert.push({
-        opportunityRefNo: opportunity.opportunityRefNo || '',
-        tenderName: opportunity.tenderName || '',
-        leadName,
+        leadName: bucket.leadName,
+        leadNameKey: leadKey,
+        tenderCount: bucket.count,
         suggestedEmail: email,
         score,
         suggestedBy: 'auto',
@@ -2038,11 +2048,11 @@ app.post('/api/opportunities/lead-email/suggestions/scan', verifyToken, async (r
     });
 
     if (!toInsert.length) {
-      return res.json({ success: true, created: 0, totalScanned: opportunities.length });
+      return res.json({ success: true, created: 0, totalScanned: leadBuckets.size });
     }
 
     const inserted = await LeadEmailSuggestion.insertMany(toInsert);
-    res.json({ success: true, created: inserted.length, totalScanned: opportunities.length });
+    res.json({ success: true, created: inserted.length, totalScanned: leadBuckets.size });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2052,28 +2062,55 @@ app.post('/api/opportunities/lead-email/manual', verifyToken, async (req, res) =
   try {
     if (!await requireActionPermission(req, res, 'lead_email_manage')) return;
     const opportunityRefNo = String(req.body?.opportunityRefNo || '').trim();
+    const leadName = String(req.body?.leadName || '').trim();
     const email = String(req.body?.email || '').trim().toLowerCase();
-    if (!opportunityRefNo || !email) {
-      return res.status(400).json({ error: 'opportunityRefNo and email are required' });
-    }
-
-    const refPattern = new RegExp(`^${escapeRegex(opportunityRefNo)}$`, 'i');
-    const opportunity = await SyncedOpportunity.findOne({ opportunityRefNo: refPattern });
-    if (!opportunity) {
-      return res.status(404).json({ error: 'Opportunity not found' });
+    if (!email || (!opportunityRefNo && !leadName)) {
+      return res.status(400).json({ error: 'leadName or opportunityRefNo and email are required' });
     }
 
     const now = new Date();
-    opportunity.leadEmail = email;
-    opportunity.leadEmailSource = 'manual';
-    opportunity.leadEmailAssignedBy = req.user.email;
-    opportunity.leadEmailAssignedAt = now;
-    await opportunity.save();
+    let opportunities = [];
+    if (leadName) {
+      const leadPattern = new RegExp(`^${escapeRegex(leadName)}$`, 'i');
+      opportunities = await SyncedOpportunity.find({
+        internalLead: leadPattern,
+        $or: [
+          { leadEmail: { $exists: false } },
+          { leadEmail: '' },
+          { leadEmail: null },
+        ],
+      });
+    } else {
+      const refPattern = new RegExp(`^${escapeRegex(opportunityRefNo)}$`, 'i');
+      const opportunity = await SyncedOpportunity.findOne({ opportunityRefNo: refPattern });
+      if (!opportunity) {
+        return res.status(404).json({ error: 'Opportunity not found' });
+      }
+      opportunities = [opportunity];
+    }
+
+    if (!opportunities.length) {
+      return res.status(404).json({ error: 'No matching opportunities found' });
+    }
+
+    await SyncedOpportunity.updateMany(
+      { _id: { $in: opportunities.map((opp) => opp._id) } },
+      {
+        $set: {
+          leadEmail: email,
+          leadEmailSource: 'manual',
+          leadEmailAssignedBy: req.user.email,
+          leadEmailAssignedAt: now,
+        },
+      }
+    );
 
     const suggestion = await LeadEmailSuggestion.create({
-      opportunityRefNo: opportunity.opportunityRefNo || opportunityRefNo,
-      tenderName: opportunity.tenderName || '',
-      leadName: opportunity.internalLead || '',
+      opportunityRefNo: opportunityRefNo || '',
+      tenderName: opportunities[0]?.tenderName || '',
+      leadName: leadName || opportunities[0]?.internalLead || '',
+      leadNameKey: normalizeLeadKey(leadName || opportunities[0]?.internalLead || ''),
+      tenderCount: opportunities.length,
       suggestedEmail: email,
       score: 100,
       suggestedBy: 'manual',
@@ -2083,7 +2120,7 @@ app.post('/api/opportunities/lead-email/manual', verifyToken, async (req, res) =
       approvedAt: now,
     });
 
-    res.json({ success: true, suggestion: mapIdField(suggestion.toObject()), opportunity: mapIdField(opportunity.toObject()) });
+    res.json({ success: true, suggestion: mapIdField(suggestion.toObject()), updatedCount: opportunities.length });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -2094,23 +2131,75 @@ app.post('/api/opportunities/lead-email/suggestions/:id/approve', verifyToken, a
     if (!await requireActionPermission(req, res, 'lead_email_manage')) return;
     const suggestion = await LeadEmailSuggestion.findById(req.params.id);
     if (!suggestion) return res.status(404).json({ error: 'Suggestion not found' });
+    const leadName = String(suggestion.leadName || '').trim();
+    if (!leadName) return res.status(400).json({ error: 'Suggestion missing leadName' });
 
-    const opportunity = await SyncedOpportunity.findOne({ opportunityRefNo: suggestion.opportunityRefNo });
-    if (!opportunity) return res.status(404).json({ error: 'Opportunity not found' });
-
+    const leadPattern = new RegExp(`^${escapeRegex(leadName)}$`, 'i');
     const now = new Date();
-    opportunity.leadEmail = suggestion.suggestedEmail;
-    opportunity.leadEmailSource = suggestion.suggestedBy || 'auto';
-    opportunity.leadEmailAssignedBy = req.user.email;
-    opportunity.leadEmailAssignedAt = now;
-    await opportunity.save();
+    const updateResult = await SyncedOpportunity.updateMany(
+      {
+        internalLead: leadPattern,
+        $or: [
+          { leadEmail: { $exists: false } },
+          { leadEmail: '' },
+          { leadEmail: null },
+        ],
+      },
+      {
+        $set: {
+          leadEmail: suggestion.suggestedEmail,
+          leadEmailSource: suggestion.suggestedBy || 'auto',
+          leadEmailAssignedBy: req.user.email,
+          leadEmailAssignedAt: now,
+        },
+      }
+    );
 
     suggestion.status = 'approved';
     suggestion.approvedBy = req.user.email;
     suggestion.approvedAt = now;
     await suggestion.save();
 
-    res.json({ success: true, suggestion: mapIdField(suggestion.toObject()) });
+    res.json({ success: true, suggestion: mapIdField(suggestion.toObject()), updatedCount: updateResult.modifiedCount || 0 });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/opportunities/lead-email/unassigned', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'lead_email_manage')) return;
+    const opportunities = await SyncedOpportunity.find(
+      {
+        internalLead: { $exists: true, $ne: '' },
+        $or: [
+          { leadEmail: { $exists: false } },
+          { leadEmail: '' },
+          { leadEmail: null },
+        ],
+      },
+      { internalLead: 1, opportunityRefNo: 1, tenderName: 1 }
+    ).lean();
+
+    const leadBuckets = new Map();
+    opportunities.forEach((opportunity) => {
+      const leadName = String(opportunity.internalLead || '').trim();
+      if (!leadName) return;
+      const key = normalizeLeadKey(leadName);
+      if (!key) return;
+      const bucket = leadBuckets.get(key) || { leadName, count: 0, tenders: [] };
+      bucket.count += 1;
+      if (bucket.tenders.length < 8) {
+        bucket.tenders.push({
+          refNo: opportunity.opportunityRefNo || '',
+          tenderName: opportunity.tenderName || '',
+        });
+      }
+      leadBuckets.set(key, bucket);
+    });
+
+    const result = Array.from(leadBuckets.values()).sort((a, b) => b.count - a.count);
+    res.json({ total: opportunities.length, leads: result });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
