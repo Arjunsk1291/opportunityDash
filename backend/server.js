@@ -2146,6 +2146,36 @@ app.post('/api/opportunities/lead-email/suggestions/scan', verifyToken, async (r
   try {
     if (!await requireActionPermission(req, res, 'lead_email_manage')) return;
 
+    const pendingSuggestions = await LeadEmailSuggestion.find({ status: 'pending' })
+      .sort({ createdAt: -1 })
+      .lean();
+    const cleanupUpdates = [];
+    const cleanupDeletes = [];
+    const seenKeys = new Set();
+
+    pendingSuggestions.forEach((suggestion) => {
+      const normalizedLeadKey = normalizeLeadKey(suggestion.leadName || suggestion.leadNameKey || '');
+      const normalizedEmail = String(suggestion.suggestedEmail || '').toLowerCase();
+      const dedupeKey = `${normalizedLeadKey}|${normalizedEmail}|pending`;
+      if (dedupeKey && seenKeys.has(dedupeKey)) {
+        cleanupDeletes.push({ deleteOne: { filter: { _id: suggestion._id } } });
+        return;
+      }
+      if (dedupeKey) seenKeys.add(dedupeKey);
+      if (normalizedLeadKey && normalizedLeadKey !== suggestion.leadNameKey) {
+        cleanupUpdates.push({
+          updateOne: {
+            filter: { _id: suggestion._id },
+            update: { $set: { leadNameKey: normalizedLeadKey } },
+          },
+        });
+      }
+    });
+
+    if (cleanupUpdates.length || cleanupDeletes.length) {
+      await LeadEmailSuggestion.bulkWrite([...cleanupUpdates, ...cleanupDeletes]);
+    }
+
     const approvedUsers = await AuthorizedUser.find({ status: 'approved' }).lean();
     const opportunities = await SyncedOpportunity.find({
       internalLead: { $exists: true, $ne: '' },
