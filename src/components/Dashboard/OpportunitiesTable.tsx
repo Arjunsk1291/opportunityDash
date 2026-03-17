@@ -262,7 +262,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   };
 
   return (
-    <Card className="flex-1 flex flex-col min-w-0">
+    <Card className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
       <CardHeader className="pb-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <CardTitle className="text-lg">Tenders</CardTitle>
@@ -305,8 +305,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
         </div>
       </CardHeader>
       <CardContent className="p-0 flex-1 flex flex-col overflow-hidden min-w-0">
-        <div className={`${scrollContainerClassName || ''} overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
-          <Table className="min-w-[900px] lg:min-w-0 text-xs sm:text-sm">
+        <div className={`${scrollContainerClassName || ''} w-full min-w-0 overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
+          <Table className="w-full min-w-0 table-fixed text-xs sm:text-sm lg:table-auto">
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
                 <TableHead className="px-2 sm:px-3 font-bold">
@@ -370,25 +370,25 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => onSelectOpportunity?.(tender)}
                   >
-                    <TableCell className="px-2 sm:px-3 font-mono text-xs sm:text-sm font-bold text-blue-600 dark:text-blue-400">{tender.opportunityRefNo || '—'}</TableCell>
+                    <TableCell className="px-2 sm:px-3 max-w-[120px] truncate font-mono text-xs sm:text-sm font-bold text-blue-600 dark:text-blue-400">{tender.opportunityRefNo || '—'}</TableCell>
                     <TableCell className="px-2 sm:px-3 max-w-[180px] sm:max-w-[250px] min-w-0">
                       <div className="truncate" title={tender.tenderName || ''}>
                         {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
                       </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell px-2 sm:px-3">
-                      <Badge className={`text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>
+                      <Badge className={`max-w-[8rem] truncate text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>
                     </TableCell>
                     <TableCell className="px-2 sm:px-3 max-w-[100px] sm:max-w-[140px] truncate font-semibold text-foreground">{tender.clientName || '—'}</TableCell>
                     <TableCell className="hidden lg:table-cell px-2 sm:px-3">
-                      <Badge className={`text-xs font-mono ${getGroupBadge(tender.groupClassification)}`}>{tender.groupClassification || '—'}</Badge>
+                      <Badge className={`max-w-[6rem] truncate text-xs font-mono ${getGroupBadge(tender.groupClassification)}`}>{tender.groupClassification || '—'}</Badge>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell px-2 sm:px-3 font-bold text-xs sm:text-sm">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
                     <TableCell className="hidden xl:table-cell px-2 sm:px-3 font-bold text-xs sm:text-sm">{getSubmissionDisplay(tender) || '—'}</TableCell>
                     <TableCell className="hidden xl:table-cell px-2 sm:px-3">{tender.internalLead || 'Unassigned'}</TableCell>
                     <TableCell className="px-2 sm:px-3 text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
                     <TableCell className="px-2 sm:px-3">
-                      <Badge className={getStatusBadge(getMergedStatus(tender))}>{getMergedStatus(tender) || '—'}</Badge>
+                      <Badge className={`max-w-[8rem] truncate ${getStatusBadge(getMergedStatus(tender))}`}>{getMergedStatus(tender) || '—'}</Badge>
                     </TableCell>
                     <TableCell className="hidden md:table-cell px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
                       {tender.remarksReason ? (
@@ -585,8 +585,8 @@ interface ApprovalCellProps {
 function ApprovalCell({ approvalStatus, canProposalHeadApprove, canSVPApprove, canRevert, onApproveProposalHead, onApproveSVP, onRevert }: ApprovalCellProps) {
   if (approvalStatus === 'fully_approved') {
     return (
-      <div className="flex items-center gap-1">
-        <Badge className="bg-success/20 text-success gap-1 text-xs">
+      <div className="flex min-w-0 flex-wrap items-center gap-1">
+        <Badge className="max-w-[9rem] truncate bg-success/20 text-success gap-1 text-xs">
           <CheckCircle className="h-3 w-3" />
           Fully Approved
         </Badge>
@@ -606,17 +606,17 @@ function ApprovalCell({ approvalStatus, canProposalHeadApprove, canSVPApprove, c
 
   if (approvalStatus === 'proposal_head_approved') {
     return (
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-1">
-          <Badge className="bg-info/20 text-info gap-1 text-xs">
+      <div className="flex flex-col gap-1 min-w-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
+          <Badge className="max-w-[6.5rem] truncate bg-info/20 text-info gap-1 text-xs">
             <CheckCircle className="h-3 w-3" />
             TM ✓
           </Badge>
           <ArrowRight className="h-3 w-3 text-muted-foreground" />
           {canSVPApprove ? (
-            <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={onApproveSVP}>SVP Approve</Button>
+            <Button size="sm" variant="outline" className="h-6 text-[11px] sm:text-xs px-2" onClick={onApproveSVP}>SVP Approve</Button>
           ) : (
-            <Badge variant="secondary" className="gap-1 text-xs">
+            <Badge variant="secondary" className="max-w-[8rem] truncate gap-1 text-xs">
               <Clock className="h-3 w-3" />
               Awaiting SVP
             </Badge>
@@ -632,11 +632,11 @@ function ApprovalCell({ approvalStatus, canProposalHeadApprove, canSVPApprove, c
   }
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex min-w-0 flex-wrap items-center gap-1">
       {canProposalHeadApprove ? (
-        <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={onApproveProposalHead}>TM Approve</Button>
+        <Button size="sm" variant="outline" className="h-6 text-[11px] sm:text-xs px-2" onClick={onApproveProposalHead}>TM Approve</Button>
       ) : (
-        <Badge variant="secondary" className="gap-1 text-xs">
+        <Badge variant="secondary" className="max-w-[8rem] truncate gap-1 text-xs">
           <Clock className="h-3 w-3" />
           Pending TM
         </Badge>
