@@ -116,7 +116,7 @@ function TimelineLane({ title, count, icon, className, lineClassName, accentClas
                 </div>
                 <details className="mt-2 text-xs text-muted-foreground">
                   <summary className="cursor-pointer text-[11px] uppercase tracking-wider">Details</summary>
-                  <p className="mt-2 break-words text-sm text-foreground">{update.details}</p>
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm text-foreground">{update.details}</p>
                   <p className="mt-2 text-[11px] uppercase tracking-wider text-muted-foreground">Created by</p>
                   <p className="break-words text-xs">{update.createdBy} • {update.createdAt.slice(0, 10)}</p>
                   {canEdit && (

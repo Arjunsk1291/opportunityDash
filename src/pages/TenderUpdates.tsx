@@ -20,10 +20,12 @@ import {
   deleteTenderUpdate,
   getNextDueDate,
   getTenderUpdates,
+  seedTenderUpdates,
   type TenderUpdate,
   type TenderUpdateSubType,
   type TenderUpdateType,
 } from '@/lib/tenderUpdates';
+import tenderUpdatesSeed from '@/data/tenderUpdatesSeed.json';
 import { cn } from '@/lib/utils';
 import {
   CalendarClock,
@@ -87,6 +89,12 @@ export default function TenderUpdates() {
 
   useEffect(() => {
     setUpdates(getTenderUpdates());
+  }, [opportunities]);
+
+  useEffect(() => {
+    if (!opportunities.length) return;
+    const result = seedTenderUpdates(opportunities, tenderUpdatesSeed);
+    if (result.seeded) setUpdates(getTenderUpdates());
   }, [opportunities]);
 
   const refreshUpdates = () => setUpdates(getTenderUpdates());

@@ -1,0 +1,101 @@
+[
+  {
+    "refNo": "AC25396",
+    "type": "client",
+    "subType": "note",
+    "actor": "Client",
+    "date": "2026-11-14",
+    "dueDate": null,
+    "details": "doc number arjun shold add",
+    "attachments": [],
+    "createdBy": "import:tracker"
+  },
+  {
+    "refNo": "AC25445",
+    "type": "subcontractor",
+    "subType": "note",
+    "actor": "giglabz",
+    "date": "2026-12-24",
+    "dueDate": null,
+    "details": "Technical submission,\n\nDeadline: Feb 10th",
+    "attachments": [],
+    "createdBy": "import:tracker"
+  },
+  {
+    "refNo": "AC25452_EOI",
+    "type": "subcontractor",
+    "subType": "note",
+    "actor": "giglabz",
+    "date": "2026-01-28",
+    "dueDate": null,
+    "details": "ADNOC has raised clarifications on our submitted bid.\n\nKindly review the same and provide your response by tomorrow 12 PM.\n\nDeadline: Feb 10th",
+    "attachments": [],
+    "createdBy": "import:tracker"
+  },
+  {
+    "refNo": "AC26006_EOI",
+    "type": "subcontractor",
+    "subType": "note",
+    "actor": "glacien.ai",
+    "date": "2026-01-06",
+    "dueDate": null,
+    "details": "Glacien opting only as an ai service provider\n\nDeadline: RFT not received",
+    "attachments": [],
+    "createdBy": "import:tracker"
+  },
+  {
+    "refNo": "AC26044",
+    "type": "subcontractor",
+    "subType": "note",
+    "actor": "glacien.ai",
+    "date": "2026-01-29",
+    "dueDate": null,
+    "details": "reviewed it at a preliminary level and confirm our interest in participating in the RFT.\n\nDeadline: FEB 16th extended to 23",
+    "attachments": [],
+    "createdBy": "import:tracker"
+  },
+  {
+    "refNo": "AC26057",
+    "type": "subcontractor",
+    "subType": "note",
+    "actor": "Glacien",
+    "date": "2026-03-24",
+    "dueDate": null,
+    "details": "interested in participating in this opportunity.\n\nKindly let us know if there are any additional documents, references, templates, or qualification formats to be followed as part of the EOI submission.\n\nAnd any timelines for this ?",
+    "attachments": [],
+    "createdBy": "import:tracker"
+  },
+  {
+    "refNo": "AC_25399",
+    "type": "client",
+    "subType": "note",
+    "actor": "Client",
+    "date": "2026-03-24",
+    "dueDate": null,
+    "details": "sent them the rft docs on 27 Friday",
+    "attachments": [],
+    "createdBy": "import:tracker"
+  },
+  {
+    "refNo": "AC26076",
+    "type": "client",
+    "subType": "note",
+    "actor": "Client",
+    "date": "2026-03-24",
+    "dueDate": null,
+    "details": "INTRESTED",
+    "attachments": [],
+    "createdBy": "import:tracker"
+  },
+  {
+    "refNo": "AC26038",
+    "type": "client",
+    "subType": "note",
+    "actor": "Client",
+    "date": "2026-03-24",
+    "dueDate": null,
+    "details": "Not prefered",
+    "attachments": [],
+    "createdBy": "import:tracker"
+  }
+]
