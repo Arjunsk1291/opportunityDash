@@ -90,6 +90,15 @@ const createRateLimiter = ({ windowMs, max, keyPrefix }) => {
   };
 };
 
+const isDatabaseReady = () => mongoose.connection.readyState === 1;
+
+const respondDatabaseUnavailable = (res) => (
+  res.status(503).json({
+    error: 'Database unavailable',
+    code: 'DATABASE_UNAVAILABLE',
+  })
+);
+
 const authRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 20, keyPrefix: 'auth' });
 const privilegedRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 120, keyPrefix: 'priv' });
 
@@ -138,9 +147,15 @@ mongoose.connect(MONGODB_URI)
     console.log('[mongo.connect.success]', JSON.stringify({ timestamp: new Date().toISOString() }));
   })
   .then(async () => {
+    await ensureInitialMongoState();
+  })
+  .then(async () => {
     await initializeBootSync();
     await scheduleGraphAutoSync();
     scheduleDailyNotificationCheck();
+    app.listen(PORT, () => {
+      console.log('✅ Server running on http://localhost:' + PORT);
+    });
   })
   .catch(err => {
     console.error('[mongo.connect.failure]', JSON.stringify({
@@ -1842,8 +1857,57 @@ function isBootstrapMaster(email) {
   return BOOTSTRAP_MASTER_EMAILS.has(String(email || '').trim().toLowerCase());
 }
 
+async function ensureCollectionExists(model, collectionName) {
+  const existingCollections = await mongoose.connection.db.listCollections({ name: collectionName }).toArray();
+  if (!existingCollections.length) {
+    await model.createCollection();
+    console.log('[mongo.collection.created]', JSON.stringify({
+      collection: collectionName,
+      timestamp: new Date().toISOString(),
+    }));
+  }
+}
+
+async function ensureBootstrapMasterUser(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) return;
+
+  await AuthorizedUser.findOneAndUpdate(
+    { email: normalizedEmail },
+    {
+      $setOnInsert: {
+        email: normalizedEmail,
+        createdAt: new Date(),
+      },
+      $set: {
+        displayName: normalizedEmail,
+        role: 'Master',
+        status: 'approved',
+        approvedBy: 'system-bootstrap',
+        approvedAt: new Date(),
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  console.log('[mongo.bootstrap-master.ready]', JSON.stringify({
+    email: normalizedEmail,
+    timestamp: new Date().toISOString(),
+  }));
+}
+
+async function ensureInitialMongoState() {
+  await ensureCollectionExists(AuthorizedUser, 'authorizedusers');
+  await ensureCollectionExists(SyncedOpportunity, 'syncedopportunities');
+  await ensureBootstrapMasterUser('arjun.s@avenirengineering.com');
+}
+
 const verifyToken = async (req, res, next) => {
   try {
+    if (!isDatabaseReady()) {
+      return respondDatabaseUnavailable(res);
+    }
+
     const username = getUsernameFromRequest(req);
     if (!username) {
       return res.status(401).json({ error: 'Missing username authorization' });
@@ -1888,6 +1952,11 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
   };
 
   try {
+    if (!isDatabaseReady()) {
+      console.warn('[auth.verify-token.db-unavailable]', JSON.stringify(requestMeta));
+      return respondDatabaseUnavailable(res);
+    }
+
     const rawUsername = req.body?.username || req.body?.token;
     const username = rawUsername?.toString().trim().toLowerCase();
     if (!username) {
@@ -3850,6 +3919,10 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
 
 app.get('/api/opportunities', async (req, res) => {
   try {
+    if (!isDatabaseReady()) {
+      return respondDatabaseUnavailable(res);
+    }
+
     const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
     const mapped = opportunities.map(opp => mapIdField(opp));
     res.json(mapped);
@@ -4318,8 +4391,4 @@ app.use(express.static(distPath));
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
-});
-
-app.listen(PORT, () => {
-  console.log('✅ Server running on http://localhost:' + PORT);
 });
