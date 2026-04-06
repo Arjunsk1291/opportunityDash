@@ -245,6 +245,31 @@ function chooseHeaderRowIndex(rows = [], preferredOffset = 0, mapping = {}) {
   return bestIndex;
 }
 
+function validateResolvedColumns(headers = [], colIndices = {}) {
+  const criticalKeys = ['tenderNo', 'tenderName', 'client', 'lead', 'value', 'avenirStatus', 'tenderResult', 'groupClassification'];
+  const grouped = new Map();
+
+  criticalKeys.forEach((key) => {
+    const idx = colIndices[key];
+    if (typeof idx !== 'number' || idx < 0) return;
+    const list = grouped.get(idx) || [];
+    list.push(key);
+    grouped.set(idx, list);
+  });
+
+  const suspicious = Array.from(grouped.entries())
+    .filter(([, keys]) => keys.length >= 4)
+    .sort((a, b) => b[1].length - a[1].length)[0];
+
+  if (!suspicious) return;
+
+  const [columnIndex, keys] = suspicious;
+  const header = headers[columnIndex] || `COLUMN_${columnIndex + 1}`;
+  throw new Error(
+    `Graph column mapping looks incorrect. ${keys.join(', ')} all resolved to the same column: ${header}. Check Header Row Offset, Data Range, and Custom Field Mapping.`
+  );
+}
+
 export async function syncTendersFromGraph(config) {
   if (!config?.driveId || !config?.fileId || !config?.worksheetName) {
     throw new Error('Graph sync config missing driveId/fileId/worksheetName');
@@ -290,6 +315,8 @@ export async function syncTendersFromGraph(config) {
     submissionDeadline: findColumn(headers, mapping.submissionDeadline),
     tenderSubmittedDate: findColumn(headers, mapping.tenderSubmittedDate),
   };
+
+  validateResolvedColumns(headers, colIndices);
 
   if (colIndices.value < 0) {
     const availableHeaders = headers.filter(Boolean).slice(0, 20).join(', ');
