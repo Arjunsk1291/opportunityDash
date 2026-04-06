@@ -118,7 +118,7 @@ const DEFAULT_MAPPING = {
   year: ['Year '],
   dateReceived: ['date tender recd', 'DATE RECEIVED'],
   lead: ['Assigned Person'],
-  value: ['Tender value'],
+  value: ['Tender value', 'TENDER VALUE ', 'TENDER VALUE (AED)', 'VALUE', 'PROJECT VALUE', 'ESTIMATED VALUE', 'TENDER AMOUNT', 'AMOUNT'],
   avenirStatus: ['AVENIR STATUS'],
   tenderResult: ['TENDER RESULT'],
   groupClassification: ['GDS/GES', 'GROUP'],
@@ -131,7 +131,12 @@ const DEFAULT_MAPPING = {
 };
 
 function normalizeHeader(value) {
-  return String(value || '').toUpperCase().replace(/\s+/g, ' ').trim();
+  return String(value || '')
+    .toUpperCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/[()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function findColumn(headers, candidates, options = {}) {
@@ -198,7 +203,7 @@ export async function syncTendersFromGraph(config) {
     year: findColumn(headers, mapping.year),
     dateReceived: findColumn(headers, mapping.dateReceived),
     lead: findColumn(headers, mapping.lead),
-    value: findColumn(headers, mapping.value, { exactOnly: true }),
+    value: findColumn(headers, mapping.value),
     avenirStatus: findColumn(headers, mapping.avenirStatus),
     tenderResult: findColumn(headers, mapping.tenderResult),
     groupClassification: findColumn(headers, mapping.groupClassification),
@@ -211,7 +216,8 @@ export async function syncTendersFromGraph(config) {
   };
 
   if (colIndices.value < 0) {
-    throw new Error('Required column not found: Tender value');
+    const availableHeaders = headers.filter(Boolean).slice(0, 20).join(', ');
+    throw new Error(`Required column not found: Tender value. Available headers: ${availableHeaders}`);
   }
 
   const tenders = [];
