@@ -40,6 +40,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
+const DISABLE_MONGODB = String(process.env.DISABLE_MONGODB || '').toLowerCase() === 'true';
 console.log('Debug flags:', { MAIL_DEBUG: String(process.env.MAIL_DEBUG || '').toLowerCase() === 'true', NOTIFICATION_DEBUG: String(process.env.NOTIFICATION_DEBUG || '').toLowerCase() === 'true', GRAPH_TOKEN_DEBUG: String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true' });
 
 const DEFAULT_CORS_ORIGINS = [
@@ -90,7 +91,7 @@ const createRateLimiter = ({ windowMs, max, keyPrefix }) => {
   };
 };
 
-const isDatabaseReady = () => mongoose.connection.readyState === 1;
+const isDatabaseReady = () => DISABLE_MONGODB || mongoose.connection.readyState === 1;
 
 const respondDatabaseUnavailable = (res) => (
   res.status(503).json({
@@ -118,6 +119,14 @@ app.get('/healthz', (_req, res) => {
 });
 
 app.get('/api/health', (_req, res) => {
+  if (DISABLE_MONGODB) {
+    return res.status(200).json({
+      ok: true,
+      service: 'backend',
+      dbState: 'disabled',
+      timestamp: new Date().toISOString(),
+    });
+  }
   const dbReady = mongoose.connection.readyState === 1;
   res.status(dbReady ? 200 : 503).json({
     ok: dbReady,
@@ -141,30 +150,39 @@ app.get('/api/auth/msal-config', (_req, res) => {
   });
 });
 
-console.log('[mongo.connect.start]', JSON.stringify({ uriConfigured: Boolean(MONGODB_URI), timestamp: new Date().toISOString() }));
-mongoose.connect(MONGODB_URI)
-  .then(() => {
-    console.log('[mongo.connect.success]', JSON.stringify({ timestamp: new Date().toISOString() }));
-  })
-  .then(async () => {
-    await ensureInitialMongoState();
-  })
-  .then(async () => {
-    await initializeBootSync();
-    await scheduleGraphAutoSync();
-    scheduleDailyNotificationCheck();
-    app.listen(PORT, () => {
-      console.log('✅ Server running on http://localhost:' + PORT);
-    });
-  })
-  .catch(err => {
-    console.error('[mongo.connect.failure]', JSON.stringify({
-      timestamp: new Date().toISOString(),
-      name: err?.name || 'Error',
-      message: err?.message || String(err),
-      stack: err?.stack || null,
-    }));
+const startServer = () => {
+  app.listen(PORT, () => {
+    console.log('✅ Server running on http://localhost:' + PORT);
   });
+};
+
+if (DISABLE_MONGODB) {
+  console.warn('[mongo.disabled]', JSON.stringify({ timestamp: new Date().toISOString() }));
+  startServer();
+} else {
+  console.log('[mongo.connect.start]', JSON.stringify({ uriConfigured: Boolean(MONGODB_URI), timestamp: new Date().toISOString() }));
+  mongoose.connect(MONGODB_URI)
+    .then(() => {
+      console.log('[mongo.connect.success]', JSON.stringify({ timestamp: new Date().toISOString() }));
+    })
+    .then(async () => {
+      await ensureInitialMongoState();
+    })
+    .then(async () => {
+      await initializeBootSync();
+      await scheduleGraphAutoSync();
+      scheduleDailyNotificationCheck();
+      startServer();
+    })
+    .catch(err => {
+      console.error('[mongo.connect.failure]', JSON.stringify({
+        timestamp: new Date().toISOString(),
+        name: err?.name || 'Error',
+        message: err?.message || String(err),
+        stack: err?.stack || null,
+      }));
+    });
+}
 
 const mapIdField = (doc) => {
   if (!doc) return doc;
@@ -1853,8 +1871,53 @@ const BOOTSTRAP_MASTER_EMAILS = new Set(
   ],
 );
 
+const localAuthorizedUsers = new Map();
+const localPermissionConfig = {
+  pageRoleAccess: {},
+  pageEmailAccess: {},
+  actionRoleAccess: {},
+  actionEmailAccess: {},
+};
+
 function isBootstrapMaster(email) {
   return BOOTSTRAP_MASTER_EMAILS.has(String(email || '').trim().toLowerCase());
+}
+
+function buildLocalUser(email, overrides = {}) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const bootstrapMaster = isBootstrapMaster(normalizedEmail);
+  const now = new Date();
+  return {
+    _id: overrides._id || normalizedEmail,
+    email: normalizedEmail,
+    displayName: overrides.displayName || normalizedEmail,
+    role: overrides.role || (bootstrapMaster ? 'Master' : 'Basic'),
+    assignedGroup: Object.prototype.hasOwnProperty.call(overrides, 'assignedGroup') ? overrides.assignedGroup : null,
+    status: overrides.status || (bootstrapMaster ? 'approved' : 'pending'),
+    lastLogin: overrides.lastLogin || null,
+    createdAt: overrides.createdAt || now,
+    approvedBy: Object.prototype.hasOwnProperty.call(overrides, 'approvedBy') ? overrides.approvedBy : (bootstrapMaster ? 'system-bootstrap' : null),
+    approvedAt: Object.prototype.hasOwnProperty.call(overrides, 'approvedAt') ? overrides.approvedAt : (bootstrapMaster ? now : null),
+  };
+}
+
+function getLocalAuthorizedUser(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) return null;
+  return localAuthorizedUsers.get(normalizedEmail) || null;
+}
+
+function upsertLocalAuthorizedUser(email, overrides = {}) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) return null;
+  const existing = getLocalAuthorizedUser(normalizedEmail);
+  const nextUser = buildLocalUser(normalizedEmail, { ...(existing || {}), ...overrides });
+  localAuthorizedUsers.set(normalizedEmail, nextUser);
+  return nextUser;
+}
+
+function listLocalAuthorizedUsers() {
+  return Array.from(localAuthorizedUsers.values()).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 }
 
 async function ensureCollectionExists(model, collectionName) {
@@ -1913,6 +1976,32 @@ const verifyToken = async (req, res, next) => {
       return res.status(401).json({ error: 'Missing username authorization' });
     }
 
+    if (DISABLE_MONGODB) {
+      const user = getLocalAuthorizedUser(username);
+      if (!user) {
+        return res.status(403).json({ error: 'User not authorized' });
+      }
+
+      if (user.status === 'rejected') {
+        return res.status(403).json({ error: 'User access has been rejected' });
+      }
+
+      if (user.status === 'pending') {
+        return res.status(403).json({ error: 'User access pending approval' });
+      }
+
+      req.user = {
+        email: user.email,
+        displayName: user.displayName || user.email,
+        role: user.role,
+        status: user.status,
+        assignedGroup: user.assignedGroup || null,
+        userId: user._id,
+      };
+
+      return next();
+    }
+
     const user = await AuthorizedUser.findOne({ email: username });
     if (!user) {
       return res.status(403).json({ error: 'User not authorized' });
@@ -1965,6 +2054,39 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
         reason: 'missing_username',
       }));
       return res.status(400).json({ error: 'Username is required' });
+    }
+
+    if (DISABLE_MONGODB) {
+      let user = getLocalAuthorizedUser(username);
+      if (!user) {
+        const bootstrapMaster = isBootstrapMaster(username);
+        user = upsertLocalAuthorizedUser(username, {
+          displayName: username,
+          role: bootstrapMaster ? 'Master' : 'Basic',
+          status: bootstrapMaster ? 'approved' : 'pending',
+        });
+      } else if (isBootstrapMaster(username) && (user.role !== 'Master' || user.status !== 'approved')) {
+        user = upsertLocalAuthorizedUser(username, {
+          role: 'Master',
+          status: 'approved',
+          approvedBy: 'system-bootstrap',
+          approvedAt: new Date(),
+        });
+      }
+
+      return res.json({
+        success: true,
+        user: {
+          email: user.email,
+          displayName: user.displayName || user.email,
+          role: user.role,
+          status: user.status,
+          assignedGroup: user.assignedGroup,
+        },
+        message: user.status === 'pending'
+          ? 'User pending approval. Master will review your request.'
+          : 'Login successful',
+      });
     }
 
     let user = await AuthorizedUser.findOne({ email: username });
@@ -2038,6 +2160,11 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
 
 app.post('/api/auth/login', authRateLimiter, verifyToken, async (req, res) => {
   try {
+    if (DISABLE_MONGODB) {
+      upsertLocalAuthorizedUser(req.user.email, { lastLogin: new Date() });
+      return res.json({ success: true, message: 'Login recorded locally' });
+    }
+
     const loginLog = new LoginLog({
       email: req.user.email,
       role: req.user.role,
@@ -2075,6 +2202,10 @@ app.get('/api/users/authorized', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin users can view this' });
     }
 
+    if (DISABLE_MONGODB) {
+      return res.json(listLocalAuthorizedUsers().map(mapIdField));
+    }
+
     const users = await AuthorizedUser.find().sort({ createdAt: -1 }).lean();
     res.json(users.map(mapIdField));
   } catch (error) {
@@ -2109,24 +2240,29 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'assignedGroup must be one of GES, GDS, GTS' });
     }
 
-    const existing = await AuthorizedUser.findOne({ email });
+    const existing = DISABLE_MONGODB
+      ? getLocalAuthorizedUser(email)
+      : await AuthorizedUser.findOne({ email });
     if (existing?.role === 'Master' || existing?.role === 'MASTER') {
       return res.status(403).json({ error: 'Modifying Master users is not allowed' });
     }
 
-    const user = await AuthorizedUser.findOneAndUpdate(
-      { email },
-      {
-        email,
-        displayName: displayName || email,
-        role,
-        assignedGroup: role === 'SVP' ? assignedGroupRaw : null,
-        status: ['approved', 'pending', 'rejected'].includes(status) ? status : 'approved',
-        approvedBy: req.user.email,
-        approvedAt: new Date(),
-      },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
-    );
+    const nextPayload = {
+      email,
+      displayName: displayName || email,
+      role,
+      assignedGroup: role === 'SVP' ? assignedGroupRaw : null,
+      status: ['approved', 'pending', 'rejected'].includes(status) ? status : 'approved',
+      approvedBy: req.user.email,
+      approvedAt: new Date(),
+    };
+    const user = DISABLE_MONGODB
+      ? upsertLocalAuthorizedUser(email, nextPayload)
+      : await AuthorizedUser.findOneAndUpdate(
+        { email },
+        nextPayload,
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      );
 
     res.json({ success: true, user: mapIdField(user.toObject ? user.toObject() : user) });
   } catch (error) {
@@ -2143,15 +2279,22 @@ app.post('/api/users/approve', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    const user = await AuthorizedUser.findOneAndUpdate(
-      { email: email.toLowerCase() },
-      {
+    const normalizedEmail = email.toLowerCase();
+    const user = DISABLE_MONGODB
+      ? upsertLocalAuthorizedUser(normalizedEmail, {
         status: 'approved',
         approvedBy: req.user.email,
         approvedAt: new Date(),
-      },
-      { new: true }
-    );
+      })
+      : await AuthorizedUser.findOneAndUpdate(
+        { email: normalizedEmail },
+        {
+          status: 'approved',
+          approvedBy: req.user.email,
+          approvedAt: new Date(),
+        },
+        { new: true }
+      );
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -2172,15 +2315,22 @@ app.post('/api/users/reject', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    const user = await AuthorizedUser.findOneAndUpdate(
-      { email: email.toLowerCase() },
-      {
+    const normalizedEmail = email.toLowerCase();
+    const user = DISABLE_MONGODB
+      ? upsertLocalAuthorizedUser(normalizedEmail, {
         status: 'rejected',
         approvedBy: req.user.email,
         approvedAt: new Date(),
-      },
-      { new: true }
-    );
+      })
+      : await AuthorizedUser.findOneAndUpdate(
+        { email: normalizedEmail },
+        {
+          status: 'rejected',
+          approvedBy: req.user.email,
+          approvedAt: new Date(),
+        },
+        { new: true }
+      );
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -2215,7 +2365,10 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'assignedGroup must be one of GES, GDS, GTS' });
     }
 
-    const existing = await AuthorizedUser.findOne({ email: email.toLowerCase() });
+    const normalizedEmail = email.toLowerCase();
+    const existing = DISABLE_MONGODB
+      ? getLocalAuthorizedUser(normalizedEmail)
+      : await AuthorizedUser.findOne({ email: normalizedEmail });
     if (!existing) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -2232,11 +2385,13 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
     }
 
     const update = { role: newRole, assignedGroup: newRole === 'SVP' ? normalizedGroup : null };
-    const user = await AuthorizedUser.findOneAndUpdate(
-      { email: email.toLowerCase() },
-      update,
-      { new: true }
-    );
+    const user = DISABLE_MONGODB
+      ? upsertLocalAuthorizedUser(normalizedEmail, update)
+      : await AuthorizedUser.findOneAndUpdate(
+        { email: normalizedEmail },
+        update,
+        { new: true }
+      );
 
     res.json({ success: true, user });
   } catch (error) {
@@ -2253,7 +2408,10 @@ app.delete('/api/users/remove', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    const target = await AuthorizedUser.findOne({ email: email.toLowerCase() });
+    const normalizedEmail = email.toLowerCase();
+    const target = DISABLE_MONGODB
+      ? getLocalAuthorizedUser(normalizedEmail)
+      : await AuthorizedUser.findOne({ email: normalizedEmail });
     if (!target) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -2261,7 +2419,12 @@ app.delete('/api/users/remove', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Removing Master users is not allowed' });
     }
 
-    const result = await AuthorizedUser.deleteOne({ email: email.toLowerCase() });
+    if (DISABLE_MONGODB) {
+      localAuthorizedUsers.delete(normalizedEmail);
+      return res.json({ success: true, message: 'User removed' });
+    }
+
+    const result = await AuthorizedUser.deleteOne({ email: normalizedEmail });
 
     res.json({ success: true, message: 'User removed' });
   } catch (error) {
@@ -2921,6 +3084,16 @@ const sanitizeActionEmailAccess = (input = {}) => {
 };
 
 const getSystemConfig = async () => {
+  if (DISABLE_MONGODB) {
+    return {
+      pageRoleAccess: sanitizePageRoleAccess(localPermissionConfig.pageRoleAccess),
+      pageEmailAccess: sanitizePageEmailAccess(localPermissionConfig.pageEmailAccess),
+      actionRoleAccess: sanitizeActionRoleAccess(localPermissionConfig.actionRoleAccess),
+      actionEmailAccess: sanitizeActionEmailAccess(localPermissionConfig.actionEmailAccess),
+      isModified: () => false,
+      save: async () => null,
+    };
+  }
   let config = await SystemConfig.findOne();
   if (!config) config = await SystemConfig.create({});
   return config;
@@ -2972,6 +3145,11 @@ app.get('/api/navigation/permissions', verifyToken, async (req, res) => {
     const config = await getSystemConfig();
     const permissions = sanitizePageRoleAccess(config.pageRoleAccess || {});
     const emailPermissions = sanitizePageEmailAccess(config.pageEmailAccess || {});
+    if (DISABLE_MONGODB) {
+      localPermissionConfig.pageRoleAccess = permissions;
+      localPermissionConfig.pageEmailAccess = emailPermissions;
+      return res.json({ success: true, permissions, emailPermissions });
+    }
     if (!config.pageRoleAccess || Object.keys(config.pageRoleAccess).length === 0) {
       config.pageRoleAccess = permissions;
     }
@@ -2993,6 +3171,11 @@ app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
 
     const permissions = sanitizePageRoleAccess(req.body?.permissions || {});
     const emailPermissions = sanitizePageEmailAccess(req.body?.emailPermissions || {});
+    if (DISABLE_MONGODB) {
+      localPermissionConfig.pageRoleAccess = permissions;
+      localPermissionConfig.pageEmailAccess = emailPermissions;
+      return res.json({ success: true, permissions, emailPermissions });
+    }
     const config = await getSystemConfig();
     config.pageRoleAccess = permissions;
     config.pageEmailAccess = emailPermissions;
@@ -3020,6 +3203,11 @@ app.post('/api/action-permissions', verifyToken, async (req, res) => {
 
     const permissions = sanitizeActionRoleAccess(req.body?.permissions || {});
     const emailPermissions = sanitizeActionEmailAccess(req.body?.emailPermissions || {});
+    if (DISABLE_MONGODB) {
+      localPermissionConfig.actionRoleAccess = permissions;
+      localPermissionConfig.actionEmailAccess = emailPermissions;
+      return res.json({ success: true, permissions, emailPermissions });
+    }
     const config = await getSystemConfig();
     config.actionRoleAccess = permissions;
     config.actionEmailAccess = emailPermissions;
@@ -3919,6 +4107,10 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
 
 app.get('/api/opportunities', async (req, res) => {
   try {
+    if (DISABLE_MONGODB) {
+      return res.json([]);
+    }
+
     if (!isDatabaseReady()) {
       return respondDatabaseUnavailable(res);
     }
