@@ -199,6 +199,52 @@ function resolveMapping(fieldMapping = {}) {
   return normalized;
 }
 
+function isMostlyNumericRow(row = []) {
+  const filled = row
+    .map((cell) => String(cell ?? '').trim())
+    .filter(Boolean);
+  if (!filled.length) return false;
+  const numericLike = filled.filter((cell) => /^[-(]?\d[\d\s,./-]*\)?$/.test(cell)).length;
+  return numericLike / filled.length >= 0.6;
+}
+
+function scoreHeaderRow(row = [], mapping = {}) {
+  const headers = row.map((cell) => String(cell ?? '').trim());
+  const nonEmptyCount = headers.filter(Boolean).length;
+  if (!nonEmptyCount) return -1;
+
+  let matchCount = 0;
+  for (const candidates of Object.values(mapping)) {
+    if (findColumn(headers, candidates) >= 0) matchCount += 1;
+  }
+
+  const textualCount = headers.filter((header) => {
+    const value = normalizeHeader(header);
+    return value && /[A-Z]/.test(value);
+  }).length;
+
+  const numericPenalty = isMostlyNumericRow(headers) ? 5 : 0;
+  return (matchCount * 10) + textualCount - numericPenalty;
+}
+
+function chooseHeaderRowIndex(rows = [], preferredOffset = 0, mapping = {}) {
+  const safePreferredOffset = Math.max(0, Math.min(Number(preferredOffset || 0), Math.max(rows.length - 1, 0)));
+  const maxCandidates = Math.min(rows.length, 12);
+
+  let bestIndex = safePreferredOffset;
+  let bestScore = scoreHeaderRow(rows[safePreferredOffset] || [], mapping);
+
+  for (let idx = 0; idx < maxCandidates; idx += 1) {
+    const score = scoreHeaderRow(rows[idx] || [], mapping);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = idx;
+    }
+  }
+
+  return bestIndex;
+}
+
 export async function syncTendersFromGraph(config) {
   if (!config?.driveId || !config?.fileId || !config?.worksheetName) {
     throw new Error('Graph sync config missing driveId/fileId/worksheetName');
@@ -221,8 +267,9 @@ export async function syncTendersFromGraph(config) {
     throw new Error(`Invalid headerRowOffset (${headerRowOffset}) for ${rows.length} rows`);
   }
 
-  const headers = (rows[headerRowOffset] || []).map((h) => h?.toString().trim().toUpperCase() || '');
   const mapping = resolveMapping(config.fieldMapping || {});
+  const detectedHeaderRowOffset = chooseHeaderRowIndex(rows, headerRowOffset, mapping);
+  const headers = (rows[detectedHeaderRowOffset] || []).map((h) => h?.toString().trim().toUpperCase() || '');
 
   const colIndices = {
     tenderNo: findColumn(headers, mapping.tenderNo),
@@ -251,7 +298,7 @@ export async function syncTendersFromGraph(config) {
 
   const tenders = [];
 
-  for (let i = headerRowOffset + 1; i < rows.length; i++) {
+  for (let i = detectedHeaderRowOffset + 1; i < rows.length; i++) {
     const row = rows[i] || [];
 
     const hasContent = row.some((cell) => cell && cell.toString().trim() !== '');
