@@ -139,8 +139,17 @@ function normalizeHeader(value) {
     .trim();
 }
 
+function canonicalizeHeader(value) {
+  return normalizeHeader(value).replace(/[^A-Z0-9]+/g, '');
+}
+
+function tokenizeHeader(value) {
+  return normalizeHeader(value).split(' ').filter(Boolean);
+}
+
 function findColumn(headers, candidates, options = {}) {
   const normalizedCandidates = (candidates || []).map((candidate) => normalizeHeader(candidate)).filter(Boolean);
+  const canonicalCandidates = normalizedCandidates.map((candidate) => canonicalizeHeader(candidate));
   if (!normalizedCandidates.length) return -1;
 
   const exactMatchIdx = headers.findIndex((header) => {
@@ -150,9 +159,29 @@ function findColumn(headers, candidates, options = {}) {
   if (exactMatchIdx >= 0) return exactMatchIdx;
   if (options.exactOnly) return -1;
 
-  return headers.findIndex((header) => {
+  const includesMatchIdx = headers.findIndex((header) => {
     const normalizedHeader = normalizeHeader(header);
-    return normalizedCandidates.some((candidate) => normalizedHeader.includes(candidate));
+    const canonicalHeader = canonicalizeHeader(header);
+    return normalizedCandidates.some((candidate, index) => (
+      normalizedHeader.includes(candidate)
+      || candidate.includes(normalizedHeader)
+      || canonicalHeader.includes(canonicalCandidates[index])
+      || canonicalCandidates[index].includes(canonicalHeader)
+    ));
+  });
+  if (includesMatchIdx >= 0) return includesMatchIdx;
+
+  return headers.findIndex((header) => {
+    const headerTokens = tokenizeHeader(header);
+    if (!headerTokens.length) return false;
+
+    return normalizedCandidates.some((candidate) => {
+      const candidateTokens = tokenizeHeader(candidate);
+      if (!candidateTokens.length) return false;
+      const overlapCount = candidateTokens.filter((token) => headerTokens.includes(token)).length;
+      const overlapRatio = overlapCount / candidateTokens.length;
+      return overlapRatio >= 0.6;
+    });
   });
 }
 
