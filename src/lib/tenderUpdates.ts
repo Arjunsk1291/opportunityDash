@@ -12,6 +12,7 @@ export type FinalDecision = 'accepted' | 'rejected' | 'negotiating';
 export type ProjectUpdate = {
   id: string;
   tenderId: string;
+  tenderRefNo: string;
   updateType: ProjectUpdateType;
   vendorName?: string;
   parentUpdateId?: string;
@@ -28,36 +29,13 @@ export type ProjectUpdate = {
   createdAt: string;
 };
 
-type CreateProjectUpdateInput = Omit<ProjectUpdate, 'id' | 'createdAt'>;
+type CreateProjectUpdateInput = Omit<ProjectUpdate, 'id' | 'createdAt' | 'updatedBy'>;
 
-const STORAGE_KEY = 'project_tracker_updates_v2';
-
-const canUseStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined';
-
-const safeParse = (value: string | null): ProjectUpdate[] => {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const saveUpdates = (updates: ProjectUpdate[]) => {
-  if (!canUseStorage()) return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updates));
-};
-
-const newId = () => {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  return `project_update_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-};
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const normalizeUpdate = (input: ProjectUpdate): ProjectUpdate => ({
   ...input,
+  tenderRefNo: input.tenderRefNo?.trim() || '',
   vendorName: input.vendorName?.trim() || '',
   parentUpdateId: input.parentUpdateId?.trim() || '',
   responseDetails: input.responseDetails?.trim() || '',
@@ -72,42 +50,52 @@ const normalizeUpdate = (input: ProjectUpdate): ProjectUpdate => ({
   updatedBy: input.updatedBy?.trim() || 'unknown',
 });
 
-export const getProjectUpdates = (): ProjectUpdate[] => {
-  if (!canUseStorage()) return [];
-  const raw = safeParse(localStorage.getItem(STORAGE_KEY));
-  return raw
-    .map((item) => normalizeUpdate(item))
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 1000);
+const authHeaders = (token: string) => ({
+  Authorization: `Bearer ${token}`,
+  'Content-Type': 'application/json',
+});
+
+export const getProjectUpdates = async (token: string): Promise<ProjectUpdate[]> => {
+  const response = await fetch(`${API_URL}/project-updates?limit=1000`, {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => []);
+  if (!response.ok) {
+    throw new Error(data?.error || 'Failed to load project updates');
+  }
+  return (Array.isArray(data) ? data : [])
+    .map((item) => normalizeUpdate(item as ProjectUpdate))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 };
 
-export const createProjectUpdate = (input: CreateProjectUpdateInput): ProjectUpdate => {
-  const updates = getProjectUpdates();
-  const next: ProjectUpdate = normalizeUpdate({
-    ...input,
-    id: newId(),
-    createdAt: new Date().toISOString(),
-  } as ProjectUpdate);
-  updates.unshift(next);
-  saveUpdates(updates);
-  return next;
+export const createProjectUpdate = async (token: string, input: CreateProjectUpdateInput): Promise<ProjectUpdate> => {
+  const response = await fetch(`${API_URL}/project-updates`, {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(input),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || 'Failed to create project update');
+  }
+  return normalizeUpdate(data as ProjectUpdate);
 };
 
-export const getTenderProjectUpdates = (tenderId: string): ProjectUpdate[] => (
-  getProjectUpdates()
-    .filter((update) => update.tenderId === tenderId)
+export const getTenderProjectUpdates = (tenderId: string, tenderRefNo: string, updates: ProjectUpdate[]): ProjectUpdate[] => (
+  updates
+    .filter((update) => update.tenderRefNo === tenderRefNo || update.tenderId === tenderId)
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 );
 
-export const getUpdateCount = (tenderId: string, updates?: ProjectUpdate[]): number => {
-  const source = updates || getProjectUpdates();
-  return source.filter((update) => update.tenderId === tenderId).length;
+export const getUpdateCount = (tenderId: string, tenderRefNo: string, updates?: ProjectUpdate[]): number => {
+  const source = updates || [];
+  return source.filter((update) => update.tenderRefNo === tenderRefNo || update.tenderId === tenderId).length;
 };
 
-export const getLastUpdate = (tenderId: string, updates?: ProjectUpdate[]): ProjectUpdate | null => {
-  const source = updates || getProjectUpdates();
+export const getLastUpdate = (tenderId: string, tenderRefNo: string, updates?: ProjectUpdate[]): ProjectUpdate | null => {
+  const source = updates || [];
   const matches = source
-    .filter((update) => update.tenderId === tenderId)
+    .filter((update) => update.tenderRefNo === tenderRefNo || update.tenderId === tenderId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   return matches[0] || null;
 };

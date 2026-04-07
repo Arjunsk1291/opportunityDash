@@ -8,9 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import type { FinalDecision, ProjectUpdate, ProjectUpdateType } from '@/lib/tenderUpdates';
 
 type AddUpdateFormProps = {
-  tenderId: string;
   existingUpdates: ProjectUpdate[];
-  onSubmit: (formData: Omit<ProjectUpdate, 'id' | 'createdAt' | 'updatedBy'>) => void;
+  onSubmit: (formData: Omit<ProjectUpdate, 'id' | 'createdAt' | 'updatedBy' | 'tenderId' | 'tenderRefNo'>) => void;
   onCancel: () => void;
 };
 
@@ -54,7 +53,7 @@ const initialState: FormState = {
   notes: '',
 };
 
-export function AddUpdateForm({ tenderId, existingUpdates, onSubmit, onCancel }: AddUpdateFormProps) {
+export function AddUpdateForm({ existingUpdates, onSubmit, onCancel }: AddUpdateFormProps) {
   const [form, setForm] = useState<FormState>(initialState);
   const [error, setError] = useState('');
 
@@ -86,7 +85,6 @@ export function AddUpdateForm({ tenderId, existingUpdates, onSubmit, onCancel }:
     }
 
     onSubmit({
-      tenderId,
       updateType: form.updateType,
       vendorName: showVendorName ? form.vendorName.trim() : '',
       parentUpdateId: form.parentUpdateId || '',

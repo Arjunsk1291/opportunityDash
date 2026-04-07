@@ -104,7 +104,7 @@ function csvEscape(value: unknown) {
 
 export default function TenderUpdates() {
   const { opportunities, refreshData } = useData();
-  const { isMaster, user } = useAuth();
+  const { isMaster, token } = useAuth();
   const { formatCurrency } = useCurrency();
 
   const [selectedGroup, setSelectedGroup] = useState('ALL');
@@ -116,15 +116,25 @@ export default function TenderUpdates() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadModuleData = async () => {
+    if (!token) return;
     setIsRefreshing(true);
-    await refreshData();
-    setProjectUpdates(getProjectUpdates());
-    setIsRefreshing(false);
+    try {
+      await refreshData();
+      const updates = await getProjectUpdates(token);
+      setProjectUpdates(updates);
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to refresh project tracker');
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   useEffect(() => {
-    setProjectUpdates(getProjectUpdates());
-  }, [selectedGroup]);
+    if (!token) return;
+    getProjectUpdates(token)
+      .then(setProjectUpdates)
+      .catch((error) => toast.error((error as Error).message || 'Failed to load project updates'));
+  }, [selectedGroup, token]);
 
   const trackerTenders = useMemo(
     () => opportunities.map(mapOpportunityToTrackerTender),
@@ -162,18 +172,23 @@ export default function TenderUpdates() {
   const selectedTender = filteredTenders.find((tender) => tender.id === selectedTenderId)
     || trackerTenders.find((tender) => tender.id === selectedTenderId)
     || null;
-  const selectedTenderUpdates = selectedTender ? getTenderProjectUpdates(selectedTender.id) : [];
+  const selectedTenderUpdates = selectedTender ? getTenderProjectUpdates(selectedTender.id, selectedTender.refNo, projectUpdates) : [];
 
-  const handleCreateUpdate = (payload: Omit<ProjectUpdate, 'id' | 'createdAt' | 'updatedBy'>) => {
-    if (!selectedTender) return;
-    createProjectUpdate({
-      ...payload,
-      tenderId: selectedTender.id,
-      updatedBy: user?.email || 'unknown@local',
-    });
-    setProjectUpdates(getProjectUpdates());
-    setAddUpdateOpen(false);
-    toast.success('Project update logged.');
+  const handleCreateUpdate = async (payload: Omit<ProjectUpdate, 'id' | 'createdAt' | 'updatedBy'>) => {
+    if (!selectedTender || !token) return;
+    try {
+      await createProjectUpdate(token, {
+        ...payload,
+        tenderId: selectedTender.id,
+        tenderRefNo: selectedTender.refNo,
+      });
+      const updates = await getProjectUpdates(token);
+      setProjectUpdates(updates);
+      setAddUpdateOpen(false);
+      toast.success('Project update logged.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to log update');
+    }
   };
 
   const handleExportCsv = () => {
@@ -192,7 +207,7 @@ export default function TenderUpdates() {
     ];
 
     const lines = filteredTenders.map((tender) => {
-      const lastUpdate = getLastUpdate(tender.id, projectUpdates);
+      const lastUpdate = getLastUpdate(tender.id, tender.refNo, projectUpdates);
       return [
         tender.refNo,
         tender.rfpReceivedDate || '',
@@ -202,7 +217,7 @@ export default function TenderUpdates() {
         tender.value,
         tender.avenirStatus,
         tender.groupClassification,
-        getUpdateCount(tender.id, projectUpdates),
+        getUpdateCount(tender.id, tender.refNo, projectUpdates),
         lastUpdate?.createdAt || '',
         lastUpdate ? UPDATE_TYPE_LABELS[lastUpdate.updateType] : '',
       ].map(csvEscape).join(',');
@@ -340,8 +355,8 @@ export default function TenderUpdates() {
                   </TableRow>
                 )}
                 {filteredTenders.map((tender) => {
-                  const lastUpdate = getLastUpdate(tender.id, projectUpdates);
-                  const updatesCount = getUpdateCount(tender.id, projectUpdates);
+                  const lastUpdate = getLastUpdate(tender.id, tender.refNo, projectUpdates);
+                  const updatesCount = getUpdateCount(tender.id, tender.refNo, projectUpdates);
                   const badgeClass = STATUS_STYLES[tender.avenirStatus] || 'bg-slate-100 text-slate-800 border-slate-200';
 
                   return (
@@ -447,8 +462,7 @@ export default function TenderUpdates() {
 
           {selectedTender ? (
             <AddUpdateForm
-              tenderId={selectedTender.id}
-              existingUpdates={getTenderProjectUpdates(selectedTender.id)}
+              existingUpdates={getTenderProjectUpdates(selectedTender.id, selectedTender.refNo, projectUpdates)}
               onSubmit={handleCreateUpdate}
               onCancel={() => setAddUpdateOpen(false)}
             />

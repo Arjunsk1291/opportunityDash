@@ -13,6 +13,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
+import ProjectUpdate from './models/ProjectUpdate.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig } from './services/graphExcelService.js';
@@ -1962,6 +1963,7 @@ async function ensureBootstrapMasterUser(email) {
 async function ensureInitialMongoState() {
   await ensureCollectionExists(AuthorizedUser, 'authorizedusers');
   await ensureCollectionExists(SyncedOpportunity, 'syncedopportunities');
+  await ensureCollectionExists(ProjectUpdate, 'projectupdates');
   await ensureBootstrapMasterUser('arjun.s@avenirengineering.com');
 }
 
@@ -4476,6 +4478,65 @@ app.post('/api/generate-report', async (req, res) => {
   } catch (error) {
     console.error('Error generating report:', error);
     res.status(500).json({ error: 'Failed to generate report' });
+  }
+});
+
+app.get('/api/project-updates', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master' && req.user.role !== 'MASTER') {
+      return res.status(403).json({ error: 'Only Master users can access project updates' });
+    }
+
+    const limit = Math.min(Math.max(Number(req.query?.limit || 1000), 1), 1000);
+    const updates = await ProjectUpdate.find()
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    res.json(updates.map(mapIdField));
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to load project updates' });
+  }
+});
+
+app.post('/api/project-updates', verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'Master' && req.user.role !== 'MASTER') {
+      return res.status(403).json({ error: 'Only Master users can create project updates' });
+    }
+
+    const tenderId = String(req.body?.tenderId || '').trim();
+    const tenderRefNo = String(req.body?.tenderRefNo || '').trim();
+    const updateType = String(req.body?.updateType || '').trim();
+
+    if (!tenderId) return res.status(400).json({ error: 'tenderId is required' });
+    if (!tenderRefNo) return res.status(400).json({ error: 'tenderRefNo is required' });
+    if (!updateType) return res.status(400).json({ error: 'updateType is required' });
+
+    const payload = {
+      tenderId,
+      tenderRefNo,
+      updateType,
+      vendorName: String(req.body?.vendorName || '').trim(),
+      parentUpdateId: String(req.body?.parentUpdateId || '').trim(),
+      responseDetails: String(req.body?.responseDetails || '').trim(),
+      contactDate: String(req.body?.contactDate || '').trim(),
+      responseDate: String(req.body?.responseDate || '').trim(),
+      extensionDate: String(req.body?.extensionDate || '').trim(),
+      finalizedDate: String(req.body?.finalizedDate || '').trim(),
+      finalDecision: String(req.body?.finalDecision || '').trim(),
+      finalInstructions: String(req.body?.finalInstructions || '').trim(),
+      finalPrice: req.body?.finalPrice === undefined || req.body?.finalPrice === null || req.body?.finalPrice === ''
+        ? null
+        : Number(req.body.finalPrice),
+      notes: String(req.body?.notes || '').trim(),
+      updatedBy: req.user.email,
+    };
+
+    const created = await ProjectUpdate.create(payload);
+    res.status(201).json(mapIdField(created.toObject()));
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to create project update' });
   }
 });
 
