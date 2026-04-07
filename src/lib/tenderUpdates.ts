@@ -1,28 +1,40 @@
-export type TenderUpdateType = 'subcontractor' | 'client';
-export type TenderUpdateSubType = 'contacted' | 'response' | 'note' | 'submission' | 'extension' | 'clarification';
+export type ProjectUpdateType =
+  | 'vendor_contacted'
+  | 'vendor_response'
+  | 'vendor_finalized'
+  | 'extension_requested'
+  | 'due_date_changed'
+  | 'status_update'
+  | 'general_note';
 
-export type TenderUpdate = {
+export type FinalDecision = 'accepted' | 'rejected' | 'negotiating';
+
+export type ProjectUpdate = {
   id: string;
-  opportunityId: string;
-  type: TenderUpdateType;
-  subType: TenderUpdateSubType;
-  actor: string;
-  date: string;
-  dueDate: string | null;
-  details: string;
-  attachments: string[];
-  createdBy: string;
+  tenderId: string;
+  updateType: ProjectUpdateType;
+  vendorName?: string;
+  parentUpdateId?: string;
+  responseDetails?: string;
+  contactDate?: string;
+  responseDate?: string;
+  extensionDate?: string;
+  finalizedDate?: string;
+  finalDecision?: FinalDecision;
+  finalInstructions?: string;
+  finalPrice?: number;
+  notes?: string;
+  updatedBy: string;
   createdAt: string;
 };
 
-export type DueDateStatus = 'overdue' | 'urgent' | 'upcoming' | 'safe';
+type CreateProjectUpdateInput = Omit<ProjectUpdate, 'id' | 'createdAt'>;
 
-const STORAGE_KEY = 'tender_updates_v1';
-const SEEDED_KEY = 'tender_updates_seeded_v1';
+const STORAGE_KEY = 'project_tracker_updates_v2';
 
 const canUseStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 
-const safeParse = (value: string | null) => {
+const safeParse = (value: string | null): ProjectUpdate[] => {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value);
@@ -32,7 +44,7 @@ const safeParse = (value: string | null) => {
   }
 };
 
-const saveUpdates = (updates: TenderUpdate[]) => {
+const saveUpdates = (updates: ProjectUpdate[]) => {
   if (!canUseStorage()) return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(updates));
 };
@@ -41,86 +53,61 @@ const newId = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID();
   }
-  return `upd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return `project_update_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 };
 
-type TenderUpdateSeed = Omit<TenderUpdate, 'id' | 'opportunityId' | 'createdAt'> & { refNo: string; createdAt?: string };
+const normalizeUpdate = (input: ProjectUpdate): ProjectUpdate => ({
+  ...input,
+  vendorName: input.vendorName?.trim() || '',
+  parentUpdateId: input.parentUpdateId?.trim() || '',
+  responseDetails: input.responseDetails?.trim() || '',
+  contactDate: input.contactDate || '',
+  responseDate: input.responseDate || '',
+  extensionDate: input.extensionDate || '',
+  finalizedDate: input.finalizedDate || '',
+  finalDecision: input.finalDecision || undefined,
+  finalInstructions: input.finalInstructions?.trim() || '',
+  finalPrice: typeof input.finalPrice === 'number' && Number.isFinite(input.finalPrice) ? input.finalPrice : undefined,
+  notes: input.notes?.trim() || '',
+  updatedBy: input.updatedBy?.trim() || 'unknown',
+});
 
-const normalizeRefNo = (value: string) => String(value || '').trim().toUpperCase();
-
-export const getTenderUpdates = (): TenderUpdate[] => {
+export const getProjectUpdates = (): ProjectUpdate[] => {
   if (!canUseStorage()) return [];
-  const raw = safeParse(localStorage.getItem(STORAGE_KEY)) as TenderUpdate[];
-  return raw.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const raw = safeParse(localStorage.getItem(STORAGE_KEY));
+  return raw
+    .map((item) => normalizeUpdate(item))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 1000);
 };
 
-export const addTenderUpdate = (input: Omit<TenderUpdate, 'id' | 'createdAt'>): TenderUpdate => {
-  const updates = getTenderUpdates();
-  const next: TenderUpdate = {
+export const createProjectUpdate = (input: CreateProjectUpdateInput): ProjectUpdate => {
+  const updates = getProjectUpdates();
+  const next: ProjectUpdate = normalizeUpdate({
     ...input,
     id: newId(),
     createdAt: new Date().toISOString(),
-  };
+  } as ProjectUpdate);
   updates.unshift(next);
   saveUpdates(updates);
   return next;
 };
 
-export const deleteTenderUpdate = (id: string) => {
-  const updates = getTenderUpdates().filter((update) => update.id !== id);
-  saveUpdates(updates);
+export const getTenderProjectUpdates = (tenderId: string): ProjectUpdate[] => (
+  getProjectUpdates()
+    .filter((update) => update.tenderId === tenderId)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+);
+
+export const getUpdateCount = (tenderId: string, updates?: ProjectUpdate[]): number => {
+  const source = updates || getProjectUpdates();
+  return source.filter((update) => update.tenderId === tenderId).length;
 };
 
-export const seedTenderUpdates = (
-  opportunities: Array<{ id: string; opportunityRefNo?: string }>,
-  seeds: TenderUpdateSeed[],
-) => {
-  if (!canUseStorage()) return { seeded: false, count: 0 };
-  if (localStorage.getItem(SEEDED_KEY)) return { seeded: false, count: 0 };
-  if (getTenderUpdates().length > 0) {
-    localStorage.setItem(SEEDED_KEY, 'true');
-    return { seeded: false, count: 0 };
-  }
-
-  const updates: TenderUpdate[] = [];
-  const oppMap = new Map(
-    opportunities
-      .filter((opp) => opp.opportunityRefNo)
-      .map((opp) => [normalizeRefNo(opp.opportunityRefNo || ''), opp.id]),
-  );
-
-  seeds.forEach((seed) => {
-    const oppId = oppMap.get(normalizeRefNo(seed.refNo));
-    if (!oppId) return;
-    updates.push({
-      ...seed,
-      id: newId(),
-      opportunityId: oppId,
-      createdAt: seed.createdAt || new Date().toISOString(),
-    });
-  });
-
-  if (updates.length) saveUpdates(updates);
-  localStorage.setItem(SEEDED_KEY, 'true');
-  return { seeded: updates.length > 0, count: updates.length };
-};
-
-export const getNextDueDate = (opportunityId: string, updates?: TenderUpdate[]) => {
-  const list = updates ?? getTenderUpdates();
-  const dueDates = list
-    .filter((update) => update.opportunityId === opportunityId && update.dueDate)
-    .map((update) => update.dueDate as string)
-    .sort();
-  if (dueDates.length === 0) return null;
-  const date = dueDates[0];
-  return { date, status: resolveDueStatus(date) };
-};
-
-export const resolveDueStatus = (date: string, now = new Date()): DueDateStatus => {
-  const due = new Date(date);
-  const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-  if (diffDays < 0) return 'overdue';
-  if (diffDays <= 7) return 'urgent';
-  if (diffDays <= 30) return 'upcoming';
-  return 'safe';
+export const getLastUpdate = (tenderId: string, updates?: ProjectUpdate[]): ProjectUpdate | null => {
+  const source = updates || getProjectUpdates();
+  const matches = source
+    .filter((update) => update.tenderId === tenderId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return matches[0] || null;
 };
