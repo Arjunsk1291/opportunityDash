@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertTriangle, Search, CheckCircle, Clock, RotateCcw, RefreshCw, MessageSquare, ArrowRight, ArrowUpDown, Eye, EyeOff } from 'lucide-react';
+import { Search, CheckCircle, Clock, RotateCcw, RefreshCw, MessageSquare, ArrowRight, ArrowUpDown, Eye, EyeOff } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useApproval } from '@/contexts/ApprovalContext';
@@ -427,7 +427,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     'Approval'
                   )}
                 </TableHead>
-                <TableHead className="hidden sm:table-cell px-2 sm:px-3 font-bold">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -493,31 +492,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         onApproveSVP={() => approveAsSVP(tender.opportunityRefNo, tender.groupClassification)}
                         onRevert={() => revertApproval(tender.opportunityRefNo)}
                       />
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex gap-1 sm:gap-2">
-                        {tender.comments && (
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-6 w-6">
-                                <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-80">
-                              <p className="text-xs font-medium text-muted-foreground">Comments</p>
-                              <p className="text-sm">{tender.comments}</p>
-                            </PopoverContent>
-                          </Popover>
-                        )}
-                        {tender.isAtRisk && (
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <AlertTriangle className="h-4 w-4 text-warning" />
-                            </TooltipTrigger>
-                            <TooltipContent>Potentially at risk opportunity</TooltipContent>
-                          </Tooltip>
-                        )}
-                      </div>
                     </TableCell>
                   </TableRow>
                 );
