@@ -229,6 +229,7 @@ const getRecentTenderData = (data = []) => {
     })
     .map((item) => ({
       refNo: item?.opportunityRefNo || item?.tenderNo || '—',
+      adnocRftNo: getAdnocRftNoForReport(item),
       tenderName: item?.tenderName || 'Untitled Tender',
       clientName: item?.clientName || '—',
       receivedDate: item?.dateTenderReceived || item?.createdAt || '',
@@ -237,6 +238,28 @@ const getRecentTenderData = (data = []) => {
     }))
     .slice(0, 5);
 };
+
+const normalizeReportSnapshotHeader = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+
+const getReportRowSnapshotValue = (item, candidateHeaders = []) => {
+  const snapshot = item?.rawGraphData?.rowSnapshot;
+  if (!snapshot || typeof snapshot !== 'object') return '';
+
+  const entries = Object.entries(snapshot);
+  for (const header of candidateHeaders) {
+    const normalizedHeader = normalizeReportSnapshotHeader(header);
+    const match = entries.find(([key]) => normalizeReportSnapshotHeader(key) === normalizedHeader);
+    if (match) return String(match[1] ?? '').trim();
+  }
+
+  return '';
+};
+
+const getAdnocRftNoForReport = (item) => String(
+  item?.adnocRftNo
+  || getReportRowSnapshotValue(item, ['ADNOC RFT NO', 'ADNOC RFT NO.'])
+  || '',
+).trim();
 
 const formatDateForReport = (value) => {
   const parsed = parseDateValue(value);
@@ -4444,6 +4467,7 @@ app.post('/api/generate-report', async (req, res) => {
           new TableRow({
             children: [
               createReportHeaderCell('Ref No', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('ADNOC RFT NO', REPORT_COLORS.blueSoft),
               createReportHeaderCell('Tender Name', REPORT_COLORS.blueSoft),
               createReportHeaderCell('Client', REPORT_COLORS.blueSoft),
               createReportHeaderCell('Received', REPORT_COLORS.blueSoft),
@@ -4453,6 +4477,7 @@ app.post('/api/generate-report', async (req, res) => {
           ...recentTenders.map((row) => new TableRow({
             children: [
               createReportValueCell(row.refNo, REPORT_COLORS.slateSoft),
+              createReportValueCell(row.adnocRftNo || '—', REPORT_COLORS.slateSoft),
               createReportValueCell(row.tenderName, REPORT_COLORS.slateSoft),
               createReportValueCell(row.clientName, REPORT_COLORS.slateSoft),
               createReportValueCell(row.receivedDate ? formatDateForReport(row.receivedDate) : '—', REPORT_COLORS.slateSoft),

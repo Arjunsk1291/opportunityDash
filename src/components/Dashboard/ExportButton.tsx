@@ -1,5 +1,16 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { Opportunity } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useApproval } from '@/contexts/ApprovalContext';
@@ -10,34 +21,83 @@ interface ExportButtonProps {
   filename?: string;
 }
 
+interface ExportColumn {
+  id: string;
+  label: string;
+  getValue: (opp: Opportunity) => string | number;
+}
+
+const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+
+const getSnapshotValue = (opp: Opportunity, candidateHeaders: string[]) => {
+  const snapshot = opp.rawGraphData?.rowSnapshot;
+  if (!snapshot || typeof snapshot !== 'object') return '';
+
+  const entries = Object.entries(snapshot);
+  for (const header of candidateHeaders) {
+    const normalizedHeader = normalizeHeader(header);
+    const match = entries.find(([key]) => normalizeHeader(key) === normalizedHeader);
+    if (match) return String(match[1] ?? '').trim();
+  }
+
+  return '';
+};
+
+const getAdnocRftNo = (opp: Opportunity) => String(
+  opp.adnocRftNo
+  || getSnapshotValue(opp, ['ADNOC RFT NO', 'ADNOC RFT NO.'])
+  || '',
+).trim();
+
 export function ExportButton({ data, filename = 'opportunities' }: ExportButtonProps) {
   const { currency, convertValue } = useCurrency();
   const { getApprovalStatus } = useApproval();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const columns = useMemo<ExportColumn[]>(() => {
+    const currencySymbol = currency === 'AED' ? 'AED' : 'USD';
+
+    return [
+      { id: 'refNo', label: 'Ref No', getValue: (opp) => opp.opportunityRefNo },
+      { id: 'adnocRftNo', label: 'ADNOC RFT NO', getValue: (opp) => getAdnocRftNo(opp) },
+      { id: 'tenderName', label: 'Tender Name', getValue: (opp) => opp.tenderName },
+      { id: 'client', label: 'Client', getValue: (opp) => opp.clientName },
+      { id: 'clientType', label: 'Client Type', getValue: (opp) => opp.clientType },
+      { id: 'status', label: 'Status', getValue: (opp) => opp.canonicalStage },
+      { id: 'group', label: 'Group', getValue: (opp) => opp.groupClassification },
+      { id: 'lead', label: 'Lead', getValue: (opp) => opp.internalLead || 'Unassigned' },
+      { id: 'value', label: `Value (${currencySymbol})`, getValue: (opp) => Math.round(convertValue(opp.opportunityValue)) },
+      { id: 'probability', label: 'Probability (%)', getValue: (opp) => opp.probability },
+      { id: 'expectedValue', label: `Expected Value (${currencySymbol})`, getValue: (opp) => Math.round(convertValue(opp.expectedValue)) },
+      { id: 'rfpReceived', label: 'RFP Received', getValue: (opp) => opp.dateTenderReceived || '' },
+      { id: 'plannedSubmission', label: 'Planned Submission', getValue: (opp) => opp.tenderPlannedSubmissionDate || '' },
+      { id: 'submittedDate', label: 'Submitted Date', getValue: (opp) => opp.tenderSubmittedDate || '' },
+      { id: 'lastContact', label: 'Last Contact', getValue: (opp) => opp.lastContactDate || '' },
+      { id: 'atRisk', label: 'At Risk', getValue: (opp) => (opp.isAtRisk ? 'Yes' : 'No') },
+      { id: 'approvalStatus', label: 'Approval Status', getValue: (opp) => (getApprovalStatus(opp.id) === 'approved' ? 'Approved' : 'Pending') },
+      { id: 'partner', label: 'Partner', getValue: (opp) => opp.partnerName || '' },
+      { id: 'remarksReason', label: 'Remarks/Reason', getValue: (opp) => opp.remarksReason || '' },
+      { id: 'comments', label: 'Comments', getValue: (opp) => opp.comments || '' },
+    ];
+  }, [convertValue, currency, getApprovalStatus]);
+
+  const [selectedColumnIds, setSelectedColumnIds] = useState<string[]>(() => columns.map((column) => column.id));
+
+  useEffect(() => {
+    setSelectedColumnIds((previous) => {
+      const validIds = new Set(columns.map((column) => column.id));
+      const retained = previous.filter((id) => validIds.has(id));
+      return retained.length ? retained : columns.map((column) => column.id);
+    });
+  }, [columns]);
 
   const handleExport = () => {
-    const currencySymbol = currency === 'AED' ? 'AED' : 'USD';
-    
-    const exportData = data.map((opp) => ({
-      'Ref No': opp.opportunityRefNo,
-      'Tender Name': opp.tenderName,
-      'Client': opp.clientName,
-      'Client Type': opp.clientType,
-      'Status': opp.canonicalStage,
-      'Group': opp.groupClassification,
-      'Lead': opp.internalLead || 'Unassigned',
-      [`Value (${currencySymbol})`]: Math.round(convertValue(opp.opportunityValue)),
-      'Probability (%)': opp.probability,
-      [`Expected Value (${currencySymbol})`]: Math.round(convertValue(opp.expectedValue)),
-      'RFP Received': opp.dateTenderReceived || '',
-      'Planned Submission': opp.tenderPlannedSubmissionDate || '',
-      'Submitted Date': opp.tenderSubmittedDate || '',
-      'Last Contact': opp.lastContactDate || '',
-      'At Risk': opp.isAtRisk ? 'Yes' : 'No',
-      'Approval Status': getApprovalStatus(opp.id) === 'approved' ? 'Approved' : 'Pending',
-      'Partner': opp.partnerName || '',
-      'Remarks/Reason': opp.remarksReason || '',
-      'Comments': opp.comments || '',
-    }));
+    const selectedColumns = columns.filter((column) => selectedColumnIds.includes(column.id));
+    if (!selectedColumns.length) return;
+
+    const exportData = data.map((opp) => Object.fromEntries(
+      selectedColumns.map((column) => [column.label, column.getValue(opp)]),
+    ));
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
@@ -53,12 +113,80 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
     worksheet['!cols'] = maxWidths;
 
     XLSX.writeFile(workbook, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    setIsDialogOpen(false);
   };
 
   return (
-    <Button variant="outline" size="sm" onClick={handleExport} className="gap-2">
-      <Download className="h-4 w-4" />
-      Export Excel
-    </Button>
+    <>
+      <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(true)} className="gap-2">
+        <Download className="h-4 w-4" />
+        Export Excel
+      </Button>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Export opportunity columns</DialogTitle>
+            <DialogDescription>
+              Choose which columns to export for the current filtered result set. {data.length} row{data.length === 1 ? '' : 's'} will be included.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-muted-foreground">
+                {selectedColumnIds.length} of {columns.length} columns selected
+              </p>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedColumnIds(columns.map((column) => column.id))}>
+                  Select all
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedColumnIds([])}>
+                  Clear all
+                </Button>
+              </div>
+            </div>
+
+            <div className="max-h-[50vh] overflow-y-auto pr-1">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {columns.map((column) => {
+                  const checked = selectedColumnIds.includes(column.id);
+                  return (
+                    <div
+                      key={column.id}
+                      className="flex items-start gap-3 rounded-md border p-3 text-sm transition-colors hover:bg-muted/40"
+                    >
+                      <Checkbox
+                        id={`export-column-${column.id}`}
+                        checked={checked}
+                        onCheckedChange={(nextChecked) => {
+                          setSelectedColumnIds((current) => (
+                            nextChecked
+                              ? Array.from(new Set([...current, column.id]))
+                              : current.filter((id) => id !== column.id)
+                          ));
+                        }}
+                      />
+                      <Label htmlFor={`export-column-${column.id}`} className="cursor-pointer leading-5">
+                        {column.label}
+                      </Label>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleExport} disabled={!data.length || !selectedColumnIds.length}>
+              Export selected columns
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

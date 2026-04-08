@@ -17,6 +17,28 @@ interface ReportButtonProps {
   filters: FilterState;
 }
 
+const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+
+const getSnapshotValue = (opp: Opportunity, candidateHeaders: string[]) => {
+  const snapshot = opp.rawGraphData?.rowSnapshot;
+  if (!snapshot || typeof snapshot !== 'object') return '';
+
+  const entries = Object.entries(snapshot);
+  for (const header of candidateHeaders) {
+    const normalizedHeader = normalizeHeader(header);
+    const match = entries.find(([key]) => normalizeHeader(key) === normalizedHeader);
+    if (match) return String(match[1] ?? '').trim();
+  }
+
+  return '';
+};
+
+const getAdnocRftNo = (opp: Opportunity) => String(
+  opp.adnocRftNo
+  || getSnapshotValue(opp, ['ADNOC RFT NO', 'ADNOC RFT NO.'])
+  || '',
+).trim();
+
 function generatePieChart(values: number[], labels: string[], colors: string[]): string {
   const total = values.reduce((a, b) => a + b, 0);
   let currentAngle = 0;
@@ -94,6 +116,10 @@ function toHtml(filters: FilterState, data: Opportunity[]) {
   
   const funnelLabels = funnel.map(f => f.stage).slice(0, 5);
   const funnelCounts = funnel.map(f => f.count).slice(0, 5);
+  const recentTenders = data
+    .slice()
+    .sort((a, b) => new Date(b.dateTenderReceived || b.tenderSubmittedDate || 0).getTime() - new Date(a.dateTenderReceived || a.tenderSubmittedDate || 0).getTime())
+    .slice(0, 5);
 
   return `<!doctype html>
 <html>
@@ -402,6 +428,36 @@ footer {
 
     <div class="summary-box">
       <strong>🔍 Funnel Analysis:</strong> The funnel shows <span class="highlight">${funnel[0].count} opportunities at the initial stage</span>. Track progression between stages to identify bottlenecks and optimize sales process efficiency.
+    </div>
+  </section>
+
+  <section>
+    <h2>Recent 5 Tenders</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Ref No</th>
+          <th>ADNOC RFT NO</th>
+          <th>Tender Name</th>
+          <th>Client</th>
+          <th>Received</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+      ${recentTenders.map((row) => `<tr>
+        <td><strong>${safe(row.opportunityRefNo || '—')}</strong></td>
+        <td>${safe(getAdnocRftNo(row) || '—')}</td>
+        <td><strong>${safe(row.tenderName || 'Untitled Tender')}</strong></td>
+        <td>${safe(row.clientName || '—')}</td>
+        <td>${safe(row.dateTenderReceived || '—')}</td>
+        <td>${safe(row.tenderResult || row.avenirStatus || row.canonicalStage || 'UNSPECIFIED')}</td>
+      </tr>`).join('')}
+      </tbody>
+    </table>
+
+    <div class="summary-box">
+      <strong>📌 Tender Snapshot:</strong> This table lists the most recent filtered tenders and includes the ADNOC RFT reference where available for quick downstream tracking.
     </div>
   </section>
 

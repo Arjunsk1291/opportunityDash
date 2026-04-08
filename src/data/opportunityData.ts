@@ -3,6 +3,7 @@ import { isSubmissionWithinDays } from '@/lib/submissionDate';
 export interface Opportunity {
   id: string;
   opportunityRefNo: string;
+  adnocRftNo?: string;
   tenderNo: string;
   tenderName: string;
   clientName: string;
