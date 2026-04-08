@@ -46,6 +46,10 @@ export interface Opportunity {
   comments?: string;
   remarksReason?: string;
   awardStatus: string;
+  rawSheetYear?: string;
+  rawDateReceived?: unknown;
+  rawSubmissionDeadline?: unknown;
+  rawTenderSubmittedDate?: unknown;
   rawAvenirStatus?: string;
   rawTenderResult?: string;
   avenirStatus?: string;

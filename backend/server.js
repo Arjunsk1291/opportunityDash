@@ -696,10 +696,10 @@ const getTenderReceivedDate = (opportunity) => (
 
 const applyOpportunityDateFields = (opportunity = {}) => {
   const rawGraphData = opportunity?.rawGraphData || {};
-  const year = rawGraphData?.year || '';
-  const dateReceived = rawGraphData?.dateReceived;
-  const submissionDeadlineRaw = rawGraphData?.submissionDeadlineRaw;
-  const tenderSubmittedRaw = rawGraphData?.tenderSubmittedRaw;
+  const year = opportunity?.rawSheetYear || rawGraphData?.year || '';
+  const dateReceived = opportunity?.rawDateReceived ?? rawGraphData?.dateReceived;
+  const submissionDeadlineRaw = opportunity?.rawSubmissionDeadline ?? rawGraphData?.submissionDeadlineRaw;
+  const tenderSubmittedRaw = opportunity?.rawTenderSubmittedDate ?? rawGraphData?.tenderSubmittedRaw;
 
   if (!year && dateReceived === undefined && submissionDeadlineRaw === undefined && tenderSubmittedRaw === undefined) {
     return opportunity;
