@@ -116,7 +116,7 @@ function parseDate(year, dateValue) {
     if (month && resolvedYear) return toIso(resolvedYear, month, day);
   }
 
-  const parsed = raw.match(/[a-z]/i) ? new Date(raw) : null;
+  const parsed = (raw.match(/[a-z]/i) && resolvedYear) ? new Date(`${raw} ${resolvedYear}`) : null;
   if (parsed && !Number.isNaN(parsed.getTime())) {
     return parsed.toISOString().slice(0, 10);
   }
