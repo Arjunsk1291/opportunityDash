@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertTriangle, Search, CheckCircle, Clock, RotateCcw, RefreshCw, MessageSquare, ArrowRight, ArrowUpDown } from 'lucide-react';
+import { AlertTriangle, Search, CheckCircle, Clock, RotateCcw, RefreshCw, MessageSquare, ArrowRight, ArrowUpDown, Eye, EyeOff } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useApproval } from '@/contexts/ApprovalContext';
@@ -33,6 +33,7 @@ const normalizeHeader = (value: string) => String(value || '').trim().toUpperCas
 export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-96' }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [showConvertedEoiRows, setShowConvertedEoiRows] = useState(false);
   const [sortBy, setSortBy] = useState<'ref' | 'rfp'>('ref');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
   const [refSortOrder, setRefSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -108,6 +109,12 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
     return tender.tenderSubmittedDate || tender.tenderPlannedSubmissionDate || '';
   };
 
+  const normalizeComparisonText = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
+
+  const getBaseRefNo = (value: string | null | undefined) => String(value || '').trim().replace(/_EOI$/i, '');
+
+  const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(String(value || '').trim());
+
   const getMergedStatus = (tender: Opportunity) => {
     if (tender.tenderResult) return tender.tenderResult;
     return tender.avenirStatus || '';
@@ -175,6 +182,28 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       }
       return rfpSortOrder === 'desc' ? bTime - aTime : aTime - bTime;
     });
+
+  const visibleData = useMemo(() => {
+    if (showConvertedEoiRows) return filteredData;
+
+    return filteredData.filter((tender) => {
+      if (!isEoiRefNo(tender.opportunityRefNo)) return true;
+
+      const baseRefNo = normalizeComparisonText(getBaseRefNo(tender.opportunityRefNo));
+      const tenderName = normalizeComparisonText(tender.tenderName);
+      if (!baseRefNo || !tenderName) return true;
+
+      const convertedTenderExists = filteredData.some((candidate) => (
+        candidate.id !== tender.id
+        && !isEoiRefNo(candidate.opportunityRefNo)
+        && normalizeComparisonText(candidate.opportunityRefNo) === baseRefNo
+        && normalizeComparisonText(candidate.tenderName) === tenderName
+        && normalizeComparisonText(candidate.opportunityClassification) === 'tender'
+      ));
+
+      return !convertedTenderExists;
+    });
+  }, [filteredData, showConvertedEoiRows]);
 
   const getStatusBadge = (status: string) => {
     const upperStatus = status?.toUpperCase() || '';
@@ -280,7 +309,25 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
     <Card className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
       <CardHeader className="pb-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <CardTitle className="text-lg">Tenders</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-lg">Tenders</CardTitle>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setShowConvertedEoiRows((prev) => !prev)}
+                >
+                  {showConvertedEoiRows ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {showConvertedEoiRows ? 'Hide converted EOI duplicates' : 'Show converted EOI duplicates'}
+              </TooltipContent>
+            </Tooltip>
+          </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <div className="relative min-w-0 w-full sm:w-auto">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -376,7 +423,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.map((tender) => {
+              {visibleData.map((tender) => {
                 const approvalStatus = getApprovalStatus(tender.opportunityRefNo);
                 const approvalState = getApprovalState(tender.opportunityRefNo);
                 return (
@@ -471,7 +518,9 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
           </Table>
         </div>
         <div className="p-2 sm:p-3 text-xs sm:text-sm text-muted-foreground border-t bg-background">
-          Showing by {sortBy === 'ref' ? `Ref No. (${refSortOrder.toUpperCase()})` : `RFP Received (${rfpSortOrder.toUpperCase()})`}: {filteredData.length} of {data.length} tenders (scroll to view all)
+          Showing by {sortBy === 'ref' ? `Ref No. (${refSortOrder.toUpperCase()})` : `RFP Received (${rfpSortOrder.toUpperCase()})`}: {visibleData.length} of {data.length} tenders
+          {!showConvertedEoiRows && visibleData.length !== filteredData.length ? ` (${filteredData.length - visibleData.length} converted EOI row${filteredData.length - visibleData.length === 1 ? '' : 's'} hidden)` : ''}
+          {' '} (scroll to view all)
         </div>
         <Dialog open={isBulkOpen} onOpenChange={setIsBulkOpen}>
           <DialogContent className="max-w-2xl">
