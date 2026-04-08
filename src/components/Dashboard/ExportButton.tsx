@@ -15,6 +15,7 @@ import { Opportunity } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useApproval } from '@/contexts/ApprovalContext';
 import * as XLSX from 'xlsx';
+import { getRawAvenirStatus, getRawTenderResult } from '@/lib/opportunityStatus';
 
 interface ExportButtonProps {
   data: Opportunity[];
@@ -78,7 +79,8 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       { id: 'tenderType', label: 'Tender Type', getValue: (opp) => opp.opportunityClassification || '' },
       { id: 'client', label: 'Client', getValue: (opp) => opp.clientName },
       { id: 'clientType', label: 'Client Type', getValue: (opp) => opp.clientType },
-      { id: 'status', label: 'Status', getValue: (opp) => opp.canonicalStage },
+      { id: 'avenirStatus', label: 'AVENIR STATUS', getValue: (opp) => getRawAvenirStatus(opp) },
+      { id: 'tenderResult', label: 'TENDER RESULT', getValue: (opp) => getRawTenderResult(opp) },
       { id: 'group', label: 'Group', getValue: (opp) => opp.groupClassification },
       { id: 'lead', label: 'Lead', getValue: (opp) => opp.internalLead || 'Unassigned' },
       { id: 'value', label: `Value (${currencySymbol})`, getValue: (opp) => Math.round(convertValue(opp.opportunityValue)) },

@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { Opportunity } from '@/data/opportunityData';
+import { getDisplayResult, getDisplayStatus, isEoiNormalizedOpportunity } from '@/lib/opportunityStatus';
 
 interface OpportunityDetailDialogProps {
   opportunity: Opportunity | null;
@@ -28,6 +29,7 @@ export function OpportunityDetailDialog({
   const getHeaderColor = () => {
     if (opportunity.canonicalStage === 'AWARDED') return 'bg-emerald-600';
     if (opportunity.isAtRisk) return 'bg-red-600';
+    if (isEoiNormalizedOpportunity(opportunity)) return 'bg-violet-700';
     return 'bg-slate-700';
   };
 
@@ -69,9 +71,9 @@ export function OpportunityDetailDialog({
             />
             <DetailRow label="Submission" value={getSubmissionDisplay()} />
             <DetailRow label="Lead" value={opportunity.internalLead || '—'} />
-            <DetailRow label="Status" value={opportunity.avenirStatus || '—'} />
+            <DetailRow label="Status" value={getDisplayStatus(opportunity) || '—'} />
             <DetailRow label="Remarks" value={opportunity.remarksReason || '—'} />
-            <DetailRow label="Result" value={opportunity.tenderResult || '—'} />
+            <DetailRow label="Result" value={getDisplayResult(opportunity) || '—'} />
           </div>
         </div>
       </DialogContent>

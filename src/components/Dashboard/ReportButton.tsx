@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Opportunity, calculateFunnelData, calculateSummaryStats, getClientData } from '@/data/opportunityData';
 import { FilterState } from '@/components/Dashboard/AdvancedFilters';
+import { getDisplayStatus } from '@/lib/opportunityStatus';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -549,7 +550,7 @@ footer {
         <td><strong>${safe(row.tenderName || 'Untitled Tender')}</strong></td>
         <td>${safe(row.clientName || '—')}</td>
         <td>${safe(row.dateTenderReceived || '—')}</td>
-        <td>${safe(row.tenderResult || row.avenirStatus || row.canonicalStage || 'UNSPECIFIED')}</td>
+        <td>${safe(getDisplayStatus(row) || 'UNSPECIFIED')}</td>
       </tr>`).join('')}
       </tbody>
     </table>

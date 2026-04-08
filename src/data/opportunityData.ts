@@ -46,6 +46,8 @@ export interface Opportunity {
   comments?: string;
   remarksReason?: string;
   awardStatus: string;
+  rawAvenirStatus?: string;
+  rawTenderResult?: string;
   avenirStatus?: string;
   tenderResult?: string;
   combinedStatuses?: string[];
@@ -87,7 +89,8 @@ export const PROBABILITY_BY_STAGE: Record<string, number> = {
 const normalizeTenderName = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
 
 const getMergedStatus = (opp: Opportunity) => {
-  const merged = String(opp.tenderResult || opp.avenirStatus || opp.canonicalStage || '').trim().toUpperCase();
+  const tenderResult = String(opp.tenderResult || '').trim().toUpperCase();
+  const merged = String((tenderResult && tenderResult !== 'UNKNOWN') ? tenderResult : (opp.avenirStatus || opp.canonicalStage || '')).trim().toUpperCase();
   return merged;
 };
 

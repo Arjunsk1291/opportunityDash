@@ -1,4 +1,5 @@
 import { getWorksheetRows } from './graphExcelService.js';
+import { deriveOpportunityStatusFields } from './opportunityStatusService.js';
 
 function normalizeStatus(status) {
   if (!status) return '';
@@ -383,6 +384,11 @@ export async function syncTendersFromGraph(config) {
     const plannedSubmissionDisplay = buildDateDisplay(year, submissionDeadlineRaw, plannedSubmissionDate);
     const tenderSubmittedDisplay = buildDateDisplay(year, tenderSubmittedRaw, tenderSubmittedDate);
 
+    const derivedStatuses = deriveOpportunityStatusFields({
+      rawAvenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
+      rawTenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
+    });
+
     const tender = {
       opportunityRefNo: getValue(colIndices.tenderNo),
       tenderName: getValue(colIndices.tenderName),
@@ -392,12 +398,10 @@ export async function syncTendersFromGraph(config) {
       opportunityValue: getNumericValue(colIndices.value),
       probability: getNumericValue(colIndices.probability),
       country: getValue(colIndices.country),
-      canonicalStage: normalizeStatus(getValue(colIndices.avenirStatus)),
       dateTenderReceived: rfpDate || null,
       tenderPlannedSubmissionDate: plannedSubmissionDate || null,
       tenderSubmittedDate: tenderSubmittedDate || null,
-      avenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
-      tenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
+      ...derivedStatuses,
       groupClassification: getValue(colIndices.groupClassification),
       remarksReason: getValue(colIndices.remarksReason),
       comments: getValue(colIndices.comments),

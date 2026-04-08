@@ -20,6 +20,7 @@ import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDele
 import { initializeBootSync } from './services/bootSyncService.js';
 import SystemConfig from './models/SystemConfig.js';
 import { encryptSecret } from './services/cryptoService.js';
+import { applyOpportunityStatusFields, getEffectiveMergedStatus } from './services/opportunityStatusService.js';
 import {
   Document,
   Packer,
@@ -195,8 +196,7 @@ const mapIdField = (doc) => {
 };
 
 const getMergedReportStatus = (item = {}) => {
-  const rawStatus = item.tenderResult || item.avenirStatus || item.canonicalStage || item.status || '';
-  return String(rawStatus || '').trim().toUpperCase();
+  return getEffectiveMergedStatus(item);
 };
 
 const calculateSummaryStats = (data = []) => {
@@ -4201,7 +4201,7 @@ app.get('/api/opportunities', async (req, res) => {
     }
 
     const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
-    const mapped = opportunities.map(opp => mapIdField(opp));
+    const mapped = opportunities.map((opp) => mapIdField(applyOpportunityStatusFields(opp)));
     res.json(mapped);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -4395,7 +4395,7 @@ app.post('/api/clients/seed', verifyToken, async (req, res) => {
 
 app.get('/api/opportunities/stats', verifyToken, async (req, res) => {
   try {
-    const opportunities = await SyncedOpportunity.find().lean();
+    const opportunities = (await SyncedOpportunity.find().lean()).map((opp) => applyOpportunityStatusFields(opp));
     const totalTenders = opportunities.length;
     const totalValue = opportunities.reduce((sum, opp) => sum + (opp.opportunityValue || 0), 0);
     const lastSync = opportunities[0]?.syncedAt || null;

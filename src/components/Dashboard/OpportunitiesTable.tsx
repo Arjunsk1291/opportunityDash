@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import styles from './OpportunitiesTable.module.css';
+import { getDisplayStatus, isEoiNormalizedOpportunity } from '@/lib/opportunityStatus';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -120,8 +121,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(String(value || '').trim());
 
   const getMergedStatus = (tender: Opportunity) => {
-    if (tender.tenderResult) return tender.tenderResult;
-    return tender.avenirStatus || '';
+    return getDisplayStatus(tender);
   };
 
   const buildSearchableText = (tender: Opportunity) => {
@@ -165,9 +165,10 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       const searchLower = search.toLowerCase();
       const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
       const allSearchable = buildSearchableText(tender);
+      const mergedStatus = getMergedStatus(tender);
 
       const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);
-      const matchesStatus = statusFilter === 'ALL' || tender.avenirStatus?.toUpperCase() === statusFilter;
+      const matchesStatus = statusFilter === 'ALL' || mergedStatus === statusFilter;
 
       return matchesSearch && matchesStatus;
     })
@@ -209,7 +210,10 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
     });
   }, [filteredData, showConvertedEoiRows]);
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (tender: Opportunity, status: string) => {
+    if (isEoiNormalizedOpportunity(tender)) {
+      return 'border border-violet-300 bg-gradient-to-r from-violet-100 to-fuchsia-100 text-violet-900';
+    }
     const upperStatus = status?.toUpperCase() || '';
     const variants: Record<string, string> = {
       'AWARDED': 'bg-success/20 text-success',
@@ -461,7 +465,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     <TableCell className="hidden xl:table-cell px-2 sm:px-3">{tender.internalLead || 'Unassigned'}</TableCell>
                     <TableCell className="px-2 sm:px-3 text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
                     <TableCell className="px-2 sm:px-3">
-                      <Badge className={`max-w-[8rem] truncate ${getStatusBadge(getMergedStatus(tender))}`}>{getMergedStatus(tender) || '—'}</Badge>
+                      <Badge className={`max-w-[8rem] truncate ${getStatusBadge(tender, getMergedStatus(tender))}`}>{getMergedStatus(tender) || '—'}</Badge>
                     </TableCell>
                     <TableCell className="hidden md:table-cell px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
                       {tender.remarksReason ? (
