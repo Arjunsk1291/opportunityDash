@@ -126,6 +126,7 @@ const buildCaseInsensitiveList = (values: Array<string | null | undefined>): str
 export interface FilterState {
   search: string;
   statuses: string[];
+  excludeLostOutcomes: boolean;
   groups: string[];
   leads: string[];
   clients: string[];
@@ -150,6 +151,7 @@ interface AdvancedFiltersProps {
 export const defaultFilters: FilterState = {
   search: "",
   statuses: [],
+  excludeLostOutcomes: false,
   groups: [],
   leads: [],
   clients: [],
@@ -676,6 +678,10 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
       });
       
       if (!matchesStatus) return false;
+    }
+
+    if (filters.excludeLostOutcomes && o.tenderResult === 'LOST') {
+      return false;
     }
 
     if (filters.groups.length > 0 && !filters.groups.includes(o.groupClassification)) {

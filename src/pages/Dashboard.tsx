@@ -41,46 +41,55 @@ const Dashboard = () => {
           return {
             ...prevFilters,
             statuses: ['WORKING', 'SUBMITTED', 'AWARDED'],
+            excludeLostOutcomes: true,
           };
         case 'quoted':
           return {
             ...prevFilters,
             statuses: [],
+            excludeLostOutcomes: false,
           };
         case 'awarded':
           return {
             ...prevFilters,
             statuses: ['AWARDED'],
+            excludeLostOutcomes: false,
           };
         case 'lost':
           return {
             ...prevFilters,
             statuses: ['LOST'],
+            excludeLostOutcomes: false,
           };
         case 'regretted':
           return {
             ...prevFilters,
             statuses: ['REGRETTED'],
+            excludeLostOutcomes: false,
           };
         case 'working':
           return {
             ...prevFilters,
             statuses: ['WORKING'],
+            excludeLostOutcomes: false,
           };
         case 'tostart':
           return {
             ...prevFilters,
             statuses: ['TO START'],
+            excludeLostOutcomes: false,
           };
         case 'ongoing':
           return {
             ...prevFilters,
             statuses: ['ONGOING'],
+            excludeLostOutcomes: false,
           };
         case 'submission':
           return {
             ...prevFilters,
             showAtRisk: true,
+            excludeLostOutcomes: false,
           };
         default:
           return prevFilters;
