@@ -2,6 +2,7 @@ import { Buffer } from 'buffer';
 import crypto from 'crypto';
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
+const GRAPH_EXCEL_READ_ONLY = true;
 const requiredEnv = ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET'];
 const DELEGATED_SCOPES = ['Files.Read.Selected', 'Sites.Selected', 'User.Read', 'Mail.Send', 'offline_access'];
 
@@ -23,6 +24,25 @@ function validateEnv() {
   };
   const missing = requiredEnv.filter((name) => !values[name]);
   if (missing.length) throw new Error(`Missing Graph env vars: ${missing.join(', ')}`);
+}
+
+function assertReadOnly(method, url) {
+  if (!GRAPH_EXCEL_READ_ONLY) return;
+  const normalized = String(method || 'GET').toUpperCase();
+  if (normalized !== 'GET') {
+    throw new Error(`Graph Excel is read-only. Refusing ${normalized} ${url}`);
+  }
+}
+
+async function graphGet(url, accessToken, extraHeaders = {}) {
+  assertReadOnly('GET', url);
+  return fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...extraHeaders,
+    },
+  });
 }
 
 // --- CRYPTO ---
@@ -165,12 +185,11 @@ export async function resolveShareLink(shareLink, config) {
 
   for (const linkVariant of variants) {
     const shareToken = 'u!' + Buffer.from(linkVariant).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    const res = await fetch(`${GRAPH_BASE_URL}/shares/${shareToken}/driveItem`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Prefer: 'redeemSharingLinkIfNecessary',
-      },
-    });
+    const res = await graphGet(
+      `${GRAPH_BASE_URL}/shares/${shareToken}/driveItem`,
+      accessToken,
+      { Prefer: 'redeemSharingLinkIfNecessary' }
+    );
 
     const item = await res.json();
     if (res.ok && item?.parentReference?.driveId && item?.id) {
@@ -185,20 +204,29 @@ export async function resolveShareLink(shareLink, config) {
 
 export async function getWorksheets({ driveId, fileId, config }) {
   const { accessToken } = await getAccessTokenWithConfig(config);
-  const res = await fetch(`${GRAPH_BASE_URL}/drives/${driveId}/items/${fileId}/workbook/worksheets`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const res = await graphGet(`${GRAPH_BASE_URL}/drives/${driveId}/items/${fileId}/workbook/worksheets`, accessToken);
   const data = await res.json();
   return (data.value || []).map(s => ({ id: s.id, name: s.name }));
 }
 
 export async function getWorksheetRangeValues({ driveId, fileId, worksheetName, rangeAddress, config }) {
-  const { accessToken } = await getAccessTokenWithConfig(config);
-  const sheet = worksheetName.replace(/'/g, "''");
-  const path = rangeAddress ? `worksheets('${sheet}')/range(address='${encodeURIComponent(rangeAddress)}')` : `worksheets('${sheet}')/usedRange`;
-  const res = await fetch(`${GRAPH_BASE_URL}/drives/${driveId}/items/${fileId}/workbook/${path}`, { headers: { Authorization: `Bearer ${accessToken}` } });
-  const data = await res.json();
+  const data = await getWorksheetRangeData({ driveId, fileId, worksheetName, rangeAddress, config });
   return data.values || [];
 }
 
+export async function getWorksheetRangeData({ driveId, fileId, worksheetName, rangeAddress, config }) {
+  const { accessToken } = await getAccessTokenWithConfig(config);
+  const sheet = worksheetName.replace(/'/g, "''");
+  const path = rangeAddress ? `worksheets('${sheet}')/range(address='${encodeURIComponent(rangeAddress)}')` : `worksheets('${sheet}')/usedRange`;
+  const res = await graphGet(`${GRAPH_BASE_URL}/drives/${driveId}/items/${fileId}/workbook/${path}`, accessToken);
+  const data = await res.json();
+  return data || {};
+}
+
 export async function getWorksheetRows(params) {
-  return getWorksheetRangeValues(params);
+  const data = await getWorksheetRangeData(params);
+  return {
+    values: data?.values || [],
+    text: data?.text || [],
+  };
 }

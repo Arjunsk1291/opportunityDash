@@ -316,12 +316,27 @@ export async function syncTendersFromGraph(config) {
     throw new Error('Graph sync config missing driveId/fileId/worksheetName');
   }
 
-  const rows = await getWorksheetRows({
+  const worksheetData = await getWorksheetRows({
     driveId: config.driveId,
     fileId: config.fileId,
     worksheetName: config.worksheetName,
     rangeAddress: config.dataRange || undefined,
     config,
+  });
+  const valueRows = Array.isArray(worksheetData?.values) ? worksheetData.values : [];
+  const textRows = Array.isArray(worksheetData?.text) ? worksheetData.text : [];
+  const totalRowCount = Math.max(valueRows.length, textRows.length);
+  const rows = Array.from({ length: totalRowCount }, (_, rowIndex) => {
+    const row = valueRows[rowIndex] || [];
+    const textRow = textRows[rowIndex] || [];
+    const maxLength = Math.max(row.length || 0, textRow.length || 0);
+    return Array.from({ length: maxLength }, (_, colIndex) => {
+      const textValue = textRow[colIndex];
+      if (textValue !== null && textValue !== undefined && String(textValue).trim() !== '') {
+        return textValue;
+      }
+      return row[colIndex] ?? '';
+    });
   });
 
   if (!rows.length) {
@@ -368,13 +383,27 @@ export async function syncTendersFromGraph(config) {
 
   for (let i = detectedHeaderRowOffset + 1; i < rows.length; i++) {
     const row = rows[i] || [];
+    const rawRow = valueRows[i] || [];
+    const textRow = textRows[i] || [];
 
     const hasContent = row.some((cell) => cell && cell.toString().trim() !== '');
     if (!hasContent) continue;
 
+    const getCellValue = (sourceRow, colIdx) => {
+      if (!Array.isArray(sourceRow) || colIdx < 0 || colIdx >= sourceRow.length) return '';
+      return sourceRow[colIdx] ?? '';
+    };
+
     const getRawValue = (colIdx) => {
-      if (colIdx < 0 || colIdx >= row.length) return '';
-      return row[colIdx] ?? '';
+      const textValue = getCellValue(textRow, colIdx);
+      if (textValue !== null && textValue !== undefined && String(textValue).trim() !== '') {
+        return textValue;
+      }
+      return getCellValue(rawRow, colIdx);
+    };
+
+    const getUnderlyingValue = (colIdx) => {
+      return getCellValue(rawRow, colIdx);
     };
 
     const getValue = (colIdx) => {
@@ -439,10 +468,13 @@ export async function syncTendersFromGraph(config) {
       rawGraphData: {
         year,
         dateReceived,
+        dateReceivedRawValue: getUnderlyingValue(colIndices.dateReceived),
         rfpReceivedDisplay,
         submissionDeadlineRaw,
+        submissionDeadlineRawValue: getUnderlyingValue(colIndices.submissionDeadline),
         plannedSubmissionDisplay,
         tenderSubmittedRaw,
+        tenderSubmittedRawValue: getUnderlyingValue(colIndices.tenderSubmittedDate),
         tenderSubmittedDisplay,
         rowSnapshot,
       },
