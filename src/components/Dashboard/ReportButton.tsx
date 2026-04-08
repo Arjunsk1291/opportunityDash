@@ -535,8 +535,8 @@ footer {
     <table>
       <thead>
         <tr>
-          <th>AVE No.</th>
-          <th>ADNOC Ref No.</th>
+          <th>Avenir Ref</th>
+          <th>ADNOC Ref</th>
           <th>Tender Name</th>
           <th>Client</th>
           <th>Received</th>

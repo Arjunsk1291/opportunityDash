@@ -73,8 +73,8 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
     const currencySymbol = currency === 'AED' ? 'AED' : 'USD';
 
     return [
-      { id: 'refNo', label: 'AVE No.', getValue: (opp) => opp.opportunityRefNo },
-      { id: 'adnocRftNo', label: 'ADNOC Ref No.', getValue: (opp) => getAdnocRftNo(opp) },
+      { id: 'refNo', label: 'Avenir Ref', getValue: (opp) => opp.opportunityRefNo },
+      { id: 'adnocRftNo', label: 'ADNOC Ref', getValue: (opp) => getAdnocRftNo(opp) },
       { id: 'tenderName', label: 'Tender Name', getValue: (opp) => opp.tenderName },
       { id: 'tenderType', label: 'Tender Type', getValue: (opp) => opp.opportunityClassification || '' },
       { id: 'client', label: 'Client', getValue: (opp) => opp.clientName },

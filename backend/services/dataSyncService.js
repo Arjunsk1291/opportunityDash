@@ -12,6 +12,15 @@ function extractYear(yearValue) {
   return match ? match[0] : '';
 }
 
+function normalizeDateText(value) {
+  return String(value || '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/[–—]/g, '-')
+    .replace(/\s*-\s*/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function parseDate(year, dateValue) {
   if (dateValue === null || dateValue === undefined || String(dateValue).trim() === '' || String(dateValue).trim() === '-') {
     return null;
@@ -29,7 +38,7 @@ function parseDate(year, dateValue) {
     }
   }
 
-  const raw = String(dateValue).trim();
+  const raw = normalizeDateText(dateValue);
   const resolvedYear = extractYear(year);
 
   const monthMap = {
@@ -66,6 +75,24 @@ function parseDate(year, dateValue) {
   if (withYearLast) {
     const yy = withYearLast[3].length === 2 ? `20${withYearLast[3]}` : withYearLast[3];
     return toIso(yy, withYearLast[2], withYearLast[1]);
+  }
+
+  const dayMonthTextWithYear = raw.match(/^(\d{1,2})[-/\s](\w+)[-/\s](\d{2,4})$/i);
+  if (dayMonthTextWithYear) {
+    const day = dayMonthTextWithYear[1];
+    const monthKey = dayMonthTextWithYear[2].toLowerCase().substring(0, 3);
+    const month = monthMap[monthKey];
+    const yy = dayMonthTextWithYear[3].length === 2 ? `20${dayMonthTextWithYear[3]}` : dayMonthTextWithYear[3];
+    if (month) return toIso(yy, month, day);
+  }
+
+  const monthDayTextWithYear = raw.match(/^(\w+)[-/\s](\d{1,2})[-/\s](\d{2,4})$/i);
+  if (monthDayTextWithYear) {
+    const monthKey = monthDayTextWithYear[1].toLowerCase().substring(0, 3);
+    const month = monthMap[monthKey];
+    const day = monthDayTextWithYear[2];
+    const yy = monthDayTextWithYear[3].length === 2 ? `20${monthDayTextWithYear[3]}` : monthDayTextWithYear[3];
+    if (month) return toIso(yy, month, day);
   }
 
   const dayMonthNumeric = raw.match(/^(\d{1,2})[-/](\d{1,2})$/);
@@ -112,7 +139,7 @@ function buildDateDisplay(year, dateValue, isoDate) {
     }
   }
 
-  const rawDate = String(dateValue || '').trim();
+  const rawDate = normalizeDateText(dateValue);
   const rawYear = extractYear(year);
 
   if (rawDate && rawDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
@@ -129,8 +156,8 @@ const DEFAULT_MAPPING = {
   tenderType: ['Tender Type ', 'Type'],
   client: ['Client'],
   tenderName: ['Tender name', 'DESCRIPTION'],
-  year: ['Year '],
-  dateReceived: ['date tender recd', 'DATE RECEIVED'],
+  year: ['Year ', 'Year'],
+  dateReceived: ['date tender recd', 'DATE RECEIVED', 'DATE TENDER RECD'],
   lead: ['Assigned Person'],
   value: ['Tender value', 'TENDER VALUE ', 'TENDER VALUE (AED)', 'VALUE', 'PROJECT VALUE', 'ESTIMATED VALUE', 'TENDER AMOUNT', 'AMOUNT'],
   avenirStatus: ['AVENIR STATUS'],
@@ -140,8 +167,8 @@ const DEFAULT_MAPPING = {
   comments: ['REMARKS'],
   country: ['COUNTRY', 'REGION', 'LOCATION'],
   probability: ['PROBABILITY', 'WIN %', 'CHANCE'],
-  submissionDeadline: ['SUBMISSION DEADLINE', 'DUE DATE', 'TENDER PLANNED SUBMISSION DATE'],
-  tenderSubmittedDate: ['TENDER SUBMITTED DATE', 'TENDER SUBMITTED', 'TENDER  SUBMITTED', 'SUBMITTED DATE'],
+  submissionDeadline: ['SUBMISSION DEADLINE', 'DUE DATE', 'TENDER PLANNED SUBMISSION DATE', 'TENDER DUE DATE', 'TENDER DUE  DATE'],
+  tenderSubmittedDate: ['TENDER SUBMITTED DATE', 'TENDER SUBMITTED', 'TENDER  SUBMITTED', 'SUBMITTED DATE', 'TENDER SUBMITTED  DATE'],
 };
 
 function normalizeHeader(value) {

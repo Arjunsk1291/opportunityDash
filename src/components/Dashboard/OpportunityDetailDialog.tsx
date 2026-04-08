@@ -60,7 +60,7 @@ export function OpportunityDetailDialog({
         {/* Content */}
         <div className="p-6 overflow-y-auto max-h-[calc(85vh-150px)]">
           <div className="space-y-1">
-            <DetailRow label="AVE No." value={opportunity.opportunityRefNo || '—'} />
+            <DetailRow label="Avenir Ref" value={opportunity.opportunityRefNo || '—'} />
             <DetailRow label="Tender Name" value={opportunity.tenderName || '—'} />
             <DetailRow label="Tender Type" value={opportunity.opportunityClassification || '—'} />
             <DetailRow label="Client" value={opportunity.clientName || '—'} />

@@ -388,7 +388,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                       setRefSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
                     }}
                   >
-                    AVE No.
+                    Avenir Ref
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </TableHead>
@@ -448,7 +448,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         </div>
                         {getAdnocRftNo(tender) ? (
                           <div className="truncate font-mono text-[10px] sm:text-xs text-muted-foreground" title={getAdnocRftNo(tender)}>
-                            ADNOC Ref No: {getAdnocRftNo(tender)}
+                            ADNOC Ref: {getAdnocRftNo(tender)}
                           </div>
                         ) : null}
                       </div>
@@ -526,7 +526,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
           </Table>
         </div>
         <div className="p-2 sm:p-3 text-xs sm:text-sm text-muted-foreground border-t bg-background">
-          Showing by {sortBy === 'ref' ? `AVE No. (${refSortOrder.toUpperCase()})` : `RFP Received (${rfpSortOrder.toUpperCase()})`}: {visibleData.length} of {data.length} tenders
+          Showing by {sortBy === 'ref' ? `Avenir Ref (${refSortOrder.toUpperCase()})` : `RFP Received (${rfpSortOrder.toUpperCase()})`}: {visibleData.length} of {data.length} tenders
           {!showConvertedEoiRows && visibleData.length !== filteredData.length ? ` (${filteredData.length - visibleData.length} converted EOI row${filteredData.length - visibleData.length === 1 ? '' : 's'} hidden)` : ''}
           {' '} (scroll to view all)
         </div>
