@@ -221,6 +221,23 @@ const calculateSummaryStats = (data = []) => {
   };
 };
 
+const getClientDataForReport = (data = []) => {
+  const grouped = new Map();
+
+  data.forEach((item) => {
+    const name = String(item?.clientName || '').trim();
+    if (!name) return;
+    const current = grouped.get(name) || { name, count: 0, value: 0 };
+    current.count += 1;
+    current.value += Number(item?.opportunityValue || 0);
+    grouped.set(name, current);
+  });
+
+  return Array.from(grouped.values())
+    .sort((a, b) => b.value - a.value || b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, 10);
+};
+
 const getPortfolioSnapshotData = (data = [], limit = 12) => {
   const rows = [...data]
     .sort((a, b) => {
@@ -4404,6 +4421,7 @@ app.post('/api/generate-report', async (req, res) => {
     const reportDurationKey = String(reportMeta.key || '');
 
     const summary = calculateSummaryStats(data);
+    const clients = getClientDataForReport(data);
     const portfolioSnapshot = getPortfolioSnapshotData(data, reportDurationKey === 'all' ? Number.POSITIVE_INFINITY : 12);
 
     const totalOpportunities = data.length;
