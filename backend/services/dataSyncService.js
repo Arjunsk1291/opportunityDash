@@ -5,6 +5,12 @@ function normalizeStatus(status) {
   return status.toString().trim().toUpperCase();
 }
 
+function extractYear(yearValue) {
+  const raw = String(yearValue || '').trim();
+  const match = raw.match(/\b(19|20)\d{2}\b/);
+  return match ? match[0] : '';
+}
+
 function parseDate(year, dateValue) {
   if (dateValue === null || dateValue === undefined || String(dateValue).trim() === '' || String(dateValue).trim() === '-') {
     return null;
@@ -23,8 +29,7 @@ function parseDate(year, dateValue) {
   }
 
   const raw = String(dateValue).trim();
-  const normalizedYear = String(year || '').trim();
-  const fallbackYear = normalizedYear || String(new Date().getFullYear());
+  const resolvedYear = extractYear(year);
 
   const monthMap = {
     jan: '01', feb: '02', mar: '03', apr: '04',
@@ -63,8 +68,8 @@ function parseDate(year, dateValue) {
   }
 
   const dayMonthNumeric = raw.match(/^(\d{1,2})[-/](\d{1,2})$/);
-  if (dayMonthNumeric) {
-    return toIso(fallbackYear, dayMonthNumeric[2], dayMonthNumeric[1]);
+  if (dayMonthNumeric && resolvedYear) {
+    return toIso(resolvedYear, dayMonthNumeric[2], dayMonthNumeric[1]);
   }
 
   const dayMonthText = raw.match(/^(\d{1,2})[\s-](\w+)$/i);
@@ -72,11 +77,19 @@ function parseDate(year, dateValue) {
     const day = dayMonthText[1];
     const monthKey = dayMonthText[2].toLowerCase().substring(0, 3);
     const month = monthMap[monthKey];
-    if (month) return toIso(fallbackYear, month, day);
+    if (month && resolvedYear) return toIso(resolvedYear, month, day);
   }
 
-  const parsed = new Date(raw);
-  if (!Number.isNaN(parsed.getTime())) {
+  const monthDayText = raw.match(/^(\w+)[\s-](\d{1,2})$/i);
+  if (monthDayText) {
+    const monthKey = monthDayText[1].toLowerCase().substring(0, 3);
+    const month = monthMap[monthKey];
+    const day = monthDayText[2];
+    if (month && resolvedYear) return toIso(resolvedYear, month, day);
+  }
+
+  const parsed = raw.match(/[a-z]/i) ? new Date(raw) : null;
+  if (parsed && !Number.isNaN(parsed.getTime())) {
     return parsed.toISOString().slice(0, 10);
   }
 
@@ -99,7 +112,7 @@ function buildRfpReceivedDisplay(year, dateValue, isoDate) {
   }
 
   const rawDate = String(dateValue || '').trim();
-  const rawYear = String(year || '').trim();
+  const rawYear = extractYear(year);
 
   if (rawDate && rawDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
     return rawDate;

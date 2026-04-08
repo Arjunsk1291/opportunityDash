@@ -28,6 +28,7 @@ interface OpportunitiesTableProps {
 
 const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
 
 export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-96' }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
@@ -87,6 +88,20 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
     return tender.dateTenderReceived
       || (typeof tender.rawGraphData?.rfpReceivedDisplay === 'string' ? tender.rawGraphData.rfpReceivedDisplay : '')
       || '';
+  };
+
+  const getAdnocRftNo = (tender: Opportunity) => {
+    if (tender.adnocRftNo) return tender.adnocRftNo;
+    const snapshot = tender.rawGraphData?.rowSnapshot;
+    if (!snapshot || typeof snapshot !== 'object') return '';
+
+    const entries = Object.entries(snapshot);
+    for (const header of ['ADNOC RFT NO', 'ADNOC RFT NO.']) {
+      const match = entries.find(([key]) => normalizeHeader(key) === normalizeHeader(header));
+      if (match) return String(match[1] ?? '').trim();
+    }
+
+    return '';
   };
 
   const getSubmissionDisplay = (tender: Opportunity) => {
@@ -323,6 +338,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                   </button>
                 </TableHead>
                 <TableHead className="px-2 sm:px-3 font-bold">Tender Name</TableHead>
+                <TableHead className="hidden 2xl:table-cell px-2 sm:px-3 font-bold">ADNOC RFT NO</TableHead>
                 <TableHead className="hidden md:table-cell px-2 sm:px-3 font-bold">Tender Type</TableHead>
                 <TableHead className="px-2 sm:px-3 font-bold">Client</TableHead>
                 <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">Group</TableHead>
@@ -375,6 +391,9 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                       <div className="truncate" title={tender.tenderName || ''}>
                         {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
                       </div>
+                    </TableCell>
+                    <TableCell className="hidden 2xl:table-cell px-2 sm:px-3 max-w-[140px] truncate font-mono text-xs sm:text-sm">
+                      {getAdnocRftNo(tender) || '—'}
                     </TableCell>
                     <TableCell className="hidden md:table-cell px-2 sm:px-3">
                       <Badge className={`max-w-[8rem] truncate text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>

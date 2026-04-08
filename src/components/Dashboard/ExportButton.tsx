@@ -49,6 +49,12 @@ const getAdnocRftNo = (opp: Opportunity) => String(
   || '',
 ).trim();
 
+const getRfpReceivedDisplay = (opp: Opportunity) => (
+  opp.dateTenderReceived
+  || (typeof opp.rawGraphData?.rfpReceivedDisplay === 'string' ? opp.rawGraphData.rfpReceivedDisplay : '')
+  || ''
+);
+
 export function ExportButton({ data, filename = 'opportunities' }: ExportButtonProps) {
   const { currency, convertValue } = useCurrency();
   const { getApprovalStatus } = useApproval();
@@ -69,7 +75,7 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       { id: 'value', label: `Value (${currencySymbol})`, getValue: (opp) => Math.round(convertValue(opp.opportunityValue)) },
       { id: 'probability', label: 'Probability (%)', getValue: (opp) => opp.probability },
       { id: 'expectedValue', label: `Expected Value (${currencySymbol})`, getValue: (opp) => Math.round(convertValue(opp.expectedValue)) },
-      { id: 'rfpReceived', label: 'RFP Received', getValue: (opp) => opp.dateTenderReceived || '' },
+      { id: 'rfpReceived', label: 'RFP Received', getValue: (opp) => getRfpReceivedDisplay(opp) },
       { id: 'plannedSubmission', label: 'Planned Submission', getValue: (opp) => opp.tenderPlannedSubmissionDate || '' },
       { id: 'submittedDate', label: 'Submitted Date', getValue: (opp) => opp.tenderSubmittedDate || '' },
       { id: 'lastContact', label: 'Last Contact', getValue: (opp) => opp.lastContactDate || '' },
@@ -95,9 +101,17 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
     const selectedColumns = columns.filter((column) => selectedColumnIds.includes(column.id));
     if (!selectedColumns.length) return;
 
-    const exportData = data.map((opp) => Object.fromEntries(
-      selectedColumns.map((column) => [column.label, column.getValue(opp)]),
-    ));
+    const seenSignatures = new Set<string>();
+    const exportData = data.reduce<Array<Record<string, string | number>>>((rows, opp) => {
+      const row = Object.fromEntries(
+        selectedColumns.map((column) => [column.label, column.getValue(opp)]),
+      );
+      const signature = JSON.stringify(row);
+      if (seenSignatures.has(signature)) return rows;
+      seenSignatures.add(signature);
+      rows.push(row);
+      return rows;
+    }, []);
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
