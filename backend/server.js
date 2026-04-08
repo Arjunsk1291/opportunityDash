@@ -222,7 +222,7 @@ const calculateSummaryStats = (data = []) => {
 };
 
 const getPortfolioSnapshotData = (data = [], limit = 12) => {
-  return [...data]
+  const rows = [...data]
     .sort((a, b) => {
       const aTime = parseDateValue(a?.dateTenderReceived || a?.createdAt)?.getTime() || 0;
       const bTime = parseDateValue(b?.dateTenderReceived || b?.createdAt)?.getTime() || 0;
@@ -237,8 +237,10 @@ const getPortfolioSnapshotData = (data = [], limit = 12) => {
       status: getMergedReportStatus(item) || 'UNSPECIFIED',
       lead: item?.internalLead || '—',
       value: Number(item?.opportunityValue || 0),
-    }))
-    .slice(0, limit);
+    }));
+
+  if (!Number.isFinite(limit) || limit <= 0) return rows;
+  return rows.slice(0, limit);
 };
 
 const normalizeReportSnapshotHeader = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
@@ -299,10 +301,8 @@ const createReportValueCell = (text, fill) => new TableCell({
 
 const createReportSectionTitle = (text) => new Paragraph({
   spacing: { before: 220, after: 140 },
-  shading: { fill: REPORT_COLORS.blueSoft, type: ShadingType.CLEAR },
-  border: { left: { color: REPORT_COLORS.blue, size: 10, style: BorderStyle.SINGLE } },
   children: [
-    new TextRun({ text: `  ${text}`, bold: true, color: REPORT_COLORS.navy, size: 24 }),
+    new TextRun({ text: text, bold: true, color: REPORT_COLORS.cobalt, size: 28 }),
   ],
 });
 
@@ -4401,9 +4401,10 @@ app.post('/api/generate-report', async (req, res) => {
     const data = Array.isArray(body.data) ? body.data : [];
     const filters = body.filters || {};
     const reportMeta = body.reportMeta || {};
+    const reportDurationKey = String(reportMeta.key || '');
 
     const summary = calculateSummaryStats(data);
-    const portfolioSnapshot = getPortfolioSnapshotData(data, 12);
+    const portfolioSnapshot = getPortfolioSnapshotData(data, reportDurationKey === 'all' ? Number.POSITIVE_INFINITY : 12);
 
     const totalOpportunities = data.length;
     const generatedAt = new Date().toLocaleString();
@@ -4510,10 +4511,12 @@ app.post('/api/generate-report', async (req, res) => {
         ],
       }),
       new Paragraph({ text: '', spacing: { after: 300 } }),
-      createReportSectionTitle('Portfolio Snapshot'),
+      createReportSectionTitle(reportDurationKey === 'all' ? 'Complete Tender Register' : 'Portfolio Snapshot'),
       createReportCallout(
         'Snapshot Scope',
-        'The table below reflects the selected report duration and lists the most recent qualifying opportunities by RFP Received date.',
+        reportDurationKey === 'all'
+          ? 'The table below includes every tender in the selected all-time report window, ordered by RFP Received date.'
+          : 'The table below reflects the selected report duration and lists the most recent qualifying opportunities by RFP Received date.',
         REPORT_COLORS.slateSoft,
       ),
       new Table({

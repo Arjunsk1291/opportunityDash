@@ -104,6 +104,8 @@ const getDurationMeta = (durationKey: ReportDurationKey) => {
   };
 };
 
+const getPortfolioLimit = (durationKey?: string) => (durationKey === 'all' ? Number.POSITIVE_INFINITY : 12);
+
 function generatePieChart(values: number[], labels: string[], colors: string[]): string {
   const total = values.reduce((a, b) => a + b, 0);
   let currentAngle = 0;
@@ -154,7 +156,7 @@ function generateBarChart(labels: string[], values: number[], color: string): st
   return `<svg viewBox="0 0 250 250" style="width: 100%; height: 250px;">${bars}</svg>`;
 }
 
-function toHtml(filters: FilterState, data: Opportunity[], reportMeta: { label: string; rangeLabel: string }) {
+function toHtml(filters: FilterState, data: Opportunity[], reportMeta: { key?: string; label: string; rangeLabel: string }) {
   const summary = calculateSummaryStats(data);
   const funnel = calculateFunnelData(data);
   const clients = getClientData(data);
@@ -184,7 +186,7 @@ function toHtml(filters: FilterState, data: Opportunity[], reportMeta: { label: 
   const portfolioRows = data
     .slice()
     .sort((a, b) => new Date(b.dateTenderReceived || b.tenderSubmittedDate || 0).getTime() - new Date(a.dateTenderReceived || a.tenderSubmittedDate || 0).getTime())
-    .slice(0, 12);
+    .slice(0, getPortfolioLimit(reportMeta.key));
 
   return `<!doctype html>
 <html>
@@ -527,8 +529,8 @@ footer {
   </section>
 
   <section>
-    <h2>Portfolio Snapshot</h2>
-    <p class="portfolio-caption">Most recent opportunities inside the selected report duration, ordered by RFP Received date.</p>
+    <h2>${safe(reportMeta.key === 'all' ? 'Complete Tender Register' : 'Portfolio Snapshot')}</h2>
+    <p class="portfolio-caption">${safe(reportMeta.key === 'all' ? 'All opportunities inside the selected report duration, ordered by RFP Received date.' : 'Most recent opportunities inside the selected report duration, ordered by RFP Received date.')}</p>
     <table>
       <thead>
         <tr>
@@ -637,8 +639,7 @@ export function ReportButton({ data, filters }: ReportButtonProps) {
       setIsDialogOpen(false);
     } catch (error) {
       console.error('Error generating Word document:', error);
-      alert('Failed to generate Word document. Exporting as HTML instead.');
-      handleExportHTML();
+      alert('Failed to generate Word document. Please try again.');
     }
   };
 

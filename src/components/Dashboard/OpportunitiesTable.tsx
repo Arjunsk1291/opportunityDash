@@ -338,7 +338,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                   </button>
                 </TableHead>
                 <TableHead className="px-2 sm:px-3 font-bold">Tender Name</TableHead>
-                <TableHead className="hidden xl:table-cell px-2 sm:px-3 font-bold">ADNOC RFT NO</TableHead>
                 <TableHead className="hidden md:table-cell px-2 sm:px-3 font-bold">Tender Type</TableHead>
                 <TableHead className="px-2 sm:px-3 font-bold">Client</TableHead>
                 <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">Group</TableHead>
@@ -388,12 +387,16 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                   >
                     <TableCell className="px-2 sm:px-3 max-w-[120px] truncate font-mono text-xs sm:text-sm font-bold text-blue-600 dark:text-blue-400">{tender.opportunityRefNo || '—'}</TableCell>
                     <TableCell className="px-2 sm:px-3 max-w-[180px] sm:max-w-[250px] min-w-0">
-                      <div className="truncate" title={tender.tenderName || ''}>
-                        {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
+                      <div className="min-w-0 space-y-1">
+                        <div className="truncate" title={tender.tenderName || ''}>
+                          {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
+                        </div>
+                        {getAdnocRftNo(tender) ? (
+                          <div className="truncate font-mono text-[10px] sm:text-xs text-muted-foreground" title={getAdnocRftNo(tender)}>
+                            ADNOC RFT NO: {getAdnocRftNo(tender)}
+                          </div>
+                        ) : null}
                       </div>
-                    </TableCell>
-                    <TableCell className="hidden xl:table-cell px-2 sm:px-3 max-w-[140px] truncate font-mono text-xs sm:text-sm">
-                      {getAdnocRftNo(tender) || '—'}
                     </TableCell>
                     <TableCell className="hidden md:table-cell px-2 sm:px-3">
                       <Badge className={`max-w-[8rem] truncate text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>
