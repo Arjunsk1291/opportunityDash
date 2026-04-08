@@ -4197,6 +4197,21 @@ app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
   }
 });
 
+app.post('/api/opportunities/reset-synced', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
+
+    const deleteResult = await SyncedOpportunity.deleteMany({});
+    res.json({
+      success: true,
+      deletedCount: Number(deleteResult?.deletedCount || 0),
+      message: `Cleared ${Number(deleteResult?.deletedCount || 0)} synced opportunities. Run sync again to rebuild from Graph Excel.`,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to clear synced opportunities' });
+  }
+});
+
 app.post('/api/opportunities/sync-graph/auto', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'opportunities_sync')) return;

@@ -697,6 +697,39 @@ export default function Admin() {
     }
   };
 
+  const resetSyncedOpportunities = async () => {
+    if (!token) return;
+    const confirmed = window.confirm(
+      'This will clear all currently synced opportunities from MongoDB. Your Graph config stays intact, and the next sync will rebuild the data from Excel. Continue?'
+    );
+    if (!confirmed) return;
+
+    setSyncLoading(true);
+    try {
+      const response = await fetch(API_URL + '/opportunities/reset-synced', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(parseApiErrorPayload(result, 'Failed to clear synced opportunities'));
+      }
+
+      setMessage({ type: 'success', text: result.message || 'Cleared synced opportunities. Run sync again to rebuild.' });
+      await loadCollectionStats();
+      toast.success(result.message || 'Cleared synced opportunities');
+      setTimeout(() => setMessage(null), 4000);
+    } catch (error) {
+      setMessage({ type: 'error', text: (error as Error).message || 'Failed to clear synced opportunities' });
+      toast.error((error as Error).message || 'Failed to clear synced opportunities');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
   const loadGraphAuthStatus = async () => {
     if (!token) return;
     try {
@@ -2551,9 +2584,21 @@ export default function Admin() {
                     >
                       Seed Clients from Opportunities
                     </Button>
+                    <Button
+                      onClick={resetSyncedOpportunities}
+                      disabled={syncLoading}
+                      variant="destructive"
+                      className="w-full gap-2 border border-red-700 bg-red-700 text-white hover:bg-red-800"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Clear Synced Opportunities Before Fresh Sync
+                    </Button>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
                     Pulls latest tender data from your configured Microsoft Graph Excel and syncs to database
+                  </p>
+                  <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                    Use the red clear action only when stored synced rows are polluted and you want the next Graph sync to rebuild everything from scratch.
                   </p>
                   <div className="rounded border p-3 text-xs text-muted-foreground">
                     Notification tracker: last checked {notificationSyncStatus.lastCheckedAt ? new Date(notificationSyncStatus.lastCheckedAt).toLocaleString() : 'never'}
