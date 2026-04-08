@@ -27,6 +27,7 @@ import {
   Table,
   TableRow,
   TableCell,
+  TextRun,
   HeadingLevel,
   AlignmentType,
   WidthType,
@@ -220,7 +221,7 @@ const calculateSummaryStats = (data = []) => {
   };
 };
 
-const getRecentTenderData = (data = []) => {
+const getPortfolioSnapshotData = (data = [], limit = 12) => {
   return [...data]
     .sort((a, b) => {
       const aTime = parseDateValue(a?.dateTenderReceived || a?.createdAt)?.getTime() || 0;
@@ -235,8 +236,9 @@ const getRecentTenderData = (data = []) => {
       receivedDate: item?.dateTenderReceived || item?.createdAt || '',
       status: getMergedReportStatus(item) || 'UNSPECIFIED',
       lead: item?.internalLead || '—',
+      value: Number(item?.opportunityValue || 0),
     }))
-    .slice(0, 5);
+    .slice(0, limit);
 };
 
 const normalizeReportSnapshotHeader = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
@@ -270,12 +272,16 @@ const formatDateForReport = (value) => {
 const REPORT_COLORS = {
   navy: '0f172a',
   blue: '1d4ed8',
+  cobalt: '1e40af',
+  teal: '0f766e',
   blueSoft: 'dbeafe',
   slate: 'e2e8f0',
   slateSoft: 'f8fafc',
+  slateMid: 'cbd5e1',
   greenSoft: 'dcfce7',
   amberSoft: 'fef3c7',
   redSoft: 'fee2e2',
+  inkSoft: '334155',
   white: 'ffffff',
 };
 
@@ -290,6 +296,43 @@ const createReportValueCell = (text, fill) => new TableCell({
   ...(fill ? { shading: { fill, type: ShadingType.CLEAR } } : {}),
   children: [new Paragraph({ text: String(text) })],
 });
+
+const createReportSectionTitle = (text) => new Paragraph({
+  spacing: { before: 220, after: 140 },
+  shading: { fill: REPORT_COLORS.blueSoft, type: ShadingType.CLEAR },
+  border: { left: { color: REPORT_COLORS.blue, size: 10, style: BorderStyle.SINGLE } },
+  children: [
+    new TextRun({ text: `  ${text}`, bold: true, color: REPORT_COLORS.navy, size: 24 }),
+  ],
+});
+
+const createReportCallout = (title, body, fill = REPORT_COLORS.blueSoft) => new Table({
+  width: { size: 100, type: WidthType.PERCENTAGE },
+  rows: [
+    new TableRow({
+      children: [
+        new TableCell({
+          borders,
+          shading: { fill, type: ShadingType.CLEAR },
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({ text: `${title}: `, bold: true, color: REPORT_COLORS.navy }),
+                new TextRun({ text: body, color: REPORT_COLORS.inkSoft }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    }),
+  ],
+});
+
+const formatCurrencyCompact = (value = 0) => {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return '—';
+  return `AED ${numeric.toLocaleString('en-US')}`;
+};
 
 const buildTroubleshootingFromMessage = (message = '') => {
   const text = String(message || '').toLowerCase();
@@ -4357,9 +4400,10 @@ app.post('/api/generate-report', async (req, res) => {
     const body = req.body || {};
     const data = Array.isArray(body.data) ? body.data : [];
     const filters = body.filters || {};
+    const reportMeta = body.reportMeta || {};
 
     const summary = calculateSummaryStats(data);
-    const recentTenders = getRecentTenderData(data);
+    const portfolioSnapshot = getPortfolioSnapshotData(data, 12);
 
     const totalOpportunities = data.length;
     const generatedAt = new Date().toLocaleString();
@@ -4375,39 +4419,48 @@ app.post('/api/generate-report', async (req, res) => {
       filters.showMissDeadline ? 'Miss deadline only' : '',
     ].filter(Boolean);
 
+    const reportDurationLabel = String(reportMeta.label || 'Selected dashboard data');
+    const reportRangeLabel = String(reportMeta.rangeLabel || 'Current filtered dataset');
+
     const children = [
       new Paragraph({
         text: 'SALES PIPELINE ANALYTICS REPORT',
         heading: HeadingLevel.HEADING_1,
         alignment: AlignmentType.CENTER,
         shading: { fill: REPORT_COLORS.navy, type: ShadingType.CLEAR },
-        thematicBreak: true,
-        spacing: { after: 200, before: 120 },
+        spacing: { after: 180, before: 120 },
       }),
       new Paragraph({
         text: 'Comprehensive Sales Intelligence & Market Insights',
         alignment: AlignmentType.CENTER,
-        spacing: { after: 100 },
+        spacing: { after: 140 },
       }),
-      new Paragraph({
-        text: `Generated: ${generatedAt} | Total Opportunities: ${totalOpportunities}`,
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 400 },
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({
+            children: [
+              createReportHeaderCell('Report Window', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Date Span', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Generated', REPORT_COLORS.blueSoft),
+            ],
+          }),
+          new TableRow({
+            children: [
+              createReportValueCell(reportDurationLabel, REPORT_COLORS.slateSoft),
+              createReportValueCell(reportRangeLabel, REPORT_COLORS.slateSoft),
+              createReportValueCell(generatedAt, REPORT_COLORS.slateSoft),
+            ],
+          }),
+        ],
       }),
-      new Paragraph({
-        text: 'Report Filters',
-        heading: HeadingLevel.HEADING_2,
-        spacing: { before: 200, after: 150 },
-      }),
-      new Paragraph({
-        text: `Applied Filters: ${activeFilters.length ? activeFilters.join(' • ') : 'None (all data shown)'}`,
-        spacing: { after: 300 },
-      }),
-      new Paragraph({
-        text: 'Key Business Metrics',
-        heading: HeadingLevel.HEADING_2,
-        spacing: { before: 200, after: 200 },
-      }),
+      new Paragraph({ text: '', spacing: { after: 200 } }),
+      createReportCallout(
+        'Applied Filters',
+        activeFilters.length ? activeFilters.join(' • ') : 'None (all data shown)',
+        REPORT_COLORS.slateSoft,
+      ),
+      createReportSectionTitle('Executive Snapshot'),
       new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },
         rows: [
@@ -4432,15 +4485,12 @@ app.post('/api/generate-report', async (req, res) => {
         ],
       }),
       new Paragraph({ text: '', spacing: { after: 300 } }),
-      new Paragraph({
-        text: `Executive Summary: Currently tracking ${summary.totalActive} active opportunities. Successfully closed ${summary.wonCount} deals while ${summary.lostCount} opportunities were lost. ${summary.atRiskCount} opportunities require immediate attention due to approaching submission deadlines.`,
-        spacing: { after: 400 },
-      }),
-      new Paragraph({
-        text: 'Opportunity Status Breakdown',
-        heading: HeadingLevel.HEADING_2,
-        spacing: { before: 200, after: 200 },
-      }),
+      createReportCallout(
+        'Executive Summary',
+        `This ${reportDurationLabel.toLowerCase()} report captures ${totalOpportunities} filtered opportunities. ${summary.totalActive} are currently active, ${summary.wonCount} are won, ${summary.lostCount} are lost, and ${summary.atRiskCount} require immediate attention.`,
+        REPORT_COLORS.blueSoft,
+      ),
+      createReportSectionTitle('Status Breakdown'),
       new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },
         rows: [
@@ -4460,7 +4510,12 @@ app.post('/api/generate-report', async (req, res) => {
         ],
       }),
       new Paragraph({ text: '', spacing: { after: 300 } }),
-      new Paragraph({ text: 'Recent 5 Tenders', heading: HeadingLevel.HEADING_2, spacing: { before: 200, after: 200 } }),
+      createReportSectionTitle('Portfolio Snapshot'),
+      createReportCallout(
+        'Snapshot Scope',
+        'The table below reflects the selected report duration and lists the most recent qualifying opportunities by RFP Received date.',
+        REPORT_COLORS.slateSoft,
+      ),
       new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },
         rows: [
@@ -4470,23 +4525,55 @@ app.post('/api/generate-report', async (req, res) => {
               createReportHeaderCell('ADNOC RFT NO', REPORT_COLORS.blueSoft),
               createReportHeaderCell('Tender Name', REPORT_COLORS.blueSoft),
               createReportHeaderCell('Client', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Lead', REPORT_COLORS.blueSoft),
               createReportHeaderCell('Received', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Value', REPORT_COLORS.blueSoft),
               createReportHeaderCell('Status', REPORT_COLORS.blueSoft),
             ],
           }),
-          ...recentTenders.map((row) => new TableRow({
+          ...portfolioSnapshot.map((row) => new TableRow({
             children: [
               createReportValueCell(row.refNo, REPORT_COLORS.slateSoft),
               createReportValueCell(row.adnocRftNo || '—', REPORT_COLORS.slateSoft),
               createReportValueCell(row.tenderName, REPORT_COLORS.slateSoft),
               createReportValueCell(row.clientName, REPORT_COLORS.slateSoft),
+              createReportValueCell(row.lead || '—', REPORT_COLORS.slateSoft),
               createReportValueCell(row.receivedDate ? formatDateForReport(row.receivedDate) : '—', REPORT_COLORS.slateSoft),
+              createReportValueCell(formatCurrencyCompact(row.value), REPORT_COLORS.slateSoft),
               createReportValueCell(row.status, REPORT_COLORS.slateSoft),
             ],
           })),
         ],
       }),
       new Paragraph({ text: '', spacing: { after: 300 } }),
+      createReportSectionTitle('Client Concentration'),
+      createReportCallout(
+        'Client Strategy',
+        `Top client in the selected window: ${clients[0]?.name || 'N/A'}. Use this section to review concentration risk and prioritize account coverage for high-value clients.`,
+        REPORT_COLORS.blueSoft,
+      ),
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({
+            children: [
+              createReportHeaderCell('Client Name', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Opportunities', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Submitted Value', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('Ranking', REPORT_COLORS.blueSoft),
+            ],
+          }),
+          ...clients.map((row, i) => new TableRow({
+            children: [
+              createReportValueCell(row.name, REPORT_COLORS.slateSoft),
+              createReportValueCell(row.count, REPORT_COLORS.slateSoft),
+              createReportValueCell(`$${(row.value / 1000000).toFixed(2)}M`, REPORT_COLORS.slateSoft),
+              createReportValueCell(`#${i + 1}`, REPORT_COLORS.slateSoft),
+            ],
+          })),
+        ],
+      }),
+      new Paragraph({ text: '', spacing: { after: 260 } }),
       new Paragraph({
         text: 'This report is generated automatically from your Sales Pipeline Management System.',
         alignment: AlignmentType.CENTER,

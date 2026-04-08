@@ -1,12 +1,16 @@
-
-import { ChevronDown, Download, FileText } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Download, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Opportunity, calculateFunnelData, calculateSummaryStats, getClientData } from '@/data/opportunityData';
 import { FilterState } from '@/components/Dashboard/AdvancedFilters';
 
@@ -38,6 +42,67 @@ const getAdnocRftNo = (opp: Opportunity) => String(
   || getSnapshotValue(opp, ['ADNOC RFT NO', 'ADNOC RFT NO.'])
   || '',
 ).trim();
+
+type ReportDurationKey = '30d' | '90d' | '180d' | '365d' | 'all';
+
+const REPORT_DURATION_OPTIONS: Array<{ key: ReportDurationKey; label: string; description: string; days: number | null }> = [
+  { key: '30d', label: 'Last 30 days', description: 'Short-term pipeline snapshot based on RFP Received date.', days: 30 },
+  { key: '90d', label: 'Last 90 days', description: 'Quarter-style view for recent sales activity.', days: 90 },
+  { key: '180d', label: 'Last 6 months', description: 'Balanced trend view across an extended cycle.', days: 180 },
+  { key: '365d', label: 'Last 12 months', description: 'Annual report view for broader performance review.', days: 365 },
+  { key: 'all', label: 'All available data', description: 'Uses the full currently filtered dataset.', days: null },
+];
+
+const getReportReferenceDate = (opp: Opportunity) => {
+  const candidates = [
+    opp.dateTenderReceived,
+    opp.tenderSubmittedDate,
+    opp.tenderPlannedSubmissionDate,
+    typeof opp.rawGraphData?.rfpReceivedDisplay === 'string' ? opp.rawGraphData.rfpReceivedDisplay : '',
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const parsed = new Date(candidate);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  return null;
+};
+
+const filterDataByDuration = (data: Opportunity[], durationKey: ReportDurationKey) => {
+  const option = REPORT_DURATION_OPTIONS.find((item) => item.key === durationKey) || REPORT_DURATION_OPTIONS[1];
+  if (option.days === null) return data;
+
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  const start = new Date(end);
+  start.setDate(start.getDate() - (option.days - 1));
+  start.setHours(0, 0, 0, 0);
+
+  return data.filter((opp) => {
+    const date = getReportReferenceDate(opp);
+    if (!date) return false;
+    return date >= start && date <= end;
+  });
+};
+
+const getDurationMeta = (durationKey: ReportDurationKey) => {
+  const option = REPORT_DURATION_OPTIONS.find((item) => item.key === durationKey) || REPORT_DURATION_OPTIONS[1];
+  if (option.days === null) {
+    return { key: option.key, label: option.label, rangeLabel: 'All available dates' };
+  }
+
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - (option.days - 1));
+
+  return {
+    key: option.key,
+    label: option.label,
+    rangeLabel: `${start.toLocaleDateString()} to ${end.toLocaleDateString()}`,
+  };
+};
 
 function generatePieChart(values: number[], labels: string[], colors: string[]): string {
   const total = values.reduce((a, b) => a + b, 0);
@@ -89,7 +154,7 @@ function generateBarChart(labels: string[], values: number[], color: string): st
   return `<svg viewBox="0 0 250 250" style="width: 100%; height: 250px;">${bars}</svg>`;
 }
 
-function toHtml(filters: FilterState, data: Opportunity[]) {
+function toHtml(filters: FilterState, data: Opportunity[], reportMeta: { label: string; rangeLabel: string }) {
   const summary = calculateSummaryStats(data);
   const funnel = calculateFunnelData(data);
   const clients = getClientData(data);
@@ -116,10 +181,10 @@ function toHtml(filters: FilterState, data: Opportunity[]) {
   
   const funnelLabels = funnel.map(f => f.stage).slice(0, 5);
   const funnelCounts = funnel.map(f => f.count).slice(0, 5);
-  const recentTenders = data
+  const portfolioRows = data
     .slice()
     .sort((a, b) => new Date(b.dateTenderReceived || b.tenderSubmittedDate || 0).getTime() - new Date(a.dateTenderReceived || a.tenderSubmittedDate || 0).getTime())
-    .slice(0, 5);
+    .slice(0, 12);
 
   return `<!doctype html>
 <html>
@@ -136,7 +201,9 @@ body {
 }
 .container { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
 header { 
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  background:
+    radial-gradient(circle at top right, rgba(125,211,252,0.24), transparent 28%),
+    linear-gradient(135deg, #082f49 0%, #0f172a 55%, #172554 100%);
   color: white;
   padding: 40px;
   border-radius: 12px;
@@ -146,6 +213,22 @@ header {
 header h1 { font-size: 32px; margin-bottom: 8px; font-weight: 700; }
 header p { opacity: 0.85; font-size: 15px; }
 .timestamp { font-size: 12px; opacity: 0.6; margin-top: 15px; }
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+.hero-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.16);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
 
 section { 
   background: white;
@@ -271,6 +354,12 @@ tr:nth-child(even) { background: #f8fafc; }
   border: 1px solid #bfdbfe;
 }
 
+.portfolio-caption {
+  font-size: 13px;
+  color: #475569;
+  margin-bottom: 14px;
+}
+
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -309,6 +398,11 @@ footer {
   <header>
     <h1>📊 SALES PIPELINE ANALYTICS REPORT</h1>
     <p>Comprehensive Sales Intelligence & Market Insights</p>
+    <div class="hero-meta">
+      <div class="hero-chip">Report window: ${safe(reportMeta.label)}</div>
+      <div class="hero-chip">Date span: ${safe(reportMeta.rangeLabel)}</div>
+      <div class="hero-chip">Included opportunities: ${safe(totalOpportunities)}</div>
+    </div>
     <div class="timestamp">Generated: ${safe(generatedAt)} | Total Opportunities: ${safe(totalOpportunities)}</div>
   </header>
 
@@ -316,6 +410,7 @@ footer {
     <h2>Report Filters</h2>
     <div class="filters">
       <p><strong>Applied Filters:</strong> ${activeFilters.length ? activeFilters.map((item) => safe(item)).join(' • ') : 'None (all data shown)'}</p>
+      <p><strong>Report duration:</strong> ${safe(reportMeta.label)} (${safe(reportMeta.rangeLabel)})</p>
     </div>
   </section>
 
@@ -432,7 +527,8 @@ footer {
   </section>
 
   <section>
-    <h2>Recent 5 Tenders</h2>
+    <h2>Portfolio Snapshot</h2>
+    <p class="portfolio-caption">Most recent opportunities inside the selected report duration, ordered by RFP Received date.</p>
     <table>
       <thead>
         <tr>
@@ -445,7 +541,7 @@ footer {
         </tr>
       </thead>
       <tbody>
-      ${recentTenders.map((row) => `<tr>
+      ${portfolioRows.map((row) => `<tr>
         <td><strong>${safe(row.opportunityRefNo || '—')}</strong></td>
         <td>${safe(getAdnocRftNo(row) || '—')}</td>
         <td><strong>${safe(row.tenderName || 'Untitled Tender')}</strong></td>
@@ -457,7 +553,7 @@ footer {
     </table>
 
     <div class="summary-box">
-      <strong>📌 Tender Snapshot:</strong> This table lists the most recent filtered tenders and includes the ADNOC RFT reference where available for quick downstream tracking.
+      <strong>📌 Portfolio View:</strong> This section expands beyond only five tenders and reflects the selected reporting duration so the snapshot feels aligned with the report scope.
     </div>
   </section>
 
@@ -498,8 +594,14 @@ footer {
 }
 
 export function ReportButton({ data, filters }: ReportButtonProps) {
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [durationKey, setDurationKey] = useState<ReportDurationKey>('90d');
+
+  const reportData = useMemo(() => filterDataByDuration(data, durationKey), [data, durationKey]);
+  const reportMeta = useMemo(() => getDurationMeta(durationKey), [durationKey]);
+
   const handleExportHTML = () => {
-    const blob = new Blob([toHtml(filters, data)], { type: 'text/html;charset=utf-8' });
+    const blob = new Blob([toHtml(filters, reportData, reportMeta)], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     const stamp = new Date().toISOString().slice(0, 10);
@@ -509,6 +611,7 @@ export function ReportButton({ data, filters }: ReportButtonProps) {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+    setIsDialogOpen(false);
   };
 
   const handleExportWord = async () => {
@@ -516,7 +619,7 @@ export function ReportButton({ data, filters }: ReportButtonProps) {
       const response = await fetch(`${API_BASE_URL}/generate-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data, filters }),
+        body: JSON.stringify({ data: reportData, filters, reportMeta }),
       });
 
       if (!response.ok) throw new Error('Failed to generate Word document');
@@ -531,6 +634,7 @@ export function ReportButton({ data, filters }: ReportButtonProps) {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
+      setIsDialogOpen(false);
     } catch (error) {
       console.error('Error generating Word document:', error);
       alert('Failed to generate Word document. Exporting as HTML instead.');
@@ -539,24 +643,67 @@ export function ReportButton({ data, filters }: ReportButtonProps) {
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg hover:from-blue-700 hover:to-blue-800">
-          <FileText className="h-4 w-4" />
-          Report
-          <ChevronDown className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-44">
-        <DropdownMenuItem onClick={handleExportHTML}>
-          <FileText className="mr-2 h-4 w-4" />
-          HTML Report
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleExportWord}>
-          <Download className="mr-2 h-4 w-4" />
-          Word Report
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg hover:from-blue-700 hover:to-blue-800" onClick={() => setIsDialogOpen(true)}>
+        <FileText className="h-4 w-4" />
+        Report
+      </Button>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Generate sales report</DialogTitle>
+            <DialogDescription>
+              Choose the report duration first. The report uses your current dashboard filters and then applies the selected time window on top.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-slate-50 p-4">
+              <p className="text-sm font-medium text-slate-900">Report duration</p>
+              <p className="mt-1 text-sm text-slate-600">Based on RFP Received date where available.</p>
+            </div>
+
+            <RadioGroup value={durationKey} onValueChange={(value) => setDurationKey(value as ReportDurationKey)} className="gap-3">
+              {REPORT_DURATION_OPTIONS.map((option) => (
+                <label
+                  key={option.key}
+                  htmlFor={`report-duration-${option.key}`}
+                  className="flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/40"
+                >
+                  <RadioGroupItem id={`report-duration-${option.key}`} value={option.key} />
+                  <div className="space-y-1">
+                    <Label htmlFor={`report-duration-${option.key}`} className="cursor-pointer text-sm font-medium">
+                      {option.label}
+                    </Label>
+                    <p className="text-sm text-muted-foreground">{option.description}</p>
+                  </div>
+                </label>
+              ))}
+            </RadioGroup>
+
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+              <div className="font-medium">Selected window</div>
+              <div className="mt-1">{reportMeta.label} • {reportMeta.rangeLabel}</div>
+              <div className="mt-1">{reportData.length} opportunit{reportData.length === 1 ? 'y' : 'ies'} included after applying the time window.</div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" variant="outline" onClick={handleExportHTML} disabled={!reportData.length}>
+              <FileText className="mr-2 h-4 w-4" />
+              HTML Report
+            </Button>
+            <Button type="button" onClick={handleExportWord} disabled={!reportData.length}>
+              <Download className="mr-2 h-4 w-4" />
+              Word Report
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

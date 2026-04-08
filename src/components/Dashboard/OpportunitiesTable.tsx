@@ -338,7 +338,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                   </button>
                 </TableHead>
                 <TableHead className="px-2 sm:px-3 font-bold">Tender Name</TableHead>
-                <TableHead className="hidden 2xl:table-cell px-2 sm:px-3 font-bold">ADNOC RFT NO</TableHead>
+                <TableHead className="hidden xl:table-cell px-2 sm:px-3 font-bold">ADNOC RFT NO</TableHead>
                 <TableHead className="hidden md:table-cell px-2 sm:px-3 font-bold">Tender Type</TableHead>
                 <TableHead className="px-2 sm:px-3 font-bold">Client</TableHead>
                 <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">Group</TableHead>
@@ -392,7 +392,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
                       </div>
                     </TableCell>
-                    <TableCell className="hidden 2xl:table-cell px-2 sm:px-3 max-w-[140px] truncate font-mono text-xs sm:text-sm">
+                    <TableCell className="hidden xl:table-cell px-2 sm:px-3 max-w-[140px] truncate font-mono text-xs sm:text-sm">
                       {getAdnocRftNo(tender) || '—'}
                     </TableCell>
                     <TableCell className="hidden md:table-cell px-2 sm:px-3">
