@@ -32,7 +32,11 @@ export function OpportunityDetailDialog({
   };
 
   const getSubmissionDisplay = () => {
-    return opportunity.tenderSubmittedDate || opportunity.tenderPlannedSubmissionDate || '—';
+    return opportunity.tenderSubmittedDate
+      || opportunity.tenderPlannedSubmissionDate
+      || opportunity.rawGraphData?.tenderSubmittedDisplay
+      || opportunity.rawGraphData?.plannedSubmissionDisplay
+      || '—';
   };
 
   return (
@@ -54,7 +58,7 @@ export function OpportunityDetailDialog({
         {/* Content */}
         <div className="p-6 overflow-y-auto max-h-[calc(85vh-150px)]">
           <div className="space-y-1">
-            <DetailRow label="Ref No." value={opportunity.opportunityRefNo || '—'} />
+            <DetailRow label="AVE No." value={opportunity.opportunityRefNo || '—'} />
             <DetailRow label="Tender Name" value={opportunity.tenderName || '—'} />
             <DetailRow label="Tender Type" value={opportunity.opportunityClassification || '—'} />
             <DetailRow label="Client" value={opportunity.clientName || '—'} />

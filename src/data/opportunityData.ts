@@ -53,6 +53,8 @@ export interface Opportunity {
     year?: string;
     dateReceived?: string;
     rfpReceivedDisplay?: string;
+    plannedSubmissionDisplay?: string;
+    tenderSubmittedDisplay?: string;
     rowSnapshot?: Record<string, unknown>;
     [key: string]: unknown;
   };

@@ -4542,8 +4542,8 @@ app.post('/api/generate-report', async (req, res) => {
         rows: [
           new TableRow({
             children: [
-              createReportHeaderCell('Ref No', REPORT_COLORS.blueSoft),
-              createReportHeaderCell('ADNOC RFT NO', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('AVE No.', REPORT_COLORS.blueSoft),
+              createReportHeaderCell('ADNOC Ref No.', REPORT_COLORS.blueSoft),
               createReportHeaderCell('Tender Name', REPORT_COLORS.blueSoft),
               createReportHeaderCell('Client', REPORT_COLORS.blueSoft),
               createReportHeaderCell('Lead', REPORT_COLORS.blueSoft),

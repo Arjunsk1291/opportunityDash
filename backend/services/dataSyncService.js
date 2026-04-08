@@ -96,7 +96,7 @@ function parseDate(year, dateValue) {
   return null;
 }
 
-function buildRfpReceivedDisplay(year, dateValue, isoDate) {
+function buildDateDisplay(year, dateValue, isoDate) {
   if (isoDate) return isoDate;
 
   if (dateValue instanceof Date && !Number.isNaN(dateValue.getTime())) {
@@ -379,7 +379,9 @@ export async function syncTendersFromGraph(config) {
     const rfpDate = parseDate(year, dateReceived);
     const plannedSubmissionDate = parseDate(year, submissionDeadlineRaw);
     const tenderSubmittedDate = parseDate(year, tenderSubmittedRaw);
-    const rfpReceivedDisplay = buildRfpReceivedDisplay(year, dateReceived, rfpDate);
+    const rfpReceivedDisplay = buildDateDisplay(year, dateReceived, rfpDate);
+    const plannedSubmissionDisplay = buildDateDisplay(year, submissionDeadlineRaw, plannedSubmissionDate);
+    const tenderSubmittedDisplay = buildDateDisplay(year, tenderSubmittedRaw, tenderSubmittedDate);
 
     const tender = {
       opportunityRefNo: getValue(colIndices.tenderNo),
@@ -404,7 +406,9 @@ export async function syncTendersFromGraph(config) {
         dateReceived,
         rfpReceivedDisplay,
         submissionDeadlineRaw,
+        plannedSubmissionDisplay,
         tenderSubmittedRaw,
+        tenderSubmittedDisplay,
         rowSnapshot,
       },
       syncedAt: new Date(),

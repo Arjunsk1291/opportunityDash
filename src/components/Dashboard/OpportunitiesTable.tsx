@@ -106,7 +106,11 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   };
 
   const getSubmissionDisplay = (tender: Opportunity) => {
-    return tender.tenderSubmittedDate || tender.tenderPlannedSubmissionDate || '';
+    return tender.tenderSubmittedDate
+      || tender.tenderPlannedSubmissionDate
+      || (typeof tender.rawGraphData?.tenderSubmittedDisplay === 'string' ? tender.rawGraphData.tenderSubmittedDisplay : '')
+      || (typeof tender.rawGraphData?.plannedSubmissionDisplay === 'string' ? tender.rawGraphData.plannedSubmissionDisplay : '')
+      || '';
   };
 
   const normalizeComparisonText = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
@@ -380,7 +384,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                       setRefSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
                     }}
                   >
-                    Ref No.
+                    AVE No.
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </TableHead>
@@ -440,7 +444,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         </div>
                         {getAdnocRftNo(tender) ? (
                           <div className="truncate font-mono text-[10px] sm:text-xs text-muted-foreground" title={getAdnocRftNo(tender)}>
-                            ADNOC RFT NO: {getAdnocRftNo(tender)}
+                            ADNOC Ref No: {getAdnocRftNo(tender)}
                           </div>
                         ) : null}
                       </div>
@@ -518,7 +522,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
           </Table>
         </div>
         <div className="p-2 sm:p-3 text-xs sm:text-sm text-muted-foreground border-t bg-background">
-          Showing by {sortBy === 'ref' ? `Ref No. (${refSortOrder.toUpperCase()})` : `RFP Received (${rfpSortOrder.toUpperCase()})`}: {visibleData.length} of {data.length} tenders
+          Showing by {sortBy === 'ref' ? `AVE No. (${refSortOrder.toUpperCase()})` : `RFP Received (${rfpSortOrder.toUpperCase()})`}: {visibleData.length} of {data.length} tenders
           {!showConvertedEoiRows && visibleData.length !== filteredData.length ? ` (${filteredData.length - visibleData.length} converted EOI row${filteredData.length - visibleData.length === 1 ? '' : 's'} hidden)` : ''}
           {' '} (scroll to view all)
         </div>

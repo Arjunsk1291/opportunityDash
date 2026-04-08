@@ -55,6 +55,14 @@ const getRfpReceivedDisplay = (opp: Opportunity) => (
   || ''
 );
 
+const getSubmissionDisplay = (opp: Opportunity) => (
+  opp.tenderSubmittedDate
+  || opp.tenderPlannedSubmissionDate
+  || (typeof opp.rawGraphData?.tenderSubmittedDisplay === 'string' ? opp.rawGraphData.tenderSubmittedDisplay : '')
+  || (typeof opp.rawGraphData?.plannedSubmissionDisplay === 'string' ? opp.rawGraphData.plannedSubmissionDisplay : '')
+  || ''
+);
+
 export function ExportButton({ data, filename = 'opportunities' }: ExportButtonProps) {
   const { currency, convertValue } = useCurrency();
   const { getApprovalStatus } = useApproval();
@@ -64,22 +72,19 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
     const currencySymbol = currency === 'AED' ? 'AED' : 'USD';
 
     return [
-      { id: 'refNo', label: 'Ref No', getValue: (opp) => opp.opportunityRefNo },
-      { id: 'adnocRftNo', label: 'ADNOC RFT NO', getValue: (opp) => getAdnocRftNo(opp) },
+      { id: 'refNo', label: 'AVE No.', getValue: (opp) => opp.opportunityRefNo },
+      { id: 'adnocRftNo', label: 'ADNOC Ref No.', getValue: (opp) => getAdnocRftNo(opp) },
       { id: 'tenderName', label: 'Tender Name', getValue: (opp) => opp.tenderName },
+      { id: 'tenderType', label: 'Tender Type', getValue: (opp) => opp.opportunityClassification || '' },
       { id: 'client', label: 'Client', getValue: (opp) => opp.clientName },
       { id: 'clientType', label: 'Client Type', getValue: (opp) => opp.clientType },
       { id: 'status', label: 'Status', getValue: (opp) => opp.canonicalStage },
       { id: 'group', label: 'Group', getValue: (opp) => opp.groupClassification },
       { id: 'lead', label: 'Lead', getValue: (opp) => opp.internalLead || 'Unassigned' },
       { id: 'value', label: `Value (${currencySymbol})`, getValue: (opp) => Math.round(convertValue(opp.opportunityValue)) },
-      { id: 'probability', label: 'Probability (%)', getValue: (opp) => opp.probability },
-      { id: 'expectedValue', label: `Expected Value (${currencySymbol})`, getValue: (opp) => Math.round(convertValue(opp.expectedValue)) },
       { id: 'rfpReceived', label: 'RFP Received', getValue: (opp) => getRfpReceivedDisplay(opp) },
-      { id: 'plannedSubmission', label: 'Planned Submission', getValue: (opp) => opp.tenderPlannedSubmissionDate || '' },
-      { id: 'submittedDate', label: 'Submitted Date', getValue: (opp) => opp.tenderSubmittedDate || '' },
+      { id: 'submission', label: 'Submission', getValue: (opp) => getSubmissionDisplay(opp) },
       { id: 'lastContact', label: 'Last Contact', getValue: (opp) => opp.lastContactDate || '' },
-      { id: 'atRisk', label: 'At Risk', getValue: (opp) => (opp.isAtRisk ? 'Yes' : 'No') },
       { id: 'approvalStatus', label: 'Approval Status', getValue: (opp) => (getApprovalStatus(opp.id) === 'approved' ? 'Approved' : 'Pending') },
       { id: 'partner', label: 'Partner', getValue: (opp) => opp.partnerName || '' },
       { id: 'remarksReason', label: 'Remarks/Reason', getValue: (opp) => opp.remarksReason || '' },
