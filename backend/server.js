@@ -14,7 +14,7 @@ import LoginLog from './models/LoginLog.js';
 import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
 import ProjectUpdate from './models/ProjectUpdate.js';
-import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
+import { buildDateDisplay, parseDate as parseGraphDate, syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
@@ -644,8 +644,18 @@ const buildNotificationKey = (opportunity) => {
 const parseDateValue = (value) => {
   if (!value) return null;
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
-  const raw = String(value).trim();
+  const raw = String(value).replace(/\u00A0/g, ' ').replace(/[–—]/g, '-').trim();
   if (!raw) return null;
+
+  const hasExplicitYear = /\b(19|20)\d{2}\b/.test(raw) || /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(raw);
+  if (!hasExplicitYear) {
+    const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (iso) {
+      const parsedIso = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
+      return Number.isNaN(parsedIso.getTime()) ? null : parsedIso;
+    }
+    return null;
+  }
 
   const parsed = new Date(raw);
   if (!Number.isNaN(parsed.getTime())) return parsed;
@@ -683,6 +693,35 @@ const getTenderReceivedDate = (opportunity) => (
   parseDateValue(opportunity?.dateTenderReceived)
   || parseDateValue(opportunity?.rawGraphData?.rowSnapshot?.['DATE TENDER RECD'])
 );
+
+const applyOpportunityDateFields = (opportunity = {}) => {
+  const rawGraphData = opportunity?.rawGraphData || {};
+  const year = rawGraphData?.year || '';
+  const dateReceived = rawGraphData?.dateReceived;
+  const submissionDeadlineRaw = rawGraphData?.submissionDeadlineRaw;
+  const tenderSubmittedRaw = rawGraphData?.tenderSubmittedRaw;
+
+  if (!year && dateReceived === undefined && submissionDeadlineRaw === undefined && tenderSubmittedRaw === undefined) {
+    return opportunity;
+  }
+
+  const dateTenderReceived = parseGraphDate(year, dateReceived) || opportunity?.dateTenderReceived || null;
+  const tenderPlannedSubmissionDate = parseGraphDate(year, submissionDeadlineRaw) || opportunity?.tenderPlannedSubmissionDate || null;
+  const tenderSubmittedDate = parseGraphDate(year, tenderSubmittedRaw) || opportunity?.tenderSubmittedDate || null;
+
+  return {
+    ...opportunity,
+    dateTenderReceived,
+    tenderPlannedSubmissionDate,
+    tenderSubmittedDate,
+    rawGraphData: {
+      ...rawGraphData,
+      rfpReceivedDisplay: buildDateDisplay(year, dateReceived, dateTenderReceived),
+      plannedSubmissionDisplay: buildDateDisplay(year, submissionDeadlineRaw, tenderPlannedSubmissionDate),
+      tenderSubmittedDisplay: buildDateDisplay(year, tenderSubmittedRaw, tenderSubmittedDate),
+    },
+  };
+};
 
 const isTenderRecentForTelecast = (opportunity, now = new Date()) => {
   const received = getTenderReceivedDate(opportunity);
@@ -4201,7 +4240,7 @@ app.get('/api/opportunities', async (req, res) => {
     }
 
     const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
-    const mapped = opportunities.map((opp) => mapIdField(applyOpportunityStatusFields(opp)));
+    const mapped = opportunities.map((opp) => mapIdField(applyOpportunityDateFields(applyOpportunityStatusFields(opp))));
     res.json(mapped);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -4395,7 +4434,7 @@ app.post('/api/clients/seed', verifyToken, async (req, res) => {
 
 app.get('/api/opportunities/stats', verifyToken, async (req, res) => {
   try {
-    const opportunities = (await SyncedOpportunity.find().lean()).map((opp) => applyOpportunityStatusFields(opp));
+    const opportunities = (await SyncedOpportunity.find().lean()).map((opp) => applyOpportunityDateFields(applyOpportunityStatusFields(opp)));
     const totalTenders = opportunities.length;
     const totalValue = opportunities.reduce((sum, opp) => sum + (opp.opportunityValue || 0), 0);
     const lastSync = opportunities[0]?.syncedAt || null;

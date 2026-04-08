@@ -13,7 +13,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Opportunity } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
-import { useApproval } from '@/contexts/ApprovalContext';
 import * as XLSX from 'xlsx';
 import { getRawAvenirStatus, getRawTenderResult } from '@/lib/opportunityStatus';
 
@@ -66,7 +65,6 @@ const getSubmissionDisplay = (opp: Opportunity) => (
 
 export function ExportButton({ data, filename = 'opportunities' }: ExportButtonProps) {
   const { currency, convertValue } = useCurrency();
-  const { getApprovalStatus } = useApproval();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const columns = useMemo<ExportColumn[]>(() => {
@@ -78,7 +76,6 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       { id: 'tenderName', label: 'Tender Name', getValue: (opp) => opp.tenderName },
       { id: 'tenderType', label: 'Tender Type', getValue: (opp) => opp.opportunityClassification || '' },
       { id: 'client', label: 'Client', getValue: (opp) => opp.clientName },
-      { id: 'clientType', label: 'Client Type', getValue: (opp) => opp.clientType },
       { id: 'avenirStatus', label: 'AVENIR STATUS', getValue: (opp) => getRawAvenirStatus(opp) },
       { id: 'tenderResult', label: 'TENDER RESULT', getValue: (opp) => getRawTenderResult(opp) },
       { id: 'group', label: 'Group', getValue: (opp) => opp.groupClassification },
@@ -86,13 +83,8 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       { id: 'value', label: `Value (${currencySymbol})`, getValue: (opp) => Math.round(convertValue(opp.opportunityValue)) },
       { id: 'rfpReceived', label: 'RFP Received', getValue: (opp) => getRfpReceivedDisplay(opp) },
       { id: 'submission', label: 'Submission', getValue: (opp) => getSubmissionDisplay(opp) },
-      { id: 'lastContact', label: 'Last Contact', getValue: (opp) => opp.lastContactDate || '' },
-      { id: 'approvalStatus', label: 'Approval Status', getValue: (opp) => (getApprovalStatus(opp.id) === 'approved' ? 'Approved' : 'Pending') },
-      { id: 'partner', label: 'Partner', getValue: (opp) => opp.partnerName || '' },
-      { id: 'remarksReason', label: 'Remarks/Reason', getValue: (opp) => opp.remarksReason || '' },
-      { id: 'comments', label: 'Comments', getValue: (opp) => opp.comments || '' },
     ];
-  }, [convertValue, currency, getApprovalStatus]);
+  }, [convertValue, currency]);
 
   const [selectedColumnIds, setSelectedColumnIds] = useState<string[]>(() => columns.map((column) => column.id));
 

@@ -21,7 +21,7 @@ function normalizeDateText(value) {
     .trim();
 }
 
-function parseDate(year, dateValue) {
+export function parseDate(year, dateValue) {
   if (dateValue === null || dateValue === undefined || String(dateValue).trim() === '' || String(dateValue).trim() === '-') {
     return null;
   }
@@ -124,7 +124,7 @@ function parseDate(year, dateValue) {
   return null;
 }
 
-function buildDateDisplay(year, dateValue, isoDate) {
+export function buildDateDisplay(year, dateValue, isoDate) {
   if (isoDate) return isoDate;
 
   if (dateValue instanceof Date && !Number.isNaN(dateValue.getTime())) {

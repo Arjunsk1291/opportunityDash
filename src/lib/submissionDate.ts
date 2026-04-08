@@ -2,7 +2,7 @@ import { Opportunity } from '@/data/opportunityData';
 
 function parseFlexibleDate(raw?: string | null): Date | null {
   if (!raw) return null;
-  const value = String(raw).trim();
+  const value = String(raw).replace(/\u00A0/g, ' ').replace(/[–—]/g, '-').trim();
   if (!value) return null;
 
   const iso = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -16,10 +16,25 @@ function parseFlexibleDate(raw?: string | null): Date | null {
     const day = Number(dayFirst[1]);
     const month = Number(dayFirst[2]) - 1;
     const yearRaw = dayFirst[3];
-    const year = yearRaw ? (yearRaw.length === 2 ? Number(`20${yearRaw}`) : Number(yearRaw)) : new Date().getFullYear();
+    if (!yearRaw) return null;
+    const year = yearRaw.length === 2 ? Number(`20${yearRaw}`) : Number(yearRaw);
     const d = new Date(year, month, day);
     return Number.isNaN(d.getTime()) ? null : d;
   }
+
+  const dayMonthTextWithYear = value.match(/^(\d{1,2})[-/\s](\w+)[-/\s](\d{2,4})$/i);
+  if (dayMonthTextWithYear) {
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const month = months.indexOf(dayMonthTextWithYear[2].slice(0, 3).toLowerCase());
+    if (month < 0) return null;
+    const yearRaw = dayMonthTextWithYear[3];
+    const year = yearRaw.length === 2 ? Number(`20${yearRaw}`) : Number(yearRaw);
+    const d = new Date(year, month, Number(dayMonthTextWithYear[1]));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const hasExplicitYear = /\b(19|20)\d{2}\b/.test(value) || /[/\-.]\d{2}$/.test(value);
+  if (!hasExplicitYear) return null;
 
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;

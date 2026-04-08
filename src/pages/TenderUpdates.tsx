@@ -14,7 +14,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useData } from '@/contexts/DataContext';
 import type { Opportunity } from '@/data/opportunityData';
-import { getDisplayResult, getDisplayStatus, isEoiNormalizedOpportunity } from '@/lib/opportunityStatus';
+import { getDisplayResult, getDisplayStatus, getStatusBadgeClass } from '@/lib/opportunityStatus';
 import {
   createProjectUpdate,
   getLastUpdate,
@@ -42,18 +42,6 @@ type TrackerTender = {
   remarksReason: string;
   year: number | null;
   rawOpportunity: Opportunity;
-};
-
-const STATUS_STYLES: Record<string, string> = {
-  AWARDED: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  WORKING: 'bg-amber-100 text-amber-800 border-amber-200',
-  ONGOING: 'bg-blue-100 text-blue-800 border-blue-200',
-  SUBMITTED: 'bg-violet-100 text-violet-800 border-violet-200',
-  'TO START': 'bg-cyan-100 text-cyan-800 border-cyan-200',
-  LOST: 'bg-rose-100 text-rose-800 border-rose-200',
-  REGRETTED: 'bg-slate-200 text-slate-800 border-slate-300',
-  'HOLD/CLOSED': 'bg-zinc-200 text-zinc-800 border-zinc-300',
-  'HOLD / CLOSED': 'bg-zinc-200 text-zinc-800 border-zinc-300',
 };
 
 const UPDATE_TYPE_LABELS: Record<ProjectUpdateType, string> = {
@@ -358,9 +346,7 @@ export default function TenderUpdates() {
                 {filteredTenders.map((tender) => {
                   const lastUpdate = getLastUpdate(tender.id, tender.refNo, projectUpdates);
                   const updatesCount = getUpdateCount(tender.id, tender.refNo, projectUpdates);
-                  const badgeClass = isEoiNormalizedOpportunity(tender.rawOpportunity)
-                    ? 'bg-gradient-to-r from-violet-100 to-fuchsia-100 text-violet-900 border-violet-300'
-                    : (STATUS_STYLES[tender.avenirStatus] || 'bg-slate-100 text-slate-800 border-slate-200');
+                  const badgeClass = getStatusBadgeClass(tender.avenirStatus, tender.rawOpportunity);
 
                   return (
                     <TableRow
@@ -441,9 +427,7 @@ export default function TenderUpdates() {
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Badge
                     variant="outline"
-                    className={isEoiNormalizedOpportunity(selectedTender.rawOpportunity)
-                      ? 'bg-gradient-to-r from-violet-100 to-fuchsia-100 text-violet-900 border-violet-300'
-                      : (STATUS_STYLES[selectedTender.avenirStatus] || '')}
+                    className={getStatusBadgeClass(selectedTender.avenirStatus, selectedTender.rawOpportunity)}
                   >
                     {selectedTender.avenirStatus || '—'}
                   </Badge>

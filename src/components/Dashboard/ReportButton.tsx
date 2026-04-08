@@ -44,6 +44,24 @@ const getAdnocRftNo = (opp: Opportunity) => String(
   || '',
 ).trim();
 
+const parseReportDate = (value?: string | null) => {
+  if (!value) return null;
+  const raw = String(value).replace(/\u00A0/g, ' ').replace(/[–—]/g, '-').trim();
+  if (!raw) return null;
+
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) {
+    const parsedIso = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return Number.isNaN(parsedIso.getTime()) ? null : parsedIso;
+  }
+
+  const hasExplicitYear = /\b(19|20)\d{2}\b/.test(raw) || /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(raw);
+  if (!hasExplicitYear) return null;
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 type ReportDurationKey = '30d' | '90d' | '180d' | '365d' | 'all';
 
 const REPORT_DURATION_OPTIONS: Array<{ key: ReportDurationKey; label: string; description: string; days: number | null }> = [
@@ -64,8 +82,8 @@ const getReportReferenceDate = (opp: Opportunity) => {
 
   for (const candidate of candidates) {
     if (!candidate) continue;
-    const parsed = new Date(candidate);
-    if (!Number.isNaN(parsed.getTime())) return parsed;
+    const parsed = parseReportDate(candidate);
+    if (parsed) return parsed;
   }
 
   return null;

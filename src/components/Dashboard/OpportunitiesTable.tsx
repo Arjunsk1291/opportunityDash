@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import styles from './OpportunitiesTable.module.css';
-import { getDisplayStatus, isEoiNormalizedOpportunity } from '@/lib/opportunityStatus';
+import { getDisplayStatus, getStatusBadgeClass } from '@/lib/opportunityStatus';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -209,24 +209,6 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       return !convertedTenderExists;
     });
   }, [filteredData, showConvertedEoiRows]);
-
-  const getStatusBadge = (tender: Opportunity, status: string) => {
-    if (isEoiNormalizedOpportunity(tender)) {
-      return 'border border-violet-300 bg-gradient-to-r from-violet-100 to-fuchsia-100 text-violet-900';
-    }
-    const upperStatus = status?.toUpperCase() || '';
-    const variants: Record<string, string> = {
-      'AWARDED': 'bg-success/20 text-success',
-      'WORKING': 'bg-warning/20 text-warning',
-      'TO START': 'bg-info/20 text-info',
-      'SUBMITTED': 'bg-pending/20 text-pending',
-      'ONGOING': 'bg-warning/20 text-warning',
-      'LOST': 'bg-destructive/20 text-destructive',
-      'HOLD / CLOSED': 'bg-muted text-muted-foreground',
-      'REGRETTED': 'bg-muted text-muted-foreground',
-    };
-    return variants[upperStatus] || 'bg-muted text-muted-foreground';
-  };
 
   const getTenderTypeBadge = (type?: string) => {
     const key = String(type || '').toUpperCase();
@@ -464,7 +446,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     <TableCell className="hidden xl:table-cell px-2 sm:px-3">{tender.internalLead || 'Unassigned'}</TableCell>
                     <TableCell className="px-2 sm:px-3 text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
                     <TableCell className="px-2 sm:px-3">
-                      <Badge className={`max-w-[8rem] truncate ${getStatusBadge(tender, getMergedStatus(tender))}`}>{getMergedStatus(tender) || '—'}</Badge>
+                      <Badge className={`max-w-[8rem] truncate ${getStatusBadgeClass(getMergedStatus(tender), tender)}`}>{getMergedStatus(tender) || '—'}</Badge>
                     </TableCell>
                     <TableCell className="hidden md:table-cell px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
                       {tender.remarksReason ? (
