@@ -92,18 +92,6 @@ export const PROBABILITY_BY_STAGE: Record<string, number> = {
 
 const normalizeTenderName = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
 
-const getMergedStatus = (opp: Opportunity) => {
-  const tenderResult = String(opp.tenderResult || '').trim().toUpperCase();
-  const merged = String((tenderResult && tenderResult !== 'UNKNOWN') ? tenderResult : (opp.avenirStatus || opp.canonicalStage || '')).trim().toUpperCase();
-  return merged;
-};
-
-const isQuotedValueStatus = (opp: Opportunity) => {
-  const mergedStatus = getMergedStatus(opp);
-  if (!mergedStatus) return true;
-  return mergedStatus === 'AWARDED' || mergedStatus === 'SUBMITTED' || !(mergedStatus in STATUS_MAPPING);
-};
-
 const getOpportunityTimestamp = (opp: Opportunity) => {
   const dateCandidates = [opp.tenderSubmittedDate, opp.dateTenderReceived, opp.tenderPlannedSubmissionDate];
 
@@ -121,8 +109,6 @@ const sumQuotedValueWithDedup = (data: Opportunity[]) => {
   let untitledIndex = 0;
 
   data.forEach((opp) => {
-    if (!isQuotedValueStatus(opp)) return;
-
     const normalizedName = normalizeTenderName(opp.tenderName);
     const key = normalizedName || `__untitled__${opp.id || untitledIndex++}`;
     const current = uniqueTenders.get(key);
