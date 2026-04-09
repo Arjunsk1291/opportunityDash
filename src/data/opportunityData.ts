@@ -91,6 +91,9 @@ export const PROBABILITY_BY_STAGE: Record<string, number> = {
 };
 
 const normalizeTenderName = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
+const normalizeRefNo = (value: string | null | undefined) => String(value || '').trim().toUpperCase();
+const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_EOI$/i, '');
+const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(normalizeRefNo(value));
 
 const getOpportunityTimestamp = (opp: Opportunity) => {
   const dateCandidates = [opp.tenderSubmittedDate, opp.dateTenderReceived, opp.tenderPlannedSubmissionDate];
@@ -104,16 +107,54 @@ const getOpportunityTimestamp = (opp: Opportunity) => {
   return 0;
 };
 
+const getDedupBusinessKey = (opp: Opportunity, untitledIndex: number) => {
+  const normalizedName = normalizeTenderName(opp.tenderName);
+  const baseRefNo = getBaseRefNo(opp.opportunityRefNo);
+  if (baseRefNo && normalizedName) return `${baseRefNo}::${normalizedName}`;
+  if (baseRefNo) return baseRefNo;
+  if (normalizedName) return normalizedName;
+  return `__untitled__${opp.id || untitledIndex}`;
+};
+
+const getDedupPriority = (opp: Opportunity) => {
+  const value = Number(opp.opportunityValue || 0);
+  const hasMeaningfulValue = value > 0 ? 1 : 0;
+  const isTenderType = String(opp.opportunityClassification || '').trim().toUpperCase() === 'TENDER' ? 1 : 0;
+  const isConvertedTender = isEoiRefNo(opp.opportunityRefNo) ? 0 : 1;
+  const timestamp = getOpportunityTimestamp(opp);
+
+  return [
+    hasMeaningfulValue,
+    isConvertedTender,
+    isTenderType,
+    value,
+    timestamp,
+  ];
+};
+
+const shouldReplaceDedupCandidate = (candidate: Opportunity, current: Opportunity) => {
+  const candidatePriority = getDedupPriority(candidate);
+  const currentPriority = getDedupPriority(current);
+
+  for (let index = 0; index < candidatePriority.length; index += 1) {
+    const candidateScore = candidatePriority[index];
+    const currentScore = currentPriority[index];
+    if (candidateScore > currentScore) return true;
+    if (candidateScore < currentScore) return false;
+  }
+
+  return false;
+};
+
 const sumQuotedValueWithDedup = (data: Opportunity[]) => {
   const uniqueTenders = new Map<string, Opportunity>();
   let untitledIndex = 0;
 
   data.forEach((opp) => {
-    const normalizedName = normalizeTenderName(opp.tenderName);
-    const key = normalizedName || `__untitled__${opp.id || untitledIndex++}`;
+    const key = getDedupBusinessKey(opp, untitledIndex++);
     const current = uniqueTenders.get(key);
 
-    if (!current || getOpportunityTimestamp(opp) >= getOpportunityTimestamp(current)) {
+    if (!current || shouldReplaceDedupCandidate(opp, current)) {
       uniqueTenders.set(key, opp);
     }
   });
