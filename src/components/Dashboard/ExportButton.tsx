@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Opportunity } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import * as XLSX from 'xlsx';
@@ -63,9 +64,14 @@ const getSubmissionDisplay = (opp: Opportunity) => (
   || ''
 );
 
+const normalizeComparisonText = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
+const getBaseRefNo = (value: string | null | undefined) => String(value || '').trim().replace(/_EOI$/i, '');
+const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(String(value || '').trim());
+
 export function ExportButton({ data, filename = 'opportunities' }: ExportButtonProps) {
   const { currency, convertValue } = useCurrency();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [includeConvertedEoiDuplicates, setIncludeConvertedEoiDuplicates] = useState(false);
 
   const columns = useMemo<ExportColumn[]>(() => {
     const currencySymbol = currency === 'AED' ? 'AED' : 'USD';
@@ -95,12 +101,34 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
     });
   }, [columns]);
 
+  const exportableData = useMemo(() => {
+    if (includeConvertedEoiDuplicates) return data;
+
+    return data.filter((opp) => {
+      if (!isEoiRefNo(opp.opportunityRefNo)) return true;
+
+      const baseRefNo = normalizeComparisonText(getBaseRefNo(opp.opportunityRefNo));
+      const tenderName = normalizeComparisonText(opp.tenderName);
+      if (!baseRefNo || !tenderName) return true;
+
+      const convertedTenderExists = data.some((candidate) => (
+        candidate.id !== opp.id
+        && !isEoiRefNo(candidate.opportunityRefNo)
+        && normalizeComparisonText(candidate.opportunityRefNo) === baseRefNo
+        && normalizeComparisonText(candidate.tenderName) === tenderName
+        && normalizeComparisonText(candidate.opportunityClassification) === 'tender'
+      ));
+
+      return !convertedTenderExists;
+    });
+  }, [data, includeConvertedEoiDuplicates]);
+
   const handleExport = () => {
     const selectedColumns = columns.filter((column) => selectedColumnIds.includes(column.id));
     if (!selectedColumns.length) return;
 
     const seenSignatures = new Set<string>();
-    const exportData = data.reduce<Array<Record<string, string | number>>>((rows, opp) => {
+    const exportData = exportableData.reduce<Array<Record<string, string | number>>>((rows, opp) => {
       const row = Object.fromEntries(
         selectedColumns.map((column) => [column.label, column.getValue(opp)]),
       );
@@ -140,11 +168,25 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
           <DialogHeader>
             <DialogTitle>Export opportunity columns</DialogTitle>
             <DialogDescription>
-              Choose which columns to export for the current filtered result set. {data.length} row{data.length === 1 ? '' : 's'} will be included.
+              Choose which columns to export for the current filtered result set. {exportableData.length} row{exportableData.length === 1 ? '' : 's'} will be included.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
+            <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Include converted EOI duplicates</p>
+                <p className="text-xs text-muted-foreground">
+                  Turn this on to export both `_EOI` rows and their converted tender rows.
+                </p>
+              </div>
+              <Switch
+                checked={includeConvertedEoiDuplicates}
+                onCheckedChange={setIncludeConvertedEoiDuplicates}
+                aria-label="Include converted EOI duplicates"
+              />
+            </div>
+
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-muted-foreground">
                 {selectedColumnIds.length} of {columns.length} columns selected
@@ -193,7 +235,7 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
             <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" onClick={handleExport} disabled={!data.length || !selectedColumnIds.length}>
+            <Button type="button" onClick={handleExport} disabled={!exportableData.length || !selectedColumnIds.length}>
               Export selected columns
             </Button>
           </DialogFooter>
