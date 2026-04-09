@@ -177,7 +177,7 @@ const Dashboard = () => {
       <KPICards stats={stats} onKPIClick={handleKPIClick} />
 
       {/* Opportunities Table */}
-      <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
+      <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} responsiveMode="dashboard" />
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">

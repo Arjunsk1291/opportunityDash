@@ -25,6 +25,7 @@ interface OpportunitiesTableProps {
   onSelectOpportunity?: (opp: Opportunity) => void;
   scrollContainerClassName?: string;
   maxHeight?: string;
+  responsiveMode?: 'default' | 'dashboard';
 }
 
 const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
@@ -62,7 +63,13 @@ const getPostBidBadgeClass = (detailType?: string) => {
   }
 };
 
-export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-96' }: OpportunitiesTableProps) {
+export function OpportunitiesTable({
+  data,
+  onSelectOpportunity,
+  scrollContainerClassName,
+  maxHeight = 'max-h-96',
+  responsiveMode = 'default',
+}: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [showConvertedEoiRows, setShowConvertedEoiRows] = useState(false);
@@ -87,6 +94,10 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
     client: '',
     submitter: '',
   });
+
+  const postBidColumnClass = responsiveMode === 'dashboard'
+    ? 'hidden min-[1750px]:table-cell'
+    : 'hidden 2xl:table-cell';
 
   useEffect(() => {
     if (!token) return;
@@ -499,7 +510,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     'Approval'
                   )}
                 </TableHead>
-                <TableHead className="hidden 2xl:table-cell px-2 sm:px-3 font-bold">Post bid details</TableHead>
+                <TableHead className={`${postBidColumnClass} px-2 sm:px-3 font-bold`}>Post bid details</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -566,7 +577,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         onRevert={() => revertApproval(tender.opportunityRefNo)}
                       />
                     </TableCell>
-                    <TableCell className="hidden 2xl:table-cell px-2 sm:px-3 max-w-[220px]" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className={`${postBidColumnClass} px-2 sm:px-3 max-w-[220px]`} onClick={(e) => e.stopPropagation()}>
                       <PostBidDetailsCell
                         detailType={tender.postBidDetailType}
                         detailOther={tender.postBidDetailOther}
