@@ -32,6 +32,10 @@ const syncedOpportunitySchema = new mongoose.Schema(
     rawTenderResult: { type: String, default: '' },
     avenirStatus: String,  // ✅ NEW: AVENIR STATUS from Google Sheets
     tenderResult: String,  // ✅ NEW: TENDER RESULT from Google Sheets
+    postBidDetailType: { type: String, default: '' },
+    postBidDetailOther: { type: String, default: '' },
+    postBidDetailUpdatedBy: { type: String, default: '' },
+    postBidDetailUpdatedAt: { type: Date, default: null },
     remarksReason: String,
     comments: String,
     combinedStatuses: [String],  // ✅ NEW: Array of both statuses (no double count)

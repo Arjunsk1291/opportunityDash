@@ -735,10 +735,31 @@ const TELECAST_TEMPLATE_KEYWORDS = [
   '{{TENDER_NO}}', '{{TENDER_NAME}}', '{{CLIENT}}', '{{GROUP}}', '{{TENDER_TYPE}}', '{{DATE_TENDER_RECD}}', '{{SUBMISSION_DATE}}', '{{YEAR}}', '{{LEAD}}', '{{OPPORTUNITY_ID}}', '{{COMMENTS}}',
 ];
 
+const POST_BID_DETAIL_TYPES = [
+  'TECHNICAL_CLARIFICATION_MEETING',
+  'TECHNICAL_PRESENTATION',
+  'NO_RESPONSE',
+  'OTHER',
+];
+
+const normalizePostBidDetailType = (value) => {
+  const normalized = String(value || '').trim().toUpperCase().replace(/\s+/g, '_');
+  return POST_BID_DETAIL_TYPES.includes(normalized) ? normalized : '';
+};
+
 const normalizeEmailList = (value) => {
   if (!value) return [];
   const parts = Array.isArray(value) ? value : String(value).split(/[\n,;]+/g);
   return [...new Set(parts.map((v) => String(v || '').trim().toLowerCase()).filter(Boolean))];
+};
+
+const canEditPostBidDetails = (config, user) => {
+  const role = String(user?.role || '').toUpperCase();
+  if (role === 'MASTER') return true;
+  const email = String(user?.email || '').trim().toLowerCase();
+  if (!email) return false;
+  const allowedEmails = normalizeEmailList(config?.postBidAllowedEmails || []);
+  return allowedEmails.includes(email);
 };
 
 const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -4183,6 +4204,79 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
     res.json({ success: true, recipients: recipients.length });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to send issue report' });
+  }
+});
+
+app.get('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
+  try {
+    let config = await SystemConfig.findOne();
+    if (!config) config = await SystemConfig.create({});
+    const allowedEmails = normalizeEmailList(config.postBidAllowedEmails || []);
+    res.json({
+      allowedEmails,
+      canEdit: canEditPostBidDetails(config, req.user),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
+  try {
+    if (String(req.user?.role || '').toUpperCase() !== 'MASTER') {
+      return res.status(403).json({ error: 'Only Master users can manage post-bid assignees' });
+    }
+
+    let config = await SystemConfig.findOne();
+    if (!config) config = await SystemConfig.create({});
+
+    config.postBidAllowedEmails = normalizeEmailList(req.body?.emails || []);
+    config.updatedBy = req.user?.email || req.user?.displayName || 'unknown';
+    config.lastUpdatedBy = req.user?.email || req.user?.displayName || 'unknown';
+    await config.save();
+
+    res.json({ success: true, allowedEmails: config.postBidAllowedEmails });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/opportunities/:id/post-bid-details', verifyToken, async (req, res) => {
+  try {
+    let config = await SystemConfig.findOne();
+    if (!config) config = await SystemConfig.create({});
+
+    if (!canEditPostBidDetails(config, req.user)) {
+      return res.status(403).json({ error: 'You are not allowed to update post-bid details' });
+    }
+
+    const detailType = normalizePostBidDetailType(req.body?.detailType);
+    const otherText = String(req.body?.otherText || '').trim();
+
+    if (detailType === 'OTHER' && !otherText) {
+      return res.status(400).json({ error: 'Other detail text is required' });
+    }
+
+    const opportunity = await SyncedOpportunity.findById(req.params.id);
+    if (!opportunity) {
+      return res.status(404).json({ error: 'Opportunity not found' });
+    }
+
+    const approval = await Approval.findOne({ opportunityRefNo: opportunity.opportunityRefNo }).lean();
+    if (String(approval?.status || 'pending') !== 'fully_approved') {
+      return res.status(400).json({ error: 'Post-bid details can only be updated after full approval' });
+    }
+
+    opportunity.postBidDetailType = detailType;
+    opportunity.postBidDetailOther = detailType === 'OTHER' ? otherText : '';
+    opportunity.postBidDetailUpdatedBy = req.user?.email || req.user?.displayName || 'unknown';
+    opportunity.postBidDetailUpdatedAt = detailType ? new Date() : null;
+    await opportunity.save();
+
+    const saved = mapIdField(applyOpportunityDateFields(applyOpportunityStatusFields(opportunity.toObject())));
+    res.json({ success: true, opportunity: saved });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 

@@ -326,6 +326,8 @@ export default function Admin() {
   const [draftPageEmailPermissions, setDraftPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
   const [draftActionPermissions, setDraftActionPermissions] = useState<Record<ActionKey, UserRole[]>>(DEFAULT_ACTION_ROLE_ACCESS as Record<ActionKey, UserRole[]>);
   const [draftActionEmailPermissions, setDraftActionEmailPermissions] = useState<Record<ActionKey, string[]>>({} as Record<ActionKey, string[]>);
+  const [postBidAllowedEmails, setPostBidAllowedEmails] = useState<string[]>([]);
+  const [postBidSaving, setPostBidSaving] = useState(false);
 
   const tabConfig = useMemo(
     () => ([
@@ -373,6 +375,7 @@ export default function Admin() {
     if (activeTab === 'users') {
       loadLeadEmailSuggestions();
       loadAssignedLeadEmails();
+      loadPostBidConfig();
     }
   }, [activeTab, canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -473,6 +476,10 @@ export default function Admin() {
   };
 
   const canManageLeadEmails = canPerformAction('lead_email_manage');
+  const approvedUsers = useMemo(
+    () => users.filter((candidate) => candidate.status === 'approved'),
+    [users],
+  );
 
   const loadUsers = async () => {
     if (!token) return;
@@ -544,6 +551,61 @@ export default function Admin() {
     } finally {
       setAssignedLeadLoading(false);
     }
+  };
+
+  const loadPostBidConfig = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/opportunities/post-bid-config', {
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load post-bid assignees');
+      }
+      const data = await response.json();
+      setPostBidAllowedEmails(Array.isArray(data?.allowedEmails) ? data.allowedEmails : []);
+    } catch (error) {
+      console.error('❌ Error loading post-bid assignees:', error);
+      toast.error((error as Error).message || 'Failed to load post-bid assignees');
+    }
+  };
+
+  const savePostBidConfig = async () => {
+    if (!token) return;
+    setPostBidSaving(true);
+    try {
+      const response = await fetch(API_URL + '/opportunities/post-bid-config', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ emails: postBidAllowedEmails }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to save post-bid assignees');
+      }
+      setPostBidAllowedEmails(Array.isArray(data?.allowedEmails) ? data.allowedEmails : []);
+      toast.success('Post-bid assignees updated.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to save post-bid assignees');
+    } finally {
+      setPostBidSaving(false);
+    }
+  };
+
+  const togglePostBidAllowedEmail = (email: string, checked: boolean) => {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    setPostBidAllowedEmails((prev) => {
+      const current = new Set(prev);
+      if (checked) current.add(normalizedEmail);
+      else current.delete(normalizedEmail);
+      return Array.from(current).sort();
+    });
   };
 
   const approveLeadEmailMapping = async (suggestion: LeadEmailSuggestion) => {
@@ -2074,6 +2136,67 @@ export default function Admin() {
                   <Button onClick={saveActionPermissions}>Save Action Permissions</Button>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Post-Bid Detail Assignees</CardTitle>
+              <CardDescription>Only Master can choose who may enter post-bid details after a tender is fully approved.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+                Allowed users can update the dashboard-only <strong>Post bid details</strong> column with:
+                {' '}Technical Clarification meeting, Technical presentation, No response, or Other.
+              </div>
+              <div className="overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-14 text-center">Allow</TableHead>
+                      <TableHead>User</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Group</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {approvedUsers.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                          No approved users available.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {approvedUsers.map((candidate) => {
+                      const email = String(candidate.email || '').trim().toLowerCase();
+                      return (
+                        <TableRow key={`post-bid-${candidate._id}`}>
+                          <TableCell className="text-center">
+                            <Checkbox
+                              checked={postBidAllowedEmails.includes(email)}
+                              onCheckedChange={(checked) => togglePostBidAllowedEmail(email, Boolean(checked))}
+                              disabled={!isMaster}
+                            />
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">{candidate.email}</TableCell>
+                          <TableCell>{candidate.role}</TableCell>
+                          <TableCell>{candidate.assignedGroup || '—'}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-muted-foreground">
+                  Selected: {postBidAllowedEmails.length}
+                </div>
+                {isMaster && (
+                  <Button onClick={savePostBidConfig} disabled={postBidSaving}>
+                    Save Post-Bid Assignees
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
 

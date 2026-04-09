@@ -70,6 +70,7 @@ const systemConfigSchema = new mongoose.Schema(
     pageEmailAccess: { type: Object, default: {} },
     actionRoleAccess: { type: Object, default: {} },
     actionEmailAccess: { type: Object, default: {} },
+    postBidAllowedEmails: { type: [String], default: [] },
     lastUpdatedBy: { type: String, default: null },
     updatedBy: { type: String, default: null },
   },

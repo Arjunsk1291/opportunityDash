@@ -54,6 +54,10 @@ export interface Opportunity {
   rawTenderResult?: string;
   avenirStatus?: string;
   tenderResult?: string;
+  postBidDetailType?: string;
+  postBidDetailOther?: string;
+  postBidDetailUpdatedBy?: string;
+  postBidDetailUpdatedAt?: string | null;
   combinedStatuses?: string[];
   rawGraphData?: {
     year?: string;

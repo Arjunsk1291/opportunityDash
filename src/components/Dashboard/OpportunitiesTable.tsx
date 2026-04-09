@@ -30,6 +30,22 @@ interface OpportunitiesTableProps {
 const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+const POST_BID_OTHER = 'OTHER';
+const POST_BID_OPTIONS = [
+  { value: 'TECHNICAL_CLARIFICATION_MEETING', label: 'Technical Clarification meeting' },
+  { value: 'TECHNICAL_PRESENTATION', label: 'Technical presentation' },
+  { value: 'NO_RESPONSE', label: 'No response' },
+  { value: POST_BID_OTHER, label: 'Other' },
+] as const;
+
+const getPostBidLabel = (detailType?: string, detailOther?: string) => {
+  const normalized = String(detailType || '').trim().toUpperCase();
+  if (normalized === POST_BID_OTHER) {
+    const otherValue = String(detailOther || '').trim();
+    return otherValue ? `Other: ${otherValue}` : 'Other';
+  }
+  return POST_BID_OPTIONS.find((option) => option.value === normalized)?.label || '';
+};
 
 export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-96' }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
@@ -46,6 +62,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   const [isBulkOpen, setIsBulkOpen] = useState(false);
   const [bulkMode, setBulkMode] = useState<'approve' | 'revert'>('approve');
   const [bulkAction, setBulkAction] = useState<'proposal_head' | 'svp'>(isSVP && !isMaster ? 'svp' : 'proposal_head');
+  const [postBidCanEdit, setPostBidCanEdit] = useState(false);
+  const [postBidSavingId, setPostBidSavingId] = useState<string | null>(null);
   const [bulkFilters, setBulkFilters] = useState({
     dateFrom: '',
     dateTo: '',
@@ -54,6 +72,35 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
     client: '',
     submitter: '',
   });
+
+  useEffect(() => {
+    if (!token) return;
+
+    let mounted = true;
+    const loadPostBidConfig = async () => {
+      try {
+        const response = await fetch(API_URL + '/opportunities/post-bid-config', {
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.error || 'Failed to load post-bid permissions');
+        }
+        if (!mounted) return;
+        setPostBidCanEdit(Boolean(payload?.canEdit));
+      } catch (error) {
+        console.error('❌ Failed to load post-bid permissions:', error);
+      }
+    };
+
+    loadPostBidConfig();
+    return () => {
+      mounted = false;
+    };
+  }, [token]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -295,6 +342,34 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
     }
   };
 
+  const savePostBidDetails = async (tender: Opportunity, detailType: string, otherText = '') => {
+    if (!token) return;
+    setPostBidSavingId(tender.id);
+    try {
+      const response = await fetch(`${API_URL}/opportunities/${encodeURIComponent(tender.id)}/post-bid-details`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          detailType,
+          otherText,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to save post-bid details');
+      }
+      await refreshData({ background: true });
+      toast.success('Post-bid details updated.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to save post-bid details');
+    } finally {
+      setPostBidSavingId(null);
+    }
+  };
+
   return (
     <Card className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
       <CardHeader className="pb-3">
@@ -358,10 +433,10 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       </CardHeader>
       <CardContent className="p-0 flex-1 flex flex-col overflow-hidden min-w-0">
         <div className={`${scrollContainerClassName || ''} w-full min-w-0 overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
-          <Table className="w-full min-w-0 table-fixed text-xs sm:text-sm lg:table-auto">
+          <Table className="w-full min-w-[92rem] table-fixed text-xs sm:text-sm">
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
-                <TableHead className="px-2 sm:px-3 font-bold">
+                <TableHead className="w-[8.5rem] px-2 sm:px-3 font-bold">
                   <button
                     type="button"
                     className="inline-flex items-center gap-1 text-primary hover:text-primary/80"
@@ -374,11 +449,11 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </TableHead>
-                <TableHead className="px-2 sm:px-3 font-bold">Tender Name</TableHead>
-                <TableHead className="hidden md:table-cell px-2 sm:px-3 font-bold">Tender Type</TableHead>
-                <TableHead className="px-2 sm:px-3 font-bold">Client</TableHead>
-                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">Group</TableHead>
-                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">
+                <TableHead className="w-[19rem] px-2 sm:px-3 font-bold">Tender Name</TableHead>
+                <TableHead className="hidden md:table-cell w-[8.5rem] px-2 sm:px-3 font-bold">Tender Type</TableHead>
+                <TableHead className="w-[10rem] px-2 sm:px-3 font-bold">Client</TableHead>
+                <TableHead className="hidden lg:table-cell w-[7rem] px-2 sm:px-3 font-bold">Group</TableHead>
+                <TableHead className="hidden lg:table-cell w-[8.5rem] px-2 sm:px-3 font-bold">
                   <button
                     type="button"
                     className="inline-flex items-center gap-1 text-primary hover:text-primary/80"
@@ -391,12 +466,12 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </TableHead>
-                <TableHead className="hidden xl:table-cell px-2 sm:px-3 font-bold">Submission</TableHead>
-                <TableHead className="hidden xl:table-cell px-2 sm:px-3 font-bold">Lead</TableHead>
-                <TableHead className="px-2 sm:px-3 text-right font-bold">Value</TableHead>
-                <TableHead className="px-2 sm:px-3 font-bold">Status</TableHead>
-                <TableHead className="hidden md:table-cell px-2 sm:px-3 font-bold">Remarks</TableHead>
-                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">
+                <TableHead className="hidden xl:table-cell w-[8.5rem] px-2 sm:px-3 font-bold">Submission</TableHead>
+                <TableHead className="hidden xl:table-cell w-[8rem] px-2 sm:px-3 font-bold">Lead</TableHead>
+                <TableHead className="w-[10rem] px-2 sm:px-3 text-right font-bold">Value</TableHead>
+                <TableHead className="w-[9rem] px-2 sm:px-3 font-bold">Status</TableHead>
+                <TableHead className="hidden md:table-cell w-[5rem] px-2 sm:px-3 font-bold">Remarks</TableHead>
+                <TableHead className="hidden lg:table-cell w-[10rem] px-2 sm:px-3 font-bold">
                   {canBulkApprove ? (
                     <button
                       type="button"
@@ -409,6 +484,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     'Approval'
                   )}
                 </TableHead>
+                <TableHead className="hidden lg:table-cell w-[13rem] px-2 sm:px-3 font-bold">Post bid details</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -421,8 +497,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => onSelectOpportunity?.(tender)}
                   >
-                    <TableCell className="px-2 sm:px-3 max-w-[120px] truncate font-mono text-xs sm:text-sm font-bold text-blue-600 dark:text-blue-400">{tender.opportunityRefNo || '—'}</TableCell>
-                    <TableCell className="px-2 sm:px-3 max-w-[180px] sm:max-w-[250px] min-w-0">
+                    <TableCell className="w-[8.5rem] px-2 sm:px-3 truncate font-mono text-xs sm:text-sm font-bold text-blue-600 dark:text-blue-400">{tender.opportunityRefNo || '—'}</TableCell>
+                    <TableCell className="w-[19rem] px-2 sm:px-3 min-w-0">
                       <div className="min-w-0 space-y-1">
                         <div className="truncate" title={tender.tenderName || ''}>
                           {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
@@ -434,21 +510,21 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell px-2 sm:px-3">
+                    <TableCell className="hidden md:table-cell w-[8.5rem] px-2 sm:px-3">
                       <Badge className={`max-w-[8rem] truncate text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="px-2 sm:px-3 max-w-[100px] sm:max-w-[140px] truncate font-semibold text-foreground">{tender.clientName || '—'}</TableCell>
-                    <TableCell className="hidden lg:table-cell px-2 sm:px-3">
+                    <TableCell className="w-[10rem] px-2 sm:px-3 truncate font-semibold text-foreground">{tender.clientName || '—'}</TableCell>
+                    <TableCell className="hidden lg:table-cell w-[7rem] px-2 sm:px-3">
                       <Badge className={`max-w-[6rem] truncate text-xs font-mono ${getGroupBadge(tender.groupClassification)}`}>{tender.groupClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell px-2 sm:px-3 font-bold text-xs sm:text-sm">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
-                    <TableCell className="hidden xl:table-cell px-2 sm:px-3 font-bold text-xs sm:text-sm">{getSubmissionDisplay(tender) || '—'}</TableCell>
-                    <TableCell className="hidden xl:table-cell px-2 sm:px-3">{tender.internalLead || 'Unassigned'}</TableCell>
-                    <TableCell className="px-2 sm:px-3 text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
-                    <TableCell className="px-2 sm:px-3">
+                    <TableCell className="hidden lg:table-cell w-[8.5rem] px-2 sm:px-3 font-bold text-xs sm:text-sm">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
+                    <TableCell className="hidden xl:table-cell w-[8.5rem] px-2 sm:px-3 font-bold text-xs sm:text-sm">{getSubmissionDisplay(tender) || '—'}</TableCell>
+                    <TableCell className="hidden xl:table-cell w-[8rem] px-2 sm:px-3 truncate">{tender.internalLead || 'Unassigned'}</TableCell>
+                    <TableCell className="w-[10rem] px-2 sm:px-3 text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
+                    <TableCell className="w-[9rem] px-2 sm:px-3">
                       <Badge className={`max-w-[8rem] truncate ${getStatusBadgeClass(getMergedStatus(tender), tender)}`}>{getMergedStatus(tender) || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="hidden md:table-cell w-[5rem] px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
                       {tender.remarksReason ? (
                         <Popover>
                           <PopoverTrigger asChild>
@@ -463,7 +539,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         </Popover>
                       ) : '—'}
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="hidden lg:table-cell w-[10rem] px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
                       <ApprovalCell
                         approvalStatus={approvalStatus}
                         approvalState={approvalState}
@@ -473,6 +549,18 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         onApproveProposalHead={() => approveAsProposalHead(tender.opportunityRefNo)}
                         onApproveSVP={() => approveAsSVP(tender.opportunityRefNo, tender.groupClassification)}
                         onRevert={() => revertApproval(tender.opportunityRefNo)}
+                      />
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell w-[13rem] px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
+                      <PostBidDetailsCell
+                        detailType={tender.postBidDetailType}
+                        detailOther={tender.postBidDetailOther}
+                        updatedBy={tender.postBidDetailUpdatedBy}
+                        updatedAt={tender.postBidDetailUpdatedAt}
+                        isApproved={approvalStatus === 'fully_approved'}
+                        canEdit={postBidCanEdit}
+                        isSaving={postBidSavingId === tender.id}
+                        onSave={(detailType, otherText) => savePostBidDetails(tender, detailType, otherText)}
                       />
                     </TableCell>
                   </TableRow>
@@ -675,6 +763,121 @@ function ApprovalCell({ approvalStatus, canProposalHeadApprove, canSVPApprove, c
           <Clock className="h-3 w-3" />
           Pending TM
         </Badge>
+      )}
+    </div>
+  );
+}
+
+interface PostBidDetailsCellProps {
+  detailType?: string;
+  detailOther?: string;
+  updatedBy?: string;
+  updatedAt?: string | null;
+  isApproved: boolean;
+  canEdit: boolean;
+  isSaving: boolean;
+  onSave: (detailType: string, otherText?: string) => void;
+}
+
+function PostBidDetailsCell({
+  detailType,
+  detailOther,
+  updatedBy,
+  updatedAt,
+  isApproved,
+  canEdit,
+  isSaving,
+  onSave,
+}: PostBidDetailsCellProps) {
+  const normalizedType = String(detailType || '').trim().toUpperCase();
+  const [draftType, setDraftType] = useState(normalizedType || '__none__');
+  const [draftOther, setDraftOther] = useState(String(detailOther || ''));
+
+  useEffect(() => {
+    setDraftType(normalizedType || '__none__');
+    setDraftOther(String(detailOther || ''));
+  }, [normalizedType, detailOther]);
+
+  const displayValue = getPostBidLabel(detailType, detailOther);
+
+  if (!isApproved) {
+    return <span className="text-xs text-muted-foreground">After approval</span>;
+  }
+
+  if (!canEdit) {
+    return (
+      <div className="space-y-1">
+        <div className="truncate text-xs font-medium" title={displayValue || ''}>
+          {displayValue || '—'}
+        </div>
+        {updatedBy ? (
+          <div className="truncate text-[10px] text-muted-foreground" title={updatedBy}>
+            {updatedBy}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <Select
+        disabled={isSaving}
+        value={draftType}
+        onValueChange={(nextValue) => {
+          setDraftType(nextValue);
+          if (nextValue === '__none__') {
+            setDraftOther('');
+            onSave('', '');
+            return;
+          }
+          if (nextValue !== POST_BID_OTHER) {
+            setDraftOther('');
+            onSave(nextValue, '');
+          }
+        }}
+      >
+        <SelectTrigger className="h-8 w-full text-xs">
+          <SelectValue placeholder="Select detail" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">Not set</SelectItem>
+          {POST_BID_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {draftType === POST_BID_OTHER && (
+        <div className="space-y-2">
+          <Input
+            value={draftOther}
+            onChange={(event) => setDraftOther(event.target.value)}
+            placeholder="Enter other detail"
+            className="h-8 text-xs"
+          />
+          <Button
+            size="sm"
+            className="h-7 w-full text-xs"
+            disabled={isSaving || !draftOther.trim()}
+            onClick={() => onSave(POST_BID_OTHER, draftOther.trim())}
+          >
+            Save other detail
+          </Button>
+        </div>
+      )}
+      {!draftType || draftType === '__none__' ? null : (
+        <div className="space-y-1">
+          <div className="truncate text-[11px] text-muted-foreground" title={displayValue || ''}>
+            {displayValue || '—'}
+          </div>
+          {updatedAt ? (
+            <div className="text-[10px] text-muted-foreground">
+              {new Date(updatedAt).toLocaleDateString()}
+            </div>
+          ) : null}
+        </div>
       )}
     </div>
   );
