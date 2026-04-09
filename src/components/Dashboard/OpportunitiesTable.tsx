@@ -448,7 +448,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       </CardHeader>
       <CardContent className="p-0 flex-1 flex flex-col overflow-hidden min-w-0">
         <div className={`${scrollContainerClassName || ''} w-full min-w-0 overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
-          <Table className="w-full min-w-0 table-fixed text-xs sm:text-sm lg:table-auto">
+          <Table className="w-max min-w-full text-xs sm:text-sm">
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
                 <TableHead className="px-2 sm:px-3 font-bold">
@@ -499,7 +499,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     'Approval'
                   )}
                 </TableHead>
-                <TableHead className="hidden xl:table-cell px-2 sm:px-3 font-bold">Post bid details</TableHead>
+                <TableHead className="hidden 2xl:table-cell px-2 sm:px-3 font-bold">Post bid details</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -566,7 +566,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         onRevert={() => revertApproval(tender.opportunityRefNo)}
                       />
                     </TableCell>
-                    <TableCell className="hidden xl:table-cell px-2 sm:px-3 max-w-[220px]" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="hidden 2xl:table-cell px-2 sm:px-3 max-w-[220px]" onClick={(e) => e.stopPropagation()}>
                       <PostBidDetailsCell
                         detailType={tender.postBidDetailType}
                         detailOther={tender.postBidDetailOther}
