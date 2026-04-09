@@ -64,6 +64,22 @@ const getSubmissionDisplay = (opp: Opportunity) => (
   || ''
 );
 
+const getPostBidDisplay = (opp: Opportunity) => {
+  const normalized = String(opp.postBidDetailType || '').trim().toUpperCase();
+  if (normalized === 'OTHER') {
+    const otherValue = String(opp.postBidDetailOther || '').trim();
+    return otherValue ? `Other: ${otherValue}` : 'Other';
+  }
+
+  const labels: Record<string, string> = {
+    TECHNICAL_CLARIFICATION_MEETING: 'Technical Clarification meeting',
+    TECHNICAL_PRESENTATION: 'Technical presentation',
+    NO_RESPONSE: 'No response',
+  };
+
+  return labels[normalized] || '';
+};
+
 const normalizeComparisonText = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
 const getBaseRefNo = (value: string | null | undefined) => String(value || '').trim().replace(/_EOI$/i, '');
 const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(String(value || '').trim());
@@ -88,6 +104,7 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       { id: 'value', label: `Value (${currencySymbol})`, getValue: (opp) => Math.round(convertValue(opp.opportunityValue)) },
       { id: 'rfpReceived', label: 'RFP Received', getValue: (opp) => getRfpReceivedDisplay(opp) },
       { id: 'submission', label: 'Submission', getValue: (opp) => getSubmissionDisplay(opp) },
+      { id: 'postBidDetails', label: 'Post bid details', getValue: (opp) => getPostBidDisplay(opp) },
     ];
   }, [convertValue, currency]);
 

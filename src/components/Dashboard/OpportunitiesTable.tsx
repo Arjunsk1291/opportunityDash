@@ -47,6 +47,21 @@ const getPostBidLabel = (detailType?: string, detailOther?: string) => {
   return POST_BID_OPTIONS.find((option) => option.value === normalized)?.label || '';
 };
 
+const getPostBidBadgeClass = (detailType?: string) => {
+  switch (String(detailType || '').trim().toUpperCase()) {
+    case 'TECHNICAL_CLARIFICATION_MEETING':
+      return 'border border-amber-300 bg-amber-100 text-amber-900';
+    case 'TECHNICAL_PRESENTATION':
+      return 'border border-sky-300 bg-sky-100 text-sky-900';
+    case 'NO_RESPONSE':
+      return 'border border-slate-300 bg-slate-200 text-slate-800';
+    case POST_BID_OTHER:
+      return 'border border-fuchsia-300 bg-fuchsia-100 text-fuchsia-900';
+    default:
+      return 'border border-slate-200 bg-slate-100 text-slate-700';
+  }
+};
+
 export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerClassName, maxHeight = 'max-h-96' }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -433,7 +448,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       </CardHeader>
       <CardContent className="p-0 flex-1 flex flex-col overflow-hidden min-w-0">
         <div className={`${scrollContainerClassName || ''} w-full min-w-0 overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
-          <Table className="w-full min-w-[96rem] table-fixed text-xs sm:text-sm">
+          <Table className="w-full min-w-0 table-fixed text-xs sm:text-sm lg:table-auto">
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
                 <TableHead className="w-[8.5rem] px-2 sm:px-3 font-bold">
@@ -484,7 +499,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                     'Approval'
                   )}
                 </TableHead>
-                <TableHead className="hidden lg:table-cell w-[13rem] px-2 sm:px-3 font-bold">Post bid details</TableHead>
+                <TableHead className="hidden xl:table-cell w-[13rem] px-2 sm:px-3 font-bold">Post bid details</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -551,7 +566,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
                         onRevert={() => revertApproval(tender.opportunityRefNo)}
                       />
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell w-[13rem] px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="hidden xl:table-cell w-[13rem] px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
                       <PostBidDetailsCell
                         detailType={tender.postBidDetailType}
                         detailOther={tender.postBidDetailOther}
@@ -807,9 +822,13 @@ function PostBidDetailsCell({
   if (!canEdit) {
     return (
       <div className="space-y-1">
-        <div className="truncate text-xs font-medium" title={displayValue || ''}>
-          {displayValue || '—'}
-        </div>
+        {displayValue ? (
+          <Badge className={`max-w-full truncate text-[11px] font-medium ${getPostBidBadgeClass(detailType)}`} title={displayValue}>
+            {displayValue}
+          </Badge>
+        ) : (
+          <div className="truncate text-xs font-medium">—</div>
+        )}
         {updatedBy ? (
           <div className="truncate text-[10px] text-muted-foreground" title={updatedBy}>
             {updatedBy}
@@ -869,9 +888,11 @@ function PostBidDetailsCell({
       )}
       {!draftType || draftType === '__none__' ? null : (
         <div className="space-y-1">
-          <div className="truncate text-[11px] text-muted-foreground" title={displayValue || ''}>
-            {displayValue || '—'}
-          </div>
+          {displayValue ? (
+            <Badge className={`max-w-full truncate text-[11px] font-medium ${getPostBidBadgeClass(draftType)}`} title={displayValue}>
+              {displayValue}
+            </Badge>
+          ) : null}
           {updatedAt ? (
             <div className="text-[10px] text-muted-foreground">
               {new Date(updatedAt).toLocaleDateString()}
