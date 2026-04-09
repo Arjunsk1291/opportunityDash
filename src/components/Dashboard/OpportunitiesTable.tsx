@@ -433,7 +433,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
       </CardHeader>
       <CardContent className="p-0 flex-1 flex flex-col overflow-hidden min-w-0">
         <div className={`${scrollContainerClassName || ''} w-full min-w-0 overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
-          <Table className="w-full min-w-[92rem] table-fixed text-xs sm:text-sm">
+          <Table className="w-full min-w-[96rem] table-fixed text-xs sm:text-sm">
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
                 <TableHead className="w-[8.5rem] px-2 sm:px-3 font-bold">

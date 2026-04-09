@@ -15,8 +15,37 @@ export async function initializeBootSync() {
     const tenders = await syncTendersFromGraph(config);
     const opportunities = await transformTendersToOpportunities(tenders);
 
+    const existingOpportunityMeta = await SyncedOpportunity.find(
+      {},
+      {
+        opportunityRefNo: 1,
+        postBidDetailType: 1,
+        postBidDetailOther: 1,
+        postBidDetailUpdatedBy: 1,
+        postBidDetailUpdatedAt: 1,
+      }
+    ).lean();
+    const metaByRef = new Map(
+      existingOpportunityMeta
+        .map((row) => [String(row?.opportunityRefNo || '').trim().toUpperCase(), row])
+        .filter(([ref]) => Boolean(ref))
+    );
+
+    const opportunitiesForInsert = opportunities.map((opportunity) => {
+      const refKey = String(opportunity?.opportunityRefNo || '').trim().toUpperCase();
+      const metaSnapshot = refKey ? metaByRef.get(refKey) : null;
+
+      return {
+        ...opportunity,
+        postBidDetailType: metaSnapshot?.postBidDetailType || opportunity?.postBidDetailType || '',
+        postBidDetailOther: metaSnapshot?.postBidDetailOther || opportunity?.postBidDetailOther || '',
+        postBidDetailUpdatedBy: metaSnapshot?.postBidDetailUpdatedBy || opportunity?.postBidDetailUpdatedBy || '',
+        postBidDetailUpdatedAt: metaSnapshot?.postBidDetailUpdatedAt || opportunity?.postBidDetailUpdatedAt || null,
+      };
+    });
+
     await SyncedOpportunity.deleteMany({});
-    const insertResult = await SyncedOpportunity.insertMany(opportunities);
+    const insertResult = await SyncedOpportunity.insertMany(opportunitiesForInsert);
 
     await GraphSyncConfig.updateOne({ _id: config._id }, { $set: { lastSyncAt: new Date() } });
 

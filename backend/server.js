@@ -1793,6 +1793,10 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
       deadlineAlerted: 1,
       deadlineAlertedAt: 1,
       deadlineAlertedDateKey: 1,
+      postBidDetailType: 1,
+      postBidDetailOther: 1,
+      postBidDetailUpdatedBy: 1,
+      postBidDetailUpdatedAt: 1,
     }
   ).lean();
   const metaByRef = new Map(
@@ -1827,6 +1831,10 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
       deadlineAlerted: metaSnapshot?.deadlineAlerted || opportunity?.deadlineAlerted || false,
       deadlineAlertedAt: metaSnapshot?.deadlineAlertedAt || opportunity?.deadlineAlertedAt || null,
       deadlineAlertedDateKey: metaSnapshot?.deadlineAlertedDateKey || opportunity?.deadlineAlertedDateKey || '',
+      postBidDetailType: metaSnapshot?.postBidDetailType || opportunity?.postBidDetailType || '',
+      postBidDetailOther: metaSnapshot?.postBidDetailOther || opportunity?.postBidDetailOther || '',
+      postBidDetailUpdatedBy: metaSnapshot?.postBidDetailUpdatedBy || opportunity?.postBidDetailUpdatedBy || '',
+      postBidDetailUpdatedAt: metaSnapshot?.postBidDetailUpdatedAt || opportunity?.postBidDetailUpdatedAt || null,
       telecastAlerted: isAlerted,
       telecastAlertedAt,
       telecastAlertedKey: key || '',
