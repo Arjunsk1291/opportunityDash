@@ -3142,6 +3142,7 @@ const PAGE_KEYS = [
   'master_users',
   'master_data_sync',
   'master_telecast',
+  'master_export',
 ];
 const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
 const ACTION_KEYS = [
@@ -3161,6 +3162,7 @@ const ACTION_KEYS = [
   'graph_auth_write',
   'telecast_config_write',
   'telecast_auth_write',
+  'export_template_write',
   'notification_alert_flags_write',
   'lead_email_manage',
   'logs_cleanup',
@@ -3177,6 +3179,7 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
   master_users: ['Master', 'Admin'],
   master_data_sync: ['Master', 'Admin'],
   master_telecast: ['Master', 'Admin'],
+  master_export: ['Master', 'Admin'],
 };
 const DEFAULT_ACTION_ROLE_ACCESS = {
   opportunities_sync: ['Master', 'Admin'],
@@ -3195,10 +3198,58 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   graph_auth_write: ['Master'],
   telecast_config_write: ['Master'],
   telecast_auth_write: ['Master'],
+  export_template_write: ['Master'],
   notification_alert_flags_write: ['Master', 'Admin'],
   lead_email_manage: ['Master', 'Admin'],
   logs_cleanup: ['Master'],
 };
+
+const DEFAULT_EXPORT_TEMPLATE_CONFIG = {
+  sheetName: 'Opportunities',
+  title: 'Opportunity Export',
+  introText: 'Generated from the Avenir dashboard export.',
+  showLogo: true,
+  logoDataUrl: '',
+  headerBackgroundColor: '#1D4ED8',
+  headerTextColor: '#FFFFFF',
+  titleColor: '#0F172A',
+  introColor: '#475569',
+};
+
+const normalizeHexColor = (value, fallback) => {
+  const candidate = String(value || '').trim();
+  return /^#([0-9a-f]{6})$/i.test(candidate) ? candidate.toUpperCase() : fallback;
+};
+
+const normalizeExportTemplateConfig = (input = {}) => {
+  const logoDataUrl = String(input.logoDataUrl || '').trim();
+  const safeLogo = /^data:image\/(?:png|jpeg|jpg);base64,[a-z0-9+/=]+$/i.test(logoDataUrl) && logoDataUrl.length <= 2_000_000
+    ? logoDataUrl
+    : '';
+  return {
+    sheetName: String(input.sheetName || DEFAULT_EXPORT_TEMPLATE_CONFIG.sheetName).trim() || DEFAULT_EXPORT_TEMPLATE_CONFIG.sheetName,
+    title: String(input.title || DEFAULT_EXPORT_TEMPLATE_CONFIG.title).trim() || DEFAULT_EXPORT_TEMPLATE_CONFIG.title,
+    introText: String(input.introText || DEFAULT_EXPORT_TEMPLATE_CONFIG.introText).trim(),
+    showLogo: input.showLogo ?? DEFAULT_EXPORT_TEMPLATE_CONFIG.showLogo,
+    logoDataUrl: safeLogo,
+    headerBackgroundColor: normalizeHexColor(input.headerBackgroundColor, DEFAULT_EXPORT_TEMPLATE_CONFIG.headerBackgroundColor),
+    headerTextColor: normalizeHexColor(input.headerTextColor, DEFAULT_EXPORT_TEMPLATE_CONFIG.headerTextColor),
+    titleColor: normalizeHexColor(input.titleColor, DEFAULT_EXPORT_TEMPLATE_CONFIG.titleColor),
+    introColor: normalizeHexColor(input.introColor, DEFAULT_EXPORT_TEMPLATE_CONFIG.introColor),
+  };
+};
+
+const getExportTemplateConfigResponse = (config) => normalizeExportTemplateConfig({
+  sheetName: config?.exportTemplateSheetName,
+  title: config?.exportTemplateTitle,
+  introText: config?.exportTemplateIntroText,
+  showLogo: config?.exportTemplateShowLogo,
+  logoDataUrl: config?.exportTemplateLogoDataUrl,
+  headerBackgroundColor: config?.exportTemplateHeaderBackgroundColor,
+  headerTextColor: config?.exportTemplateHeaderTextColor,
+  titleColor: config?.exportTemplateTitleColor,
+  introColor: config?.exportTemplateIntroColor,
+});
 
 const sanitizePageRoleAccess = (input = {}) => {
   const normalized = {};
@@ -3531,6 +3582,45 @@ app.post('/api/reporting/config', verifyToken, async (req, res) => {
         description: style.description,
         colors: style.colors,
       })),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/export-template/config', verifyToken, async (_req, res) => {
+  try {
+    const config = await getSystemConfig();
+    res.json({
+      success: true,
+      ...getExportTemplateConfigResponse(config),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/export-template/config', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'export_template_write')) return;
+
+    const templateConfig = normalizeExportTemplateConfig(req.body || {});
+    const config = await getSystemConfig();
+    config.exportTemplateSheetName = templateConfig.sheetName;
+    config.exportTemplateTitle = templateConfig.title;
+    config.exportTemplateIntroText = templateConfig.introText;
+    config.exportTemplateShowLogo = templateConfig.showLogo;
+    config.exportTemplateLogoDataUrl = templateConfig.logoDataUrl;
+    config.exportTemplateHeaderBackgroundColor = templateConfig.headerBackgroundColor;
+    config.exportTemplateHeaderTextColor = templateConfig.headerTextColor;
+    config.exportTemplateTitleColor = templateConfig.titleColor;
+    config.exportTemplateIntroColor = templateConfig.introColor;
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({
+      success: true,
+      ...getExportTemplateConfigResponse(config),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

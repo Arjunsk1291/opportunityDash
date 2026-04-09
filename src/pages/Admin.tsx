@@ -9,8 +9,9 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, type ChangeEvent } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -19,6 +20,8 @@ import { DEFAULT_PAGE_ROLE_ACCESS, PAGE_GROUPS, PAGE_LABELS, PageKey } from '@/c
 import { UserRole } from '@/contexts/AuthContext';
 import { ACTION_DESCRIPTIONS, ACTION_LABELS, ActionKey, DEFAULT_ACTION_ROLE_ACCESS } from '@/config/actionPermissions';
 import { RecipientBlockSelector } from '@/components/Admin/RecipientBlockSelector';
+import defaultExportLogo from '@/assets/avenir-logo.png';
+import { DEFAULT_EXPORT_TEMPLATE, ExportTemplateConfig, normalizeExportTemplate } from '@/lib/exportTemplate';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -155,6 +158,9 @@ interface NotificationSyncStatus {
   lastNewRowsPreview?: NotificationRowPreview[];
   telecastEligibleRowsPreview?: NotificationRowPreview[];
 }
+
+const EXPORT_TEMPLATE_PREVIEW_HEADERS = ['Avenir Ref', 'Tender Name', 'Client', 'Status', 'RFP Received'];
+const EXPORT_TEMPLATE_PREVIEW_ROW = ['AC26144', 'HSE MONITORING SYSTEM', 'L&T', 'Submitted', '2026-04-07'];
 
 const DEFAULT_TELECAST_TEMPLATE_STYLE: TelecastTemplateStyle = {
   key: 'avenir_blue',
@@ -328,6 +334,8 @@ export default function Admin() {
   const [draftActionEmailPermissions, setDraftActionEmailPermissions] = useState<Record<ActionKey, string[]>>({} as Record<ActionKey, string[]>);
   const [postBidAllowedEmails, setPostBidAllowedEmails] = useState<string[]>([]);
   const [postBidSaving, setPostBidSaving] = useState(false);
+  const [exportTemplate, setExportTemplate] = useState<ExportTemplateConfig>(DEFAULT_EXPORT_TEMPLATE);
+  const [exportTemplateSaving, setExportTemplateSaving] = useState(false);
 
   const tabConfig = useMemo(
     () => ([
@@ -335,6 +343,7 @@ export default function Admin() {
       { value: 'users', label: 'User Management', pageKey: 'master_users' as PageKey },
       { value: 'data-sync', label: 'Data Sync', pageKey: 'master_data_sync' as PageKey },
       { value: 'telecast', label: '📣 Telecast', pageKey: 'master_telecast' as PageKey },
+      { value: 'export', label: 'Export', pageKey: 'master_export' as PageKey },
     ]),
     [],
   );
@@ -357,6 +366,7 @@ export default function Admin() {
       loadTelecastAuthStatus();
       loadTelecastConfig();
       loadReportingConfig();
+      loadExportTemplateConfig();
       loadNotificationStatus();
       fetchConsentUrl();
     }
@@ -476,10 +486,12 @@ export default function Admin() {
   };
 
   const canManageLeadEmails = canPerformAction('lead_email_manage');
+  const canManageExportTemplate = canPerformAction('export_template_write');
   const approvedUsers = useMemo(
     () => users.filter((candidate) => candidate.status === 'approved'),
     [users],
   );
+  const exportTemplateLogoPreview = exportTemplate.logoDataUrl || defaultExportLogo;
 
   const loadUsers = async () => {
     if (!token) return;
@@ -570,6 +582,80 @@ export default function Admin() {
     } catch (error) {
       console.error('❌ Error loading post-bid assignees:', error);
       toast.error((error as Error).message || 'Failed to load post-bid assignees');
+    }
+  };
+
+  const loadExportTemplateConfig = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/export-template/config', {
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load export template');
+      }
+      const data = await response.json();
+      setExportTemplate(normalizeExportTemplate(data));
+    } catch (error) {
+      console.error('❌ Error loading export template:', error);
+      toast.error((error as Error).message || 'Failed to load export template');
+    }
+  };
+
+  const saveExportTemplateConfig = async () => {
+    if (!token) return;
+    setExportTemplateSaving(true);
+    try {
+      const response = await fetch(API_URL + '/export-template/config', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(exportTemplate),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to save export template');
+      }
+      setExportTemplate(normalizeExportTemplate(data));
+      toast.success('Export template saved.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to save export template');
+    } finally {
+      setExportTemplateSaving(false);
+    }
+  };
+
+  const updateExportTemplateField = (field: keyof ExportTemplateConfig, value: string | boolean) => {
+    setExportTemplate((prev) => normalizeExportTemplate({ ...prev, [field]: value } as Partial<ExportTemplateConfig>));
+  };
+
+  const handleExportLogoUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!/^image\/(png|jpeg|jpg)$/i.test(file.type)) {
+      toast.error('Use a PNG or JPG logo.');
+      event.target.value = '';
+      return;
+    }
+    try {
+      const reader = new FileReader();
+      const nextDataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Failed to read logo file'));
+        reader.readAsDataURL(file);
+      });
+      updateExportTemplateField('logoDataUrl', nextDataUrl);
+      updateExportTemplateField('showLogo', true);
+      toast.success('Logo ready for export template.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to load logo file');
+    } finally {
+      event.target.value = '';
     }
   };
 
@@ -2463,6 +2549,203 @@ export default function Admin() {
             </CardContent>
           </Card>
 
+        </TabsContent>
+        )}
+
+        {allowedTabValues.has('export') && (
+        <TabsContent value="export">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+            <Card>
+              <CardHeader>
+                <CardTitle>Excel Export Template</CardTitle>
+                <CardDescription>
+                  Control the default title block, logo, intro copy, and heading styling used when dashboard exports are downloaded.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Sheet Name</Label>
+                    <Input
+                      value={exportTemplate.sheetName}
+                      onChange={(e) => updateExportTemplateField('sheetName', e.target.value)}
+                      placeholder="Opportunities"
+                      disabled={!canManageExportTemplate}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Export Title</Label>
+                    <Input
+                      value={exportTemplate.title}
+                      onChange={(e) => updateExportTemplateField('title', e.target.value)}
+                      placeholder="Opportunity Export"
+                      disabled={!canManageExportTemplate}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Intro Text</Label>
+                  <Textarea
+                    value={exportTemplate.introText}
+                    onChange={(e) => updateExportTemplateField('introText', e.target.value)}
+                    placeholder="Add any default note, summary, or cover text that should appear above the table."
+                    rows={4}
+                    disabled={!canManageExportTemplate}
+                  />
+                </div>
+
+                <div className="rounded-xl border p-4 space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium">Show logo in export</p>
+                      <p className="text-xs text-muted-foreground">PNG and JPG logos work best for Excel export.</p>
+                    </div>
+                    <Switch
+                      checked={exportTemplate.showLogo}
+                      onCheckedChange={(checked) => updateExportTemplateField('showLogo', checked)}
+                      disabled={!canManageExportTemplate}
+                    />
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+                    <div className="rounded-lg border bg-muted/30 p-3">
+                      <div className="text-xs font-medium text-muted-foreground mb-2">Logo Preview</div>
+                      <div className="flex min-h-[88px] items-center justify-center rounded-md bg-white p-3">
+                        {exportTemplate.showLogo ? (
+                          <img src={exportTemplateLogoPreview} alt="Export logo preview" className="max-h-16 w-auto object-contain" />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Logo hidden</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="export-logo-upload">Upload Logo</Label>
+                        <Input
+                          id="export-logo-upload"
+                          type="file"
+                          accept="image/png,image/jpeg"
+                          onChange={handleExportLogoUpload}
+                          disabled={!canManageExportTemplate}
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => updateExportTemplateField('logoDataUrl', '')}
+                          disabled={!canManageExportTemplate || !exportTemplate.logoDataUrl}
+                        >
+                          Use Default Logo
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setExportTemplate(DEFAULT_EXPORT_TEMPLATE)}
+                          disabled={!canManageExportTemplate}
+                        >
+                          Reset Template
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    ['headerBackgroundColor', 'Header Background'],
+                    ['headerTextColor', 'Header Text'],
+                    ['titleColor', 'Title'],
+                    ['introColor', 'Intro'],
+                  ].map(([field, label]) => (
+                    <div key={field} className="space-y-2">
+                      <Label>{label}</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="color"
+                          value={exportTemplate[field as keyof ExportTemplateConfig] as string}
+                          onChange={(e) => updateExportTemplateField(field as keyof ExportTemplateConfig, e.target.value)}
+                          disabled={!canManageExportTemplate}
+                          className="h-10 w-14 p-1"
+                        />
+                        <Input
+                          value={exportTemplate[field as keyof ExportTemplateConfig] as string}
+                          onChange={(e) => updateExportTemplateField(field as keyof ExportTemplateConfig, e.target.value)}
+                          disabled={!canManageExportTemplate}
+                          className="font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">
+                    These defaults apply to dashboard Excel exports and are stored in MongoDB.
+                  </p>
+                  <Button onClick={saveExportTemplateConfig} disabled={!canManageExportTemplate || exportTemplateSaving}>
+                    Save Export Template
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Live Preview</CardTitle>
+                <CardDescription>Quick visual preview of the heading block and table headers.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+                  <div className="space-y-4 p-5">
+                    <div className="flex items-start gap-4">
+                      {exportTemplate.showLogo && (
+                        <div className="flex h-16 w-28 items-center justify-center rounded-lg border bg-slate-50 p-3">
+                          <img src={exportTemplateLogoPreview} alt="Preview logo" className="max-h-10 w-auto object-contain" />
+                        </div>
+                      )}
+                      <div className="min-w-0 space-y-2">
+                        <div className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
+                          {exportTemplate.sheetName}
+                        </div>
+                        <h3 className="text-xl font-semibold" style={{ color: exportTemplate.titleColor }}>
+                          {exportTemplate.title}
+                        </h3>
+                        <p className="text-sm leading-6" style={{ color: exportTemplate.introColor }}>
+                          {exportTemplate.introText || 'Your intro text will appear here above the exported table.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-hidden border-t">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr style={{ backgroundColor: exportTemplate.headerBackgroundColor, color: exportTemplate.headerTextColor }}>
+                          {EXPORT_TEMPLATE_PREVIEW_HEADERS.map((header) => (
+                            <th key={header} className="px-4 py-3 text-left font-semibold">
+                              {header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-t bg-slate-50/60">
+                          {EXPORT_TEMPLATE_PREVIEW_ROW.map((cell) => (
+                            <td key={cell} className="px-4 py-3 text-slate-700">
+                              {cell}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
         )}
 
