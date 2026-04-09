@@ -147,7 +147,7 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
 
     return [
       { id: 'refNo', label: 'Avenir Ref', getValue: (opp) => getExportRefNo(opp) },
-      { id: 'adnocRftNo', label: 'ADNOC Ref', getValue: (opp) => getAdnocRftNo(opp) },
+      { id: 'adnocRftNo', label: 'CLIENT Ref', getValue: (opp) => getAdnocRftNo(opp) },
       { id: 'tenderName', label: 'Tender Name', getValue: (opp) => opp.tenderName },
       { id: 'tenderType', label: 'Tender Type', getValue: (opp) => opp.opportunityClassification || '' },
       { id: 'client', label: 'Client', getValue: (opp) => opp.clientName },
