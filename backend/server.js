@@ -3210,6 +3210,15 @@ const DEFAULT_EXPORT_TEMPLATE_CONFIG = {
   introText: 'Generated from the Avenir dashboard export.',
   showLogo: true,
   logoDataUrl: '',
+  logoRow: 1,
+  logoColumn: 1,
+  logoWidth: 150,
+  logoHeight: 46,
+  titleRow: 1,
+  titleColumn: 3,
+  introRow: 2,
+  introColumn: 3,
+  headerRow: 4,
   headerBackgroundColor: '#1D4ED8',
   headerTextColor: '#FFFFFF',
   titleColor: '#0F172A',
@@ -3221,9 +3230,15 @@ const normalizeHexColor = (value, fallback) => {
   return /^#([0-9a-f]{6})$/i.test(candidate) ? candidate.toUpperCase() : fallback;
 };
 
+const normalizeIntegerInRange = (value, fallback, min, max) => {
+  const parsed = Math.round(Number(value));
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+};
+
 const normalizeExportTemplateConfig = (input = {}) => {
   const logoDataUrl = String(input.logoDataUrl || '').trim();
-  const safeLogo = /^data:image\/(?:png|jpeg|jpg);base64,[a-z0-9+/=]+$/i.test(logoDataUrl) && logoDataUrl.length <= 2_000_000
+  const safeLogo = /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+$/i.test(logoDataUrl) && logoDataUrl.length <= 8_000_000
     ? logoDataUrl
     : '';
   return {
@@ -3232,6 +3247,15 @@ const normalizeExportTemplateConfig = (input = {}) => {
     introText: String(input.introText || DEFAULT_EXPORT_TEMPLATE_CONFIG.introText).trim(),
     showLogo: input.showLogo ?? DEFAULT_EXPORT_TEMPLATE_CONFIG.showLogo,
     logoDataUrl: safeLogo,
+    logoRow: normalizeIntegerInRange(input.logoRow, DEFAULT_EXPORT_TEMPLATE_CONFIG.logoRow, 1, 20),
+    logoColumn: normalizeIntegerInRange(input.logoColumn, DEFAULT_EXPORT_TEMPLATE_CONFIG.logoColumn, 1, 12),
+    logoWidth: normalizeIntegerInRange(input.logoWidth, DEFAULT_EXPORT_TEMPLATE_CONFIG.logoWidth, 40, 360),
+    logoHeight: normalizeIntegerInRange(input.logoHeight, DEFAULT_EXPORT_TEMPLATE_CONFIG.logoHeight, 20, 180),
+    titleRow: normalizeIntegerInRange(input.titleRow, DEFAULT_EXPORT_TEMPLATE_CONFIG.titleRow, 1, 20),
+    titleColumn: normalizeIntegerInRange(input.titleColumn, DEFAULT_EXPORT_TEMPLATE_CONFIG.titleColumn, 1, 12),
+    introRow: normalizeIntegerInRange(input.introRow, DEFAULT_EXPORT_TEMPLATE_CONFIG.introRow, 1, 24),
+    introColumn: normalizeIntegerInRange(input.introColumn, DEFAULT_EXPORT_TEMPLATE_CONFIG.introColumn, 1, 12),
+    headerRow: normalizeIntegerInRange(input.headerRow, DEFAULT_EXPORT_TEMPLATE_CONFIG.headerRow, 2, 30),
     headerBackgroundColor: normalizeHexColor(input.headerBackgroundColor, DEFAULT_EXPORT_TEMPLATE_CONFIG.headerBackgroundColor),
     headerTextColor: normalizeHexColor(input.headerTextColor, DEFAULT_EXPORT_TEMPLATE_CONFIG.headerTextColor),
     titleColor: normalizeHexColor(input.titleColor, DEFAULT_EXPORT_TEMPLATE_CONFIG.titleColor),
@@ -3245,6 +3269,15 @@ const getExportTemplateConfigResponse = (config) => normalizeExportTemplateConfi
   introText: config?.exportTemplateIntroText,
   showLogo: config?.exportTemplateShowLogo,
   logoDataUrl: config?.exportTemplateLogoDataUrl,
+  logoRow: config?.exportTemplateLogoRow,
+  logoColumn: config?.exportTemplateLogoColumn,
+  logoWidth: config?.exportTemplateLogoWidth,
+  logoHeight: config?.exportTemplateLogoHeight,
+  titleRow: config?.exportTemplateTitleRow,
+  titleColumn: config?.exportTemplateTitleColumn,
+  introRow: config?.exportTemplateIntroRow,
+  introColumn: config?.exportTemplateIntroColumn,
+  headerRow: config?.exportTemplateHeaderRow,
   headerBackgroundColor: config?.exportTemplateHeaderBackgroundColor,
   headerTextColor: config?.exportTemplateHeaderTextColor,
   titleColor: config?.exportTemplateTitleColor,
@@ -3611,6 +3644,15 @@ app.post('/api/export-template/config', verifyToken, async (req, res) => {
     config.exportTemplateIntroText = templateConfig.introText;
     config.exportTemplateShowLogo = templateConfig.showLogo;
     config.exportTemplateLogoDataUrl = templateConfig.logoDataUrl;
+    config.exportTemplateLogoRow = templateConfig.logoRow;
+    config.exportTemplateLogoColumn = templateConfig.logoColumn;
+    config.exportTemplateLogoWidth = templateConfig.logoWidth;
+    config.exportTemplateLogoHeight = templateConfig.logoHeight;
+    config.exportTemplateTitleRow = templateConfig.titleRow;
+    config.exportTemplateTitleColumn = templateConfig.titleColumn;
+    config.exportTemplateIntroRow = templateConfig.introRow;
+    config.exportTemplateIntroColumn = templateConfig.introColumn;
+    config.exportTemplateHeaderRow = templateConfig.headerRow;
     config.exportTemplateHeaderBackgroundColor = templateConfig.headerBackgroundColor;
     config.exportTemplateHeaderTextColor = templateConfig.headerTextColor;
     config.exportTemplateTitleColor = templateConfig.titleColor;

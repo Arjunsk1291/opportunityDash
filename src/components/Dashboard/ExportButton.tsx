@@ -108,6 +108,7 @@ const getExportReceivedTimestamp = (opp: Opportunity) => {
 };
 
 const stripHexHash = (value: string) => value.replace(/^#/, '').toUpperCase();
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const getWorksheetSafeName = (value: string) => {
   const sanitized = String(value || '')
@@ -253,7 +254,18 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       const worksheet = workbook.addWorksheet(getWorksheetSafeName(exportTemplate.sheetName));
       const columnCount = Math.max(selectedColumns.length, 1);
       const lastColumnIndex = columnCount;
-      const titleStartColumn = exportTemplate.showLogo && columnCount >= 3 ? 3 : 1;
+      const titleStartColumn = clamp(exportTemplate.titleColumn, 1, lastColumnIndex);
+      const introStartColumn = clamp(exportTemplate.introColumn, 1, lastColumnIndex);
+      const headerRowIndex = Math.max(
+        clamp(exportTemplate.headerRow, 2, 30),
+        exportTemplate.titleRow + 1,
+        exportTemplate.introRow + 1,
+      );
+      const titleRowIndex = clamp(exportTemplate.titleRow, 1, headerRowIndex - 1);
+      const introRowCandidate = clamp(exportTemplate.introRow, 1, headerRowIndex - 1);
+      const introRowIndex = introRowCandidate === titleRowIndex
+        ? clamp(titleRowIndex + 1, 1, headerRowIndex - 1)
+        : introRowCandidate;
 
       let logoDataUrl = '';
       if (exportTemplate.showLogo) {
@@ -264,25 +276,26 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
             extension: inferImageExtension(logoDataUrl),
           });
           worksheet.addImage(imageId, {
-            tl: { col: 0, row: 0 },
-            ext: { width: 150, height: 46 },
+            tl: { col: clamp(exportTemplate.logoColumn - 1, 0, 11), row: clamp(exportTemplate.logoRow - 1, 0, 19) },
+            ext: { width: exportTemplate.logoWidth, height: exportTemplate.logoHeight },
           });
         }
       }
 
-      worksheet.mergeCells(1, titleStartColumn, 1, lastColumnIndex);
-      worksheet.getCell(1, titleStartColumn).value = exportTemplate.title;
-      worksheet.getCell(1, titleStartColumn).font = { size: 16, bold: true, color: { argb: `FF${stripHexHash(exportTemplate.titleColor)}` } };
-      worksheet.getCell(1, titleStartColumn).alignment = { vertical: 'middle', horizontal: 'left' };
-      worksheet.getRow(1).height = 24;
+      worksheet.mergeCells(titleRowIndex, titleStartColumn, titleRowIndex, lastColumnIndex);
+      worksheet.getCell(titleRowIndex, titleStartColumn).value = exportTemplate.title;
+      worksheet.getCell(titleRowIndex, titleStartColumn).font = { size: 16, bold: true, color: { argb: `FF${stripHexHash(exportTemplate.titleColor)}` } };
+      worksheet.getCell(titleRowIndex, titleStartColumn).alignment = { vertical: 'middle', horizontal: 'left' };
+      worksheet.getRow(titleRowIndex).height = 24;
 
-      worksheet.mergeCells(2, titleStartColumn, 2, lastColumnIndex);
-      worksheet.getCell(2, titleStartColumn).value = exportTemplate.introText;
-      worksheet.getCell(2, titleStartColumn).font = { size: 11, color: { argb: `FF${stripHexHash(exportTemplate.introColor)}` } };
-      worksheet.getCell(2, titleStartColumn).alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
-      worksheet.getRow(2).height = exportTemplate.introText ? 36 : 18;
+      if (introRowIndex !== titleRowIndex) {
+        worksheet.mergeCells(introRowIndex, introStartColumn, introRowIndex, lastColumnIndex);
+        worksheet.getCell(introRowIndex, introStartColumn).value = exportTemplate.introText;
+        worksheet.getCell(introRowIndex, introStartColumn).font = { size: 11, color: { argb: `FF${stripHexHash(exportTemplate.introColor)}` } };
+        worksheet.getCell(introRowIndex, introStartColumn).alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+        worksheet.getRow(introRowIndex).height = exportTemplate.introText ? 36 : 18;
+      }
 
-      const headerRowIndex = 4;
       const headerRow = worksheet.getRow(headerRowIndex);
       selectedColumns.forEach((column, index) => {
         const cell = headerRow.getCell(index + 1);

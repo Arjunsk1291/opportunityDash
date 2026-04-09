@@ -11,6 +11,10 @@ type OpportunityApiRecord = Partial<Opportunity> & {
   opportunityRefNo?: string;
 };
 
+const shouldHideOpportunity = (opp: OpportunityApiRecord) => (
+  String(opp?.groupClassification || '').trim().toUpperCase() === 'GPS'
+);
+
 function computeSubmissionNear(opp: Partial<Opportunity>): boolean {
   return isSubmissionWithinDays(
     {
@@ -62,7 +66,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       console.log('✅ Loaded ' + data.length + ' opportunities from MongoDB');
       
       // ✅ UPDATED: Filter out opportunities with empty opportunityRefNo
-      const validData = (data as OpportunityApiRecord[]).filter((opp) => opp.opportunityRefNo && opp.opportunityRefNo.trim() !== '');
+      const validData = (data as OpportunityApiRecord[]).filter((opp) => (
+        opp.opportunityRefNo
+        && opp.opportunityRefNo.trim() !== ''
+        && !shouldHideOpportunity(opp)
+      ));
       
       const dataWithIds = validData.map((opp) => ({
         ...opp,
@@ -72,7 +80,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       
       // Log filtered count
       if (validData.length < data.length) {
-        console.log(`⚠️  Filtered out ${data.length - validData.length} opportunities with empty refNo`);
+        console.log(`⚠️  Filtered out ${data.length - validData.length} opportunities with empty refNo or hidden groups`);
       }
       
       setOpportunities(dataWithIds as Opportunity[]);

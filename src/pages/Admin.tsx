@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useState, useEffect, useMemo, type ChangeEvent } from 'react';
+import { Fragment, useState, useEffect, useMemo, type ChangeEvent } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -161,6 +161,8 @@ interface NotificationSyncStatus {
 
 const EXPORT_TEMPLATE_PREVIEW_HEADERS = ['Avenir Ref', 'Tender Name', 'Client', 'Status', 'RFP Received'];
 const EXPORT_TEMPLATE_PREVIEW_ROW = ['AC26144', 'HSE MONITORING SYSTEM', 'L&T', 'Submitted', '2026-04-07'];
+const EXPORT_PREVIEW_GRID_COLUMNS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+const EXPORT_PREVIEW_GRID_ROWS = Array.from({ length: 12 }, (_, index) => index + 1);
 
 const DEFAULT_TELECAST_TEMPLATE_STYLE: TelecastTemplateStyle = {
   key: 'avenir_blue',
@@ -630,7 +632,7 @@ export default function Admin() {
     }
   };
 
-  const updateExportTemplateField = (field: keyof ExportTemplateConfig, value: string | boolean) => {
+  const updateExportTemplateField = (field: keyof ExportTemplateConfig, value: string | boolean | number) => {
     setExportTemplate((prev) => normalizeExportTemplate({ ...prev, [field]: value } as Partial<ExportTemplateConfig>));
   };
 
@@ -2599,7 +2601,7 @@ export default function Admin() {
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <p className="text-sm font-medium">Show logo in export</p>
-                      <p className="text-xs text-muted-foreground">PNG and JPG logos work best for Excel export.</p>
+                      <p className="text-xs text-muted-foreground">PNG and JPG logos work best for Excel export. Uploaded logos are now preserved as saved data URLs.</p>
                     </div>
                     <Switch
                       checked={exportTemplate.showLogo}
@@ -2631,6 +2633,11 @@ export default function Admin() {
                           disabled={!canManageExportTemplate}
                         />
                       </div>
+                      <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                        Source:
+                        {' '}
+                        {exportTemplate.logoDataUrl ? 'Custom logo saved in MongoDB' : 'Default Avenir logo'}
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         <Button
                           type="button"
@@ -2650,6 +2657,37 @@ export default function Admin() {
                         </Button>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border p-4 space-y-4">
+                  <div>
+                    <p className="text-sm font-medium">Excel Layout Positioning</p>
+                    <p className="text-xs text-muted-foreground">Adjust the row and column where each block should appear in the exported sheet.</p>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {[
+                      ['logoRow', 'Logo Row'],
+                      ['logoColumn', 'Logo Column'],
+                      ['logoWidth', 'Logo Width'],
+                      ['logoHeight', 'Logo Height'],
+                      ['titleRow', 'Title Row'],
+                      ['titleColumn', 'Title Column'],
+                      ['introRow', 'Intro Row'],
+                      ['introColumn', 'Intro Column'],
+                      ['headerRow', 'Header Row'],
+                    ].map(([field, label]) => (
+                      <div key={field} className="space-y-2">
+                        <Label>{label}</Label>
+                        <Input
+                          type="number"
+                          value={String(exportTemplate[field as keyof ExportTemplateConfig] as number)}
+                          onChange={(e) => updateExportTemplateField(field as keyof ExportTemplateConfig, Number(e.target.value))}
+                          disabled={!canManageExportTemplate}
+                        />
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -2694,53 +2732,89 @@ export default function Admin() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Live Preview</CardTitle>
-                <CardDescription>Quick visual preview of the heading block and table headers.</CardDescription>
+                <CardTitle>Live Excel Preview</CardTitle>
+                <CardDescription>Spreadsheet-style preview using the same rows and columns that will be used during export.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-                  <div className="space-y-4 p-5">
-                    <div className="flex items-start gap-4">
-                      {exportTemplate.showLogo && (
-                        <div className="flex h-16 w-28 items-center justify-center rounded-lg border bg-slate-50 p-3">
-                          <img src={exportTemplateLogoPreview} alt="Preview logo" className="max-h-10 w-auto object-contain" />
-                        </div>
-                      )}
-                      <div className="min-w-0 space-y-2">
-                        <div className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
-                          {exportTemplate.sheetName}
-                        </div>
-                        <h3 className="text-xl font-semibold" style={{ color: exportTemplate.titleColor }}>
-                          {exportTemplate.title}
-                        </h3>
-                        <p className="text-sm leading-6" style={{ color: exportTemplate.introColor }}>
-                          {exportTemplate.introText || 'Your intro text will appear here above the exported table.'}
-                        </p>
-                      </div>
-                    </div>
+                  <div className="border-b bg-slate-50 px-4 py-3 text-xs font-medium text-slate-500">
+                    Sheet:
+                    {' '}
+                    {exportTemplate.sheetName}
                   </div>
+                  <div className="overflow-x-auto p-4">
+                    <div
+                      className="grid min-w-[640px] gap-px rounded-xl border bg-slate-200"
+                      style={{ gridTemplateColumns: `48px repeat(${EXPORT_PREVIEW_GRID_COLUMNS.length}, minmax(88px, 1fr))` }}
+                    >
+                      <div className="bg-slate-100" />
+                      {EXPORT_PREVIEW_GRID_COLUMNS.map((column) => (
+                        <div key={column} className="bg-slate-100 px-2 py-2 text-center text-xs font-semibold text-slate-500">
+                          {column}
+                        </div>
+                      ))}
 
-                  <div className="overflow-hidden border-t">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr style={{ backgroundColor: exportTemplate.headerBackgroundColor, color: exportTemplate.headerTextColor }}>
-                          {EXPORT_TEMPLATE_PREVIEW_HEADERS.map((header) => (
-                            <th key={header} className="px-4 py-3 text-left font-semibold">
-                              {header}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="border-t bg-slate-50/60">
-                          {EXPORT_TEMPLATE_PREVIEW_ROW.map((cell) => (
-                            <td key={cell} className="px-4 py-3 text-slate-700">
-                              {cell}
-                            </td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
+                      {EXPORT_PREVIEW_GRID_ROWS.map((row) => (
+                        <Fragment key={`preview-row-${row}`}>
+                          <div className="bg-slate-100 px-2 py-3 text-center text-xs font-semibold text-slate-500">
+                            {row}
+                          </div>
+                          {EXPORT_PREVIEW_GRID_COLUMNS.map((column, columnIndex) => {
+                            const currentColumn = columnIndex + 1;
+                            const isHeaderRow = row === exportTemplate.headerRow && currentColumn <= EXPORT_TEMPLATE_PREVIEW_HEADERS.length;
+                            const headerLabel = isHeaderRow ? EXPORT_TEMPLATE_PREVIEW_HEADERS[currentColumn - 1] : '';
+                            const sampleRowIndex = exportTemplate.headerRow + 1;
+                            const isSampleRow = row === sampleRowIndex && currentColumn <= EXPORT_TEMPLATE_PREVIEW_ROW.length;
+                            const sampleCell = isSampleRow ? EXPORT_TEMPLATE_PREVIEW_ROW[currentColumn - 1] : '';
+                            const showLogoCell = exportTemplate.showLogo && row === exportTemplate.logoRow && currentColumn === exportTemplate.logoColumn;
+                            const showTitleCell = row === exportTemplate.titleRow && currentColumn === exportTemplate.titleColumn;
+                            const showIntroCell = row === exportTemplate.introRow && currentColumn === exportTemplate.introColumn;
+
+                            return (
+                              <div
+                                key={`cell-${row}-${column}`}
+                                className="relative min-h-[52px] bg-white px-2 py-2 text-xs text-slate-600"
+                              >
+                                {isHeaderRow && (
+                                  <div
+                                    className="absolute inset-0 flex items-center px-2 font-semibold"
+                                    style={{ backgroundColor: exportTemplate.headerBackgroundColor, color: exportTemplate.headerTextColor }}
+                                  >
+                                    {headerLabel}
+                                  </div>
+                                )}
+                                {!isHeaderRow && isSampleRow && (
+                                  <div className="absolute inset-0 flex items-center px-2 text-slate-700">
+                                    {sampleCell}
+                                  </div>
+                                )}
+                                {!isHeaderRow && showLogoCell && (
+                                  <div className="absolute inset-1 rounded border border-sky-200 bg-sky-50 p-1">
+                                    <img
+                                      src={exportTemplateLogoPreview}
+                                      alt="Preview logo"
+                                      className="h-full max-h-[44px] w-auto object-contain"
+                                    />
+                                  </div>
+                                )}
+                                {!isHeaderRow && showTitleCell && (
+                                  <div className="absolute inset-1 overflow-hidden rounded border border-violet-200 bg-violet-50 px-2 py-1 text-sm font-semibold"
+                                    style={{ color: exportTemplate.titleColor }}>
+                                    {exportTemplate.title || 'Export title'}
+                                  </div>
+                                )}
+                                {!isHeaderRow && showIntroCell && (
+                                  <div className="absolute inset-1 overflow-hidden rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] leading-4"
+                                    style={{ color: exportTemplate.introColor }}>
+                                    {exportTemplate.introText || 'Intro text'}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </Fragment>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </CardContent>
