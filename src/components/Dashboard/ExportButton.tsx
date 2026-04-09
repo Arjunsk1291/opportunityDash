@@ -83,6 +83,25 @@ const getPostBidDisplay = (opp: Opportunity) => {
 const normalizeComparisonText = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
 const getBaseRefNo = (value: string | null | undefined) => String(value || '').trim().replace(/_EOI$/i, '');
 const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(String(value || '').trim());
+const getExportRefNo = (opp: Opportunity) => getBaseRefNo(opp.opportunityRefNo);
+
+const getExportTypeRank = (opp: Opportunity) => {
+  const normalizedType = String(opp.opportunityClassification || '').trim().toUpperCase();
+  if (normalizedType === 'TENDER') return 0;
+  if (normalizedType.includes('EOI') || isEoiRefNo(opp.opportunityRefNo)) return 1;
+  return 2;
+};
+
+const getExportReceivedTimestamp = (opp: Opportunity) => {
+  const directTimestamp = opp.dateTenderReceived ? Date.parse(opp.dateTenderReceived) : Number.NaN;
+  if (!Number.isNaN(directTimestamp)) return directTimestamp;
+
+  const display = getRfpReceivedDisplay(opp);
+  const displayTimestamp = display ? Date.parse(display) : Number.NaN;
+  if (!Number.isNaN(displayTimestamp)) return displayTimestamp;
+
+  return 0;
+};
 
 export function ExportButton({ data, filename = 'opportunities' }: ExportButtonProps) {
   const { currency, convertValue } = useCurrency();
@@ -93,7 +112,7 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
     const currencySymbol = currency === 'AED' ? 'AED' : 'USD';
 
     return [
-      { id: 'refNo', label: 'Avenir Ref', getValue: (opp) => opp.opportunityRefNo },
+      { id: 'refNo', label: 'Avenir Ref', getValue: (opp) => getExportRefNo(opp) },
       { id: 'adnocRftNo', label: 'ADNOC Ref', getValue: (opp) => getAdnocRftNo(opp) },
       { id: 'tenderName', label: 'Tender Name', getValue: (opp) => opp.tenderName },
       { id: 'tenderType', label: 'Tender Type', getValue: (opp) => opp.opportunityClassification || '' },
@@ -144,8 +163,18 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
     const selectedColumns = columns.filter((column) => selectedColumnIds.includes(column.id));
     if (!selectedColumns.length) return;
 
+    const orderedData = [...exportableData].sort((a, b) => {
+      const typeRankDiff = getExportTypeRank(a) - getExportTypeRank(b);
+      if (typeRankDiff !== 0) return typeRankDiff;
+
+      const receivedDiff = getExportReceivedTimestamp(b) - getExportReceivedTimestamp(a);
+      if (receivedDiff !== 0) return receivedDiff;
+
+      return getExportRefNo(a).localeCompare(getExportRefNo(b));
+    });
+
     const seenSignatures = new Set<string>();
-    const exportData = exportableData.reduce<Array<Record<string, string | number>>>((rows, opp) => {
+    const exportData = orderedData.reduce<Array<Record<string, string | number>>>((rows, opp) => {
       const row = Object.fromEntries(
         selectedColumns.map((column) => [column.label, column.getValue(opp)]),
       );
