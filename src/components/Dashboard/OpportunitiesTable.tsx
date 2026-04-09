@@ -16,7 +16,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Slider } from '@/components/ui/slider';
 import { toast } from 'sonner';
 import styles from './OpportunitiesTable.module.css';
 import { getDisplayStatus, getStatusBadgeClass } from '@/lib/opportunityStatus';
@@ -93,7 +92,6 @@ export function OpportunitiesTable({
   const [bulkAction, setBulkAction] = useState<'proposal_head' | 'svp'>(isSVP && !isMaster ? 'svp' : 'proposal_head');
   const [postBidCanEdit, setPostBidCanEdit] = useState(false);
   const [postBidSavingId, setPostBidSavingId] = useState<string | null>(null);
-  const [densityStep, setDensityStep] = useState(2);
   const [bulkFilters, setBulkFilters] = useState({
     dateFrom: '',
     dateTo: '',
@@ -106,7 +104,7 @@ export function OpportunitiesTable({
   const postBidColumnClass = responsiveMode === 'dashboard'
     ? 'hidden min-[1750px]:table-cell'
     : 'hidden 2xl:table-cell';
-  const densityStyle = TABLE_DENSITY_STYLES[densityStep] || TABLE_DENSITY_STYLES[2];
+  const densityStyle = TABLE_DENSITY_STYLES[1];
   const cellPaddingClass = densityStyle.cell;
   const tableTextClass = densityStyle.text;
 
@@ -429,18 +427,6 @@ export function OpportunitiesTable({
                 {showConvertedEoiRows ? 'Hide converted EOI duplicates' : 'Show converted EOI duplicates'}
               </TooltipContent>
             </Tooltip>
-            <div className="hidden min-[1100px]:flex items-center gap-2 rounded-md border px-2 py-1">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Density</span>
-              <Slider
-                value={[densityStep]}
-                min={0}
-                max={TABLE_DENSITY_STYLES.length - 1}
-                step={1}
-                className="w-24"
-                onValueChange={(value) => setDensityStep(value[0] ?? 2)}
-                aria-label="Adjust table density"
-              />
-            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <div className="relative min-w-0 w-full sm:w-auto">
