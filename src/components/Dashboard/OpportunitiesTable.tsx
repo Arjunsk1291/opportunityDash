@@ -16,6 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Slider } from '@/components/ui/slider';
 import { toast } from 'sonner';
 import styles from './OpportunitiesTable.module.css';
 import { getDisplayStatus, getStatusBadgeClass } from '@/lib/opportunityStatus';
@@ -31,6 +32,12 @@ interface OpportunitiesTableProps {
 const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+const TABLE_DENSITY_STYLES = [
+  { cell: 'px-1 sm:px-1.5', text: 'text-[10px] sm:text-[11px]' },
+  { cell: 'px-1.5 sm:px-2', text: 'text-[10px] sm:text-[11px]' },
+  { cell: 'px-2 sm:px-2.5', text: 'text-[11px] sm:text-xs' },
+  { cell: 'px-2 sm:px-3', text: 'text-[11px] sm:text-xs' },
+] as const;
 const POST_BID_OTHER = 'OTHER';
 const POST_BID_OPTIONS = [
   { value: 'TECHNICAL_CLARIFICATION_MEETING', label: 'Technical Clarification meeting' },
@@ -86,6 +93,7 @@ export function OpportunitiesTable({
   const [bulkAction, setBulkAction] = useState<'proposal_head' | 'svp'>(isSVP && !isMaster ? 'svp' : 'proposal_head');
   const [postBidCanEdit, setPostBidCanEdit] = useState(false);
   const [postBidSavingId, setPostBidSavingId] = useState<string | null>(null);
+  const [densityStep, setDensityStep] = useState(2);
   const [bulkFilters, setBulkFilters] = useState({
     dateFrom: '',
     dateTo: '',
@@ -98,6 +106,9 @@ export function OpportunitiesTable({
   const postBidColumnClass = responsiveMode === 'dashboard'
     ? 'hidden min-[1750px]:table-cell'
     : 'hidden 2xl:table-cell';
+  const densityStyle = TABLE_DENSITY_STYLES[densityStep] || TABLE_DENSITY_STYLES[2];
+  const cellPaddingClass = densityStyle.cell;
+  const tableTextClass = densityStyle.text;
 
   useEffect(() => {
     if (!token) return;
@@ -418,6 +429,18 @@ export function OpportunitiesTable({
                 {showConvertedEoiRows ? 'Hide converted EOI duplicates' : 'Show converted EOI duplicates'}
               </TooltipContent>
             </Tooltip>
+            <div className="hidden min-[1100px]:flex items-center gap-2 rounded-md border px-2 py-1">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Density</span>
+              <Slider
+                value={[densityStep]}
+                min={0}
+                max={TABLE_DENSITY_STYLES.length - 1}
+                step={1}
+                className="w-24"
+                onValueChange={(value) => setDensityStep(value[0] ?? 2)}
+                aria-label="Adjust table density"
+              />
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <div className="relative min-w-0 w-full sm:w-auto">
@@ -459,10 +482,10 @@ export function OpportunitiesTable({
       </CardHeader>
       <CardContent className="flex flex-1 min-w-0 flex-col overflow-hidden p-0">
         <div className={`${scrollContainerClassName || ''} w-full max-w-full min-w-0 overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
-          <Table className="w-max min-w-full text-xs sm:text-sm">
+          <Table className={`w-max min-w-full ${tableTextClass}`}>
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
-                <TableHead className="px-2 sm:px-3 font-bold">
+                <TableHead className={`${cellPaddingClass} font-bold`}>
                   <button
                     type="button"
                     className="inline-flex items-center gap-1 text-primary hover:text-primary/80"
@@ -475,11 +498,11 @@ export function OpportunitiesTable({
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </TableHead>
-                <TableHead className="px-2 sm:px-3 font-bold">Tender Name</TableHead>
-                <TableHead className="hidden md:table-cell px-2 sm:px-3 font-bold">Tender Type</TableHead>
-                <TableHead className="px-2 sm:px-3 font-bold">Client</TableHead>
-                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">Group</TableHead>
-                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">
+                <TableHead className={`${cellPaddingClass} font-bold`}>Tender Name</TableHead>
+                <TableHead className={`hidden md:table-cell ${cellPaddingClass} font-bold`}>Tender Type</TableHead>
+                <TableHead className={`${cellPaddingClass} font-bold`}>Client</TableHead>
+                <TableHead className={`hidden lg:table-cell ${cellPaddingClass} font-bold`}>Group</TableHead>
+                <TableHead className={`hidden lg:table-cell ${cellPaddingClass} font-bold`}>
                   <button
                     type="button"
                     className="inline-flex items-center gap-1 text-primary hover:text-primary/80"
@@ -492,12 +515,12 @@ export function OpportunitiesTable({
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </TableHead>
-                <TableHead className="hidden xl:table-cell px-2 sm:px-3 font-bold">Submission</TableHead>
-                <TableHead className="hidden xl:table-cell px-2 sm:px-3 font-bold">Lead</TableHead>
-                <TableHead className="px-2 sm:px-3 text-right font-bold">Value</TableHead>
-                <TableHead className="px-2 sm:px-3 font-bold">Status</TableHead>
-                <TableHead className="hidden md:table-cell px-2 sm:px-3 font-bold">Remarks</TableHead>
-                <TableHead className="hidden lg:table-cell px-2 sm:px-3 font-bold">
+                <TableHead className={`hidden xl:table-cell ${cellPaddingClass} font-bold`}>Submission</TableHead>
+                <TableHead className={`hidden xl:table-cell ${cellPaddingClass} font-bold`}>Lead</TableHead>
+                <TableHead className={`${cellPaddingClass} text-right font-bold`}>Value</TableHead>
+                <TableHead className={`${cellPaddingClass} font-bold`}>Status</TableHead>
+                <TableHead className={`hidden md:table-cell ${cellPaddingClass} font-bold`}>Remarks</TableHead>
+                <TableHead className={`hidden lg:table-cell ${cellPaddingClass} font-bold`}>
                   {canBulkApprove ? (
                     <button
                       type="button"
@@ -510,7 +533,7 @@ export function OpportunitiesTable({
                     'Approval'
                   )}
                 </TableHead>
-                <TableHead className={`${postBidColumnClass} px-2 sm:px-3 font-bold`}>Post bid details</TableHead>
+                <TableHead className={`${postBidColumnClass} ${cellPaddingClass} font-bold`}>Post bid details</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -523,8 +546,8 @@ export function OpportunitiesTable({
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => onSelectOpportunity?.(tender)}
                   >
-                    <TableCell className="px-2 sm:px-3 max-w-[120px] truncate font-mono text-xs sm:text-sm font-bold text-blue-600 dark:text-blue-400">{tender.opportunityRefNo || '—'}</TableCell>
-                    <TableCell className="px-2 sm:px-3 max-w-[180px] sm:max-w-[250px] min-w-0">
+                    <TableCell className={`${cellPaddingClass} max-w-[120px] truncate font-mono text-[10px] sm:text-[11px] font-bold text-blue-600 dark:text-blue-400`}>{tender.opportunityRefNo || '—'}</TableCell>
+                    <TableCell className={`${cellPaddingClass} max-w-[180px] sm:max-w-[250px] min-w-0`}>
                       <div className="min-w-0 space-y-1">
                         <div className="truncate" title={tender.tenderName || ''}>
                           {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
@@ -536,21 +559,21 @@ export function OpportunitiesTable({
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell px-2 sm:px-3">
+                    <TableCell className={`hidden md:table-cell ${cellPaddingClass}`}>
                       <Badge className={`max-w-[8rem] truncate text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="px-2 sm:px-3 max-w-[100px] sm:max-w-[140px] truncate font-semibold text-foreground">{tender.clientName || '—'}</TableCell>
-                    <TableCell className="hidden lg:table-cell px-2 sm:px-3">
+                    <TableCell className={`${cellPaddingClass} max-w-[100px] sm:max-w-[140px] truncate font-semibold text-foreground`}>{tender.clientName || '—'}</TableCell>
+                    <TableCell className={`hidden lg:table-cell ${cellPaddingClass}`}>
                       <Badge className={`max-w-[6rem] truncate text-xs font-mono ${getGroupBadge(tender.groupClassification)}`}>{tender.groupClassification || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell px-2 sm:px-3 font-bold text-xs sm:text-sm">{getRfpReceivedDisplay(tender) || '—'}</TableCell>
-                    <TableCell className="hidden xl:table-cell px-2 sm:px-3 font-bold text-xs sm:text-sm">{getSubmissionDisplay(tender) || '—'}</TableCell>
-                    <TableCell className="hidden xl:table-cell px-2 sm:px-3">{tender.internalLead || 'Unassigned'}</TableCell>
-                    <TableCell className="px-2 sm:px-3 text-right font-mono">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
-                    <TableCell className="px-2 sm:px-3">
+                    <TableCell className={`hidden lg:table-cell ${cellPaddingClass} font-bold text-[10px] sm:text-[11px]`}>{getRfpReceivedDisplay(tender) || '—'}</TableCell>
+                    <TableCell className={`hidden xl:table-cell ${cellPaddingClass} font-bold text-[10px] sm:text-[11px]`}>{getSubmissionDisplay(tender) || '—'}</TableCell>
+                    <TableCell className={`hidden xl:table-cell ${cellPaddingClass}`}>{tender.internalLead || 'Unassigned'}</TableCell>
+                    <TableCell className={`${cellPaddingClass} text-right font-mono`}>{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
+                    <TableCell className={cellPaddingClass}>
                       <Badge className={`max-w-[8rem] truncate ${getStatusBadgeClass(getMergedStatus(tender), tender)}`}>{getMergedStatus(tender) || '—'}</Badge>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className={`hidden md:table-cell ${cellPaddingClass}`} onClick={(e) => e.stopPropagation()}>
                       {tender.remarksReason ? (
                         <Popover>
                           <PopoverTrigger asChild>
@@ -565,7 +588,7 @@ export function OpportunitiesTable({
                         </Popover>
                       ) : '—'}
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell px-2 sm:px-3" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className={`hidden lg:table-cell ${cellPaddingClass}`} onClick={(e) => e.stopPropagation()}>
                       <ApprovalCell
                         approvalStatus={approvalStatus}
                         approvalState={approvalState}
@@ -577,7 +600,7 @@ export function OpportunitiesTable({
                         onRevert={() => revertApproval(tender.opportunityRefNo)}
                       />
                     </TableCell>
-                    <TableCell className={`${postBidColumnClass} px-2 sm:px-3 max-w-[220px]`} onClick={(e) => e.stopPropagation()}>
+                    <TableCell className={`${postBidColumnClass} ${cellPaddingClass} max-w-[220px]`} onClick={(e) => e.stopPropagation()}>
                       <PostBidDetailsCell
                         detailType={tender.postBidDetailType}
                         detailOther={tender.postBidDetailOther}
