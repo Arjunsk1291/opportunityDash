@@ -116,6 +116,35 @@ const getDedupBusinessKey = (opp: Opportunity, untitledIndex: number) => {
   return `__untitled__${opp.id || untitledIndex}`;
 };
 
+const normalizeComparisonText = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
+
+const hideConvertedEoiDuplicates = (data: Opportunity[]) => (
+  data.filter((opp) => {
+    if (!isEoiRefNo(opp.opportunityRefNo)) return true;
+
+    const baseRefNo = normalizeComparisonText(getBaseRefNo(opp.opportunityRefNo));
+    const tenderName = normalizeComparisonText(opp.tenderName);
+    if (!baseRefNo || !tenderName) return true;
+
+    const convertedTenderExists = data.some((candidate) => (
+      candidate.id !== opp.id
+      && !isEoiRefNo(candidate.opportunityRefNo)
+      && normalizeComparisonText(candidate.opportunityRefNo) === baseRefNo
+      && normalizeComparisonText(candidate.tenderName) === tenderName
+      && normalizeComparisonText(candidate.opportunityClassification) === 'tender'
+    ));
+
+    return !convertedTenderExists;
+  })
+);
+
+const classifyActiveTenderType = (opp: Opportunity) => {
+  const type = String(opp.opportunityClassification || '').trim().toUpperCase();
+  if (type === 'TENDER') return 'tender';
+  if (type.includes('EOI') || isEoiRefNo(opp.opportunityRefNo)) return 'eoi';
+  return 'tender';
+};
+
 const getDedupPriority = (opp: Opportunity) => {
   const value = Number(opp.opportunityValue || 0);
   const hasMeaningfulValue = value > 0 ? 1 : 0;
@@ -167,6 +196,12 @@ export function calculateSummaryStats(data: Opportunity[]) {
   const activeOpps = data.filter(o => 
     ['WORKING', 'SUBMITTED', 'AWARDED'].includes(o.canonicalStage)
   );
+  const activeVisibleOpps = hideConvertedEoiDuplicates(activeOpps);
+  const activeTenderTypeBreakdown = activeVisibleOpps.reduce((acc, opp) => {
+    const type = classifyActiveTenderType(opp);
+    acc[type] += 1;
+    return acc;
+  }, { tender: 0, eoi: 0 });
   const awardedOpps = data.filter(o => o.canonicalStage === 'AWARDED');
   const totalActiveValue = sumQuotedValueWithDedup(data);
   const awardedCount = awardedOpps.length;
@@ -197,6 +232,8 @@ export function calculateSummaryStats(data: Opportunity[]) {
 
   return {
     totalActive: activeOpps.length,
+    activeTenderCount: activeTenderTypeBreakdown.tender,
+    activeEoiCount: activeTenderTypeBreakdown.eoi,
     totalPipelineValue: totalActiveValue,
     weightedPipeline: awardedValue,
     wonCount: awardedCount,

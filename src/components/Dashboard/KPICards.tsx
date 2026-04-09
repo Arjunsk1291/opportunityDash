@@ -7,6 +7,8 @@ import aedSymbol from '@/assets/aed-symbol.png';
 interface KPICardsProps {
   stats: {
     totalActive: number;
+    activeTenderCount: number;
+    activeEoiCount: number;
     totalPipelineValue: number;
     awardedCount: number;
     awardedValue: number;
@@ -65,6 +67,10 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
     { 
       label: 'Active Tenders', 
       displayValue: stats.totalActive,
+      meta: [
+        { label: 'Tender', value: stats.activeTenderCount, tone: 'bg-blue-500' },
+        { label: 'EOI', value: stats.activeEoiCount, tone: 'bg-amber-500' },
+      ],
       Icon: Target, 
       color: 'text-primary', 
       bgColor: 'bg-primary/10', 
@@ -162,6 +168,16 @@ export function KPICards({ stats, onKPIClick }: KPICardsProps) {
                     kpi.displayValue
                   )}
                 </p>
+                {kpi.meta ? (
+                  <div className="mt-2 flex flex-wrap gap-2 text-[10px] sm:text-[11px] text-muted-foreground">
+                    {kpi.meta.map((item) => (
+                      <span key={item.label} className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2 py-0.5">
+                        <span className={`h-2 w-2 rounded-full ${item.tone}`} />
+                        {item.label} {item.value}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </div>
           </Card>
