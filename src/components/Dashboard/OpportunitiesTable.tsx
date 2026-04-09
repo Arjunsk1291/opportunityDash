@@ -386,7 +386,7 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
   };
 
   return (
-    <Card className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+    <Card className="flex w-full max-w-full flex-1 flex-col min-w-0 overflow-x-hidden">
       <CardHeader className="pb-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -446,8 +446,8 @@ export function OpportunitiesTable({ data, onSelectOpportunity, scrollContainerC
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0 flex-1 flex flex-col overflow-hidden min-w-0">
-        <div className={`${scrollContainerClassName || ''} w-full min-w-0 overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
+      <CardContent className="flex flex-1 min-w-0 flex-col overflow-hidden p-0">
+        <div className={`${scrollContainerClassName || ''} w-full max-w-full min-w-0 overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
           <Table className="w-full min-w-0 table-fixed text-xs sm:text-sm lg:table-auto">
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>

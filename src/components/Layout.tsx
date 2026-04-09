@@ -77,7 +77,7 @@ export function Layout({ children }: LayoutProps) {
           </header>
 
           {/* Main Content */}
-          <main className="flex-1 p-3 sm:p-4 lg:p-6">
+          <main className="flex-1 min-w-0 overflow-x-hidden p-3 sm:p-4 lg:p-6">
             {children}
           </main>
         </SidebarInset>
