@@ -12,14 +12,12 @@ import {
   YAxis,
 } from 'recharts';
 import {
-  Activity,
   ArrowRight,
   ChevronDown,
   ChevronUp,
   Crown,
   GitBranch,
   Hourglass,
-  Radar,
   Sparkles,
   TimerReset,
   TrendingUp,
@@ -33,19 +31,14 @@ import { useData } from '@/contexts/DataContext';
 import type { Opportunity } from '@/data/opportunityData';
 import { getDisplayStatus } from '@/lib/opportunityStatus';
 
-const PIE_COLORS = ['#10B981', '#F97316', '#94A3B8'];
+const FUNNEL_COLORS = ['#93C5FD', '#8B5CF6', '#06B6D4', '#10B981'];
+const OUTCOME_COLORS = ['#10B981', '#F97316', '#94A3B8'];
 const POST_BID_TYPE_LABELS: Record<string, string> = {
   TECHNICAL_CLARIFICATION_MEETING: 'Technical clarification',
   TECHNICAL_PRESENTATION: 'Technical presentation',
   NO_RESPONSE: 'No response',
   OTHER: 'Other',
 };
-
-const normalizeText = (value: string | null | undefined) => String(value || '').trim();
-const normalizeTextLower = (value: string | null | undefined) => normalizeText(value).toLowerCase();
-const normalizeRefNo = (value: string | null | undefined) => normalizeText(value).toUpperCase();
-const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_EOI$/i, '');
-const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(normalizeRefNo(value));
 
 type OpportunityGroup = {
   key: string;
@@ -54,14 +47,13 @@ type OpportunityGroup = {
   primary: Opportunity | null;
 };
 
-const getBusinessKey = (opp: Opportunity, index: number) => {
-  const ref = getBaseRefNo(opp.opportunityRefNo);
-  const tenderName = normalizeTextLower(opp.tenderName);
-  if (ref && tenderName) return `${ref}::${tenderName}`;
-  if (ref) return ref;
-  if (tenderName) return tenderName;
-  return `untitled-${index}`;
-};
+const normalizeText = (value: string | null | undefined) => String(value || '').trim();
+const normalizeTextLower = (value: string | null | undefined) => normalizeText(value).toLowerCase();
+const normalizeRefNo = (value: string | null | undefined) => normalizeText(value).toUpperCase();
+const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_EOI$/i, '');
+const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(normalizeRefNo(value));
+const formatPercent = (value: number) => `${value.toFixed(1)}%`;
+const safePercent = (numerator: number, denominator: number) => (denominator > 0 ? (numerator / denominator) * 100 : 0);
 
 const getTimestamp = (value: string | null | undefined) => {
   if (!value) return 0;
@@ -69,19 +61,13 @@ const getTimestamp = (value: string | null | undefined) => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
-const getMonthKey = (value: string | null | undefined) => {
-  if (!value) return '';
-  return String(value).slice(0, 7);
-};
+const getMonthKey = (value: string | null | undefined) => (value ? String(value).slice(0, 7) : '');
 
 const formatMonthLabel = (value: string) => {
   if (!value || value.length < 7) return 'Unknown';
   const parsed = new Date(`${value}-01T00:00:00`);
   return parsed.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 };
-
-const formatPercent = (value: number) => `${value.toFixed(1)}%`;
-const safePercent = (numerator: number, denominator: number) => (denominator > 0 ? (numerator / denominator) * 100 : 0);
 
 const isTenderRecord = (opp: Opportunity) => {
   const type = normalizeText(opp.opportunityClassification).toUpperCase();
@@ -117,13 +103,21 @@ const pickPrimaryOpportunity = (items: Opportunity[]) => {
   })[0];
 };
 
+const getBusinessKey = (opp: Opportunity, index: number) => {
+  const ref = getBaseRefNo(opp.opportunityRefNo);
+  const tenderName = normalizeTextLower(opp.tenderName);
+  if (ref && tenderName) return `${ref}::${tenderName}`;
+  if (ref) return ref;
+  if (tenderName) return tenderName;
+  return `untitled-${index}`;
+};
+
 const buildOpportunityGroups = (opportunities: Opportunity[]) => {
   const grouped = new Map<string, OpportunityGroup>();
 
   opportunities.forEach((opp, index) => {
     const key = getBusinessKey(opp, index);
     const current = grouped.get(key) || { key, eoiRows: [], tenderRows: [], primary: null };
-
     if (isEoiRecord(opp)) current.eoiRows.push(opp);
     if (isTenderRecord(opp)) current.tenderRows.push(opp);
     current.primary = pickPrimaryOpportunity([...current.eoiRows, ...current.tenderRows]);
@@ -133,14 +127,14 @@ const buildOpportunityGroups = (opportunities: Opportunity[]) => {
   return Array.from(grouped.values());
 };
 
-const getGroupClient = (group: OpportunityGroup) => normalizeText(group.primary?.clientName || group.eoiRows[0]?.clientName || group.tenderRows[0]?.clientName) || 'Unknown';
 const getGroupStatus = (group: OpportunityGroup) => getDisplayStatus(group.primary || {});
+const getGroupClient = (group: OpportunityGroup) => normalizeText(group.primary?.clientName || group.eoiRows[0]?.clientName || group.tenderRows[0]?.clientName) || 'Unknown';
 const getGroupValue = (group: OpportunityGroup) => Number(group.primary?.opportunityValue || group.tenderRows[0]?.opportunityValue || 0);
-const getEarliestEoiDate = (group: OpportunityGroup) => {
+const getEarliestEoiTimestamp = (group: OpportunityGroup) => {
   const timestamps = group.eoiRows.map((row) => getTimestamp(row.dateTenderReceived || row.tenderSubmittedDate)).filter(Boolean);
   return timestamps.length ? Math.min(...timestamps) : 0;
 };
-const getEarliestTenderDate = (group: OpportunityGroup) => {
+const getEarliestTenderTimestamp = (group: OpportunityGroup) => {
   const timestamps = group.tenderRows.map((row) => getTimestamp(row.dateTenderReceived || row.tenderSubmittedDate)).filter(Boolean);
   return timestamps.length ? Math.min(...timestamps) : 0;
 };
@@ -148,6 +142,7 @@ const getSubmittedTimestamp = (group: OpportunityGroup) => {
   const timestamps = group.tenderRows.map((row) => getTimestamp(row.tenderSubmittedDate)).filter(Boolean);
   return timestamps.length ? Math.min(...timestamps) : 0;
 };
+
 const hasSubmittedTender = (group: OpportunityGroup) => getSubmittedTimestamp(group) > 0;
 const isAwardedGroup = (group: OpportunityGroup) => getGroupStatus(group) === 'AWARDED';
 const isLostGroup = (group: OpportunityGroup) => {
@@ -155,12 +150,10 @@ const isLostGroup = (group: OpportunityGroup) => {
   return status === 'LOST' || status === 'REGRETTED';
 };
 const isOpenDecisionGroup = (group: OpportunityGroup) => hasSubmittedTender(group) && !isAwardedGroup(group) && !isLostGroup(group);
-
 const getDayDiff = (fromTimestamp: number, toTimestamp: number) => {
   if (!fromTimestamp || !toTimestamp || toTimestamp < fromTimestamp) return 0;
   return Math.round((toTimestamp - fromTimestamp) / (1000 * 60 * 60 * 24));
 };
-
 const average = (values: number[]) => (values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0);
 
 const categorizeLossReason = (text: string) => {
@@ -203,7 +196,6 @@ const buildPostBidTrend = (groups: OpportunityGroup[]) => {
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(-6)
     .map(([month, values]) => ({
-      ...values,
       month: formatMonthLabel(month),
       technicalClarification: values['Technical clarification'] || 0,
       technicalPresentation: values['Technical presentation'] || 0,
@@ -213,22 +205,21 @@ const buildPostBidTrend = (groups: OpportunityGroup[]) => {
 
   if (rows.length) return rows;
 
-  const fallbackCounts = groups.reduce((acc, group) => {
-    const primary = group.primary;
-    if (!primary?.postBidDetailType) return acc;
-    const label = getPostBidLabel(primary.postBidDetailType);
-    acc[label] = (acc[label] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
   return [{
     month: 'Current',
-    technicalClarification: fallbackCounts['Technical clarification'] || 0,
-    technicalPresentation: fallbackCounts['Technical presentation'] || 0,
-    noResponse: fallbackCounts['No response'] || 0,
-    other: fallbackCounts.Other || 0,
+    technicalClarification: 0,
+    technicalPresentation: 0,
+    noResponse: 0,
+    other: 0,
   }];
 };
+
+const buildFunnelData = (label: string, total: number, submitted: number, awarded: number, originCount?: number) => ([
+  { stage: label, count: total, fill: FUNNEL_COLORS[0] },
+  ...(originCount === undefined ? [] : [{ stage: 'Became Tender', count: originCount, fill: FUNNEL_COLORS[1] }]),
+  { stage: 'RFT Submitted', count: submitted, fill: originCount === undefined ? FUNNEL_COLORS[1] : FUNNEL_COLORS[2] },
+  { stage: 'Awarded', count: awarded, fill: originCount === undefined ? FUNNEL_COLORS[2] : FUNNEL_COLORS[3] },
+]);
 
 const Analytics = () => {
   const { opportunities, isLoading, error } = useData();
@@ -249,121 +240,136 @@ const Analytics = () => {
   const groupedOpportunities = useMemo(() => buildOpportunityGroups(filteredOpportunities), [filteredOpportunities]);
 
   const analytics = useMemo(() => {
-    const eoiPool = groupedOpportunities.filter((group) => group.eoiRows.length > 0);
-    const tenderGroups = groupedOpportunities.filter((group) => group.tenderRows.length > 0);
-    const convertedGroups = groupedOpportunities.filter((group) => group.eoiRows.length > 0 && group.tenderRows.length > 0);
-    const submittedGroups = tenderGroups.filter(hasSubmittedTender);
-    const awardedGroups = submittedGroups.filter(isAwardedGroup);
-    const lostGroups = submittedGroups.filter(isLostGroup);
-    const openDecisionGroups = submittedGroups.filter(isOpenDecisionGroup);
-    const notSubmittedTenderGroups = tenderGroups.filter((group) => !hasSubmittedTender(group));
+    const eoiOriginGroups = groupedOpportunities.filter((group) => group.eoiRows.length > 0);
+    const eoiOriginTenderGroups = eoiOriginGroups.filter((group) => group.tenderRows.length > 0);
+    const eoiOriginSubmittedGroups = eoiOriginTenderGroups.filter(hasSubmittedTender);
+    const eoiOriginAwardedGroups = eoiOriginSubmittedGroups.filter(isAwardedGroup);
+    const eoiOriginLostGroups = eoiOriginSubmittedGroups.filter(isLostGroup);
+    const eoiOriginOpenDecisionGroups = eoiOriginSubmittedGroups.filter(isOpenDecisionGroup);
 
-    const submittedValue = submittedGroups.reduce((sum, group) => sum + getGroupValue(group), 0);
-    const awardedValue = awardedGroups.reduce((sum, group) => sum + getGroupValue(group), 0);
+    const directTenderGroups = groupedOpportunities.filter((group) => group.eoiRows.length === 0 && group.tenderRows.length > 0);
+    const directSubmittedGroups = directTenderGroups.filter(hasSubmittedTender);
+    const directAwardedGroups = directSubmittedGroups.filter(isAwardedGroup);
+    const directLostGroups = directSubmittedGroups.filter(isLostGroup);
+    const directOpenDecisionGroups = directSubmittedGroups.filter(isOpenDecisionGroup);
+
+    const allTenderGroups = groupedOpportunities.filter((group) => group.tenderRows.length > 0);
+    const openTenderGroups = allTenderGroups.filter((group) => !hasSubmittedTender(group));
+
+    const submittedValue = [...eoiOriginSubmittedGroups, ...directSubmittedGroups].reduce((sum, group) => sum + getGroupValue(group), 0);
+    const awardedValue = [...eoiOriginAwardedGroups, ...directAwardedGroups].reduce((sum, group) => sum + getGroupValue(group), 0);
 
     const clientRows = Object.values(
-      eoiPool.reduce((acc, group) => {
+      eoiOriginGroups.reduce((acc, group) => {
         const client = getGroupClient(group);
-        if (!acc[client]) {
-          acc[client] = { client, eoiPool: 0, converted: 0, tenders: 0, conversionRate: 0 };
-        }
-        acc[client].eoiPool += 1;
-        if (group.tenderRows.length > 0) acc[client].converted += 1;
-        if (group.tenderRows.length > 0) acc[client].tenders += 1;
+        if (!acc[client]) acc[client] = { client, eoiCount: 0, becameTender: 0, conversionRate: 0 };
+        acc[client].eoiCount += 1;
+        if (group.tenderRows.length > 0) acc[client].becameTender += 1;
         return acc;
-      }, {} as Record<string, { client: string; eoiPool: number; converted: number; tenders: number; conversionRate: number }>),
+      }, {} as Record<string, { client: string; eoiCount: number; becameTender: number; conversionRate: number }>),
     )
-      .map((row) => ({ ...row, conversionRate: Number(safePercent(row.converted, row.eoiPool).toFixed(1)) }))
-      .sort((a, b) => b.eoiPool - a.eoiPool)
+      .map((row) => ({ ...row, conversionRate: Number(safePercent(row.becameTender, row.eoiCount).toFixed(1)) }))
+      .sort((a, b) => b.eoiCount - a.eoiCount)
       .slice(0, 8);
 
-    const agingBuckets = notSubmittedTenderGroups.reduce<Record<string, number>>((acc, group) => {
-      const receivedTimestamp = getEarliestTenderDate(group);
-      if (!receivedTimestamp) return acc;
-      const ageDays = getDayDiff(receivedTimestamp, Date.now());
-      const bucket = getAgingBucket(ageDays);
-      acc[bucket] = (acc[bucket] || 0) + 1;
-      return acc;
-    }, { '0-15': 0, '16-30': 0, '31-60': 0, '60+': 0 });
+    const agingBucketRows = Object.entries(
+      openTenderGroups.reduce<Record<string, number>>((acc, group) => {
+        const ageDays = getDayDiff(getEarliestTenderTimestamp(group), Date.now());
+        const bucket = getAgingBucket(ageDays);
+        acc[bucket] = (acc[bucket] || 0) + 1;
+        return acc;
+      }, { '0-15': 0, '16-30': 0, '31-60': 0, '60+': 0 }),
+    ).map(([bucket, count]) => ({ bucket, count }));
 
-    const agingBucketRows = Object.entries(agingBuckets).map(([bucket, count]) => ({ bucket, count }));
+    const postBidTrendRows = buildPostBidTrend(allTenderGroups);
 
-    const postBidTrendRows = buildPostBidTrend(tenderGroups);
-
-    const lossReasonRows = lostGroups.reduce<Record<string, number>>((acc, group) => {
-      const reasonText = normalizeText(group.primary?.remarksReason || group.primary?.comments);
-      const category = categorizeLossReason(reasonText);
-      acc[category] = (acc[category] || 0) + 1;
-      return acc;
-    }, {});
-
-    const lossReasonBreakdown = Object.entries(lossReasonRows)
+    const lossReasonBreakdown = Object.entries(
+      [...eoiOriginLostGroups, ...directLostGroups].reduce<Record<string, number>>((acc, group) => {
+        const category = categorizeLossReason(normalizeText(group.primary?.remarksReason || group.primary?.comments));
+        acc[category] = (acc[category] || 0) + 1;
+        return acc;
+      }, {}),
+    )
       .map(([reason, count]) => ({ reason, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 8);
 
-    const cohortRows = convertedGroups.reduce<Record<string, { label: string; count: number; avgDays: number[] }>>((acc, group) => {
-      const eoiMonth = getMonthKey(group.eoiRows[0]?.dateTenderReceived || group.eoiRows[0]?.tenderSubmittedDate);
-      const tenderMonth = getMonthKey(group.tenderRows[0]?.dateTenderReceived || group.tenderRows[0]?.tenderSubmittedDate);
-      if (!eoiMonth || !tenderMonth) return acc;
-      const label = `${formatMonthLabel(eoiMonth)} -> ${formatMonthLabel(tenderMonth)}`;
-      if (!acc[label]) acc[label] = { label, count: 0, avgDays: [] };
-      acc[label].count += 1;
-      acc[label].avgDays.push(getDayDiff(getEarliestEoiDate(group), getEarliestTenderDate(group)));
-      return acc;
-    }, {});
-
-    const monthlyCohortView = Object.values(cohortRows)
-      .map((row) => ({ label: row.label, count: row.count, avgDays: Number(average(row.avgDays).toFixed(1)) }))
+    const monthlyCohortView = Object.values(
+      eoiOriginTenderGroups.reduce<Record<string, { label: string; count: number }>>((acc, group) => {
+        const eoiMonth = getMonthKey(group.eoiRows[0]?.dateTenderReceived || group.eoiRows[0]?.tenderSubmittedDate);
+        const tenderMonth = getMonthKey(group.tenderRows[0]?.dateTenderReceived || group.tenderRows[0]?.tenderSubmittedDate);
+        if (!eoiMonth || !tenderMonth) return acc;
+        const label = `${formatMonthLabel(eoiMonth)} -> ${formatMonthLabel(tenderMonth)}`;
+        if (!acc[label]) acc[label] = { label, count: 0 };
+        acc[label].count += 1;
+        return acc;
+      }, {}),
+    )
       .sort((a, b) => b.count - a.count)
       .slice(0, 8);
 
-    const staleEoiRows = groupedOpportunities
-      .filter((group) => group.eoiRows.length > 0 && group.tenderRows.length === 0)
-      .map((group) => {
-        const firstEoiTimestamp = getEarliestEoiDate(group);
-        return {
-          refNo: normalizeText(group.eoiRows[0]?.opportunityRefNo || group.primary?.opportunityRefNo),
-          tenderName: normalizeText(group.eoiRows[0]?.tenderName || group.primary?.tenderName) || 'Untitled',
-          client: getGroupClient(group),
-          ageDays: getDayDiff(firstEoiTimestamp, Date.now()),
-        };
-      })
+    const staleEoiRows = eoiOriginGroups
+      .filter((group) => group.tenderRows.length === 0)
+      .map((group) => ({
+        refNo: normalizeText(group.eoiRows[0]?.opportunityRefNo || group.primary?.opportunityRefNo),
+        tenderName: normalizeText(group.eoiRows[0]?.tenderName || group.primary?.tenderName) || 'Untitled',
+        client: getGroupClient(group),
+        ageDays: getDayDiff(getEarliestEoiTimestamp(group), Date.now()),
+      }))
       .sort((a, b) => b.ageDays - a.ageDays);
 
-    const staleEoiBuckets = staleEoiRows.reduce<Record<string, number>>((acc, row) => {
-      const bucket = row.ageDays > 90 ? '90+' : row.ageDays > 60 ? '61-90' : row.ageDays > 30 ? '31-60' : '0-30';
-      acc[bucket] = (acc[bucket] || 0) + 1;
-      return acc;
-    }, { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 });
+    const staleEoiBuckets = Object.entries(
+      staleEoiRows.reduce<Record<string, number>>((acc, row) => {
+        const bucket = row.ageDays > 90 ? '90+' : row.ageDays > 60 ? '61-90' : row.ageDays > 30 ? '31-60' : '0-30';
+        acc[bucket] = (acc[bucket] || 0) + 1;
+        return acc;
+      }, { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 }),
+    ).map(([bucket, count]) => ({ bucket, count }));
 
-    const roadmapDays = convertedGroups
-      .map((group) => getDayDiff(getEarliestEoiDate(group), getEarliestTenderDate(group)))
+    const roadmapDays = eoiOriginTenderGroups
+      .map((group) => getDayDiff(getEarliestEoiTimestamp(group), getEarliestTenderTimestamp(group)))
       .filter((days) => days > 0);
 
     return {
-      totalEoiPool: eoiPool.length,
-      pureEoiCount: staleEoiRows.length,
-      convertedCount: convertedGroups.length,
-      tenderCount: tenderGroups.length,
-      submittedCount: submittedGroups.length,
-      awardedCount: awardedGroups.length,
-      lostCount: lostGroups.length,
-      notDecidedCount: openDecisionGroups.length,
-      valueWeightedWinRate: safePercent(awardedValue, submittedValue),
-      countWinRate: safePercent(awardedGroups.length, submittedGroups.length),
-      decisionWinRate: safePercent(awardedGroups.length, awardedGroups.length + lostGroups.length),
+      eoiOrigin: {
+        eoiCount: eoiOriginGroups.length,
+        becameTenderCount: eoiOriginTenderGroups.length,
+        submittedCount: eoiOriginSubmittedGroups.length,
+        awardedCount: eoiOriginAwardedGroups.length,
+        lostCount: eoiOriginLostGroups.length,
+        openDecisionCount: eoiOriginOpenDecisionGroups.length,
+        conversionRate: safePercent(eoiOriginTenderGroups.length, eoiOriginGroups.length),
+        winRate: safePercent(eoiOriginAwardedGroups.length, eoiOriginSubmittedGroups.length),
+      },
+      directTender: {
+        tenderCount: directTenderGroups.length,
+        submittedCount: directSubmittedGroups.length,
+        awardedCount: directAwardedGroups.length,
+        lostCount: directLostGroups.length,
+        openDecisionCount: directOpenDecisionGroups.length,
+        winRate: safePercent(directAwardedGroups.length, directSubmittedGroups.length),
+      },
+      overall: {
+        submittedCount: eoiOriginSubmittedGroups.length + directSubmittedGroups.length,
+        awardedCount: eoiOriginAwardedGroups.length + directAwardedGroups.length,
+        valueWeightedWinRate: safePercent(awardedValue, submittedValue),
+      },
       clientRows,
       agingBucketRows,
       postBidTrendRows,
       lossReasonBreakdown,
       monthlyCohortView,
       staleEoiRows: staleEoiRows.slice(0, 6),
-      staleEoiBuckets: Object.entries(staleEoiBuckets).map(([bucket, count]) => ({ bucket, count })),
+      staleEoiBuckets,
       roadmapAverage: average(roadmapDays),
       roadmapCoverage: roadmapDays.length,
-      submittedValue,
-      awardedValue,
+      eoiFunnel: buildFunnelData('EOI Received', eoiOriginGroups.length, eoiOriginSubmittedGroups.length, eoiOriginAwardedGroups.length, eoiOriginTenderGroups.length),
+      directFunnel: buildFunnelData('Direct Tender', directTenderGroups.length, directSubmittedGroups.length, directAwardedGroups.length),
+      outcomePie: [
+        { name: 'Won', value: eoiOriginAwardedGroups.length + directAwardedGroups.length },
+        { name: 'Lost/Regretted', value: eoiOriginLostGroups.length + directLostGroups.length },
+        { name: 'Not decided', value: eoiOriginOpenDecisionGroups.length + directOpenDecisionGroups.length },
+      ],
     };
   }, [groupedOpportunities]);
 
@@ -376,11 +382,11 @@ const Analytics = () => {
         <div className="absolute bottom-0 left-1/3 h-28 w-28 rounded-full bg-violet-200/30 blur-3xl" />
         <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="space-y-3">
-            <Badge className="w-fit border border-sky-200 bg-white/80 text-sky-700">Conversion Intelligence</Badge>
+            <Badge className="w-fit border border-sky-200 bg-white/80 text-sky-700">Corrected Funnel Logic</Badge>
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Bid Flow Analytics Studio</h1>
+              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">EOI vs Direct Tender Analytics</h1>
               <p className="max-w-3xl text-sm leading-6 text-slate-600">
-                Focused on EOI pool, conversion to tender, actual RFT submissions, win rates, stale EOIs, post-bid behavior, and where deals are dying.
+                EOIs are now tracked only as an origin story. What matters is which EOIs became tenders, which of those were submitted, and which were awarded, separated from direct tenders that never started as EOI.
               </p>
             </div>
           </div>
@@ -414,11 +420,11 @@ const Analytics = () => {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {[
-          { label: 'EOI Pool', value: analytics.totalEoiPool, note: `${analytics.pureEoiCount} still pure EOI`, icon: Sparkles, tone: 'border-sky-100 from-sky-500/15' },
-          { label: 'EOI to Tender', value: formatPercent(safePercent(analytics.convertedCount, analytics.totalEoiPool)), note: `${analytics.convertedCount} converted`, icon: GitBranch, tone: 'border-violet-100 from-violet-500/15' },
-          { label: 'RFT Submitted', value: analytics.submittedCount, note: 'Actual submitted tenders only', icon: Activity, tone: 'border-cyan-100 from-cyan-500/15' },
-          { label: 'Count Win %', value: formatPercent(analytics.countWinRate), note: `${analytics.awardedCount} wins from submitted`, icon: Crown, tone: 'border-emerald-100 from-emerald-500/15' },
-          { label: 'Value Win %', value: formatPercent(analytics.valueWeightedWinRate), note: 'Awarded value / submitted value', icon: TrendingUp, tone: 'border-amber-100 from-amber-500/15' },
+          { label: 'EOI Received', value: analytics.eoiOrigin.eoiCount, note: `${analytics.eoiOrigin.becameTenderCount} became tenders`, icon: Sparkles, tone: 'border-sky-100 from-sky-500/15' },
+          { label: 'EOI Win %', value: formatPercent(analytics.eoiOrigin.winRate), note: 'Awarded from submitted EOI-origin tenders', icon: GitBranch, tone: 'border-violet-100 from-violet-500/15' },
+          { label: 'Direct Tenders', value: analytics.directTender.tenderCount, note: 'No EOI history behind these', icon: ArrowRight, tone: 'border-cyan-100 from-cyan-500/15' },
+          { label: 'Direct Win %', value: formatPercent(analytics.directTender.winRate), note: 'Awarded from submitted direct tenders', icon: Crown, tone: 'border-emerald-100 from-emerald-500/15' },
+          { label: 'Value Win %', value: formatPercent(analytics.overall.valueWeightedWinRate), note: 'Awarded value / total submitted value', icon: TrendingUp, tone: 'border-amber-100 from-amber-500/15' },
         ].map((item, index) => (
           <Card key={item.label} className={`bg-gradient-to-br ${item.tone} via-white to-white animate-in fade-in-0 slide-in-from-bottom-4 duration-500`} style={{ animationDelay: `${index * 70}ms` }}>
             <CardContent className="pt-6">
@@ -437,33 +443,57 @@ const Analytics = () => {
         ))}
       </section>
 
+      <section className="grid gap-6 xl:grid-cols-2">
+        {[
+          {
+            title: 'EOI-Origin Funnel',
+            description: 'EOI received -> became tender -> RFT submitted -> awarded',
+            data: analytics.eoiFunnel,
+          },
+          {
+            title: 'Direct Tender Funnel',
+            description: 'Direct tender received -> RFT submitted -> awarded',
+            data: analytics.directFunnel,
+          },
+        ].map((chart) => (
+          <Card key={chart.title} className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
+            <CardHeader>
+              <CardTitle className="text-xl">{chart.title}</CardTitle>
+              <CardDescription>{chart.description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[320px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chart.data}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                    <XAxis dataKey="stage" tick={{ fontSize: 11, fill: '#475569' }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#475569' }} />
+                    <Tooltip formatter={(value: number) => [value, 'Count']} />
+                    <Bar dataKey="count" radius={[8, 8, 0, 0]}>
+                      {chart.data.map((entry) => (
+                        <Cell key={`${chart.title}-${entry.stage}`} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
+
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
         <Card className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <Radar className="h-5 w-5 text-sky-600" />
-              Submission Outcome Split
-            </CardTitle>
-            <CardDescription>
-              Submitted means actual RFT submitted. Awarded is win. Open decisions are submitted but neither won nor lost yet.
-            </CardDescription>
+            <CardTitle className="text-xl">Overall Submitted Outcomes</CardTitle>
+            <CardDescription>Across both EOI-origin and direct tenders, but still using submitted = actual RFT submitted only.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={[
-                      { name: 'Won', value: analytics.awardedCount },
-                      { name: 'Lost/Regretted', value: analytics.lostCount },
-                      { name: 'Not decided', value: analytics.notDecidedCount },
-                    ]}
-                    dataKey="value"
-                    innerRadius={64}
-                    outerRadius={100}
-                    paddingAngle={4}
-                  >
-                    {PIE_COLORS.map((color) => (
+                  <Pie data={analytics.outcomePie} dataKey="value" innerRadius={64} outerRadius={100} paddingAngle={4}>
+                    {OUTCOME_COLORS.map((color) => (
                       <Cell key={color} fill={color} />
                     ))}
                   </Pie>
@@ -480,9 +510,7 @@ const Analytics = () => {
               <Hourglass className="h-5 w-5 text-orange-500" />
               Tender Aging Buckets
             </CardTitle>
-            <CardDescription>
-              Open tender/RFT records that have not yet been submitted, bucketed by age since tender received.
-            </CardDescription>
+            <CardDescription>Open tenders that are not yet submitted, grouped by age since tender received.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -503,13 +531,8 @@ const Analytics = () => {
       <section className="grid gap-6 xl:grid-cols-2">
         <Card className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <TrendingUp className="h-5 w-5 text-violet-600" />
-              Client-wise Conversion Rate
-            </CardTitle>
-            <CardDescription>
-              Which clients are actually moving from EOI into tender/RFT most reliably.
-            </CardDescription>
+            <CardTitle className="text-xl">Client-wise EOI Conversion Rate</CardTitle>
+            <CardDescription>Only EOI-origin opportunities are considered here. Direct tenders are intentionally excluded.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[320px]">
@@ -528,13 +551,8 @@ const Analytics = () => {
 
         <Card className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <Waves className="h-5 w-5 text-sky-600" />
-              Monthly Conversion Cohorts
-            </CardTitle>
-            <CardDescription>
-              EOI month on the left, conversion month on the right, with count of journeys in between.
-            </CardDescription>
+            <CardTitle className="text-xl">EOI Month to Tender Month</CardTitle>
+            <CardDescription>This is the cohort view you described: EOI first, then the corresponding tender month.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[320px]">
@@ -543,7 +561,7 @@ const Analytics = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
                   <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: '#475569' }} />
                   <YAxis type="category" dataKey="label" width={150} tick={{ fontSize: 11, fill: '#475569' }} />
-                  <Tooltip formatter={(value: number, name: string) => [name === 'avgDays' ? `${value} days` : value, name === 'avgDays' ? 'Avg conversion days' : 'Conversions']} />
+                  <Tooltip formatter={(value: number) => [value, 'Count']} />
                   <Bar dataKey="count" fill="#2563EB" radius={[0, 8, 8, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -552,16 +570,11 @@ const Analytics = () => {
         </Card>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <section className="grid gap-6 xl:grid-cols-2">
         <Card className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <Sparkles className="h-5 w-5 text-cyan-600" />
-              Post-bid Detail Trend
-            </CardTitle>
-            <CardDescription>
-              Uses `postBidDetailUpdatedAt` when available. If not, it falls back to the current post-bid mix.
-            </CardDescription>
+            <CardTitle className="text-xl">Post-bid Detail Trend</CardTitle>
+            <CardDescription>Kept as a supporting chart for the tender side of the lifecycle.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[320px]">
@@ -587,9 +600,7 @@ const Analytics = () => {
               <ArrowRight className="h-5 w-5 text-rose-600" />
               Lost / Regretted Reason Breakdown
             </CardTitle>
-            <CardDescription>
-              Derived from `remarksReason` and `comments`. This is category-based and should improve if we standardize the wording later.
-            </CardDescription>
+            <CardDescription>Derived from `remarksReason` and `comments`, using broad categories.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[320px]">
@@ -607,16 +618,14 @@ const Analytics = () => {
         </Card>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <section className="grid gap-6 xl:grid-cols-2">
         <Card className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-xl">
               <TimerReset className="h-5 w-5 text-slate-700" />
               Stale EOI Tracker
             </CardTitle>
-            <CardDescription>
-              EOIs with no tender conversion yet. This helps spot opportunities that are just sitting.
-            </CardDescription>
+            <CardDescription>Only pure EOIs that have not yet become tenders.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="h-[220px]">
@@ -658,44 +667,50 @@ const Analytics = () => {
               <Waves className="h-5 w-5 text-violet-600" />
               Sankey Concept
             </CardTitle>
-            <CardDescription>
-              Placeholder for a later animated Sankey flow once we add a dedicated flow library.
-            </CardDescription>
+            <CardDescription>Placeholder for a proper animated Sankey later, but now split by EOI-origin and direct tender.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-5">
-              <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-center">
+              <div className="grid gap-4 md:grid-cols-2">
                 {[
-                  { label: 'EOI', value: analytics.totalEoiPool, tone: 'bg-sky-100 text-sky-800 border-sky-200' },
-                  { label: 'Tender', value: analytics.tenderCount, tone: 'bg-violet-100 text-violet-800 border-violet-200' },
-                  { label: 'Submitted', value: analytics.submittedCount, tone: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
-                ].map((item, index) => (
-                  <Fragment key={item.label}>
-                    <div className={`rounded-2xl border px-4 py-4 text-center ${item.tone}`}>
-                      <div className="text-xs font-medium uppercase tracking-[0.18em]">{item.label}</div>
-                      <div className="mt-2 text-3xl font-semibold">{item.value}</div>
+                  {
+                    title: 'EOI-Origin',
+                    steps: [
+                      { label: 'EOI', value: analytics.eoiOrigin.eoiCount, tone: 'bg-sky-100 text-sky-800 border-sky-200' },
+                      { label: 'Tender', value: analytics.eoiOrigin.becameTenderCount, tone: 'bg-violet-100 text-violet-800 border-violet-200' },
+                      { label: 'Submitted', value: analytics.eoiOrigin.submittedCount, tone: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
+                      { label: 'Awarded', value: analytics.eoiOrigin.awardedCount, tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+                    ],
+                  },
+                  {
+                    title: 'Direct Tender',
+                    steps: [
+                      { label: 'Tender', value: analytics.directTender.tenderCount, tone: 'bg-violet-100 text-violet-800 border-violet-200' },
+                      { label: 'Submitted', value: analytics.directTender.submittedCount, tone: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
+                      { label: 'Awarded', value: analytics.directTender.awardedCount, tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+                    ],
+                  },
+                ].map((lane) => (
+                  <div key={lane.title} className="space-y-3">
+                    <div className="text-sm font-semibold text-slate-900">{lane.title}</div>
+                    <div className="grid gap-3">
+                      {lane.steps.map((step, index) => (
+                        <Fragment key={`${lane.title}-${step.label}`}>
+                          <div className={`rounded-2xl border px-4 py-4 text-center ${step.tone}`}>
+                            <div className="text-xs font-medium uppercase tracking-[0.18em]">{step.label}</div>
+                            <div className="mt-2 text-3xl font-semibold">{step.value}</div>
+                          </div>
+                          {index < lane.steps.length - 1 && (
+                            <div className="flex justify-center">
+                              <div className="h-2 w-20 rounded-full bg-gradient-to-r from-sky-400 via-violet-400 to-cyan-400 animate-pulse" />
+                            </div>
+                          )}
+                        </Fragment>
+                      ))}
                     </div>
-                    {index < 2 && (
-                      <div className="hidden md:flex justify-center">
-                        <div className="h-2 w-16 rounded-full bg-gradient-to-r from-sky-400 via-violet-400 to-cyan-400 animate-pulse" />
-                      </div>
-                    )}
-                  </Fragment>
+                  </div>
                 ))}
               </div>
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-center text-emerald-900">
-                  <div className="text-xs font-medium uppercase tracking-[0.18em]">Awarded</div>
-                  <div className="mt-2 text-3xl font-semibold">{analytics.awardedCount}</div>
-                </div>
-                <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-4 text-center text-orange-900">
-                  <div className="text-xs font-medium uppercase tracking-[0.18em]">Lost / Regretted</div>
-                  <div className="mt-2 text-3xl font-semibold">{analytics.lostCount}</div>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              If you want, next round I can add a true Sankey library so the widths of the flows actually represent counts visually.
             </div>
           </CardContent>
         </Card>
@@ -709,9 +724,7 @@ const Analytics = () => {
                 <TimerReset className="h-5 w-5 text-slate-700" />
                 Experimental Roadmap
               </CardTitle>
-              <CardDescription>
-                Hidden by default. Still kept honest: only shows EOI to tender conversion days until we have a clean award/loss date field.
-              </CardDescription>
+              <CardDescription>Still hidden by default. Only EOI-origin journeys are used here, because direct tenders have no EOI start point.</CardDescription>
             </div>
             <Button type="button" variant="outline" className="gap-2" onClick={() => setShowRoadmap((current) => !current)}>
               {showRoadmap ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -725,12 +738,12 @@ const Analytics = () => {
                 <div className="rounded-2xl border border-sky-200 bg-white p-4">
                   <div className="text-xs font-medium uppercase tracking-[0.18em] text-sky-500">EOI to Tender Average</div>
                   <div className="mt-3 text-3xl font-semibold text-slate-950">{analytics.roadmapAverage.toFixed(1)} days</div>
-                  <div className="mt-2 text-xs text-slate-500">Average lag between the first EOI row and first tender row.</div>
+                  <div className="mt-2 text-xs text-slate-500">Average lag between EOI creation and corresponding tender arrival.</div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
                   <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Coverage</div>
                   <div className="mt-3 text-3xl font-semibold text-slate-950">{analytics.roadmapCoverage}</div>
-                  <div className="mt-2 text-xs text-slate-500">Converted EOI records with enough dates to measure.</div>
+                  <div className="mt-2 text-xs text-slate-500">EOI-origin opportunities with enough dates to measure that journey.</div>
                 </div>
               </div>
             </CardContent>
