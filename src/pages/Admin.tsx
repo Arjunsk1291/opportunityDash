@@ -170,6 +170,14 @@ const EXPORT_TEMPLATE_PREVIEW_HEADERS = ['Avenir Ref', 'Tender Name', 'Client', 
 const EXPORT_TEMPLATE_PREVIEW_ROW = ['AC26144', 'HSE MONITORING SYSTEM', 'L&T', 'Submitted', '2026-04-07'];
 const EXPORT_PREVIEW_GRID_COLUMNS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 const EXPORT_PREVIEW_GRID_ROWS = Array.from({ length: 12 }, (_, index) => index + 1);
+const EXPORT_DESIGNER_COLUMNS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+const EXPORT_DESIGNER_ROWS = Array.from({ length: 20 }, (_, index) => index + 1);
+const EXPORT_BLOCK_OPTIONS = [
+  { key: 'title', label: 'Title' },
+  { key: 'intro', label: 'Intro' },
+  { key: 'logo', label: 'Logo' },
+  { key: 'header', label: 'Header Row' },
+] as const;
 const MANUAL_UPDATE_TEMPLATE_COLUMNS = [
   { key: 'opportunityRefNo', label: 'Avenir Ref', required: true, help: 'Required unique row key used to map into MongoDB.' },
   { key: 'adnocRftNo', label: 'CLIENT Ref', required: false, help: 'Client or ADNOC reference number.' },
@@ -359,6 +367,7 @@ export default function Admin() {
   const [postBidSaving, setPostBidSaving] = useState(false);
   const [exportTemplate, setExportTemplate] = useState<ExportTemplateConfig>(DEFAULT_EXPORT_TEMPLATE);
   const [exportTemplateSaving, setExportTemplateSaving] = useState(false);
+  const [selectedExportBlock, setSelectedExportBlock] = useState<(typeof EXPORT_BLOCK_OPTIONS)[number]['key']>('title');
   const [manualTemplateSelection, setManualTemplateSelection] = useState<Record<string, boolean>>(DEFAULT_MANUAL_TEMPLATE_SELECTION);
   const [manualUpdateUploading, setManualUpdateUploading] = useState(false);
   const [manualUpdateFileName, setManualUpdateFileName] = useState('');
@@ -661,6 +670,29 @@ export default function Admin() {
 
   const updateExportTemplateField = (field: keyof ExportTemplateConfig, value: string | boolean | number) => {
     setExportTemplate((prev) => normalizeExportTemplate({ ...prev, [field]: value } as Partial<ExportTemplateConfig>));
+  };
+
+  const updateExportTemplateArrayField = (field: 'columnWidths' | 'rowHeights', index: number, value: number) => {
+    setExportTemplate((prev) => {
+      const nextArray = [...prev[field]];
+      nextArray[index] = value;
+      return normalizeExportTemplate({ ...prev, [field]: nextArray });
+    });
+  };
+
+  const placeSelectedExportBlock = (row: number, column: number) => {
+    setExportTemplate((prev) => {
+      if (selectedExportBlock === 'title') {
+        return normalizeExportTemplate({ ...prev, titleRow: row, titleColumn: column });
+      }
+      if (selectedExportBlock === 'intro') {
+        return normalizeExportTemplate({ ...prev, introRow: row, introColumn: column });
+      }
+      if (selectedExportBlock === 'logo') {
+        return normalizeExportTemplate({ ...prev, logoRow: row, logoColumn: column });
+      }
+      return normalizeExportTemplate({ ...prev, headerRow: row, headerColumn: column });
+    });
   };
 
   const handleExportLogoUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -2869,32 +2901,234 @@ export default function Admin() {
 
                 <div className="rounded-xl border p-4 space-y-4">
                   <div>
-                    <p className="text-sm font-medium">Excel Layout Positioning</p>
-                    <p className="text-xs text-muted-foreground">Adjust the row and column where each block should appear in the exported sheet.</p>
+                    <p className="text-sm font-medium">Excel Layout Designer</p>
+                    <p className="text-xs text-muted-foreground">Pick a block, then place it on the sheet preview like Excel. You can merge by increasing row span and column span, adjust alignment, and fine-tune row and column sizing.</p>
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {[
-                      ['logoRow', 'Logo Row'],
-                      ['logoColumn', 'Logo Column'],
-                      ['logoWidth', 'Logo Width'],
-                      ['logoHeight', 'Logo Height'],
-                      ['titleRow', 'Title Row'],
-                      ['titleColumn', 'Title Column'],
-                      ['introRow', 'Intro Row'],
-                      ['introColumn', 'Intro Column'],
-                      ['headerRow', 'Header Row'],
-                    ].map(([field, label]) => (
-                      <div key={field} className="space-y-2">
-                        <Label>{label}</Label>
-                        <Input
-                          type="number"
-                          value={String(exportTemplate[field as keyof ExportTemplateConfig] as number)}
-                          onChange={(e) => updateExportTemplateField(field as keyof ExportTemplateConfig, Number(e.target.value))}
-                          disabled={!canManageExportTemplate}
-                        />
-                      </div>
-                    ))}
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Active Block</Label>
+                      <Select value={selectedExportBlock} onValueChange={(value) => setSelectedExportBlock(value as typeof selectedExportBlock)}>
+                        <SelectTrigger disabled={!canManageExportTemplate}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {EXPORT_BLOCK_OPTIONS.map((option) => (
+                            <SelectItem key={option.key} value={option.key}>{option.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="rounded-lg border bg-muted/30 px-3 py-3 text-xs text-muted-foreground">
+                      Click any cell in the sheet preview to move the selected block there.
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    {selectedExportBlock === 'logo' ? (
+                      <>
+                        {[
+                          ['logoRow', 'Logo Row'],
+                          ['logoColumn', 'Logo Column'],
+                          ['logoWidth', 'Logo Width'],
+                          ['logoHeight', 'Logo Height'],
+                        ].map(([field, label]) => (
+                          <div key={field} className="space-y-2">
+                            <Label>{label}</Label>
+                            <Input
+                              type="number"
+                              value={String(exportTemplate[field as keyof ExportTemplateConfig] as number)}
+                              onChange={(e) => updateExportTemplateField(field as keyof ExportTemplateConfig, Number(e.target.value))}
+                              disabled={!canManageExportTemplate}
+                            />
+                          </div>
+                        ))}
+                      </>
+                    ) : selectedExportBlock === 'header' ? (
+                      <>
+                        {[
+                          ['headerRow', 'Header Row'],
+                          ['headerColumn', 'Header Column'],
+                        ].map(([field, label]) => (
+                          <div key={field} className="space-y-2">
+                            <Label>{label}</Label>
+                            <Input
+                              type="number"
+                              value={String(exportTemplate[field as keyof ExportTemplateConfig] as number)}
+                              onChange={(e) => updateExportTemplateField(field as keyof ExportTemplateConfig, Number(e.target.value))}
+                              disabled={!canManageExportTemplate}
+                            />
+                          </div>
+                        ))}
+                        <div className="space-y-2">
+                          <Label>Horizontal Align</Label>
+                          <Select
+                            value={exportTemplate.headerHorizontalAlign}
+                            onValueChange={(value) => updateExportTemplateField('headerHorizontalAlign', value)}
+                          >
+                            <SelectTrigger disabled={!canManageExportTemplate}><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="left">Left</SelectItem>
+                              <SelectItem value="center">Center</SelectItem>
+                              <SelectItem value="right">Right</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Vertical Align</Label>
+                          <Select
+                            value={exportTemplate.headerVerticalAlign}
+                            onValueChange={(value) => updateExportTemplateField('headerVerticalAlign', value)}
+                          >
+                            <SelectTrigger disabled={!canManageExportTemplate}><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="top">Top</SelectItem>
+                              <SelectItem value="middle">Middle</SelectItem>
+                              <SelectItem value="bottom">Bottom</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {selectedExportBlock === 'title' ? (
+                          <>
+                            {[
+                              ['titleRow', 'Title Row'],
+                              ['titleColumn', 'Title Column'],
+                              ['titleRowSpan', 'Title Row Span'],
+                              ['titleColumnSpan', 'Title Col Span'],
+                            ].map(([field, label]) => (
+                              <div key={field} className="space-y-2">
+                                <Label>{label}</Label>
+                                <Input
+                                  type="number"
+                                  value={String(exportTemplate[field as keyof ExportTemplateConfig] as number)}
+                                  onChange={(e) => updateExportTemplateField(field as keyof ExportTemplateConfig, Number(e.target.value))}
+                                  disabled={!canManageExportTemplate}
+                                />
+                              </div>
+                            ))}
+                            <div className="space-y-2">
+                              <Label>Horizontal Align</Label>
+                              <Select
+                                value={exportTemplate.titleHorizontalAlign}
+                                onValueChange={(value) => updateExportTemplateField('titleHorizontalAlign', value)}
+                              >
+                                <SelectTrigger disabled={!canManageExportTemplate}><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="left">Left</SelectItem>
+                                  <SelectItem value="center">Center</SelectItem>
+                                  <SelectItem value="right">Right</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Vertical Align</Label>
+                              <Select
+                                value={exportTemplate.titleVerticalAlign}
+                                onValueChange={(value) => updateExportTemplateField('titleVerticalAlign', value)}
+                              >
+                                <SelectTrigger disabled={!canManageExportTemplate}><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="top">Top</SelectItem>
+                                  <SelectItem value="middle">Middle</SelectItem>
+                                  <SelectItem value="bottom">Bottom</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            {[
+                              ['introRow', 'Intro Row'],
+                              ['introColumn', 'Intro Column'],
+                              ['introRowSpan', 'Intro Row Span'],
+                              ['introColumnSpan', 'Intro Col Span'],
+                            ].map(([field, label]) => (
+                              <div key={field} className="space-y-2">
+                                <Label>{label}</Label>
+                                <Input
+                                  type="number"
+                                  value={String(exportTemplate[field as keyof ExportTemplateConfig] as number)}
+                                  onChange={(e) => updateExportTemplateField(field as keyof ExportTemplateConfig, Number(e.target.value))}
+                                  disabled={!canManageExportTemplate}
+                                />
+                              </div>
+                            ))}
+                            <div className="space-y-2">
+                              <Label>Horizontal Align</Label>
+                              <Select
+                                value={exportTemplate.introHorizontalAlign}
+                                onValueChange={(value) => updateExportTemplateField('introHorizontalAlign', value)}
+                              >
+                                <SelectTrigger disabled={!canManageExportTemplate}><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="left">Left</SelectItem>
+                                  <SelectItem value="center">Center</SelectItem>
+                                  <SelectItem value="right">Right</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Vertical Align</Label>
+                              <Select
+                                value={exportTemplate.introVerticalAlign}
+                                onValueChange={(value) => updateExportTemplateField('introVerticalAlign', value)}
+                              >
+                                <SelectTrigger disabled={!canManageExportTemplate}><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="top">Top</SelectItem>
+                                  <SelectItem value="middle">Middle</SelectItem>
+                                  <SelectItem value="bottom">Bottom</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border p-4 space-y-4">
+                  <div>
+                    <p className="text-sm font-medium">Sheet Dimensions</p>
+                    <p className="text-xs text-muted-foreground">Fine tune the exact width of each column and the height of each row, similar to Excel sizing.</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label>Column Widths</Label>
+                    <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-4">
+                      {EXPORT_DESIGNER_COLUMNS.map((column, index) => (
+                        <div key={column} className="space-y-1">
+                          <Label className="text-xs">{column}</Label>
+                          <Input
+                            type="number"
+                            value={String(exportTemplate.columnWidths[index] ?? 18)}
+                            onChange={(e) => updateExportTemplateArrayField('columnWidths', index, Number(e.target.value))}
+                            disabled={!canManageExportTemplate}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label>Row Heights</Label>
+                    <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-5">
+                      {EXPORT_DESIGNER_ROWS.map((row, index) => (
+                        <div key={row} className="space-y-1">
+                          <Label className="text-xs">Row {row}</Label>
+                          <Input
+                            type="number"
+                            value={String(exportTemplate.rowHeights[index] ?? 24)}
+                            onChange={(e) => updateExportTemplateArrayField('rowHeights', index, Number(e.target.value))}
+                            disabled={!canManageExportTemplate}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -2939,8 +3173,8 @@ export default function Admin() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Live Excel Preview</CardTitle>
-                <CardDescription>Spreadsheet-style preview using the same rows and columns that will be used during export.</CardDescription>
+                <CardTitle>Live Excel Designer</CardTitle>
+                <CardDescription>Click cells to move the active block. The preview uses the same spans, alignments, row heights, and column widths that the exported workbook will follow.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
@@ -2951,36 +3185,46 @@ export default function Admin() {
                   </div>
                   <div className="overflow-x-auto p-4">
                     <div
-                      className="grid min-w-[640px] gap-px rounded-xl border bg-slate-200"
-                      style={{ gridTemplateColumns: `48px repeat(${EXPORT_PREVIEW_GRID_COLUMNS.length}, minmax(88px, 1fr))` }}
+                      className="grid min-w-[980px] gap-px rounded-xl border bg-slate-200"
+                      style={{ gridTemplateColumns: `48px repeat(${EXPORT_DESIGNER_COLUMNS.length}, minmax(72px, 1fr))` }}
                     >
                       <div className="bg-slate-100" />
-                      {EXPORT_PREVIEW_GRID_COLUMNS.map((column) => (
+                      {EXPORT_DESIGNER_COLUMNS.map((column) => (
                         <div key={column} className="bg-slate-100 px-2 py-2 text-center text-xs font-semibold text-slate-500">
                           {column}
+                          <div className="mt-1 text-[10px] font-normal text-slate-400">
+                            {exportTemplate.columnWidths[EXPORT_DESIGNER_COLUMNS.indexOf(column)] ?? 18}
+                          </div>
                         </div>
                       ))}
 
-                      {EXPORT_PREVIEW_GRID_ROWS.map((row) => (
+                      {EXPORT_DESIGNER_ROWS.map((row) => (
                         <Fragment key={`preview-row-${row}`}>
                           <div className="bg-slate-100 px-2 py-3 text-center text-xs font-semibold text-slate-500">
                             {row}
+                            <div className="mt-1 text-[10px] font-normal text-slate-400">
+                              {exportTemplate.rowHeights[row - 1] ?? 24}
+                            </div>
                           </div>
-                          {EXPORT_PREVIEW_GRID_COLUMNS.map((column, columnIndex) => {
+                          {EXPORT_DESIGNER_COLUMNS.map((column, columnIndex) => {
                             const currentColumn = columnIndex + 1;
-                            const isHeaderRow = row === exportTemplate.headerRow && currentColumn <= EXPORT_TEMPLATE_PREVIEW_HEADERS.length;
-                            const headerLabel = isHeaderRow ? EXPORT_TEMPLATE_PREVIEW_HEADERS[currentColumn - 1] : '';
+                            const headerOffset = currentColumn - exportTemplate.headerColumn;
+                            const isHeaderRow = row === exportTemplate.headerRow && headerOffset >= 0 && headerOffset < EXPORT_TEMPLATE_PREVIEW_HEADERS.length;
+                            const headerLabel = isHeaderRow ? EXPORT_TEMPLATE_PREVIEW_HEADERS[headerOffset] : '';
                             const sampleRowIndex = exportTemplate.headerRow + 1;
-                            const isSampleRow = row === sampleRowIndex && currentColumn <= EXPORT_TEMPLATE_PREVIEW_ROW.length;
-                            const sampleCell = isSampleRow ? EXPORT_TEMPLATE_PREVIEW_ROW[currentColumn - 1] : '';
+                            const isSampleRow = row === sampleRowIndex && headerOffset >= 0 && headerOffset < EXPORT_TEMPLATE_PREVIEW_ROW.length;
+                            const sampleCell = isSampleRow ? EXPORT_TEMPLATE_PREVIEW_ROW[headerOffset] : '';
                             const showLogoCell = exportTemplate.showLogo && row === exportTemplate.logoRow && currentColumn === exportTemplate.logoColumn;
                             const showTitleCell = row === exportTemplate.titleRow && currentColumn === exportTemplate.titleColumn;
                             const showIntroCell = row === exportTemplate.introRow && currentColumn === exportTemplate.introColumn;
 
                             return (
-                              <div
+                              <button
+                                type="button"
                                 key={`cell-${row}-${column}`}
-                                className="relative min-h-[52px] bg-white px-2 py-2 text-xs text-slate-600"
+                                onClick={() => placeSelectedExportBlock(row, currentColumn)}
+                                disabled={!canManageExportTemplate}
+                                className={`relative min-h-[52px] bg-white px-2 py-2 text-left text-xs text-slate-600 transition-colors ${selectedExportBlock === 'title' && showTitleCell ? 'ring-2 ring-violet-300' : ''} ${selectedExportBlock === 'intro' && showIntroCell ? 'ring-2 ring-emerald-300' : ''} ${selectedExportBlock === 'logo' && showLogoCell ? 'ring-2 ring-sky-300' : ''} ${selectedExportBlock === 'header' && row === exportTemplate.headerRow && currentColumn === exportTemplate.headerColumn ? 'ring-2 ring-blue-300' : ''}`}
                               >
                                 {isHeaderRow && (
                                   <div
@@ -3008,19 +3252,39 @@ export default function Admin() {
                                   <div className="absolute inset-1 overflow-hidden rounded border border-violet-200 bg-violet-50 px-2 py-1 text-sm font-semibold"
                                     style={{ color: exportTemplate.titleColor }}>
                                     {exportTemplate.title || 'Export title'}
+                                    <div className="mt-1 text-[10px] text-violet-500">
+                                      {exportTemplate.titleRowSpan}x{exportTemplate.titleColumnSpan} merge
+                                    </div>
                                   </div>
                                 )}
                                 {!isHeaderRow && showIntroCell && (
                                   <div className="absolute inset-1 overflow-hidden rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] leading-4"
                                     style={{ color: exportTemplate.introColor }}>
                                     {exportTemplate.introText || 'Intro text'}
+                                    <div className="mt-1 text-[10px] text-emerald-500">
+                                      {exportTemplate.introRowSpan}x{exportTemplate.introColumnSpan} merge
+                                    </div>
                                   </div>
                                 )}
-                              </div>
+                              </button>
                             );
                           })}
                         </Fragment>
                       ))}
+                    </div>
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
+                        Title starts at {EXPORT_DESIGNER_COLUMNS[exportTemplate.titleColumn - 1]}{exportTemplate.titleRow}
+                      </div>
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                        Intro starts at {EXPORT_DESIGNER_COLUMNS[exportTemplate.introColumn - 1]}{exportTemplate.introRow}
+                      </div>
+                      <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
+                        Logo starts at {EXPORT_DESIGNER_COLUMNS[exportTemplate.logoColumn - 1]}{exportTemplate.logoRow}
+                      </div>
+                      <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                        Header row starts at {EXPORT_DESIGNER_COLUMNS[exportTemplate.headerColumn - 1]}{exportTemplate.headerRow}
+                      </div>
                     </div>
                   </div>
                 </div>

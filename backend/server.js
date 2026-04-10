@@ -3273,13 +3273,26 @@ const DEFAULT_EXPORT_TEMPLATE_CONFIG = {
   logoHeight: 46,
   titleRow: 1,
   titleColumn: 3,
+  titleRowSpan: 1,
+  titleColumnSpan: 4,
+  titleHorizontalAlign: 'left',
+  titleVerticalAlign: 'middle',
   introRow: 2,
   introColumn: 3,
+  introRowSpan: 2,
+  introColumnSpan: 5,
+  introHorizontalAlign: 'left',
+  introVerticalAlign: 'top',
   headerRow: 4,
+  headerColumn: 1,
+  headerHorizontalAlign: 'left',
+  headerVerticalAlign: 'middle',
   headerBackgroundColor: '#1D4ED8',
   headerTextColor: '#FFFFFF',
   titleColor: '#0F172A',
   introColor: '#475569',
+  columnWidths: Array.from({ length: 12 }, () => 18),
+  rowHeights: Array.from({ length: 20 }, () => 24),
 };
 
 const normalizeHexColor = (value, fallback) => {
@@ -3291,6 +3304,19 @@ const normalizeIntegerInRange = (value, fallback, min, max) => {
   const parsed = Math.round(Number(value));
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, parsed));
+};
+
+const normalizeExportHorizontalAlign = (value, fallback) => (
+  ['left', 'center', 'right'].includes(String(value || '').trim()) ? String(value).trim() : fallback
+);
+
+const normalizeExportVerticalAlign = (value, fallback) => (
+  ['top', 'middle', 'bottom'].includes(String(value || '').trim()) ? String(value).trim() : fallback
+);
+
+const normalizeSizedNumberArray = (value, fallback, min, max) => {
+  const source = Array.isArray(value) ? value : [];
+  return fallback.map((item, index) => normalizeIntegerInRange(source[index], item, min, max));
 };
 
 const normalizeExportTemplateConfig = (input = {}) => {
@@ -3310,13 +3336,26 @@ const normalizeExportTemplateConfig = (input = {}) => {
     logoHeight: normalizeIntegerInRange(input.logoHeight, DEFAULT_EXPORT_TEMPLATE_CONFIG.logoHeight, 20, 180),
     titleRow: normalizeIntegerInRange(input.titleRow, DEFAULT_EXPORT_TEMPLATE_CONFIG.titleRow, 1, 20),
     titleColumn: normalizeIntegerInRange(input.titleColumn, DEFAULT_EXPORT_TEMPLATE_CONFIG.titleColumn, 1, 12),
+    titleRowSpan: normalizeIntegerInRange(input.titleRowSpan, DEFAULT_EXPORT_TEMPLATE_CONFIG.titleRowSpan, 1, 6),
+    titleColumnSpan: normalizeIntegerInRange(input.titleColumnSpan, DEFAULT_EXPORT_TEMPLATE_CONFIG.titleColumnSpan, 1, 12),
+    titleHorizontalAlign: normalizeExportHorizontalAlign(input.titleHorizontalAlign, DEFAULT_EXPORT_TEMPLATE_CONFIG.titleHorizontalAlign),
+    titleVerticalAlign: normalizeExportVerticalAlign(input.titleVerticalAlign, DEFAULT_EXPORT_TEMPLATE_CONFIG.titleVerticalAlign),
     introRow: normalizeIntegerInRange(input.introRow, DEFAULT_EXPORT_TEMPLATE_CONFIG.introRow, 1, 24),
     introColumn: normalizeIntegerInRange(input.introColumn, DEFAULT_EXPORT_TEMPLATE_CONFIG.introColumn, 1, 12),
+    introRowSpan: normalizeIntegerInRange(input.introRowSpan, DEFAULT_EXPORT_TEMPLATE_CONFIG.introRowSpan, 1, 8),
+    introColumnSpan: normalizeIntegerInRange(input.introColumnSpan, DEFAULT_EXPORT_TEMPLATE_CONFIG.introColumnSpan, 1, 12),
+    introHorizontalAlign: normalizeExportHorizontalAlign(input.introHorizontalAlign, DEFAULT_EXPORT_TEMPLATE_CONFIG.introHorizontalAlign),
+    introVerticalAlign: normalizeExportVerticalAlign(input.introVerticalAlign, DEFAULT_EXPORT_TEMPLATE_CONFIG.introVerticalAlign),
     headerRow: normalizeIntegerInRange(input.headerRow, DEFAULT_EXPORT_TEMPLATE_CONFIG.headerRow, 2, 30),
+    headerColumn: normalizeIntegerInRange(input.headerColumn, DEFAULT_EXPORT_TEMPLATE_CONFIG.headerColumn, 1, 12),
+    headerHorizontalAlign: normalizeExportHorizontalAlign(input.headerHorizontalAlign, DEFAULT_EXPORT_TEMPLATE_CONFIG.headerHorizontalAlign),
+    headerVerticalAlign: normalizeExportVerticalAlign(input.headerVerticalAlign, DEFAULT_EXPORT_TEMPLATE_CONFIG.headerVerticalAlign),
     headerBackgroundColor: normalizeHexColor(input.headerBackgroundColor, DEFAULT_EXPORT_TEMPLATE_CONFIG.headerBackgroundColor),
     headerTextColor: normalizeHexColor(input.headerTextColor, DEFAULT_EXPORT_TEMPLATE_CONFIG.headerTextColor),
     titleColor: normalizeHexColor(input.titleColor, DEFAULT_EXPORT_TEMPLATE_CONFIG.titleColor),
     introColor: normalizeHexColor(input.introColor, DEFAULT_EXPORT_TEMPLATE_CONFIG.introColor),
+    columnWidths: normalizeSizedNumberArray(input.columnWidths, DEFAULT_EXPORT_TEMPLATE_CONFIG.columnWidths, 8, 48),
+    rowHeights: normalizeSizedNumberArray(input.rowHeights, DEFAULT_EXPORT_TEMPLATE_CONFIG.rowHeights, 16, 80),
   };
 };
 
@@ -3332,13 +3371,26 @@ const getExportTemplateConfigResponse = (config) => normalizeExportTemplateConfi
   logoHeight: config?.exportTemplateLogoHeight,
   titleRow: config?.exportTemplateTitleRow,
   titleColumn: config?.exportTemplateTitleColumn,
+  titleRowSpan: config?.exportTemplateTitleRowSpan,
+  titleColumnSpan: config?.exportTemplateTitleColumnSpan,
+  titleHorizontalAlign: config?.exportTemplateTitleHorizontalAlign,
+  titleVerticalAlign: config?.exportTemplateTitleVerticalAlign,
   introRow: config?.exportTemplateIntroRow,
   introColumn: config?.exportTemplateIntroColumn,
+  introRowSpan: config?.exportTemplateIntroRowSpan,
+  introColumnSpan: config?.exportTemplateIntroColumnSpan,
+  introHorizontalAlign: config?.exportTemplateIntroHorizontalAlign,
+  introVerticalAlign: config?.exportTemplateIntroVerticalAlign,
   headerRow: config?.exportTemplateHeaderRow,
+  headerColumn: config?.exportTemplateHeaderColumn,
+  headerHorizontalAlign: config?.exportTemplateHeaderHorizontalAlign,
+  headerVerticalAlign: config?.exportTemplateHeaderVerticalAlign,
   headerBackgroundColor: config?.exportTemplateHeaderBackgroundColor,
   headerTextColor: config?.exportTemplateHeaderTextColor,
   titleColor: config?.exportTemplateTitleColor,
   introColor: config?.exportTemplateIntroColor,
+  columnWidths: config?.exportTemplateColumnWidths,
+  rowHeights: config?.exportTemplateRowHeights,
 });
 
 const sanitizePageRoleAccess = (input = {}) => {
@@ -3707,13 +3759,26 @@ app.post('/api/export-template/config', verifyToken, async (req, res) => {
     config.exportTemplateLogoHeight = templateConfig.logoHeight;
     config.exportTemplateTitleRow = templateConfig.titleRow;
     config.exportTemplateTitleColumn = templateConfig.titleColumn;
+    config.exportTemplateTitleRowSpan = templateConfig.titleRowSpan;
+    config.exportTemplateTitleColumnSpan = templateConfig.titleColumnSpan;
+    config.exportTemplateTitleHorizontalAlign = templateConfig.titleHorizontalAlign;
+    config.exportTemplateTitleVerticalAlign = templateConfig.titleVerticalAlign;
     config.exportTemplateIntroRow = templateConfig.introRow;
     config.exportTemplateIntroColumn = templateConfig.introColumn;
+    config.exportTemplateIntroRowSpan = templateConfig.introRowSpan;
+    config.exportTemplateIntroColumnSpan = templateConfig.introColumnSpan;
+    config.exportTemplateIntroHorizontalAlign = templateConfig.introHorizontalAlign;
+    config.exportTemplateIntroVerticalAlign = templateConfig.introVerticalAlign;
     config.exportTemplateHeaderRow = templateConfig.headerRow;
+    config.exportTemplateHeaderColumn = templateConfig.headerColumn;
+    config.exportTemplateHeaderHorizontalAlign = templateConfig.headerHorizontalAlign;
+    config.exportTemplateHeaderVerticalAlign = templateConfig.headerVerticalAlign;
     config.exportTemplateHeaderBackgroundColor = templateConfig.headerBackgroundColor;
     config.exportTemplateHeaderTextColor = templateConfig.headerTextColor;
     config.exportTemplateTitleColor = templateConfig.titleColor;
     config.exportTemplateIntroColor = templateConfig.introColor;
+    config.exportTemplateColumnWidths = templateConfig.columnWidths;
+    config.exportTemplateRowHeights = templateConfig.rowHeights;
     config.updatedBy = req.user.email;
     await config.save();
 

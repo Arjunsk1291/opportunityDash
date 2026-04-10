@@ -122,6 +122,9 @@ const inferImageExtension = (dataUrl: string): 'png' | 'jpeg' => (
   /^data:image\/png/i.test(dataUrl) ? 'png' : 'jpeg'
 );
 
+const mapHorizontalAlign = (value: ExportTemplateConfig['titleHorizontalAlign']) => value;
+const mapVerticalAlign = (value: ExportTemplateConfig['titleVerticalAlign']) => value;
+
 const blobToDataUrl = async (blob: Blob) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(String(reader.result || ''));
@@ -254,18 +257,24 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       const worksheet = workbook.addWorksheet(getWorksheetSafeName(exportTemplate.sheetName));
       const columnCount = Math.max(selectedColumns.length, 1);
       const lastColumnIndex = columnCount;
-      const titleStartColumn = clamp(exportTemplate.titleColumn, 1, lastColumnIndex);
-      const introStartColumn = clamp(exportTemplate.introColumn, 1, lastColumnIndex);
-      const headerRowIndex = Math.max(
-        clamp(exportTemplate.headerRow, 2, 30),
-        exportTemplate.titleRow + 1,
-        exportTemplate.introRow + 1,
-      );
-      const titleRowIndex = clamp(exportTemplate.titleRow, 1, headerRowIndex - 1);
-      const introRowCandidate = clamp(exportTemplate.introRow, 1, headerRowIndex - 1);
-      const introRowIndex = introRowCandidate === titleRowIndex
-        ? clamp(titleRowIndex + 1, 1, headerRowIndex - 1)
-        : introRowCandidate;
+      const headerStartColumn = clamp(exportTemplate.headerColumn, 1, 12);
+      const headerRowIndex = clamp(exportTemplate.headerRow, 2, 30);
+      const titleRowIndex = clamp(exportTemplate.titleRow, 1, Math.max(headerRowIndex - 1, 1));
+      const introRowIndex = clamp(exportTemplate.introRow, 1, Math.max(headerRowIndex - 1, 1));
+      const titleStartColumn = clamp(exportTemplate.titleColumn, 1, 12);
+      const introStartColumn = clamp(exportTemplate.introColumn, 1, 12);
+      const titleEndColumn = clamp(titleStartColumn + exportTemplate.titleColumnSpan - 1, titleStartColumn, 12);
+      const titleEndRow = clamp(titleRowIndex + exportTemplate.titleRowSpan - 1, titleRowIndex, 20);
+      const introEndColumn = clamp(introStartColumn + exportTemplate.introColumnSpan - 1, introStartColumn, 12);
+      const introEndRow = clamp(introRowIndex + exportTemplate.introRowSpan - 1, introRowIndex, 24);
+      const headerEndColumn = headerStartColumn + selectedColumns.length - 1;
+
+      worksheet.columns = Array.from({ length: Math.max(12, headerEndColumn) }, (_, index) => ({
+        width: exportTemplate.columnWidths[index] || 18,
+      }));
+      exportTemplate.rowHeights.forEach((height, index) => {
+        worksheet.getRow(index + 1).height = height;
+      });
 
       let logoDataUrl = '';
       if (exportTemplate.showLogo) {
@@ -282,23 +291,29 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
         }
       }
 
-      worksheet.mergeCells(titleRowIndex, titleStartColumn, titleRowIndex, lastColumnIndex);
+      worksheet.mergeCells(titleRowIndex, titleStartColumn, titleEndRow, titleEndColumn);
       worksheet.getCell(titleRowIndex, titleStartColumn).value = exportTemplate.title;
       worksheet.getCell(titleRowIndex, titleStartColumn).font = { size: 16, bold: true, color: { argb: `FF${stripHexHash(exportTemplate.titleColor)}` } };
-      worksheet.getCell(titleRowIndex, titleStartColumn).alignment = { vertical: 'middle', horizontal: 'left' };
-      worksheet.getRow(titleRowIndex).height = 24;
+      worksheet.getCell(titleRowIndex, titleStartColumn).alignment = {
+        vertical: mapVerticalAlign(exportTemplate.titleVerticalAlign),
+        horizontal: mapHorizontalAlign(exportTemplate.titleHorizontalAlign),
+        wrapText: true,
+      };
 
-      if (introRowIndex !== titleRowIndex) {
-        worksheet.mergeCells(introRowIndex, introStartColumn, introRowIndex, lastColumnIndex);
+      if (exportTemplate.introText) {
+        worksheet.mergeCells(introRowIndex, introStartColumn, introEndRow, introEndColumn);
         worksheet.getCell(introRowIndex, introStartColumn).value = exportTemplate.introText;
         worksheet.getCell(introRowIndex, introStartColumn).font = { size: 11, color: { argb: `FF${stripHexHash(exportTemplate.introColor)}` } };
-        worksheet.getCell(introRowIndex, introStartColumn).alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
-        worksheet.getRow(introRowIndex).height = exportTemplate.introText ? 36 : 18;
+        worksheet.getCell(introRowIndex, introStartColumn).alignment = {
+          vertical: mapVerticalAlign(exportTemplate.introVerticalAlign),
+          horizontal: mapHorizontalAlign(exportTemplate.introHorizontalAlign),
+          wrapText: true,
+        };
       }
 
       const headerRow = worksheet.getRow(headerRowIndex);
       selectedColumns.forEach((column, index) => {
-        const cell = headerRow.getCell(index + 1);
+        const cell = headerRow.getCell(headerStartColumn + index);
         cell.value = column.label;
         cell.font = { bold: true, color: { argb: `FF${stripHexHash(exportTemplate.headerTextColor)}` } };
         cell.fill = {
@@ -306,7 +321,11 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
           pattern: 'solid',
           fgColor: { argb: `FF${stripHexHash(exportTemplate.headerBackgroundColor)}` },
         };
-        cell.alignment = { vertical: 'middle', horizontal: 'left' };
+        cell.alignment = {
+          vertical: mapVerticalAlign(exportTemplate.headerVerticalAlign),
+          horizontal: mapHorizontalAlign(exportTemplate.headerHorizontalAlign),
+          wrapText: true,
+        };
         cell.border = {
           top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
           left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
@@ -317,8 +336,12 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       headerRow.height = 22;
 
       exportData.forEach((rowData) => {
-        const row = worksheet.addRow(selectedColumns.map((column) => rowData[column.label] ?? ''));
-        row.eachCell((cell) => {
+        const row = worksheet.addRow([]);
+        selectedColumns.forEach((column, index) => {
+          row.getCell(headerStartColumn + index).value = rowData[column.label] ?? '';
+        });
+        selectedColumns.forEach((_, index) => {
+          const cell = row.getCell(headerStartColumn + index);
           cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
           cell.border = {
             top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
@@ -329,21 +352,10 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
         });
       });
 
-      worksheet.columns = selectedColumns.map((column) => {
-        const maxContentLength = Math.max(
-          column.label.length,
-          ...exportData.map((row) => String(row[column.label] ?? '').length),
-          12,
-        );
-        return {
-          width: Math.min(Math.max(maxContentLength + 2, 14), 38),
-        };
-      });
-
       worksheet.views = [{ state: 'frozen', ySplit: headerRowIndex }];
       worksheet.autoFilter = {
-        from: { row: headerRowIndex, column: 1 },
-        to: { row: headerRowIndex, column: lastColumnIndex },
+        from: { row: headerRowIndex, column: headerStartColumn },
+        to: { row: headerRowIndex, column: headerEndColumn },
       };
 
       const buffer = await workbook.xlsx.writeBuffer();
