@@ -123,7 +123,7 @@ const isEoiRecord = (opp: Opportunity) => {
   const type = normalizeText(opp.opportunityClassification).toUpperCase();
   return type === 'EOI' || isEoiRefNo(opp.opportunityRefNo);
 };
-const isSubmittedLifecycleStatus = (status: string) => ['SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'HOLD / CLOSED', 'HOLD/CLOSED'].includes(status);
+const isLifecycleTenderStatus = (status: string) => ['SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'HOLD / CLOSED', 'HOLD/CLOSED'].includes(status);
 const isHoldStatus = (status: string) => status === 'HOLD / CLOSED' || status === 'HOLD/CLOSED';
 const hasPostBidDetails = (opp: Partial<Opportunity>) => Boolean(normalizeText(opp.postBidDetailType));
 
@@ -209,25 +209,27 @@ const getMatchedTenderRows = (group: OpportunityGroup) => {
   ));
 };
 
-const getSubmittedOrLaterRows = (group: OpportunityGroup) => group.tenderRows.filter((row) => isSubmittedLifecycleStatus(getNormalizedDisplayStatus(row)));
+const getLifecycleTenderRows = (group: OpportunityGroup) => group.tenderRows.filter((row) => isLifecycleTenderStatus(getNormalizedDisplayStatus(row)));
 const getAwardedRows = (group: OpportunityGroup) => group.tenderRows.filter((row) => getNormalizedDisplayStatus(row) === 'AWARDED');
 const getLostRows = (group: OpportunityGroup) => group.tenderRows.filter((row) => getNormalizedDisplayStatus(row) === 'LOST');
 const getRegrettedRows = (group: OpportunityGroup) => group.tenderRows.filter((row) => getNormalizedDisplayStatus(row) === 'REGRETTED');
 const getHoldRows = (group: OpportunityGroup) => group.tenderRows.filter((row) => isHoldStatus(getNormalizedDisplayStatus(row)));
 const getSubmittedOnlyRows = (group: OpportunityGroup) => group.tenderRows.filter((row) => getNormalizedDisplayStatus(row) === 'SUBMITTED');
 const hasConvertedTender = (group: OpportunityGroup) => getMatchedTenderRows(group).length > 0;
-const hasSubmittedTender = (group: OpportunityGroup) => getSubmittedOrLaterRows(group).length > 0;
+const hasSubmittedTender = (group: OpportunityGroup) => getSubmittedOnlyRows(group).length > 0;
 const isAwardedGroup = (group: OpportunityGroup) => getAwardedRows(group).length > 0;
 const isLostGroup = (group: OpportunityGroup) => getLostRows(group).length > 0;
 const isRegrettedGroup = (group: OpportunityGroup) => getRegrettedRows(group).length > 0;
 const isHoldGroup = (group: OpportunityGroup) => getHoldRows(group).length > 0;
+const hasLifecycleTender = (group: OpportunityGroup) => getLifecycleTenderRows(group).length > 0;
 const isNoDecisionGroup = (group: OpportunityGroup, selectedGroup: string) => (
   selectedGroup === 'GTS'
   && getSubmittedOnlyRows(group).some((row) => !hasPostBidDetails(row))
 );
 const getPureEoiRow = (group: OpportunityGroup) => getRepresentativeRow(group.eoiRows) || group.primary;
 const getConvertedTenderRow = (group: OpportunityGroup) => getRepresentativeRow(getMatchedTenderRows(group)) || getRepresentativeRow(group.tenderRows);
-const getSubmittedRow = (group: OpportunityGroup) => getRepresentativeRow(getSubmittedOrLaterRows(group)) || getConvertedTenderRow(group);
+const getLifecycleTenderRow = (group: OpportunityGroup) => getRepresentativeRow(getLifecycleTenderRows(group)) || getConvertedTenderRow(group);
+const getSubmittedRow = (group: OpportunityGroup) => getRepresentativeRow(getSubmittedOnlyRows(group)) || getConvertedTenderRow(group);
 const getAwardedRow = (group: OpportunityGroup) => getRepresentativeRow(getAwardedRows(group)) || getSubmittedRow(group);
 const getLostRow = (group: OpportunityGroup) => getRepresentativeRow(getLostRows(group)) || getSubmittedRow(group);
 const getRegrettedRow = (group: OpportunityGroup) => getRepresentativeRow(getRegrettedRows(group)) || getSubmittedRow(group);
@@ -419,19 +421,21 @@ const Analytics = () => {
     const pureEoiGroups = eoiOriginGroups.filter((group) => !hasConvertedTender(group));
     const eoiOriginTenderGroups = eoiOriginGroups.filter(hasConvertedTender);
     const eoiOriginSubmittedGroups = eoiOriginTenderGroups.filter(hasSubmittedTender);
-    const eoiOriginAwardedGroups = eoiOriginSubmittedGroups.filter(isAwardedGroup);
-    const eoiOriginLostGroups = eoiOriginSubmittedGroups.filter(isLostGroup);
-    const eoiOriginRegrettedGroups = eoiOriginSubmittedGroups.filter(isRegrettedGroup);
-    const eoiOriginHoldGroups = eoiOriginSubmittedGroups.filter(isHoldGroup);
-    const eoiOriginOpenDecisionGroups = eoiOriginSubmittedGroups.filter((group) => isNoDecisionGroup(group, selectedGroup));
+    const eoiOriginAwardedGroups = eoiOriginTenderGroups.filter(isAwardedGroup);
+    const eoiOriginLostGroups = eoiOriginTenderGroups.filter(isLostGroup);
+    const eoiOriginRegrettedGroups = eoiOriginTenderGroups.filter(isRegrettedGroup);
+    const eoiOriginHoldGroups = eoiOriginTenderGroups.filter(isHoldGroup);
+    const eoiOriginOpenDecisionGroups = eoiOriginTenderGroups.filter((group) => isNoDecisionGroup(group, selectedGroup));
+    const eoiOriginLifecycleGroups = eoiOriginTenderGroups.filter(hasLifecycleTender);
 
     const directTenderGroups = groupedOpportunities.filter((group) => group.eoiRows.length === 0 && group.tenderRows.length > 0);
     const directSubmittedGroups = directTenderGroups.filter(hasSubmittedTender);
-    const directAwardedGroups = directSubmittedGroups.filter(isAwardedGroup);
-    const directLostGroups = directSubmittedGroups.filter(isLostGroup);
-    const directRegrettedGroups = directSubmittedGroups.filter(isRegrettedGroup);
-    const directHoldGroups = directSubmittedGroups.filter(isHoldGroup);
-    const directOpenDecisionGroups = directSubmittedGroups.filter((group) => isNoDecisionGroup(group, selectedGroup));
+    const directAwardedGroups = directTenderGroups.filter(isAwardedGroup);
+    const directLostGroups = directTenderGroups.filter(isLostGroup);
+    const directRegrettedGroups = directTenderGroups.filter(isRegrettedGroup);
+    const directHoldGroups = directTenderGroups.filter(isHoldGroup);
+    const directOpenDecisionGroups = directTenderGroups.filter((group) => isNoDecisionGroup(group, selectedGroup));
+    const directLifecycleGroups = directTenderGroups.filter(hasLifecycleTender);
 
     const submittedGroups = [...eoiOriginSubmittedGroups, ...directSubmittedGroups];
     const wonGroups = [...eoiOriginAwardedGroups, ...directAwardedGroups];
@@ -439,9 +443,11 @@ const Analytics = () => {
     const regrettedGroups = [...eoiOriginRegrettedGroups, ...directRegrettedGroups];
     const holdGroups = [...eoiOriginHoldGroups, ...directHoldGroups];
     const noDecisionGroups = [...eoiOriginOpenDecisionGroups, ...directOpenDecisionGroups];
+    const lifecycleGroups = [...eoiOriginLifecycleGroups, ...directLifecycleGroups];
 
     const submittedValue = submittedGroups.reduce((sum, group) => sum + getGroupValue(group), 0);
     const wonValue = wonGroups.reduce((sum, group) => sum + getGroupValue(group), 0);
+    const lifecycleValue = lifecycleGroups.reduce((sum, group) => sum + getGroupValue(group), 0);
 
     const conversionLagDays = eoiOriginTenderGroups
       .map((group) => getDayDiff(getEarliestEoiTimestamp(group), getEarliestTenderTimestamp(group)))
@@ -516,8 +522,8 @@ const Analytics = () => {
       .sort((a, b) => b.count - a.count);
 
     const postBidBreakdown = Object.entries(
-      groupedOpportunities.reduce<Record<string, number>>((acc, group) => {
-        const tenderRow = getSubmittedRow(group);
+      lifecycleGroups.reduce<Record<string, number>>((acc, group) => {
+        const tenderRow = getLifecycleTenderRow(group);
         const label = getPostBidLabel(tenderRow?.postBidDetailType);
         acc[label] = (acc[label] || 0) + (tenderRow?.postBidDetailType ? 1 : 0);
         return acc;
@@ -530,7 +536,7 @@ const Analytics = () => {
         Other: 0,
       }),
     )
-      .map(([label, count]) => ({ label, count, percent: safePercent(count, Math.max(groupedOpportunities.length, 1)) }))
+      .map(([label, count]) => ({ label, count, percent: safePercent(count, Math.max(lifecycleGroups.length, 1)) }))
       .filter((row) => row.count > 0 || row.label === 'No Activity')
       .map((row) => {
         if (row.label === 'Technical Clarification Meeting') return { ...row, color: 'bg-cyan-500' };
@@ -653,9 +659,9 @@ const Analytics = () => {
         regrettedCount: regrettedGroups.length,
         holdCount: holdGroups.length,
         noDecisionCount: kpis.noDecision,
-        countWinRate: safePercent(kpis.won, kpis.submitted),
-        valueWinRate: safePercent(wonValue, submittedValue),
-        decisionRate: safePercent(kpis.won, kpis.won + kpis.lost),
+        countWinRate: safePercent(kpis.won, lifecycleGroups.length),
+        valueWinRate: safePercent(wonValue, lifecycleValue),
+        decisionRate: safePercent(kpis.won, kpis.won + kpis.lost + regrettedGroups.length + holdGroups.length),
         submittedValue,
         wonValue,
       },
@@ -668,10 +674,6 @@ const Analytics = () => {
         { label: 'Regretted', eoiOrigin: eoiOriginRegrettedGroups.length, direct: directRegrettedGroups.length },
         { label: 'Hold', eoiOrigin: eoiOriginHoldGroups.length, direct: directHoldGroups.length },
         ...(selectedGroup === 'GTS' ? [{ label: 'No Decision', eoiOrigin: eoiOriginOpenDecisionGroups.length, direct: directOpenDecisionGroups.length }] : []),
-        { label: 'Win % (Count)', eoiOrigin: formatPercent(safePercent(eoiOriginAwardedGroups.length, eoiOriginSubmittedGroups.length)), direct: formatPercent(safePercent(directAwardedGroups.length, directSubmittedGroups.length)) },
-        { label: 'Win % (Value)', eoiOrigin: formatPercent(safePercent(eoiOriginAwardedGroups.reduce((sum, group) => sum + getGroupValue(group), 0), eoiOriginSubmittedGroups.reduce((sum, group) => sum + getGroupValue(group), 0))), direct: formatPercent(safePercent(directAwardedGroups.reduce((sum, group) => sum + getGroupValue(group), 0), directSubmittedGroups.reduce((sum, group) => sum + getGroupValue(group), 0))) },
-        { label: 'Won Value', eoiOrigin: formatCurrencyCompact(eoiOriginAwardedGroups.reduce((sum, group) => sum + getGroupValue(group), 0)), direct: formatCurrencyCompact(directAwardedGroups.reduce((sum, group) => sum + getGroupValue(group), 0)) },
-        { label: 'Avg Days to Tender', eoiOrigin: `${average(conversionLagDays).toFixed(1)} d`, direct: 'N/A' },
       ],
       clientRows,
       eoiAgingBuckets,
@@ -683,6 +685,7 @@ const Analytics = () => {
       staleEoiRows,
       sparklineSeed: [kpis.submitted, kpis.won, kpis.lost, kpis.noDecision],
       drilldowns: {
+        lifecycle: rowsForGroups(lifecycleGroups, getLifecycleTenderRow),
         submitted: rowsForGroups(submittedGroups, getSubmittedRow),
         eoiSubmitted: rowsForGroups(eoiOriginSubmittedGroups, getSubmittedRow),
         directSubmitted: rowsForGroups(directSubmittedGroups, getSubmittedRow),
@@ -926,8 +929,6 @@ const Analytics = () => {
                           if (row.label === 'Regretted') return openDrilldown('EOI-Origin Regretted', analytics.drilldowns.eoiRegretted);
                           if (row.label === 'Hold') return openDrilldown('EOI-Origin Hold', analytics.drilldowns.eoiHold);
                           if (row.label === 'No Decision') return openDrilldown('EOI-Origin No Decision', analytics.drilldowns.eoiNoDecision);
-                          if (row.label === 'Win % (Count)' || row.label === 'Win % (Value)' || row.label === 'Won Value') return openDrilldown('EOI-Origin Won', analytics.drilldowns.eoiWon);
-                          if (row.label === 'Avg Days to Tender') return openDrilldown('EOI-Origin Became Tender', analytics.drilldowns.becameTender);
                         }}
                       >
                         {row.eoiOrigin}
@@ -945,8 +946,6 @@ const Analytics = () => {
                           if (row.label === 'Regretted') return openDrilldown('Direct Regretted', analytics.drilldowns.directRegretted);
                           if (row.label === 'Hold') return openDrilldown('Direct Hold', analytics.drilldowns.directHold);
                           if (row.label === 'No Decision') return openDrilldown('Direct No Decision', analytics.drilldowns.directNoDecision);
-                          if (row.label === 'Win % (Count)' || row.label === 'Win % (Value)' || row.label === 'Won Value') return openDrilldown('Direct Won', analytics.drilldowns.directWon);
-                          if (row.label === 'Avg Days to Tender') return openDrilldown('Direct Tenders', analytics.drilldowns.directTenders);
                         }}
                       >
                         {row.direct}
@@ -1083,7 +1082,7 @@ const Analytics = () => {
                 type="button"
                 className={`inline-block h-full ${item.color}`}
                 style={{ width: `${clampPercent(item.percent)}%` }}
-                onClick={() => openDrilldown(`Post-Bid • ${item.label}`, analytics.drilldowns.submitted.filter((opp) => getPostBidLabel(opp.postBidDetailType) === item.label || (!normalizeText(opp.postBidDetailType) && item.label === 'No Activity')))}
+                onClick={() => openDrilldown(`Post-Bid • ${item.label}`, analytics.drilldowns.lifecycle.filter((opp) => getPostBidLabel(opp.postBidDetailType) === item.label || (!normalizeText(opp.postBidDetailType) && item.label === 'No Activity')))}
               />
             ))}
           </div>
@@ -1093,7 +1092,7 @@ const Analytics = () => {
                 key={item.label}
                 type="button"
                 className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left"
-                onClick={() => openDrilldown(`Post-Bid • ${item.label}`, analytics.drilldowns.submitted.filter((opp) => getPostBidLabel(opp.postBidDetailType) === item.label || (!normalizeText(opp.postBidDetailType) && item.label === 'No Activity')))}
+                onClick={() => openDrilldown(`Post-Bid • ${item.label}`, analytics.drilldowns.lifecycle.filter((opp) => getPostBidLabel(opp.postBidDetailType) === item.label || (!normalizeText(opp.postBidDetailType) && item.label === 'No Activity')))}
               >
                 <div className="flex items-center gap-3">
                   <span className={`h-3 w-3 rounded-sm ${item.color}`} />
