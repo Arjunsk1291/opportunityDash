@@ -17,6 +17,7 @@ export type ActionKey =
   | 'graph_auth_write'
   | 'telecast_config_write'
   | 'telecast_auth_write'
+  | 'manual_opportunity_updates_write'
   | 'export_template_write'
   | 'notification_alert_flags_write'
   | 'lead_email_manage'
@@ -39,6 +40,7 @@ export const ACTION_LABELS: Record<ActionKey, string> = {
   graph_auth_write: 'Save Graph Auth Tokens',
   telecast_config_write: 'Save Telecast Config',
   telecast_auth_write: 'Save Telecast Auth Tokens',
+  manual_opportunity_updates_write: 'Upload Manual Opportunity Updates',
   export_template_write: 'Save Export Template Config',
   notification_alert_flags_write: 'Update Telecast Alert Flags',
   lead_email_manage: 'Approve lead email mappings',
@@ -62,6 +64,7 @@ export const ACTION_DESCRIPTIONS: Record<ActionKey, string> = {
   graph_auth_write: 'Persist delegated Graph auth for sync.',
   telecast_config_write: 'Persist telecast templates and recipients.',
   telecast_auth_write: 'Persist delegated Graph auth for telecast.',
+  manual_opportunity_updates_write: 'Upload manual workbook data that backfills synced opportunity fields by Avenir Ref.',
   export_template_write: 'Persist Excel export template layout, logo, and styling.',
   notification_alert_flags_write: 'Persist telecast alert flag updates on synced tenders.',
   lead_email_manage: 'Approve lead name to email mappings for deadline alerts.',
@@ -85,6 +88,7 @@ export const DEFAULT_ACTION_ROLE_ACCESS: Record<ActionKey, UserRole[]> = {
   graph_auth_write: ['Master'],
   telecast_config_write: ['Master'],
   telecast_auth_write: ['Master'],
+  manual_opportunity_updates_write: ['Master', 'Admin'],
   export_template_write: ['Master'],
   notification_alert_flags_write: ['Master', 'Admin'],
   lead_email_manage: ['Master', 'Admin'],

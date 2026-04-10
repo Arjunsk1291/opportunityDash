@@ -4,6 +4,7 @@ const syncedOpportunitySchema = new mongoose.Schema(
   {
     googleSheetRowId: String,
     opportunityRefNo: String,
+    adnocRftNo: { type: String, default: '' },
     tenderName: String,
     clientName: String,
     opportunityValue: Number,

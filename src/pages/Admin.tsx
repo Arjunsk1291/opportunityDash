@@ -159,10 +159,31 @@ interface NotificationSyncStatus {
   telecastEligibleRowsPreview?: NotificationRowPreview[];
 }
 
+interface ManualUpdateSummary {
+  receivedRows: number;
+  matchedRows: number;
+  manualDocsUpdated: number;
+  syncedRowsPatched: number;
+}
+
 const EXPORT_TEMPLATE_PREVIEW_HEADERS = ['Avenir Ref', 'Tender Name', 'Client', 'Status', 'RFP Received'];
 const EXPORT_TEMPLATE_PREVIEW_ROW = ['AC26144', 'HSE MONITORING SYSTEM', 'L&T', 'Submitted', '2026-04-07'];
 const EXPORT_PREVIEW_GRID_COLUMNS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 const EXPORT_PREVIEW_GRID_ROWS = Array.from({ length: 12 }, (_, index) => index + 1);
+const MANUAL_UPDATE_TEMPLATE_COLUMNS = [
+  { key: 'opportunityRefNo', label: 'Avenir Ref', required: true, help: 'Required unique row key used to map into MongoDB.' },
+  { key: 'adnocRftNo', label: 'CLIENT Ref', required: false, help: 'Client or ADNOC reference number.' },
+  { key: 'tenderName', label: 'Tender Name', required: false, help: 'Tender or opportunity name.' },
+  { key: 'opportunityClassification', label: 'Tender Type', required: false, help: 'Use EOI or Tender.' },
+  { key: 'clientName', label: 'Client', required: false, help: 'Client name override.' },
+  { key: 'opportunityValue', label: 'Value (AED)', required: false, help: 'Numeric value in AED.' },
+  { key: 'dateTenderReceived', label: 'RFP Received', required: false, help: 'Proper date preferred, year-only also allowed.' },
+  { key: 'tenderPlannedSubmissionDate', label: 'Submission', required: false, help: 'Proper date preferred, year-only also allowed.' },
+] as const;
+const DEFAULT_MANUAL_TEMPLATE_SELECTION = MANUAL_UPDATE_TEMPLATE_COLUMNS.reduce<Record<string, boolean>>((acc, column) => {
+  acc[column.key] = column.required || ['adnocRftNo', 'dateTenderReceived', 'tenderPlannedSubmissionDate'].includes(column.key);
+  return acc;
+}, {});
 
 const DEFAULT_TELECAST_TEMPLATE_STYLE: TelecastTemplateStyle = {
   key: 'avenir_blue',
@@ -338,6 +359,10 @@ export default function Admin() {
   const [postBidSaving, setPostBidSaving] = useState(false);
   const [exportTemplate, setExportTemplate] = useState<ExportTemplateConfig>(DEFAULT_EXPORT_TEMPLATE);
   const [exportTemplateSaving, setExportTemplateSaving] = useState(false);
+  const [manualTemplateSelection, setManualTemplateSelection] = useState<Record<string, boolean>>(DEFAULT_MANUAL_TEMPLATE_SELECTION);
+  const [manualUpdateUploading, setManualUpdateUploading] = useState(false);
+  const [manualUpdateFileName, setManualUpdateFileName] = useState('');
+  const [manualUpdateSummary, setManualUpdateSummary] = useState<ManualUpdateSummary | null>(null);
 
   const tabConfig = useMemo(
     () => ([
@@ -345,6 +370,7 @@ export default function Admin() {
       { value: 'users', label: 'User Management', pageKey: 'master_users' as PageKey },
       { value: 'data-sync', label: 'Data Sync', pageKey: 'master_data_sync' as PageKey },
       { value: 'telecast', label: '📣 Telecast', pageKey: 'master_telecast' as PageKey },
+      { value: 'update', label: 'Update', pageKey: 'master_update' as PageKey },
       { value: 'export', label: 'Export', pageKey: 'master_export' as PageKey },
     ]),
     [],
@@ -488,6 +514,7 @@ export default function Admin() {
   };
 
   const canManageLeadEmails = canPerformAction('lead_email_manage');
+  const canManageManualUpdates = canPerformAction('manual_opportunity_updates_write');
   const canManageExportTemplate = canPerformAction('export_template_write');
   const approvedUsers = useMemo(
     () => users.filter((candidate) => candidate.status === 'approved'),
@@ -657,6 +684,79 @@ export default function Admin() {
     } catch (error) {
       toast.error((error as Error).message || 'Failed to load logo file');
     } finally {
+      event.target.value = '';
+    }
+  };
+
+  const toggleManualTemplateColumn = (key: string, checked: boolean) => {
+    setManualTemplateSelection((prev) => ({
+      ...prev,
+      [key]: key === 'opportunityRefNo' ? true : checked,
+    }));
+  };
+
+  const downloadManualUpdateTemplate = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const selectedColumns = MANUAL_UPDATE_TEMPLATE_COLUMNS.filter((column) => column.required || manualTemplateSelection[column.key]);
+      const templateRow = selectedColumns.reduce<Record<string, string>>((acc, column) => {
+        acc[column.label] = '';
+        return acc;
+      }, {});
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet([templateRow]);
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Update Template');
+      XLSX.writeFile(workbook, `opportunity-update-template-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success('Update template downloaded.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to download update template');
+    }
+  };
+
+  const handleManualUpdateUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !token) return;
+
+    setManualUpdateUploading(true);
+    setManualUpdateFileName(file.name);
+    try {
+      const XLSX = await import('xlsx');
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        throw new Error('Workbook is empty.');
+      }
+      const worksheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '', raw: true });
+      if (!rows.length) {
+        throw new Error('No data rows found in the first sheet.');
+      }
+
+      const response = await fetch(API_URL + '/opportunities/manual-sheet-updates', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ rows }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to apply manual workbook updates');
+      }
+
+      setManualUpdateSummary({
+        receivedRows: Number(data?.receivedRows || 0),
+        matchedRows: Number(data?.matchedRows || 0),
+        manualDocsUpdated: Number(data?.manualDocsUpdated || 0),
+        syncedRowsPatched: Number(data?.syncedRowsPatched || 0),
+      });
+      toast.success(data?.message || 'Manual workbook updates applied.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to upload update workbook');
+    } finally {
+      setManualUpdateUploading(false);
       event.target.value = '';
     }
   };
@@ -2551,6 +2651,113 @@ export default function Admin() {
             </CardContent>
           </Card>
 
+        </TabsContent>
+        )}
+
+        {allowedTabValues.has('update') && (
+        <TabsContent value="update">
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
+            <Card>
+              <CardHeader>
+                <CardTitle>Manual Opportunity Updates</CardTitle>
+                <CardDescription>
+                  Upload a workbook keyed by Avenir Ref to backfill blank synced fields. Synced sheet values always stay authoritative, and proper dates in the workbook are preserved while year-only cells remain year-only.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="rounded-xl border p-4 space-y-4">
+                  <div>
+                    <p className="text-sm font-medium">1. Build a template</p>
+                    <p className="text-xs text-muted-foreground">Pick the columns your team wants to fill. `Avenir Ref` is always included because it drives the MongoDB mapping.</p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {MANUAL_UPDATE_TEMPLATE_COLUMNS.map((column) => (
+                      <label key={column.key} className="flex items-start gap-3 rounded-lg border p-3">
+                        <Checkbox
+                          checked={column.required || Boolean(manualTemplateSelection[column.key])}
+                          onCheckedChange={(checked) => toggleManualTemplateColumn(column.key, Boolean(checked))}
+                          disabled={column.required}
+                        />
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{column.label}</span>
+                            {column.required && <Badge variant="secondary">Required</Badge>}
+                          </div>
+                          <p className="text-xs text-muted-foreground">{column.help}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      Template downloads as Excel and can be shared with the team for controlled updates.
+                    </p>
+                    <Button type="button" variant="outline" onClick={downloadManualUpdateTemplate}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Download Template
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border p-4 space-y-4">
+                  <div>
+                    <p className="text-sm font-medium">2. Upload completed workbook</p>
+                    <p className="text-xs text-muted-foreground">The importer reads the first sheet, matches rows by Avenir Ref case-insensitively, and only backfills fields when the synced source is blank.</p>
+                  </div>
+                  <Input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleManualUpdateUpload}
+                    disabled={!canManageManualUpdates || manualUpdateUploading}
+                  />
+                  <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                    Latest file:
+                    {' '}
+                    {manualUpdateFileName || 'No workbook uploaded in this session'}
+                  </div>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p>Importer rules:</p>
+                    <p>1. Blank workbook cells do nothing.</p>
+                    <p>2. Workbook values fill MongoDB only when the synced field is blank.</p>
+                    <p>3. If a later Graph sync brings a different non-empty value, the synced value wins and becomes the new baseline.</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Update Summary</CardTitle>
+                <CardDescription>Quick check of what the last workbook upload changed.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border bg-muted/20 p-4">
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">Workbook Rows</div>
+                    <div className="mt-2 text-2xl font-semibold">{manualUpdateSummary?.receivedRows ?? 0}</div>
+                  </div>
+                  <div className="rounded-xl border bg-muted/20 p-4">
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">Matched Refs</div>
+                    <div className="mt-2 text-2xl font-semibold">{manualUpdateSummary?.matchedRows ?? 0}</div>
+                  </div>
+                  <div className="rounded-xl border bg-muted/20 p-4">
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">Manual Records Saved</div>
+                    <div className="mt-2 text-2xl font-semibold">{manualUpdateSummary?.manualDocsUpdated ?? 0}</div>
+                  </div>
+                  <div className="rounded-xl border bg-muted/20 p-4">
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">Live Rows Patched</div>
+                    <div className="mt-2 text-2xl font-semibold">{manualUpdateSummary?.syncedRowsPatched ?? 0}</div>
+                  </div>
+                </div>
+                <Alert>
+                  <Database className="h-4 w-4" />
+                  <AlertDescription>
+                    Use this page for controlled backfills only. It does not replace the normal Graph sync and does not modify your existing date parsing logic in the sync service.
+                  </AlertDescription>
+                </Alert>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
         )}
 

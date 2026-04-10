@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
+import OpportunityManualUpdate from './models/OpportunityManualUpdate.js';
 import LeadEmailMapping from './models/LeadEmailMapping.js';
 import Approval from './models/Approval.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
@@ -21,6 +22,13 @@ import { initializeBootSync } from './services/bootSyncService.js';
 import SystemConfig from './models/SystemConfig.js';
 import { encryptSecret } from './services/cryptoService.js';
 import { applyOpportunityStatusFields, getEffectiveMergedStatus } from './services/opportunityStatusService.js';
+import {
+  applyManualOverridesToOpportunity,
+  buildManualOpportunityPatch,
+  buildManualUpdatePatch,
+  parseManualUpdateRows,
+  normalizeRefKey,
+} from './services/opportunityManualUpdateService.js';
 import {
   Document,
   Packer,
@@ -639,6 +647,37 @@ const buildNotificationKey = (opportunity) => {
   if (ref) return `REF::${ref}`;
   const signature = buildRowSignature(opportunity);
   return signature ? `SIG::${signature}` : '';
+};
+
+const loadManualUpdateSnapshots = async () => {
+  const manualUpdates = await OpportunityManualUpdate.find({}).lean();
+  return new Map(
+    manualUpdates
+      .map((row) => [normalizeRefKey(row?.opportunityRefNo || row?.refKey || ''), row])
+      .filter(([ref]) => Boolean(ref))
+  );
+};
+
+const alignManualSnapshotsToSyncedValues = async (alignmentByRef = new Map(), updatedBy = '') => {
+  const ops = [];
+
+  alignmentByRef.forEach((fields, refKey) => {
+    if (!refKey || !fields || Object.keys(fields).length === 0) return;
+    ops.push({
+      updateOne: {
+        filter: { refKey },
+        update: {
+          $set: {
+            ...fields,
+            updatedBy,
+          },
+        },
+      },
+    });
+  });
+
+  if (!ops.length) return;
+  await OpportunityManualUpdate.bulkWrite(ops, { ordered: false });
 };
 
 const parseDateValue = (value) => {
@@ -1804,11 +1843,14 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
       .map((row) => [normalizeRefNo(row?.opportunityRefNo || ''), row])
       .filter(([ref]) => Boolean(ref))
   );
+  const manualUpdatesByRef = await loadManualUpdateSnapshots();
+  const manualAlignmentByRef = new Map();
 
   const opportunitiesForInsert = opportunities.map((opportunity) => {
     const key = buildNotificationKey(opportunity);
     const ref = getTenderRefNo(opportunity);
     const metaSnapshot = ref ? metaByRef.get(normalizeRefNo(ref)) : null;
+    const manualSnapshot = ref ? manualUpdatesByRef.get(normalizeRefKey(ref)) : null;
     const previousState = key ? existingTelecastState.keyState.get(key) : null;
     const isDispatchedNow = Boolean(key && telecastDispatch.dispatchedKeys.includes(key));
     const isAlerted = seededAlertBaseline || isDispatchedNow || Boolean(previousState?.telecastAlerted) || Boolean(key && alertedKeySet.has(key));
@@ -1822,19 +1864,28 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
       else telecastAlertSource = previousState?.telecastAlertSource || 'history_preserved';
     }
 
+    const { opportunity: mergedOpportunity, staleFields } = applyManualOverridesToOpportunity(opportunity, manualSnapshot);
+    if (manualSnapshot && staleFields.length) {
+      const nextFields = staleFields.reduce((acc, fieldKey) => {
+        acc[fieldKey] = mergedOpportunity?.[fieldKey] ?? opportunity?.[fieldKey] ?? '';
+        return acc;
+      }, {});
+      manualAlignmentByRef.set(normalizeRefKey(ref), nextFields);
+    }
+
     return {
-      ...opportunity,
-      leadEmail: metaSnapshot?.leadEmail || opportunity?.leadEmail || '',
-      leadEmailSource: metaSnapshot?.leadEmailSource || opportunity?.leadEmailSource || '',
-      leadEmailAssignedAt: metaSnapshot?.leadEmailAssignedAt || opportunity?.leadEmailAssignedAt || null,
-      leadEmailAssignedBy: metaSnapshot?.leadEmailAssignedBy || opportunity?.leadEmailAssignedBy || '',
-      deadlineAlerted: metaSnapshot?.deadlineAlerted || opportunity?.deadlineAlerted || false,
-      deadlineAlertedAt: metaSnapshot?.deadlineAlertedAt || opportunity?.deadlineAlertedAt || null,
-      deadlineAlertedDateKey: metaSnapshot?.deadlineAlertedDateKey || opportunity?.deadlineAlertedDateKey || '',
-      postBidDetailType: metaSnapshot?.postBidDetailType || opportunity?.postBidDetailType || '',
-      postBidDetailOther: metaSnapshot?.postBidDetailOther || opportunity?.postBidDetailOther || '',
-      postBidDetailUpdatedBy: metaSnapshot?.postBidDetailUpdatedBy || opportunity?.postBidDetailUpdatedBy || '',
-      postBidDetailUpdatedAt: metaSnapshot?.postBidDetailUpdatedAt || opportunity?.postBidDetailUpdatedAt || null,
+      ...mergedOpportunity,
+      leadEmail: metaSnapshot?.leadEmail || mergedOpportunity?.leadEmail || '',
+      leadEmailSource: metaSnapshot?.leadEmailSource || mergedOpportunity?.leadEmailSource || '',
+      leadEmailAssignedAt: metaSnapshot?.leadEmailAssignedAt || mergedOpportunity?.leadEmailAssignedAt || null,
+      leadEmailAssignedBy: metaSnapshot?.leadEmailAssignedBy || mergedOpportunity?.leadEmailAssignedBy || '',
+      deadlineAlerted: metaSnapshot?.deadlineAlerted || mergedOpportunity?.deadlineAlerted || false,
+      deadlineAlertedAt: metaSnapshot?.deadlineAlertedAt || mergedOpportunity?.deadlineAlertedAt || null,
+      deadlineAlertedDateKey: metaSnapshot?.deadlineAlertedDateKey || mergedOpportunity?.deadlineAlertedDateKey || '',
+      postBidDetailType: metaSnapshot?.postBidDetailType || mergedOpportunity?.postBidDetailType || '',
+      postBidDetailOther: metaSnapshot?.postBidDetailOther || mergedOpportunity?.postBidDetailOther || '',
+      postBidDetailUpdatedBy: metaSnapshot?.postBidDetailUpdatedBy || mergedOpportunity?.postBidDetailUpdatedBy || '',
+      postBidDetailUpdatedAt: metaSnapshot?.postBidDetailUpdatedAt || mergedOpportunity?.postBidDetailUpdatedAt || null,
       telecastAlerted: isAlerted,
       telecastAlertedAt,
       telecastAlertedKey: key || '',
@@ -1845,6 +1896,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
 
   await SyncedOpportunity.deleteMany({});
   const inserted = await SyncedOpportunity.insertMany(opportunitiesForInsert);
+  await alignManualSnapshotsToSyncedValues(manualAlignmentByRef, `sync:${source}`);
   const clientSyncResult = await syncClientsFromOpportunities(opportunities);
 
   config.lastSyncAt = now;
@@ -2114,6 +2166,7 @@ async function ensureBootstrapMasterUser(email) {
 async function ensureInitialMongoState() {
   await ensureCollectionExists(AuthorizedUser, 'authorizedusers');
   await ensureCollectionExists(SyncedOpportunity, 'syncedopportunities');
+  await ensureCollectionExists(OpportunityManualUpdate, 'opportunitymanualupdates');
   await ensureCollectionExists(ProjectUpdate, 'projectupdates');
   await ensureBootstrapMasterUser('arjun.s@avenirengineering.com');
 }
@@ -3142,6 +3195,7 @@ const PAGE_KEYS = [
   'master_users',
   'master_data_sync',
   'master_telecast',
+  'master_update',
   'master_export',
 ];
 const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
@@ -3162,6 +3216,7 @@ const ACTION_KEYS = [
   'graph_auth_write',
   'telecast_config_write',
   'telecast_auth_write',
+  'manual_opportunity_updates_write',
   'export_template_write',
   'notification_alert_flags_write',
   'lead_email_manage',
@@ -3179,6 +3234,7 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
   master_users: ['Master', 'Admin'],
   master_data_sync: ['Master', 'Admin'],
   master_telecast: ['Master', 'Admin'],
+  master_update: ['Master', 'Admin'],
   master_export: ['Master', 'Admin'],
 };
 const DEFAULT_ACTION_ROLE_ACCESS = {
@@ -3198,6 +3254,7 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   graph_auth_write: ['Master'],
   telecast_config_write: ['Master'],
   telecast_auth_write: ['Master'],
+  manual_opportunity_updates_write: ['Master', 'Admin'],
   export_template_write: ['Master'],
   notification_alert_flags_write: ['Master', 'Admin'],
   lead_email_manage: ['Master', 'Admin'],
@@ -3666,6 +3723,91 @@ app.post('/api/export-template/config', verifyToken, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/opportunities/manual-sheet-updates', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
+
+    const parsedRows = parseManualUpdateRows(Array.isArray(req.body?.rows) ? req.body.rows : []);
+    if (!parsedRows.length) {
+      return res.status(400).json({ error: 'No valid rows found. Make sure the workbook includes Avenir Ref and at least one populated update column.' });
+    }
+
+    const refKeys = parsedRows.map((row) => row.refKey).filter(Boolean);
+    const [existingOpportunities, existingManualSnapshots] = await Promise.all([
+      SyncedOpportunity.find({}).lean(),
+      OpportunityManualUpdate.find({ refKey: { $in: refKeys } }).lean(),
+    ]);
+
+    const opportunityByRef = new Map(
+      existingOpportunities
+        .map((row) => [normalizeRefKey(row?.opportunityRefNo || ''), row])
+        .filter(([ref]) => Boolean(ref))
+    );
+    const manualByRef = new Map(
+      existingManualSnapshots
+        .map((row) => [normalizeRefKey(row?.opportunityRefNo || row?.refKey || ''), row])
+        .filter(([ref]) => Boolean(ref))
+    );
+
+    const manualOps = [];
+    const syncedOps = [];
+    let matchedRows = 0;
+    let manualDocsUpdated = 0;
+    let syncedRowsPatched = 0;
+
+    parsedRows.forEach((row) => {
+      const refKey = row.refKey;
+      const existingOpportunity = opportunityByRef.get(refKey) || null;
+      const previousManualSnapshot = manualByRef.get(refKey) || null;
+      if (existingOpportunity) matchedRows += 1;
+
+      const manualPatch = buildManualUpdatePatch(row, existingOpportunity);
+      manualOps.push({
+        updateOne: {
+          filter: { refKey },
+          update: {
+            $set: {
+              ...manualPatch,
+              updatedBy: req.user?.email || 'unknown',
+            },
+          },
+          upsert: true,
+        },
+      });
+      manualDocsUpdated += 1;
+
+      if (existingOpportunity) {
+        const syncedPatch = buildManualOpportunityPatch(row, existingOpportunity, previousManualSnapshot);
+        if (Object.keys(syncedPatch).length) {
+          syncedOps.push({
+            updateOne: {
+              filter: { _id: existingOpportunity._id },
+              update: {
+                $set: syncedPatch,
+              },
+            },
+          });
+          syncedRowsPatched += 1;
+        }
+      }
+    });
+
+    if (manualOps.length) await OpportunityManualUpdate.bulkWrite(manualOps, { ordered: false });
+    if (syncedOps.length) await SyncedOpportunity.bulkWrite(syncedOps, { ordered: false });
+
+    res.json({
+      success: true,
+      receivedRows: parsedRows.length,
+      matchedRows,
+      manualDocsUpdated,
+      syncedRowsPatched,
+      message: `Processed ${parsedRows.length} update row(s).`,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to apply manual sheet updates' });
   }
 });
 

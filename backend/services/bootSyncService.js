@@ -1,6 +1,8 @@
 import { syncTendersFromGraph, transformTendersToOpportunities } from './dataSyncService.js';
 import SyncedOpportunity from '../models/SyncedOpportunity.js';
 import GraphSyncConfig from '../models/GraphSyncConfig.js';
+import OpportunityManualUpdate from '../models/OpportunityManualUpdate.js';
+import { applyManualOverridesToOpportunity, normalizeRefKey } from './opportunityManualUpdateService.js';
 
 export async function initializeBootSync() {
   try {
@@ -30,17 +32,25 @@ export async function initializeBootSync() {
         .map((row) => [String(row?.opportunityRefNo || '').trim().toUpperCase(), row])
         .filter(([ref]) => Boolean(ref))
     );
+    const manualUpdates = await OpportunityManualUpdate.find({}).lean();
+    const manualByRef = new Map(
+      manualUpdates
+        .map((row) => [normalizeRefKey(row?.opportunityRefNo || row?.refKey || ''), row])
+        .filter(([ref]) => Boolean(ref))
+    );
 
     const opportunitiesForInsert = opportunities.map((opportunity) => {
       const refKey = String(opportunity?.opportunityRefNo || '').trim().toUpperCase();
       const metaSnapshot = refKey ? metaByRef.get(refKey) : null;
+      const manualSnapshot = refKey ? manualByRef.get(normalizeRefKey(refKey)) : null;
+      const { opportunity: mergedOpportunity } = applyManualOverridesToOpportunity(opportunity, manualSnapshot);
 
       return {
-        ...opportunity,
-        postBidDetailType: metaSnapshot?.postBidDetailType || opportunity?.postBidDetailType || '',
-        postBidDetailOther: metaSnapshot?.postBidDetailOther || opportunity?.postBidDetailOther || '',
-        postBidDetailUpdatedBy: metaSnapshot?.postBidDetailUpdatedBy || opportunity?.postBidDetailUpdatedBy || '',
-        postBidDetailUpdatedAt: metaSnapshot?.postBidDetailUpdatedAt || opportunity?.postBidDetailUpdatedAt || null,
+        ...mergedOpportunity,
+        postBidDetailType: metaSnapshot?.postBidDetailType || mergedOpportunity?.postBidDetailType || '',
+        postBidDetailOther: metaSnapshot?.postBidDetailOther || mergedOpportunity?.postBidDetailOther || '',
+        postBidDetailUpdatedBy: metaSnapshot?.postBidDetailUpdatedBy || mergedOpportunity?.postBidDetailUpdatedBy || '',
+        postBidDetailUpdatedAt: metaSnapshot?.postBidDetailUpdatedAt || mergedOpportunity?.postBidDetailUpdatedAt || null,
       };
     });
 

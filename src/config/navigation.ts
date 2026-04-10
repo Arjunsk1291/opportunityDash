@@ -11,6 +11,7 @@ export type PageKey =
   | 'master_users'
   | 'master_data_sync'
   | 'master_telecast'
+  | 'master_update'
   | 'master_export';
 
 export const PAGE_LABELS: Record<PageKey, string> = {
@@ -25,12 +26,13 @@ export const PAGE_LABELS: Record<PageKey, string> = {
   master_users: 'Master Panel · User Management',
   master_data_sync: 'Master Panel · Data Sync',
   master_telecast: 'Master Panel · Telecast',
+  master_update: 'Master Panel · Update',
   master_export: 'Master Panel · Export',
 };
 
 export const PAGE_GROUPS: Array<{ label: string; pages: PageKey[] }> = [
   { label: 'Core Workspace', pages: ['dashboard', 'opportunities', 'tender_updates', 'vendor_directory', 'clients', 'analytics'] },
-  { label: 'Master Panel', pages: ['master', 'master_general', 'master_users', 'master_data_sync', 'master_telecast', 'master_export'] },
+  { label: 'Master Panel', pages: ['master', 'master_general', 'master_users', 'master_data_sync', 'master_telecast', 'master_update', 'master_export'] },
 ];
 
 export const DEFAULT_PAGE_ROLE_ACCESS: Record<PageKey, string[]> = {
@@ -45,6 +47,7 @@ export const DEFAULT_PAGE_ROLE_ACCESS: Record<PageKey, string[]> = {
   master_users: ['Master', 'Admin'],
   master_data_sync: ['Master', 'Admin'],
   master_telecast: ['Master', 'Admin'],
+  master_update: ['Master', 'Admin'],
   master_export: ['Master', 'Admin'],
 };
 
