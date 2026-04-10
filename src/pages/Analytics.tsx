@@ -14,12 +14,24 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { useData } from '@/contexts/DataContext';
+import { useAuth } from '@/contexts/AuthContext';
 import type { Opportunity } from '@/data/opportunityData';
 import { getDisplayStatus } from '@/lib/opportunityStatus';
+import {
+  type AssistantDrilldownSummary,
+  type AssistantLossTheme,
+  type AssistantMatchReview,
+  type AssistantQueryResult,
+  fetchDrilldownSummary,
+  fetchLossThemes,
+  fetchMatchReview,
+  queryAssistant,
+} from '@/services/assistantApi';
 
 type OpportunityGroup = {
   key: string;
@@ -40,6 +52,17 @@ type DrilldownState = {
   title: string;
   rows: Opportunity[];
 };
+
+type AssistantDrilldownKey =
+  | 'submitted'
+  | 'won'
+  | 'lost'
+  | 'regretted'
+  | 'hold'
+  | 'noDecision'
+  | 'pureEoi'
+  | 'becameTender'
+  | 'directTenders';
 
 const TIME_RANGE_OPTIONS = [
   { label: '30d', value: 30 },
@@ -392,10 +415,21 @@ const FlowNode = ({
 
 const Analytics = () => {
   const { opportunities, isLoading, error } = useData();
+  const { token } = useAuth();
   const [selectedGroup, setSelectedGroup] = useState('ALL');
   const [timeRange, setTimeRange] = useState<number>(365);
   const [refreshKey, setRefreshKey] = useState(0);
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null);
+  const [assistantQuery, setAssistantQuery] = useState('');
+  const [assistantResult, setAssistantResult] = useState<AssistantQueryResult | null>(null);
+  const [assistantPendingOpen, setAssistantPendingOpen] = useState<{ key: AssistantDrilldownKey; title: string; scopeGroup: string | null } | null>(null);
+  const [isAssistantLoading, setIsAssistantLoading] = useState(false);
+  const [lossThemes, setLossThemes] = useState<AssistantLossTheme[]>([]);
+  const [isThemesLoading, setIsThemesLoading] = useState(false);
+  const [matchReview, setMatchReview] = useState<AssistantMatchReview[]>([]);
+  const [isMatchReviewLoading, setIsMatchReviewLoading] = useState(false);
+  const [drilldownSummary, setDrilldownSummary] = useState<AssistantDrilldownSummary | null>(null);
+  const [isDrilldownSummaryLoading, setIsDrilldownSummaryLoading] = useState(false);
 
   const groupOptions = useMemo(() => {
     const groups = Array.from(new Set(opportunities.map((opp) => normalizeText(opp.groupClassification)).filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -717,9 +751,130 @@ const Analytics = () => {
     };
   }, [groupedOpportunities, selectedGroup]);
 
+  const resolveAssistantDrilldown = (key: AssistantDrilldownKey) => {
+    const drilldownMap: Record<AssistantDrilldownKey, { title: string; rows: Opportunity[] }> = {
+      submitted: { title: 'Submitted Tenders', rows: analytics.drilldowns.submitted },
+      won: { title: 'Awarded Tenders', rows: analytics.drilldowns.won },
+      lost: { title: 'Lost Tenders', rows: analytics.drilldowns.lost },
+      regretted: { title: 'Regretted Tenders', rows: analytics.drilldowns.regretted },
+      hold: { title: 'Hold Tenders', rows: analytics.drilldowns.hold },
+      noDecision: { title: 'No Decision Tenders', rows: analytics.drilldowns.noDecision },
+      pureEoi: { title: 'Pure EOIs', rows: analytics.drilldowns.pureEoi },
+      becameTender: { title: 'EOI Became Tender', rows: analytics.drilldowns.becameTender },
+      directTenders: { title: 'Direct Tenders', rows: analytics.drilldowns.directTenders },
+    };
+    return drilldownMap[key];
+  };
+
   const openDrilldown = (title: string, rows: Opportunity[]) => {
     setDrilldown({ title, rows });
   };
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setIsThemesLoading(true);
+
+    fetchLossThemes(token, analytics.drilldowns.outcomeAll)
+      .then((nextThemes) => {
+        if (!cancelled) setLossThemes(nextThemes);
+      })
+      .catch((nextError) => {
+        console.error('Failed to load suggested themes:', nextError);
+        if (!cancelled) setLossThemes([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsThemesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [analytics.drilldowns.outcomeAll, token]);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setIsMatchReviewLoading(true);
+
+    fetchMatchReview(token, scopedOpportunities)
+      .then((nextMatches) => {
+        if (!cancelled) setMatchReview(nextMatches);
+      })
+      .catch((nextError) => {
+        console.error('Failed to load match review:', nextError);
+        if (!cancelled) setMatchReview([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsMatchReviewLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [scopedOpportunities, token]);
+
+  useEffect(() => {
+    if (!token || !drilldown) {
+      setDrilldownSummary(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsDrilldownSummaryLoading(true);
+
+    fetchDrilldownSummary(token, drilldown.title, drilldown.rows)
+      .then((nextSummary) => {
+        if (!cancelled) setDrilldownSummary(nextSummary);
+      })
+      .catch((nextError) => {
+        console.error('Failed to load drilldown summary:', nextError);
+        if (!cancelled) setDrilldownSummary(null);
+      })
+      .finally(() => {
+        if (!cancelled) setIsDrilldownSummaryLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [drilldown, token]);
+
+  const handleAssistantSubmit = async () => {
+    if (!token || !assistantQuery.trim()) return;
+    setIsAssistantLoading(true);
+    try {
+      const result = await queryAssistant(token, assistantQuery);
+      setAssistantResult(result);
+
+      if (result.scopeGroup && result.scopeGroup !== selectedGroup) {
+        setSelectedGroup(result.scopeGroup);
+      }
+
+      if (result.drilldownKey) {
+        setAssistantPendingOpen({
+          key: result.drilldownKey as AssistantDrilldownKey,
+          title: result.title,
+          scopeGroup: result.scopeGroup,
+        });
+      }
+    } catch (nextError) {
+      console.error('Assistant query failed:', nextError);
+    } finally {
+      setIsAssistantLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!assistantPendingOpen) return;
+    if (assistantPendingOpen.scopeGroup && assistantPendingOpen.scopeGroup !== selectedGroup) return;
+
+    const resolved = resolveAssistantDrilldown(assistantPendingOpen.key);
+    if (resolved) {
+      openDrilldown(assistantPendingOpen.title || resolved.title, resolved.rows);
+    }
+    setAssistantPendingOpen(null);
+  }, [assistantPendingOpen, selectedGroup, analytics]);
 
   const scopeLabel = selectedGroup === 'ALL' ? 'All Verticals' : selectedGroup;
   const monthHeatMax = Math.max(
@@ -852,6 +1007,32 @@ const Analytics = () => {
                 <Target className="mr-2 h-4 w-4" />
                 Focus
               </Button>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/8 p-3 backdrop-blur-md">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-200">Assistant</div>
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <Input
+                  value={assistantQuery}
+                  onChange={(event) => setAssistantQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void handleAssistantSubmit();
+                    }
+                  }}
+                  placeholder="Show GTS no-decision tenders"
+                  className="border-white/10 bg-white/10 text-white placeholder:text-slate-300"
+                />
+                <Button type="button" className="bg-white text-slate-900 hover:bg-white/90" onClick={() => void handleAssistantSubmit()} disabled={isAssistantLoading || !assistantQuery.trim()}>
+                  {isAssistantLoading ? 'Searching...' : 'Open'}
+                </Button>
+              </div>
+              {assistantResult && (
+                <div className="mt-3 text-xs text-slate-200">
+                  {assistantResult.explanation}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1105,6 +1286,65 @@ const Analytics = () => {
         </div>
       </section>
 
+      <section className="mb-6 grid gap-6 xl:grid-cols-2 lg:mb-8">
+        <div className="analytics-card p-5 lg:p-6">
+          <div className="mb-5">
+            <div className="dash-label">Assistant Themes</div>
+            <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">Suggested Loss Themes</h2>
+          </div>
+          <div className="space-y-3">
+            {isThemesLoading && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">Loading suggested themes...</div>
+            )}
+            {!isThemesLoading && lossThemes.length === 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">No suggested themes available for the current scope.</div>
+            )}
+            {lossThemes.map((theme) => (
+              <div
+                key={theme.label}
+                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left"
+              >
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">{theme.label}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {theme.sample ? `${theme.sample.refNo || 'NO REF'} • ${theme.sample.tenderName}` : 'No sample row'}
+                  </div>
+                </div>
+                <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-700">{theme.count}</Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="analytics-card p-5 lg:p-6">
+          <div className="mb-5">
+            <div className="dash-label">Assistant Review</div>
+            <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">Match Review</h2>
+            <p className="mt-2 text-sm text-slate-500">These are advisory confidence flags for EOI to tender pairing and do not affect the real counts.</p>
+          </div>
+          <div className="space-y-3">
+            {isMatchReviewLoading && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">Reviewing candidate matches...</div>
+            )}
+            {!isMatchReviewLoading && matchReview.length === 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">No questionable EOI to tender pairings detected in the current scope.</div>
+            )}
+            {matchReview.map((item) => (
+              <div key={`${item.refNo}-${item.tenderName}`} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{item.tenderName}</div>
+                    <div className="mt-1 text-xs text-slate-500">{item.refNo || 'NO REF'} • {item.clientName}</div>
+                    <div className="mt-2 text-xs text-slate-500">{item.reasons.slice(0, 2).join(' ')}</div>
+                  </div>
+                  <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-700">{item.confidence} • {item.score}%</Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="mb-6 grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)] lg:mb-8">
         <div className="analytics-card p-5 lg:p-6">
           <div className="mb-5 flex items-center gap-3">
@@ -1264,6 +1504,21 @@ const Analytics = () => {
           <DialogHeader>
             <DialogTitle>{drilldown?.title || 'Drilldown'}</DialogTitle>
           </DialogHeader>
+          <div className="space-y-3">
+            {isDrilldownSummaryLoading && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">Loading summary...</div>
+            )}
+            {drilldownSummary && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Summary</div>
+                <div className="space-y-2 text-sm text-slate-700">
+                  {drilldownSummary.bullets.map((bullet) => (
+                    <div key={bullet}>{bullet}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <OpportunitiesTable data={drilldown?.rows || []} maxHeight="max-h-[65vh]" />
         </DialogContent>
       </Dialog>

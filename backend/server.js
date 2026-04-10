@@ -22,6 +22,11 @@ import { initializeBootSync } from './services/bootSyncService.js';
 import SystemConfig from './models/SystemConfig.js';
 import { encryptSecret } from './services/cryptoService.js';
 import { applyOpportunityStatusFields, getEffectiveMergedStatus } from './services/opportunityStatusService.js';
+import { getAssistantRuntimeConfig } from './services/ai/modelRuntime.js';
+import { parseAssistantQuery } from './services/ai/queryIntentService.js';
+import { buildLossThemes } from './services/ai/lossThemeService.js';
+import { buildDrilldownSummary } from './services/ai/summaryService.js';
+import { buildMatchReview } from './services/ai/matchReviewService.js';
 import {
   applyManualOverridesToOpportunity,
   buildManualOpportunityPatch,
@@ -2237,6 +2242,26 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
+const normalizeAssistantRows = (rows = []) => (
+  (Array.isArray(rows) ? rows : [])
+    .slice(0, 300)
+    .map((row) => ({
+      opportunityRefNo: String(row?.opportunityRefNo || ''),
+      tenderName: String(row?.tenderName || ''),
+      clientName: String(row?.clientName || ''),
+      groupClassification: String(row?.groupClassification || ''),
+      opportunityClassification: String(row?.opportunityClassification || ''),
+      dateTenderReceived: row?.dateTenderReceived || null,
+      tenderSubmittedDate: row?.tenderSubmittedDate || null,
+      postBidDetailType: String(row?.postBidDetailType || ''),
+      remarksReason: String(row?.remarksReason || ''),
+      comments: String(row?.comments || ''),
+      avenirStatus: String(row?.avenirStatus || ''),
+      canonicalStage: String(row?.canonicalStage || ''),
+      tenderResult: String(row?.tenderResult || ''),
+    }))
+);
+
 app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
   const requestMeta = {
     endpoint: '/api/auth/verify-token',
@@ -2400,6 +2425,66 @@ app.get('/api/auth/user', verifyToken, async (req, res) => {
     status: req.user.status,
     assignedGroup: req.user.assignedGroup,
   });
+});
+
+app.get('/api/assistant/runtime', verifyToken, async (_req, res) => {
+  res.json({
+    ok: true,
+    runtime: getAssistantRuntimeConfig(),
+  });
+});
+
+app.post('/api/assistant/query', verifyToken, async (req, res) => {
+  try {
+    const query = String(req.body?.query || '').trim();
+    const result = await parseAssistantQuery(query);
+    res.json({
+      ok: true,
+      ...result,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Assistant query failed' });
+  }
+});
+
+app.post('/api/assistant/loss-themes', verifyToken, async (req, res) => {
+  try {
+    const rows = normalizeAssistantRows(req.body?.rows);
+    const themes = await buildLossThemes(rows);
+    res.json({
+      ok: true,
+      themes,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Loss theme analysis failed' });
+  }
+});
+
+app.post('/api/assistant/drilldown-summary', verifyToken, async (req, res) => {
+  try {
+    const rows = normalizeAssistantRows(req.body?.rows);
+    const title = String(req.body?.title || 'Selection');
+    const summary = await buildDrilldownSummary({ rows, title });
+    res.json({
+      ok: true,
+      ...summary,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Drilldown summary failed' });
+  }
+});
+
+app.post('/api/assistant/match-review', verifyToken, async (req, res) => {
+  try {
+    const rows = normalizeAssistantRows(req.body?.rows);
+    const matches = await buildMatchReview(rows);
+    res.json({
+      ok: true,
+      matches,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Match review failed' });
+  }
 });
 
 app.get('/api/users/authorized', verifyToken, async (req, res) => {
