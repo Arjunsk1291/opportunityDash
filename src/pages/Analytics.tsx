@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
+import { AdvancedFilters, applyFilters, defaultFilters, type FilterState } from '@/components/Dashboard/AdvancedFilters';
 import { useData } from '@/contexts/DataContext';
 import type { Opportunity } from '@/data/opportunityData';
 import { getDisplayStatus } from '@/lib/opportunityStatus';
@@ -103,6 +104,7 @@ const formatCurrencyCompact = (value: number) => {
 };
 
 const formatPercent = (value: number) => `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`;
+const QUICK_RANGE_CUSTOM = -1;
 
 const formatMonthLabel = (value: string) => {
   if (!value || value.length < 7) return 'Unknown';
@@ -115,6 +117,22 @@ const getMonthKey = (value: string | null | undefined) => {
   if (!timestamp) return '';
   const date = new Date(timestamp);
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
+const getQuickRangeDateConfig = (days: number): Pick<FilterState, 'datePreset' | 'dateRange'> => {
+  if (days >= 3650) {
+    return {
+      datePreset: 'all',
+      dateRange: { from: undefined, to: undefined },
+    };
+  }
+
+  const to = new Date();
+  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+  return {
+    datePreset: 'custom',
+    dateRange: { from, to },
+  };
 };
 
 const getNormalizedDisplayStatus = (opp: Partial<Opportunity>) => normalizeText(getDisplayStatus(opp)).toUpperCase();
@@ -396,8 +414,8 @@ const FlowNode = ({
 
 const Analytics = () => {
   const { opportunities, isLoading, error } = useData();
-  const [selectedGroup, setSelectedGroup] = useState('ALL');
-  const [timeRange, setTimeRange] = useState<number>(3650);
+  const [filters, setFilters] = useState<FilterState>(defaultFilters);
+  const [quickRange, setQuickRange] = useState<number>(3650);
   const [refreshKey, setRefreshKey] = useState(0);
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null);
   const [heatmapYear, setHeatmapYear] = useState('LATEST');
@@ -408,17 +426,7 @@ const Analytics = () => {
     return ['ALL', ...groups];
   }, [opportunities]);
 
-  const scopedOpportunities = useMemo(() => {
-    const now = Date.now();
-    const cutoff = now - timeRange * 24 * 60 * 60 * 1000;
-
-    return opportunities.filter((opp) => {
-      if (selectedGroup !== 'ALL' && normalizeText(opp.groupClassification) !== selectedGroup) return false;
-      const timestamp = parseFlexibleTimestamp(opp.dateTenderReceived || opp.tenderSubmittedDate || opp.tenderPlannedSubmissionDate);
-      if (!timestamp) return timeRange >= 3650;
-      return timestamp >= cutoff;
-    });
-  }, [opportunities, selectedGroup, timeRange]);
+  const scopedOpportunities = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
 
   const groupedOpportunities = useMemo(() => buildOpportunityGroups(scopedOpportunities), [scopedOpportunities]);
 
@@ -431,7 +439,8 @@ const Analytics = () => {
     const eoiOriginLostGroups = eoiOriginTenderGroups.filter(isLostGroup);
     const eoiOriginRegrettedGroups = eoiOriginTenderGroups.filter(isRegrettedGroup);
     const eoiOriginHoldGroups = eoiOriginTenderGroups.filter(isHoldGroup);
-    const eoiOriginOpenDecisionGroups = eoiOriginTenderGroups.filter((group) => isNoDecisionGroup(group, selectedGroup));
+    const selectedSingleGroup = filters.groups.length === 1 ? filters.groups[0] : 'ALL';
+    const eoiOriginOpenDecisionGroups = eoiOriginTenderGroups.filter((group) => isNoDecisionGroup(group, selectedSingleGroup));
     const eoiOriginLifecycleGroups = eoiOriginTenderGroups.filter(hasLifecycleTender);
 
     const directTenderGroups = groupedOpportunities.filter((group) => group.eoiRows.length === 0 && group.tenderRows.length > 0);
@@ -440,7 +449,7 @@ const Analytics = () => {
     const directLostGroups = directTenderGroups.filter(isLostGroup);
     const directRegrettedGroups = directTenderGroups.filter(isRegrettedGroup);
     const directHoldGroups = directTenderGroups.filter(isHoldGroup);
-    const directOpenDecisionGroups = directTenderGroups.filter((group) => isNoDecisionGroup(group, selectedGroup));
+    const directOpenDecisionGroups = directTenderGroups.filter((group) => isNoDecisionGroup(group, selectedSingleGroup));
     const directLifecycleGroups = directTenderGroups.filter(hasLifecycleTender);
 
     const flattenRows = (groups: OpportunityGroup[], selector: (group: OpportunityGroup) => Opportunity[]) => groups.flatMap(selector);
@@ -702,7 +711,7 @@ const Analytics = () => {
         { label: 'Lost', eoiOrigin: eoiOriginLostGroups.length, direct: directLostGroups.length },
         { label: 'Regretted', eoiOrigin: eoiOriginRegrettedGroups.length, direct: directRegrettedGroups.length },
         { label: 'Hold', eoiOrigin: eoiOriginHoldGroups.length, direct: directHoldGroups.length },
-        ...(selectedGroup === 'GTS' ? [{ label: 'No Decision', eoiOrigin: eoiOriginOpenDecisionGroups.length, direct: directOpenDecisionGroups.length }] : []),
+        ...(selectedSingleGroup === 'GTS' ? [{ label: 'No Decision', eoiOrigin: eoiOriginOpenDecisionGroups.length, direct: directOpenDecisionGroups.length }] : []),
       ],
       clientRows,
       eoiAgingBuckets,
@@ -745,7 +754,7 @@ const Analytics = () => {
         ],
       },
     };
-  }, [groupedOpportunities, selectedGroup]);
+  }, [groupedOpportunities, filters.groups]);
 
   const availableHeatmapYears = useMemo(
     () => Array.from(new Set(analytics.monthColumns.map((month) => month.slice(0, 4)))).sort((a, b) => a.localeCompare(b)),
@@ -773,7 +782,12 @@ const Analytics = () => {
     setDrilldown({ title, rows });
   };
 
-  const scopeLabel = selectedGroup === 'ALL' ? 'All Verticals' : selectedGroup;
+  const selectedGroup = filters.groups.length === 1 ? filters.groups[0] : 'ALL';
+  const scopeLabel = filters.groups.length === 0
+    ? 'All Verticals'
+    : filters.groups.length === 1
+      ? filters.groups[0]
+      : `${filters.groups.length} Verticals`;
   const monthHeatMax = Math.max(
     1,
     ...analytics.monthlyHeatmap.flatMap((row) => row.values.map((value) => value.value)),
@@ -865,6 +879,7 @@ const Analytics = () => {
             </div>
             <div className="flex flex-wrap gap-3 text-xs text-slate-200/90">
               <div className="analytics-chip">Scope: {scopeLabel}</div>
+              <div className="analytics-chip">Rows: {scopedOpportunities.length}</div>
               <div className="analytics-chip">EOI to Tender: {formatPercent(analytics.eoiOrigin.conversionRate)}</div>
               <div className="analytics-chip">Count Win: {formatPercent(analytics.overall.countWinRate)}</div>
               <div className="analytics-chip">Value Win: {formatPercent(analytics.overall.valueWinRate)}</div>
@@ -878,9 +893,15 @@ const Analytics = () => {
                   key={option.value}
                   type="button"
                   size="sm"
-                  variant={timeRange === option.value ? 'default' : 'ghost'}
-                  className={timeRange === option.value ? 'bg-white text-slate-900 hover:bg-white/90' : 'text-white hover:bg-white/10 hover:text-white'}
-                  onClick={() => setTimeRange(option.value)}
+                  variant={quickRange === option.value ? 'default' : 'ghost'}
+                  className={quickRange === option.value ? 'bg-white text-slate-900 hover:bg-white/90' : 'text-white hover:bg-white/10 hover:text-white'}
+                  onClick={() => {
+                    setQuickRange(option.value);
+                    setFilters((prev) => ({
+                      ...prev,
+                      ...getQuickRangeDateConfig(option.value),
+                    }));
+                  }}
                 >
                   {option.label}
                 </Button>
@@ -888,7 +909,15 @@ const Analytics = () => {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-              <Select value={selectedGroup} onValueChange={setSelectedGroup}>
+              <Select
+                value={selectedGroup}
+                onValueChange={(value) => {
+                  setFilters((prev) => ({
+                    ...prev,
+                    groups: value === 'ALL' ? [] : [value],
+                  }));
+                }}
+              >
                 <SelectTrigger className="border-white/10 bg-white/8 text-white backdrop-blur-sm">
                   <SelectValue placeholder="Select vertical" />
                 </SelectTrigger>
@@ -905,6 +934,23 @@ const Analytics = () => {
               </Button>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="mb-6 lg:mb-8">
+        <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur-sm lg:p-5">
+          <AdvancedFilters
+            data={opportunities}
+            filters={filters}
+            onFiltersChange={(nextFilters) => {
+              setFilters(nextFilters);
+              setQuickRange(QUICK_RANGE_CUSTOM);
+            }}
+            onClearFilters={() => {
+              setFilters(defaultFilters);
+              setQuickRange(3650);
+            }}
+          />
         </div>
       </section>
 
