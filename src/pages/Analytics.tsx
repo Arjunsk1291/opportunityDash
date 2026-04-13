@@ -465,6 +465,7 @@ const Analytics = () => {
     const directLifecycleGroups = directTenderGroups.filter(hasLifecycleTender);
 
     const flattenRows = (groups: OpportunityGroup[], selector: (group: OpportunityGroup) => Opportunity[]) => groups.flatMap(selector);
+    const flattenAllRows = (groups: OpportunityGroup[]) => groups.flatMap((group) => [...group.eoiRows, ...group.tenderRows]);
 
     const eoiOriginSubmittedRows = flattenRows(eoiOriginTenderGroups, getSubmittedOnlyRows);
     const eoiOriginWonRows = flattenRows(eoiOriginTenderGroups, getAwardedRows);
@@ -479,6 +480,11 @@ const Analytics = () => {
     const directRegrettedRows = flattenRows(directTenderGroups, getRegrettedRows);
     const directHoldRows = flattenRows(directTenderGroups, getHoldRows);
     const directNoDecisionRows = flattenRows(directTenderGroups, getNoDecisionSubmittedRows);
+    const eoiOriginAllRows = flattenAllRows(eoiOriginGroups);
+    const directAllRows = flattenAllRows(directTenderGroups);
+    const eoiOriginReceivedRows = flattenRows(eoiOriginGroups, (group) => group.eoiRows);
+    const directReceivedRows = flattenRows(directTenderGroups, (group) => group.tenderRows);
+    const eoiOriginBecameTenderRows = flattenRows(eoiOriginTenderGroups, (group) => group.tenderRows);
 
     const submittedRows = [...eoiOriginSubmittedRows, ...directSubmittedRows];
     const wonRows = [...eoiOriginWonRows, ...directWonRows];
@@ -716,14 +722,14 @@ const Analytics = () => {
         wonValue,
       },
       comparisonRows: [
-        { label: 'Received', eoiOrigin: eoiOriginGroups.length, direct: directTenderGroups.length },
-        { label: 'Became Tender', eoiOrigin: eoiOriginTenderGroups.length, direct: null },
-        { label: 'Submitted', eoiOrigin: eoiOriginSubmittedGroups.length, direct: directSubmittedGroups.length },
-        { label: 'Won', eoiOrigin: eoiOriginAwardedGroups.length, direct: directAwardedGroups.length },
-        { label: 'Lost', eoiOrigin: eoiOriginLostGroups.length, direct: directLostGroups.length },
-        { label: 'Regretted', eoiOrigin: eoiOriginRegrettedGroups.length, direct: directRegrettedGroups.length },
-        { label: 'Hold', eoiOrigin: eoiOriginHoldGroups.length, direct: directHoldGroups.length },
-        ...(selectedSingleGroup === 'GTS' ? [{ label: 'No Decision', eoiOrigin: eoiOriginOpenDecisionGroups.length, direct: directOpenDecisionGroups.length }] : []),
+        { label: 'Received', eoiOrigin: eoiOriginReceivedRows.length, direct: directReceivedRows.length },
+        { label: 'Became Tender', eoiOrigin: eoiOriginBecameTenderRows.length, direct: null },
+        { label: 'Submitted', eoiOrigin: eoiOriginSubmittedRows.length, direct: directSubmittedRows.length },
+        { label: 'Won', eoiOrigin: eoiOriginWonRows.length, direct: directWonRows.length },
+        { label: 'Lost', eoiOrigin: eoiOriginLostRows.length, direct: directLostRows.length },
+        { label: 'Regretted', eoiOrigin: eoiOriginRegrettedRows.length, direct: directRegrettedRows.length },
+        { label: 'Hold', eoiOrigin: eoiOriginHoldRows.length, direct: directHoldRows.length },
+        ...(selectedSingleGroup === 'GTS' ? [{ label: 'No Decision', eoiOrigin: eoiOriginNoDecisionRows.length, direct: directNoDecisionRows.length }] : []),
       ],
       clientRows,
       eoiAgingBuckets,
@@ -754,16 +760,18 @@ const Analytics = () => {
         noDecision: noDecisionRows,
         eoiNoDecision: rowsForGroups(eoiOriginOpenDecisionGroups, getNoDecisionRow),
         directNoDecision: rowsForGroups(directOpenDecisionGroups, getNoDecisionRow),
-        eoiReceived: rowsForGroups(eoiOriginGroups, getPureEoiRow),
+        eoiReceived: eoiOriginReceivedRows,
         pureEoi: rowsForGroups(pureEoiGroups, getPureEoiRow),
-        becameTender: rowsForGroups(eoiOriginTenderGroups, getConvertedTenderRow),
-        directTenders: rowsForGroups(directTenderGroups, getConvertedTenderRow),
+        becameTender: eoiOriginBecameTenderRows,
+        directTenders: directReceivedRows,
         receivedAll: rowsForGroups(groupedOpportunities, (group) => getPureEoiRow(group) || getConvertedTenderRow(group) || group.primary),
         outcomeAll: [
           ...lostRows,
           ...regrettedRows,
           ...holdRows,
         ],
+        eoiOriginAll: eoiOriginAllRows,
+        directAll: directAllRows,
       },
     };
   }, [groupedOpportunities, filters.groups]);
