@@ -18,6 +18,7 @@ import { getDisplayStatus } from '@/lib/opportunityStatus';
 import { useAuth } from '@/contexts/AuthContext';
 import defaultExportLogo from '@/assets/avenir-logo.png';
 import { DEFAULT_EXPORT_TEMPLATE, ExportTemplateConfig, normalizeExportTemplate } from '@/lib/exportTemplate';
+import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -232,7 +233,11 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
 
     setIsExporting(true);
     try {
-      const ExcelJS = await import('exceljs');
+      const ExcelJSImport = await import('exceljs');
+      const ExcelJS = ExcelJSImport.default ?? ExcelJSImport;
+      if (!ExcelJS?.Workbook) {
+        throw new Error('Excel export engine failed to load.');
+      }
       const orderedData = [...exportableData].sort((a, b) => {
         const typeRankDiff = getExportTypeRank(a) - getExportTypeRank(b);
         if (typeRankDiff !== 0) return typeRankDiff;
@@ -373,6 +378,9 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       URL.revokeObjectURL(url);
 
       setIsDialogOpen(false);
+    } catch (error) {
+      console.error('Export failed:', error);
+      toast.error((error as Error)?.message || 'Failed to export Excel file.');
     } finally {
       setIsExporting(false);
     }
