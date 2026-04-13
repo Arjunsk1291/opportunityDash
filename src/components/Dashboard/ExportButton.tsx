@@ -279,16 +279,32 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       const introEndRow = clamp(introRowIndex + exportTemplate.introRowSpan - 1, introRowIndex, 24);
       const headerEndColumn = headerStartColumn + selectedColumns.length - 1;
       const mergedRanges: Array<[number, number, number, number]> = [];
+      const normalizeRange = (range: [number, number, number, number]) => {
+        const [rowStart, colStart, rowEnd, colEnd] = range;
+        return [
+          Math.min(rowStart, rowEnd),
+          Math.min(colStart, colEnd),
+          Math.max(rowStart, rowEnd),
+          Math.max(colStart, colEnd),
+        ] as [number, number, number, number];
+      };
       const mergeIfSafe = (range: [number, number, number, number], label: string) => {
-        const overlap = mergedRanges.find((existing) => rangesOverlap(existing, range));
+        const normalized = normalizeRange(range);
+        const overlap = mergedRanges.find((existing) => rangesOverlap(existing, normalized));
         if (overlap) {
           console.warn(`Export merge skipped for ${label}: overlaps existing merge`, { range, overlap });
           toast.warning(`Export layout overlap: ${label} merge skipped.`);
           return false;
         }
-        worksheet.mergeCells(...range);
-        mergedRanges.push(range);
-        return true;
+        try {
+          worksheet.mergeCells(...normalized);
+          mergedRanges.push(normalized);
+          return true;
+        } catch (error) {
+          console.warn(`Export merge failed for ${label}:`, error);
+          toast.warning(`Export layout merge failed for ${label}.`);
+          return false;
+        }
       };
 
       worksheet.columns = Array.from({ length: Math.max(12, headerEndColumn) }, (_, index) => ({
