@@ -900,8 +900,6 @@ const Analytics = () => {
     {
       label: 'Submitted',
       value: visibleSubmittedOpportunityRows.length,
-      delta: analytics.eoiOrigin.submittedCount,
-      direct: analytics.directTender.submittedCount,
       meta: [
         { label: 'Tender', value: submittedTenderCount, tone: 'bg-blue-500' },
         { label: 'EOI', value: submittedEoiCount, tone: 'bg-amber-500' },
@@ -915,8 +913,6 @@ const Analytics = () => {
     {
       label: 'Won',
       value: analytics.overall.wonCount,
-      delta: analytics.eoiOrigin.awardedCount,
-      direct: analytics.directTender.awardedCount,
       tone: 'text-emerald-600',
       glow: 'analytics-kpi-glow-emerald',
       icon: Trophy,
@@ -926,8 +922,6 @@ const Analytics = () => {
     {
       label: 'Negative Outcome',
       value: negativeOutcomeCount,
-      delta: negativeOutcomeEoiCount,
-      direct: negativeOutcomeDirectCount,
       chip: `${analytics.overall.regrettedCount} regretted and ${analytics.overall.holdCount} hold`,
       tone: 'text-rose-600',
       glow: 'analytics-kpi-glow-rose',
@@ -938,8 +932,6 @@ const Analytics = () => {
     {
       label: 'No Decision',
       value: analytics.overall.noDecisionCount,
-      delta: analytics.eoiOrigin.noDecisionCount,
-      direct: analytics.directTender.noDecisionCount,
       chip: selectedGroup === 'GTS' ? 'Submitted with no post-bid detail yet' : 'Only shown for GTS scope',
       tone: 'text-amber-600',
       glow: 'analytics-kpi-glow-amber',
@@ -1086,7 +1078,7 @@ const Analytics = () => {
                 </div>
               </div>
               <div className="mb-3 flex items-center justify-between gap-3">
-                <span className={`text-xs font-semibold ${card.tone}`}>EOI-origin {formatCompactNumber(card.delta)} • Direct {formatCompactNumber(card.direct)}</span>
+                <span className={`text-xs font-semibold ${card.tone}`}>Total {formatCompactNumber(card.value)}</span>
                 <Sparkline values={card.sparkline} className={`h-8 w-20 ${card.tone}`} />
               </div>
               <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
