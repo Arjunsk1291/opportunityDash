@@ -68,6 +68,28 @@ const POST_BID_TYPE_LABELS: Record<string, string> = {
   OTHER: 'Other',
 };
 
+const LOSS_REASON_THEMES = [
+  { label: 'Price / Commercial', patterns: ['price', 'pricing', 'commercial', 'cost', 'budget', 'rate', 'too high', 'higher', 'lowest bidder', 'l1', 'quote'] },
+  { label: 'Technical / Compliance', patterns: ['technical', 'specification', 'spec', 'compliance', 'non compliant', 'qualification', 'qualified', 'experience', 'methodology', 'tbe'] },
+  { label: 'Client / Internal Decision', patterns: ['client decision', 'internal', 'management decision', 'business decision', 'strategy', 'strategic', 'not shortlisted', 'shortlist', 'not selected', 'selected other'] },
+  { label: 'Competitor / Incumbent', patterns: ['competitor', 'competition', 'incumbent', 'alternate vendor', 'other bidder', 'existing contractor'] },
+  { label: 'Schedule / Timeline', patterns: ['timeline', 'delay', 'deadline', 'time', 'late', 'postponed', 'deferred', 'rescheduled', 'expired'] },
+  { label: 'Scope / Resource Fit', patterns: ['scope', 'resource', 'resourcing', 'capacity', 'bandwidth', 'manpower', 'fit', 'not in scope', 'outside scope'] },
+  { label: 'No Response / Dormant', patterns: ['no response', 'silent', 'no update', 'awaiting', 'pending response', 'dormant', 'not reverted'] },
+  { label: 'Cancelled / On Hold', patterns: ['cancel', 'cancelled', 'hold', 'closed', 'stopped', 'suspended'] },
+] as const;
+
+const POST_BID_THEMES = [
+  { label: 'Technical Clarification Meeting', patterns: ['clarification', 'tcm', 'clarification meeting', 'technical clarification'] },
+  { label: 'Technical Presentation', patterns: ['presentation', 'technical presentation', 'demo', 'demonstration', 'workshop'] },
+  { label: 'Site Visit', patterns: ['site visit', 'visit', 'inspection', 'walkdown', 'survey'] },
+  { label: 'Commercial Negotiation', patterns: ['commercial', 'negotiation', 'price discussion', 'pricing discussion', 'commercial clarification'] },
+  { label: 'Best & Final Offer', patterns: ['best and final', 'best & final', 'bafo', 'final offer'] },
+  { label: 'Document Resubmission', patterns: ['resubmit', 'resubmission', 'clarification response', 're-submit', 're submission'] },
+  { label: 'Client Follow-Up', patterns: ['follow up', 'follow-up', 'meeting', 'discussion', 'client call', 'client feedback'] },
+  { label: 'No Activity', patterns: ['no activity', 'no response', 'silent', 'awaiting', 'pending'] },
+] as const;
+
 const normalizeText = (value: string | null | undefined) => String(value || '').trim();
 const normalizeTextLower = (value: string | null | undefined) => normalizeText(value).toLowerCase();
 const normalizeRefNo = (value: string | null | undefined) => normalizeText(value).toUpperCase();
@@ -268,16 +290,31 @@ const getRegrettedRow = (group: OpportunityGroup) => getRepresentativeRow(getReg
 const getHoldRow = (group: OpportunityGroup) => getRepresentativeRow(getHoldRows(group)) || getSubmittedRow(group);
 const getNoDecisionRow = (group: OpportunityGroup) => getRepresentativeRow(getNoDecisionSubmittedRows(group)) || getSubmittedRow(group);
 
-const categorizeLossReason = (text: string) => {
+const resolveThemeFromText = (
+  text: string,
+  themes: ReadonlyArray<{ label: string; patterns: readonly string[] }>,
+  fallbackLabel: string,
+) => {
   const normalized = normalizeTextLower(text);
-  if (!normalized) return 'Unspecified';
-  if (/(price|pricing|commercial|cost|budget|rate)/.test(normalized)) return 'Price / Cost';
-  if (/(technical|specification|compliance|qualification|experience)/.test(normalized)) return 'Technical';
-  if (/(competitor|competition|incumbent|alternate)/.test(normalized)) return 'Competitor';
-  if (/(timeline|delay|deadline|time)/.test(normalized)) return 'Timeline';
-  if (/(no response|silent|no update|awaiting)/.test(normalized)) return 'No Response';
-  return 'Other';
+  if (!normalized) return fallbackLabel;
+
+  let bestLabel = fallbackLabel;
+  let bestScore = 0;
+
+  for (const theme of themes) {
+    const score = theme.patterns.reduce((sum, pattern) => (
+      normalized.includes(pattern) ? sum + Math.max(pattern.split(' ').length, 1) : sum
+    ), 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestLabel = theme.label;
+    }
+  }
+
+  return bestLabel;
 };
+
+const categorizeLossReason = (text: string) => resolveThemeFromText(text, LOSS_REASON_THEMES, 'Other / Unspecified');
 
 const getEoiAgingBucket = (days: number) => {
   if (days <= 15) return '0-15';
@@ -292,7 +329,26 @@ const getTenderAgingBucket = (days: number) => {
   return '60+';
 };
 
-const getPostBidLabel = (type: string | null | undefined) => POST_BID_TYPE_LABELS[normalizeText(type).toUpperCase()] || 'Other';
+const getPostBidAnalysisText = (opp: Partial<Opportunity>) => (
+  [
+    opp.postBidDetailType,
+    opp.postBidDetailOther,
+    opp.remarksReason,
+    opp.comments,
+  ].map((value) => normalizeText(value)).filter(Boolean).join(' ')
+);
+
+const getPostBidLabel = (opp: Partial<Opportunity>) => {
+  const normalizedType = normalizeText(opp.postBidDetailType).toUpperCase();
+  if (normalizedType && normalizedType !== 'OTHER') {
+    return POST_BID_TYPE_LABELS[normalizedType] || normalizedType;
+  }
+
+  const inferred = resolveThemeFromText(getPostBidAnalysisText(opp), POST_BID_THEMES, '');
+  if (inferred) return inferred;
+  if (normalizedType === 'OTHER' || normalizeText(opp.postBidDetailOther)) return 'Other';
+  return 'No Activity';
+};
 
 const buildSparklinePoints = (values: number[]) => {
   if (!values.length) return '0,18 100,18';
@@ -430,7 +486,7 @@ const Analytics = () => {
   const [refreshKey, setRefreshKey] = useState(0);
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null);
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
-  const [heatmapYear, setHeatmapYear] = useState('LATEST');
+  const [heatmapYear, setHeatmapYear] = useState('ALL');
   const [heatmapSearch, setHeatmapSearch] = useState('');
 
   const groupOptions = useMemo(() => {
@@ -578,16 +634,17 @@ const Analytics = () => {
     const postBidBreakdown = Object.entries(
       lifecycleGroups.reduce<Record<string, number>>((acc, group) => {
         const tenderRow = getLifecycleTenderRow(group);
-        const label = normalizeText(tenderRow?.postBidDetailType)
-          ? getPostBidLabel(tenderRow?.postBidDetailType)
-          : 'No Activity';
+        const label = getPostBidLabel(tenderRow || {});
         acc[label] = (acc[label] || 0) + 1;
         return acc;
       }, {
         'Technical Clarification Meeting': 0,
         'Technical Presentation': 0,
         'Site Visit': 0,
+        'Commercial Negotiation': 0,
         'Best & Final Offer': 0,
+        'Document Resubmission': 0,
+        'Client Follow-Up': 0,
         'No Activity': 0,
         Other: 0,
       }),
@@ -598,7 +655,10 @@ const Analytics = () => {
         if (row.label === 'Technical Clarification Meeting') return { ...row, color: 'bg-cyan-500' };
         if (row.label === 'Technical Presentation') return { ...row, color: 'bg-blue-600' };
         if (row.label === 'Site Visit') return { ...row, color: 'bg-emerald-500' };
+        if (row.label === 'Commercial Negotiation') return { ...row, color: 'bg-violet-500' };
         if (row.label === 'Best & Final Offer') return { ...row, color: 'bg-amber-500' };
+        if (row.label === 'Document Resubmission') return { ...row, color: 'bg-orange-500' };
+        if (row.label === 'Client Follow-Up') return { ...row, color: 'bg-sky-500' };
         if (row.label === 'No Activity') return { ...row, color: 'bg-slate-300' };
         return { ...row, color: 'bg-fuchsia-500' };
       });
@@ -1234,7 +1294,7 @@ const Analytics = () => {
                 type="button"
                 className={`inline-block h-full ${item.color}`}
                 style={{ width: `${clampPercent(item.percent)}%` }}
-                onClick={() => openDrilldown(`Post-Bid • ${item.label}`, analytics.drilldowns.lifecycle.filter((opp) => getPostBidLabel(opp.postBidDetailType) === item.label || (!normalizeText(opp.postBidDetailType) && item.label === 'No Activity')))}
+                onClick={() => openDrilldown(`Post-Bid • ${item.label}`, analytics.drilldowns.lifecycle.filter((opp) => getPostBidLabel(opp) === item.label))}
               />
             ))}
           </div>
@@ -1244,7 +1304,7 @@ const Analytics = () => {
                 key={item.label}
                 type="button"
                 className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left"
-                onClick={() => openDrilldown(`Post-Bid • ${item.label}`, analytics.drilldowns.lifecycle.filter((opp) => getPostBidLabel(opp.postBidDetailType) === item.label || (!normalizeText(opp.postBidDetailType) && item.label === 'No Activity')))}
+                onClick={() => openDrilldown(`Post-Bid • ${item.label}`, analytics.drilldowns.lifecycle.filter((opp) => getPostBidLabel(opp) === item.label))}
               >
                 <div className="flex items-center gap-3">
                   <span className={`h-3 w-3 rounded-sm ${item.color}`} />
