@@ -55,4 +55,3 @@ export function getEffectiveMergedStatus(item = {}) {
   if (tenderResult && tenderResult !== 'UNKNOWN') return tenderResult;
   return normalizeStatusValue(item?.avenirStatus || item?.canonicalStage || item?.status);
 }
-
