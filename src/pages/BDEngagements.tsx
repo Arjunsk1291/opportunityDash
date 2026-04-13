@@ -20,6 +20,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 import {
   BD_ENGAGEMENTS_SEED,
   BDEngagement,
@@ -37,6 +39,7 @@ type FormState = {
   date: string;
   clientName: string;
   meetingType: string;
+  status: string;
   discussionPoints: string;
   reportSubmitted: boolean;
   leadGenerated: boolean;
@@ -52,6 +55,7 @@ const emptyForm: FormState = {
   date: '',
   clientName: '',
   meetingType: MEETING_TYPES[0],
+  status: 'Open',
   discussionPoints: '',
   reportSubmitted: false,
   leadGenerated: false,
@@ -79,6 +83,7 @@ const buildFormFromRow = (row: BDEngagement): FormState => ({
   date: row.date,
   clientName: row.clientName,
   meetingType: row.meetingType,
+  status: row.status || 'Open',
   discussionPoints: row.discussionPoints,
   reportSubmitted: row.reportSubmitted,
   leadGenerated: row.leadGenerated,
@@ -95,6 +100,7 @@ const buildRowFromForm = (form: FormState, current?: BDEngagement): BDEngagement
     date: form.date,
     clientName: form.clientName.trim(),
     meetingType: form.meetingType.trim(),
+    status: form.status.trim() || 'Open',
     discussionPoints: form.discussionPoints.trim(),
     reportSubmitted: form.reportSubmitted,
     leadGenerated: form.leadGenerated,
@@ -118,11 +124,14 @@ const chartGridStroke = 'hsl(var(--border))';
 const chartNodeFill = 'hsl(var(--muted))';
 const chartNodeStroke = 'hsl(var(--border))';
 const chartLinkFill = 'hsl(var(--primary))';
+const BULK_ADD_ACCESS_KEY = 'bd_engagement_bulk_add_access';
 
 const BDEngagements = () => {
+  const { isAdmin, isMaster, user } = useAuth();
   const [rows, setRows] = useState<BDEngagement[]>([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [meetingTypeFilter, setMeetingTypeFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [leadFilter, setLeadFilter] = useState<'ALL' | 'YES' | 'NO'>('ALL');
   const [reportFilter, setReportFilter] = useState<'ALL' | 'YES' | 'NO'>('ALL');
   const [search, setSearch] = useState('');
@@ -131,15 +140,106 @@ const BDEngagements = () => {
   const [clientSearch, setClientSearch] = useState('');
   const [clientSort, setClientSort] = useState<'engagements' | 'leads' | 'reports' | 'name' | 'lastContact'>('engagements');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkAccessOpen, setBulkAccessOpen] = useState(false);
+  const [bulkAccessInput, setBulkAccessInput] = useState('');
+  const [bulkAccessEmails, setBulkAccessEmails] = useState<string[]>([]);
+  const [bulkText, setBulkText] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<BDEngagement | null>(null);
   const [editingRow, setEditingRow] = useState<BDEngagement | null>(null);
+  const [drilldown, setDrilldown] = useState<{ title: string; rows: BDEngagement[] } | null>(null);
+  const [selectedEngagement, setSelectedEngagement] = useState<BDEngagement | null>(null);
   const [selectedClient, setSelectedClient] = useState<string>('');
   const [form, setForm] = useState<FormState>(emptyForm);
+  const canBulkAdd = Boolean(isAdmin || isMaster || bulkAccessEmails.includes(String(user?.email || '').toLowerCase()));
+  const canManageBulkAccess = Boolean(isAdmin || isMaster);
+
+  const openDrilldown = (title: string, drilldownRows: BDEngagement[]) => {
+    setDrilldown({ title, rows: drilldownRows });
+  };
+
+  const persistBulkAccess = (emails: string[]) => {
+    setBulkAccessEmails(emails);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(BULK_ADD_ACCESS_KEY, JSON.stringify(emails));
+    }
+  };
+
+  const parseBulkRows = (text: string): BDEngagement[] => {
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const timestamp = new Date().toISOString();
+    return lines.map((line, index) => {
+      const parts = line.split(',').map((part) => part.trim().replace(/^"(.*)"$/, '$1'));
+      const [
+        ref,
+        date,
+        clientName,
+        meetingType,
+        status,
+        discussionPoints,
+        reportSubmittedRaw,
+        leadGeneratedRaw,
+        leadDescription,
+        nextSteps,
+        lastContact,
+      ] = parts;
+      if (!ref || !date || !clientName || !meetingType) {
+        throw new Error(`Line ${index + 1} missing required fields (ref, date, client, meetingType).`);
+      }
+      const reportSubmitted = ['yes', 'true', '1'].includes(String(reportSubmittedRaw || '').toLowerCase());
+      const leadGenerated = ['yes', 'true', '1'].includes(String(leadGeneratedRaw || '').toLowerCase());
+      return {
+        id: createBDEngagementId(),
+        ref: ref.trim(),
+        date: date.trim(),
+        clientName: clientName.trim(),
+        meetingType: meetingType.trim(),
+        status: (status || 'Open').trim() || 'Open',
+        discussionPoints: (discussionPoints || '').trim(),
+        reportSubmitted,
+        leadGenerated,
+        leadDescription: leadGenerated ? String(leadDescription || '').trim() : '',
+        nextSteps: (nextSteps || '').trim(),
+        lastContact: (lastContact || date || '').trim(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+    });
+  };
+
+  const handleBulkAdd = () => {
+    try {
+      const newRows = parseBulkRows(bulkText);
+      setRows((current) => [...newRows, ...current]);
+      setBulkText('');
+      setBulkDialogOpen(false);
+      toast.success(`Added ${newRows.length} engagement${newRows.length === 1 ? '' : 's'}.`);
+    } catch (error) {
+      console.error('Bulk add failed:', error);
+      toast.error((error as Error).message || 'Bulk add failed.');
+    }
+  };
 
   useEffect(() => {
     const initialRows = loadBDEngagements();
     setRows(initialRows);
     setSelectedClient(initialRows[0]?.clientName || '');
+    if (typeof window !== 'undefined') {
+      const raw = window.localStorage.getItem(BULK_ADD_ACCESS_KEY);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            setBulkAccessEmails(parsed.map((value) => String(value).trim().toLowerCase()).filter(Boolean));
+          }
+        } catch {
+          // ignore invalid local data
+        }
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -151,11 +251,16 @@ const BDEngagements = () => {
     () => Array.from(new Set(rows.map((row) => row.clientName).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
     [rows],
   );
+  const statusOptions = useMemo(
+    () => Array.from(new Set(rows.map((row) => row.status).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [rows],
+  );
 
   const filteredRows = useMemo(() => {
     const searchTerm = search.trim().toLowerCase();
     const sorted = [...rows].filter((row) => {
       if (meetingTypeFilter !== 'ALL' && row.meetingType !== meetingTypeFilter) return false;
+      if (statusFilter !== 'ALL' && row.status !== statusFilter) return false;
       if (leadFilter === 'YES' && !row.leadGenerated) return false;
       if (leadFilter === 'NO' && row.leadGenerated) return false;
       if (reportFilter === 'YES' && !row.reportSubmitted) return false;
@@ -166,6 +271,7 @@ const BDEngagements = () => {
         row.ref,
         row.clientName,
         row.meetingType,
+        row.status,
         row.discussionPoints,
         row.leadDescription,
         row.nextSteps,
@@ -180,7 +286,7 @@ const BDEngagements = () => {
     });
 
     return sorted;
-  }, [leadFilter, meetingTypeFilter, reportFilter, rows, search, sortField, sortOrder]);
+  }, [leadFilter, meetingTypeFilter, reportFilter, rows, search, sortField, sortOrder, statusFilter]);
 
   const stats = useMemo(() => {
     const totalEngagements = rows.length;
@@ -367,30 +473,35 @@ const BDEngagements = () => {
       value: stats.totalEngagements,
       icon: BriefcaseBusiness,
       accent: 'from-teal-400/40 to-cyan-400/5',
+      rows: rows,
     },
     {
       label: 'Total Leads',
       value: stats.totalLeads,
       icon: Users,
       accent: 'from-violet-400/40 to-indigo-400/5',
+      rows: rows.filter((row) => row.leadGenerated),
     },
     {
       label: 'Lead Conversion Rate',
       value: `${stats.leadConversionRate.toFixed(1)}%`,
       icon: BarChart3,
       accent: 'from-emerald-400/40 to-teal-400/5',
+      rows: rows.filter((row) => row.leadGenerated),
     },
     {
       label: 'Clients Contacted',
       value: stats.clientsContacted,
       icon: Building2,
       accent: 'from-amber-400/40 to-orange-400/5',
+      rows: rows,
     },
     {
       label: 'Reports Submitted',
       value: stats.reportsSubmitted,
       icon: FileCheck2,
       accent: 'from-sky-400/40 to-blue-400/5',
+      rows: rows.filter((row) => row.reportSubmitted),
     },
   ];
 
@@ -428,19 +539,26 @@ const BDEngagements = () => {
         <TabsContent value="dashboard" className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             {statCards.map((card, index) => (
-              <Card key={card.label} className="group relative overflow-hidden border-border bg-card text-card-foreground shadow-xl">
-                <div className={`absolute inset-0 bg-gradient-to-br ${card.accent} opacity-70 transition-opacity duration-300 group-hover:opacity-100`} />
-                <CardContent className="relative flex items-start justify-between p-5">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.22em] text-muted-foreground">{card.label}</div>
-                    <div className="mt-3 text-3xl font-black tracking-tight">{card.value}</div>
-                    <div className="mt-2 text-xs text-muted-foreground">Card {String(index + 1).padStart(2, '0')}</div>
-                  </div>
-                  <div className="rounded-2xl border border-border bg-background/70 p-3">
-                    <card.icon className="h-5 w-5 text-primary" />
-                  </div>
-                </CardContent>
-              </Card>
+              <button
+                key={card.label}
+                type="button"
+                onClick={() => openDrilldown(card.label, card.rows)}
+                className="text-left"
+              >
+                <Card className="group relative overflow-hidden border-border bg-card text-card-foreground shadow-xl">
+                  <div className={`absolute inset-0 bg-gradient-to-br ${card.accent} opacity-70 transition-opacity duration-300 group-hover:opacity-100`} />
+                  <CardContent className="relative flex items-start justify-between p-5">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.22em] text-muted-foreground">{card.label}</div>
+                      <div className="mt-3 text-3xl font-black tracking-tight">{card.value}</div>
+                      <div className="mt-2 text-xs text-muted-foreground">Card {String(index + 1).padStart(2, '0')}</div>
+                    </div>
+                    <div className="rounded-2xl border border-border bg-background/70 p-3">
+                      <card.icon className="h-5 w-5 text-primary" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </button>
             ))}
           </div>
 
@@ -456,7 +574,17 @@ const BDEngagements = () => {
                     <XAxis dataKey="label" stroke={chartAxisStroke} tickLine={false} axisLine={false} />
                     <YAxis stroke={chartAxisStroke} tickLine={false} axisLine={false} />
                     <Tooltip contentStyle={chartTooltipStyle} />
-                    <Bar dataKey="count" radius={[10, 10, 0, 0]} fill="#2dd4bf" />
+                    <Bar
+                      dataKey="count"
+                      radius={[10, 10, 0, 0]}
+                      fill="#2dd4bf"
+                      onClick={(dataPoint) => {
+                        const monthKey = (dataPoint?.payload as { month?: string })?.month;
+                        if (!monthKey) return;
+                        const monthRows = rows.filter((row) => row.date.startsWith(monthKey));
+                        openDrilldown(`Engagements • ${formatMonthLabel(monthKey)}`, monthRows);
+                      }}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -470,7 +598,19 @@ const BDEngagements = () => {
                 <div className="h-[320px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={meetingTypeBreakdown} dataKey="value" nameKey="name" innerRadius={68} outerRadius={110} paddingAngle={3}>
+                      <Pie
+                        data={meetingTypeBreakdown}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={68}
+                        outerRadius={110}
+                        paddingAngle={3}
+                        onClick={(dataPoint) => {
+                          const meetingType = (dataPoint?.payload as { name?: string })?.name;
+                          if (!meetingType) return;
+                          openDrilldown(`Meeting Type • ${meetingType}`, rows.filter((row) => row.meetingType === meetingType));
+                        }}
+                      >
                         {meetingTypeBreakdown.map((entry, index) => (
                           <Cell key={entry.name} fill={DASHBOARD_COLORS[index % DASHBOARD_COLORS.length]} />
                         ))}
@@ -481,13 +621,18 @@ const BDEngagements = () => {
                 </div>
                 <div className="space-y-3">
                   {meetingTypeBreakdown.map((entry, index) => (
-                    <div key={entry.name} className="flex items-center justify-between rounded-2xl border border-border bg-muted/40 px-3 py-2">
+                    <button
+                      key={entry.name}
+                      type="button"
+                      onClick={() => openDrilldown(`Meeting Type • ${entry.name}`, rows.filter((row) => row.meetingType === entry.name))}
+                      className="flex w-full items-center justify-between rounded-2xl border border-border bg-muted/40 px-3 py-2 text-left"
+                    >
                       <div className="flex items-center gap-3">
                         <span className="h-3 w-3 rounded-full" style={{ backgroundColor: DASHBOARD_COLORS[index % DASHBOARD_COLORS.length] }} />
                         <span className="text-sm text-foreground">{entry.name}</span>
                       </div>
                       <span className="text-sm font-semibold text-foreground">{entry.value}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </CardContent>
@@ -527,7 +672,16 @@ const BDEngagements = () => {
                     <XAxis type="number" stroke={chartAxisStroke} tickLine={false} axisLine={false} />
                     <YAxis type="category" dataKey="client" width={120} stroke={chartAxisStroke} tickLine={false} axisLine={false} />
                     <Tooltip contentStyle={chartTooltipStyle} />
-                    <Bar dataKey="count" radius={[0, 10, 10, 0]} fill="#818cf8" />
+                    <Bar
+                      dataKey="count"
+                      radius={[0, 10, 10, 0]}
+                      fill="#818cf8"
+                      onClick={(dataPoint) => {
+                        const clientName = (dataPoint?.payload as { client?: string })?.client;
+                        if (!clientName) return;
+                        openDrilldown(`Client • ${clientName}`, rows.filter((row) => row.clientName === clientName));
+                      }}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -548,6 +702,13 @@ const BDEngagements = () => {
                   <SelectContent>
                     <SelectItem value="ALL">All Meeting Types</SelectItem>
                     {MEETING_TYPES.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Status</SelectItem>
+                    {statusOptions.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Select value={leadFilter} onValueChange={(value) => setLeadFilter(value as 'ALL' | 'YES' | 'NO')}>
@@ -589,10 +750,25 @@ const BDEngagements = () => {
                 <CardTitle>Engagement Records</CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">{filteredRows.length} visible of {rows.length} stored engagements</p>
               </div>
-              <Button type="button" onClick={openCreateDialog}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Engagement
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                {canManageBulkAccess && (
+                  <Button type="button" variant="outline" onClick={() => {
+                    setBulkAccessInput(bulkAccessEmails.join(', '));
+                    setBulkAccessOpen(true);
+                  }}>
+                    Manage Bulk Access
+                  </Button>
+                )}
+                {canBulkAdd && (
+                  <Button type="button" variant="outline" onClick={() => setBulkDialogOpen(true)}>
+                    Bulk Add
+                  </Button>
+                )}
+                <Button type="button" onClick={openCreateDialog}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Engagement
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <Table>
@@ -602,6 +778,7 @@ const BDEngagements = () => {
                     <TableHead>Date</TableHead>
                     <TableHead>Client Name</TableHead>
                     <TableHead>Meeting Type</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead>Discussion Points</TableHead>
                     <TableHead>Report</TableHead>
                     <TableHead>Lead</TableHead>
@@ -613,11 +790,12 @@ const BDEngagements = () => {
                 </TableHeader>
                 <TableBody>
                   {filteredRows.map((row) => (
-                    <TableRow key={row.id}>
+                    <TableRow key={row.id} className="cursor-pointer" onClick={() => setSelectedEngagement(row)}>
                       <TableCell className="font-medium">{row.ref}</TableCell>
                       <TableCell>{formatPrettyDate(row.date)}</TableCell>
                       <TableCell>{row.clientName}</TableCell>
                       <TableCell>{row.meetingType}</TableCell>
+                      <TableCell>{row.status || '—'}</TableCell>
                       <TableCell className="max-w-[240px] truncate">{row.discussionPoints}</TableCell>
                       <TableCell>{row.reportSubmitted ? <Badge className="border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
                       <TableCell>{row.leadGenerated ? <Badge className="border border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
@@ -626,15 +804,15 @@ const BDEngagements = () => {
                       <TableCell>{formatPrettyDate(row.lastContact)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button type="button" size="sm" variant="outline" onClick={() => openEditDialog(row)}>Edit</Button>
-                          <Button type="button" size="sm" variant="destructive" onClick={() => setDeleteTarget(row)}>Delete</Button>
+                          <Button type="button" size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); openEditDialog(row); }}>Edit</Button>
+                          <Button type="button" size="sm" variant="destructive" onClick={(event) => { event.stopPropagation(); setDeleteTarget(row); }}>Delete</Button>
                         </div>
                       </TableCell>
                     </TableRow>
                   ))}
                   {filteredRows.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={11} className="py-12 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={12} className="py-12 text-center text-sm text-muted-foreground">
                         No engagement records match the current filters.
                       </TableCell>
                     </TableRow>
@@ -671,7 +849,10 @@ const BDEngagements = () => {
                 <button
                   key={client.clientName}
                   type="button"
-                  onClick={() => setSelectedClient(client.clientName)}
+                  onClick={() => {
+                    setSelectedClient(client.clientName);
+                    openDrilldown(`Client • ${client.clientName}`, client.rows);
+                  }}
                   className={`rounded-[24px] border p-5 text-left shadow-sm transition-all hover:-translate-y-1 ${selectedClientSummary?.clientName === client.clientName ? 'border-teal-400/50 bg-teal-500/10 shadow-teal-500/10' : 'border-border bg-card'}`}
                   style={{ animationDelay: `${index * 35}ms` }}
                 >
@@ -716,7 +897,12 @@ const BDEngagements = () => {
                   </div>
                 )}
                 {selectedClientSummary?.rows.map((row) => (
-                  <div key={row.id} className="rounded-2xl border border-border bg-background p-4">
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => setSelectedEngagement(row)}
+                    className="w-full rounded-2xl border border-border bg-background p-4 text-left"
+                  >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <div className="text-sm font-semibold text-foreground">{row.ref} · {row.meetingType}</div>
@@ -732,7 +918,7 @@ const BDEngagements = () => {
                       <div><span className="font-semibold text-foreground">Lead Description:</span> {row.leadDescription || '—'}</div>
                       <div><span className="font-semibold text-foreground">Next Steps:</span> {row.nextSteps || '—'}</div>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </CardContent>
             </Card>
@@ -770,6 +956,10 @@ const BDEngagements = () => {
                   {MEETING_TYPES.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Status</label>
+              <Input value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} placeholder="Open / In Progress / Closed" />
             </div>
             <div className="space-y-2 md:col-span-2">
               <label className="text-sm font-medium">Discussion Points</label>
@@ -818,6 +1008,138 @@ const BDEngagements = () => {
             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button type="button" onClick={saveRow}>Save Engagement</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Bulk Add Engagements</DialogTitle>
+            <DialogDescription>Paste comma-separated rows in the order shown below.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <div className="rounded-lg border bg-muted/40 px-3 py-2 text-xs">
+              Format:
+              {' '}
+              <span className="font-semibold text-foreground">ref,date,clientName,meetingType,status,discussionPoints,reportSubmitted,leadGenerated,leadDescription,nextSteps,lastContact</span>
+            </div>
+            <Textarea
+              value={bulkText}
+              onChange={(event) => setBulkText(event.target.value)}
+              rows={10}
+              placeholder="BD-2026-001,2026-04-01,Client A,Capability Meeting,Open,Discussed scope,YES,NO,,Follow up,2026-04-03"
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBulkDialogOpen(false)}>Cancel</Button>
+            <Button type="button" onClick={handleBulkAdd} disabled={!bulkText.trim()}>Add Rows</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkAccessOpen} onOpenChange={setBulkAccessOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Bulk Add Access</DialogTitle>
+            <DialogDescription>Allow specific emails to use the bulk add tool.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label className="text-sm">Allowed Emails (comma-separated)</Label>
+            <Input
+              value={bulkAccessInput}
+              onChange={(event) => setBulkAccessInput(event.target.value)}
+              placeholder="user1@company.com, user2@company.com"
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBulkAccessOpen(false)}>Cancel</Button>
+            <Button
+              type="button"
+              onClick={() => {
+                const emails = bulkAccessInput
+                  .split(',')
+                  .map((value) => value.trim().toLowerCase())
+                  .filter(Boolean);
+                persistBulkAccess(emails);
+                setBulkAccessOpen(false);
+                toast.success('Bulk add access updated.');
+              }}
+            >
+              Save Access
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(drilldown)} onOpenChange={(open) => { if (!open) setDrilldown(null); }}>
+        <DialogContent className="max-w-[1200px]">
+          <DialogHeader>
+            <DialogTitle>{drilldown?.title || 'Drilldown'}</DialogTitle>
+            <DialogDescription>Click any row to view the full engagement details.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[65vh] overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Ref</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Meeting</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Report</TableHead>
+                  <TableHead>Lead</TableHead>
+                  <TableHead>Last Contact</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(drilldown?.rows || []).map((row) => (
+                  <TableRow key={row.id} className="cursor-pointer" onClick={() => setSelectedEngagement(row)}>
+                    <TableCell className="font-medium">{row.ref}</TableCell>
+                    <TableCell>{formatPrettyDate(row.date)}</TableCell>
+                    <TableCell>{row.clientName}</TableCell>
+                    <TableCell>{row.meetingType}</TableCell>
+                    <TableCell>{row.status || '—'}</TableCell>
+                    <TableCell>{row.reportSubmitted ? 'Yes' : 'No'}</TableCell>
+                    <TableCell>{row.leadGenerated ? 'Yes' : 'No'}</TableCell>
+                    <TableCell>{formatPrettyDate(row.lastContact)}</TableCell>
+                  </TableRow>
+                ))}
+                {(drilldown?.rows || []).length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
+                      No engagement rows available.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(selectedEngagement)} onOpenChange={(open) => { if (!open) setSelectedEngagement(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Engagement Detail</DialogTitle>
+            <DialogDescription>Full record details for the selected engagement.</DialogDescription>
+          </DialogHeader>
+          {selectedEngagement && (
+            <div className="grid gap-4 text-sm">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div><span className="font-semibold">Ref:</span> {selectedEngagement.ref}</div>
+                <div><span className="font-semibold">Status:</span> {selectedEngagement.status || '—'}</div>
+                <div><span className="font-semibold">Client:</span> {selectedEngagement.clientName}</div>
+                <div><span className="font-semibold">Meeting Type:</span> {selectedEngagement.meetingType}</div>
+                <div><span className="font-semibold">Date:</span> {formatPrettyDate(selectedEngagement.date)}</div>
+                <div><span className="font-semibold">Last Contact:</span> {formatPrettyDate(selectedEngagement.lastContact)}</div>
+                <div><span className="font-semibold">Report Submitted:</span> {selectedEngagement.reportSubmitted ? 'Yes' : 'No'}</div>
+                <div><span className="font-semibold">Lead Generated:</span> {selectedEngagement.leadGenerated ? 'Yes' : 'No'}</div>
+              </div>
+              <div><span className="font-semibold">Discussion Points:</span> {selectedEngagement.discussionPoints || '—'}</div>
+              <div><span className="font-semibold">Lead Description:</span> {selectedEngagement.leadDescription || '—'}</div>
+              <div><span className="font-semibold">Next Steps:</span> {selectedEngagement.nextSteps || '—'}</div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
