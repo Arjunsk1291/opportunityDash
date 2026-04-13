@@ -899,7 +899,7 @@ const Analytics = () => {
   const kpiCards = [
     {
       label: 'Submitted',
-      value: submittedOpportunityRows.length,
+      value: visibleSubmittedOpportunityRows.length,
       delta: analytics.eoiOrigin.submittedCount,
       direct: analytics.directTender.submittedCount,
       meta: [
@@ -909,7 +909,7 @@ const Analytics = () => {
       tone: 'text-sky-600',
       glow: 'analytics-kpi-glow-sky',
       icon: Send,
-      sparkline: [submittedTenderCount, submittedEoiCount, submittedOpportunityRows.length, Math.max(submittedOpportunityRows.length - 1, 0)],
+      sparkline: [submittedTenderCount, submittedEoiCount, visibleSubmittedOpportunityRows.length, Math.max(visibleSubmittedOpportunityRows.length - 1, 0)],
       onClick: () => openDrilldown('Submitted Opportunities', submittedOpportunityRows),
     },
     {
