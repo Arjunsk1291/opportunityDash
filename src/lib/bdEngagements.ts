@@ -131,7 +131,7 @@ const buildSeedEngagements = (): BDEngagement[] => {
   return rows;
 };
 
-export const BD_ENGAGEMENTS_SEED = buildSeedEngagements();
+export const BD_ENGAGEMENTS_SEED: BDEngagement[] = [];
 
 const safeWindow = () => typeof window !== 'undefined';
 
@@ -162,8 +162,8 @@ export const saveBDEngagements = (rows: BDEngagement[]) => {
 };
 
 export const resetBDEngagements = () => {
-  saveBDEngagements(BD_ENGAGEMENTS_SEED);
-  return BD_ENGAGEMENTS_SEED;
+  saveBDEngagements([]);
+  return [];
 };
 
 export const createBDEngagementId = () => `bd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

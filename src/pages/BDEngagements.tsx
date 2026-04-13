@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, Sankey } from 'recharts';
-import { AlertTriangle, BarChart3, BriefcaseBusiness, Building2, CalendarDays, FileCheck2, Plus, Search, Users } from 'lucide-react';
+import { AlertTriangle, BarChart3, BriefcaseBusiness, Building2, CalendarDays, FileCheck2, Plus, Search, Upload, Users } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -221,6 +221,90 @@ const BDEngagements = () => {
     } catch (error) {
       console.error('Bulk add failed:', error);
       toast.error((error as Error).message || 'Bulk add failed.');
+    }
+  };
+
+  const downloadBulkTemplate = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const headers = [
+        'Ref',
+        'Date',
+        'Client Name',
+        'Meeting Type',
+        'Status',
+        'Discussion Points',
+        'Report Submitted',
+        'Lead Generated',
+        'Lead Description',
+        'Next Steps',
+        'Last Contact',
+      ];
+      const sample = {
+        Ref: 'BD-2026-001',
+        Date: new Date().toISOString().slice(0, 10),
+        'Client Name': 'Client A',
+        'Meeting Type': MEETING_TYPES[0],
+        Status: 'Open',
+        'Discussion Points': 'Discussed scope and next steps.',
+        'Report Submitted': 'YES',
+        'Lead Generated': 'NO',
+        'Lead Description': '',
+        'Next Steps': 'Share capability deck.',
+        'Last Contact': new Date().toISOString().slice(0, 10),
+      };
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet([sample], { header: headers });
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'BD Engagements');
+      XLSX.writeFile(workbook, `bd-engagements-template-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success('Template downloaded.');
+    } catch (error) {
+      console.error('Template download failed:', error);
+      toast.error((error as Error).message || 'Failed to download template.');
+    }
+  };
+
+  const handleBulkUpload = async (file: File) => {
+    try {
+      const buffer = await file.arrayBuffer();
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      if (!worksheet) throw new Error('No worksheet found in uploaded file.');
+      const rowsData = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
+      const timestamp = new Date().toISOString();
+      const parsedRows = rowsData.map((row, index) => {
+        const ref = String(row['Ref'] || row['ref'] || '').trim();
+        const date = String(row['Date'] || row['date'] || '').trim();
+        const clientName = String(row['Client Name'] || row['clientName'] || row['Client'] || '').trim();
+        const meetingType = String(row['Meeting Type'] || row['meetingType'] || '').trim();
+        if (!ref || !date || !clientName || !meetingType) {
+          throw new Error(`Row ${index + 2} missing required fields (Ref, Date, Client Name, Meeting Type).`);
+        }
+        const reportSubmitted = ['yes', 'true', '1'].includes(String(row['Report Submitted'] || row['reportSubmitted'] || '').toLowerCase());
+        const leadGenerated = ['yes', 'true', '1'].includes(String(row['Lead Generated'] || row['leadGenerated'] || '').toLowerCase());
+        return {
+          id: createBDEngagementId(),
+          ref,
+          date,
+          clientName,
+          meetingType,
+          status: String(row['Status'] || row['status'] || 'Open').trim() || 'Open',
+          discussionPoints: String(row['Discussion Points'] || row['discussionPoints'] || '').trim(),
+          reportSubmitted,
+          leadGenerated,
+          leadDescription: leadGenerated ? String(row['Lead Description'] || row['leadDescription'] || '').trim() : '',
+          nextSteps: String(row['Next Steps'] || row['nextSteps'] || '').trim(),
+          lastContact: String(row['Last Contact'] || row['lastContact'] || date).trim() || date,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        } as BDEngagement;
+      });
+      setRows((current) => [...parsedRows, ...current]);
+      toast.success(`Uploaded ${parsedRows.length} engagement${parsedRows.length === 1 ? '' : 's'}.`);
+    } catch (error) {
+      console.error('Bulk upload failed:', error);
+      toast.error((error as Error).message || 'Failed to upload bulk file.');
     }
   };
 
@@ -459,7 +543,7 @@ const BDEngagements = () => {
   const resetSeedData = () => {
     const seed = resetBDEngagements();
     setRows(seed);
-    setSelectedClient(seed[0]?.clientName || '');
+    setSelectedClient('');
   };
 
   const deleteRow = () => {
@@ -522,9 +606,6 @@ const BDEngagements = () => {
             <Button type="button" className="bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={openCreateDialog}>
               <Plus className="mr-2 h-4 w-4" />
               Add Engagement
-            </Button>
-            <Button type="button" variant="outline" className="border-slate-700 bg-slate-900/60 text-slate-100 hover:bg-slate-800" onClick={resetSeedData}>
-              Reset Seed Data
             </Button>
           </div>
         </div>
@@ -806,7 +887,6 @@ const BDEngagements = () => {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Button type="button" size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); openEditDialog(row); }}>Edit</Button>
-                          <Button type="button" size="sm" variant="destructive" onClick={(event) => { event.stopPropagation(); setDeleteTarget(row); }}>Delete</Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1007,6 +1087,18 @@ const BDEngagements = () => {
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            {editingRow && (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => {
+                  setDialogOpen(false);
+                  setDeleteTarget(editingRow);
+                }}
+              >
+                Delete
+              </Button>
+            )}
             <Button type="button" onClick={saveRow}>Save Engagement</Button>
           </DialogFooter>
         </DialogContent>
@@ -1023,6 +1115,27 @@ const BDEngagements = () => {
               Format:
               {' '}
               <span className="font-semibold text-foreground">ref,date,clientName,meetingType,status,discussionPoints,reportSubmitted,leadGenerated,leadDescription,nextSteps,lastContact</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={downloadBulkTemplate}>
+                Download Excel Template
+              </Button>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium">
+                <Upload className="h-4 w-4" />
+                Upload Filled Template
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      handleBulkUpload(file);
+                      event.currentTarget.value = '';
+                    }
+                  }}
+                />
+              </label>
             </div>
             <Textarea
               value={bulkText}
