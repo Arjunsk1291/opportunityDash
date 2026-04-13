@@ -198,9 +198,17 @@ export function OpportunitiesTable({
 
   const normalizeComparisonText = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
 
-  const getBaseRefNo = (value: string | null | undefined) => String(value || '').trim().replace(/_EOI$/i, '');
+  const normalizeRefNo = (value: string | null | undefined) => String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
 
-  const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(String(value || '').trim());
+  const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_EOI$/i, '');
+
+  const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(normalizeRefNo(value));
+
+  const isEoiClassification = (value: string | null | undefined) => normalizeComparisonText(value).includes('eoi');
+
+  const isEoiRow = (tender: Opportunity) => (
+    isEoiRefNo(tender.opportunityRefNo) || isEoiClassification(tender.opportunityClassification)
+  );
 
   const getMergedStatus = (tender: Opportunity) => {
     return getDisplayStatus(tender);
@@ -274,7 +282,7 @@ export function OpportunitiesTable({
     if (showConvertedEoiRows) return filteredData;
 
     return filteredData.filter((tender) => {
-      if (!isEoiRefNo(tender.opportunityRefNo)) return true;
+      if (!isEoiRow(tender)) return true;
 
       const baseRefNo = normalizeComparisonText(getBaseRefNo(tender.opportunityRefNo));
       const tenderName = normalizeComparisonText(tender.tenderName);
@@ -282,10 +290,9 @@ export function OpportunitiesTable({
 
       const convertedTenderExists = filteredData.some((candidate) => (
         candidate.id !== tender.id
-        && !isEoiRefNo(candidate.opportunityRefNo)
-        && normalizeComparisonText(candidate.opportunityRefNo) === baseRefNo
+        && !isEoiRow(candidate)
+        && normalizeComparisonText(getBaseRefNo(candidate.opportunityRefNo)) === baseRefNo
         && normalizeComparisonText(candidate.tenderName) === tenderName
-        && normalizeComparisonText(candidate.opportunityClassification) === 'tender'
       ));
 
       return !convertedTenderExists;
