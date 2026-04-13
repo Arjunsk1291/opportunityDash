@@ -13,6 +13,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
@@ -125,6 +126,7 @@ const isEoiRecord = (opp: Opportunity) => {
 const isLifecycleTenderStatus = (status: string) => ['SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'HOLD / CLOSED', 'HOLD/CLOSED'].includes(status);
 const isHoldStatus = (status: string) => status === 'HOLD / CLOSED' || status === 'HOLD/CLOSED';
 const hasPostBidDetails = (opp: Partial<Opportunity>) => Boolean(normalizeText(opp.postBidDetailType));
+const hasRemarks = (opp: Partial<Opportunity>) => Boolean(normalizeText(opp.remarksReason || opp.comments));
 
 const getStageRank = (opp: Opportunity) => {
   const status = getDisplayStatus(opp);
@@ -221,9 +223,12 @@ const isLostGroup = (group: OpportunityGroup) => getLostRows(group).length > 0;
 const isRegrettedGroup = (group: OpportunityGroup) => getRegrettedRows(group).length > 0;
 const isHoldGroup = (group: OpportunityGroup) => getHoldRows(group).length > 0;
 const hasLifecycleTender = (group: OpportunityGroup) => getLifecycleTenderRows(group).length > 0;
+const getNoDecisionSubmittedRows = (group: OpportunityGroup) => (
+  getSubmittedOnlyRows(group).filter((row) => !hasPostBidDetails(row) && !hasRemarks(row))
+);
 const isNoDecisionGroup = (group: OpportunityGroup, selectedGroup: string) => (
   selectedGroup === 'GTS'
-  && getSubmittedOnlyRows(group).some((row) => !hasPostBidDetails(row))
+  && getNoDecisionSubmittedRows(group).length > 0
 );
 const getPureEoiRow = (group: OpportunityGroup) => getRepresentativeRow(group.eoiRows) || group.primary;
 const getConvertedTenderRow = (group: OpportunityGroup) => getRepresentativeRow(getMatchedTenderRows(group)) || getRepresentativeRow(group.tenderRows);
@@ -233,7 +238,7 @@ const getAwardedRow = (group: OpportunityGroup) => getRepresentativeRow(getAward
 const getLostRow = (group: OpportunityGroup) => getRepresentativeRow(getLostRows(group)) || getSubmittedRow(group);
 const getRegrettedRow = (group: OpportunityGroup) => getRepresentativeRow(getRegrettedRows(group)) || getSubmittedRow(group);
 const getHoldRow = (group: OpportunityGroup) => getRepresentativeRow(getHoldRows(group)) || getSubmittedRow(group);
-const getNoDecisionRow = (group: OpportunityGroup) => getRepresentativeRow(getSubmittedOnlyRows(group).filter((row) => !hasPostBidDetails(row))) || getSubmittedRow(group);
+const getNoDecisionRow = (group: OpportunityGroup) => getRepresentativeRow(getNoDecisionSubmittedRows(group)) || getSubmittedRow(group);
 
 const categorizeLossReason = (text: string) => {
   const normalized = normalizeTextLower(text);
@@ -392,9 +397,11 @@ const FlowNode = ({
 const Analytics = () => {
   const { opportunities, isLoading, error } = useData();
   const [selectedGroup, setSelectedGroup] = useState('ALL');
-  const [timeRange, setTimeRange] = useState<number>(365);
+  const [timeRange, setTimeRange] = useState<number>(3650);
   const [refreshKey, setRefreshKey] = useState(0);
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null);
+  const [heatmapYear, setHeatmapYear] = useState('LATEST');
+  const [heatmapSearch, setHeatmapSearch] = useState('');
 
   const groupOptions = useMemo(() => {
     const groups = Array.from(new Set(opportunities.map((opp) => normalizeText(opp.groupClassification)).filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -436,17 +443,39 @@ const Analytics = () => {
     const directOpenDecisionGroups = directTenderGroups.filter((group) => isNoDecisionGroup(group, selectedGroup));
     const directLifecycleGroups = directTenderGroups.filter(hasLifecycleTender);
 
+    const flattenRows = (groups: OpportunityGroup[], selector: (group: OpportunityGroup) => Opportunity[]) => groups.flatMap(selector);
+
+    const eoiOriginSubmittedRows = flattenRows(eoiOriginTenderGroups, getSubmittedOnlyRows);
+    const eoiOriginWonRows = flattenRows(eoiOriginTenderGroups, getAwardedRows);
+    const eoiOriginLostRows = flattenRows(eoiOriginTenderGroups, getLostRows);
+    const eoiOriginRegrettedRows = flattenRows(eoiOriginTenderGroups, getRegrettedRows);
+    const eoiOriginHoldRows = flattenRows(eoiOriginTenderGroups, getHoldRows);
+    const eoiOriginNoDecisionRows = flattenRows(eoiOriginTenderGroups, getNoDecisionSubmittedRows);
+
+    const directSubmittedRows = flattenRows(directTenderGroups, getSubmittedOnlyRows);
+    const directWonRows = flattenRows(directTenderGroups, getAwardedRows);
+    const directLostRows = flattenRows(directTenderGroups, getLostRows);
+    const directRegrettedRows = flattenRows(directTenderGroups, getRegrettedRows);
+    const directHoldRows = flattenRows(directTenderGroups, getHoldRows);
+    const directNoDecisionRows = flattenRows(directTenderGroups, getNoDecisionSubmittedRows);
+
+    const submittedRows = [...eoiOriginSubmittedRows, ...directSubmittedRows];
+    const wonRows = [...eoiOriginWonRows, ...directWonRows];
+    const lostRows = [...eoiOriginLostRows, ...directLostRows];
+    const regrettedRows = [...eoiOriginRegrettedRows, ...directRegrettedRows];
+    const holdRows = [...eoiOriginHoldRows, ...directHoldRows];
+    const noDecisionRows = [...eoiOriginNoDecisionRows, ...directNoDecisionRows];
+
     const submittedGroups = [...eoiOriginSubmittedGroups, ...directSubmittedGroups];
     const wonGroups = [...eoiOriginAwardedGroups, ...directAwardedGroups];
     const lostGroups = [...eoiOriginLostGroups, ...directLostGroups];
-    const regrettedGroups = [...eoiOriginRegrettedGroups, ...directRegrettedGroups];
-    const holdGroups = [...eoiOriginHoldGroups, ...directHoldGroups];
     const noDecisionGroups = [...eoiOriginOpenDecisionGroups, ...directOpenDecisionGroups];
     const lifecycleGroups = [...eoiOriginLifecycleGroups, ...directLifecycleGroups];
 
-    const submittedValue = submittedGroups.reduce((sum, group) => sum + getGroupValue(group), 0);
-    const wonValue = wonGroups.reduce((sum, group) => sum + getGroupValue(group), 0);
-    const lifecycleValue = lifecycleGroups.reduce((sum, group) => sum + getGroupValue(group), 0);
+    const submittedValue = submittedRows.reduce((sum, row) => sum + Number(row.opportunityValue || 0), 0);
+    const wonValue = wonRows.reduce((sum, row) => sum + Number(row.opportunityValue || 0), 0);
+    const lifecycleRows = flattenRows(lifecycleGroups, getLifecycleTenderRows);
+    const lifecycleValue = lifecycleRows.reduce((sum, row) => sum + Number(row.opportunityValue || 0), 0);
 
     const conversionLagDays = eoiOriginTenderGroups
       .map((group) => getDayDiff(getEarliestEoiTimestamp(group), getEarliestTenderTimestamp(group)))
@@ -510,14 +539,13 @@ const Analytics = () => {
     })) satisfies GroupBucket[];
 
     const lossReasons = Object.entries(
-      lostGroups.reduce<Record<string, number>>((acc, group) => {
-        const lostRow = getLostRow(group);
+      lostRows.reduce<Record<string, number>>((acc, lostRow) => {
         const category = categorizeLossReason(normalizeText(lostRow?.remarksReason || lostRow?.comments));
         acc[category] = (acc[category] || 0) + 1;
         return acc;
       }, {}),
     )
-      .map(([label, count]) => ({ label, count, percent: safePercent(count, Math.max(lostGroups.length, 1)) }))
+      .map(([label, count]) => ({ label, count, percent: safePercent(count, Math.max(lostRows.length, 1)) }))
       .sort((a, b) => b.count - a.count);
 
     const postBidBreakdown = Object.entries(
@@ -548,7 +576,7 @@ const Analytics = () => {
         return { ...row, color: 'bg-fuchsia-500' };
       });
 
-    const monthlyStatusMap = new Map<string, { month: string; Received: number; Submitted: number; Won: number; Lost: number }>();
+    const monthlyStatusMap = new Map<string, { month: string; Received: number; Submitted: number; Won: number; Outcome: number }>();
     const allMonthKeys = new Set<string>();
 
     groupedOpportunities.forEach((group) => {
@@ -560,7 +588,7 @@ const Analytics = () => {
       const receivedMonth = getMonthKey(receivedRow?.dateTenderReceived || receivedRow?.tenderSubmittedDate);
       if (receivedMonth) {
         allMonthKeys.add(receivedMonth);
-        const row = monthlyStatusMap.get(receivedMonth) || { month: receivedMonth, Received: 0, Submitted: 0, Won: 0, Lost: 0 };
+        const row = monthlyStatusMap.get(receivedMonth) || { month: receivedMonth, Received: 0, Submitted: 0, Won: 0, Outcome: 0 };
         row.Received += 1;
         monthlyStatusMap.set(receivedMonth, row);
       }
@@ -568,7 +596,7 @@ const Analytics = () => {
       const submittedMonth = getMonthKey(submittedRow?.tenderSubmittedDate || submittedRow?.dateTenderReceived);
       if (submittedMonth) {
         allMonthKeys.add(submittedMonth);
-        const row = monthlyStatusMap.get(submittedMonth) || { month: submittedMonth, Received: 0, Submitted: 0, Won: 0, Lost: 0 };
+        const row = monthlyStatusMap.get(submittedMonth) || { month: submittedMonth, Received: 0, Submitted: 0, Won: 0, Outcome: 0 };
         row.Submitted += 1;
         monthlyStatusMap.set(submittedMonth, row);
       }
@@ -577,7 +605,7 @@ const Analytics = () => {
         const month = getMonthKey(wonRow.postBidDetailUpdatedAt || wonRow.tenderSubmittedDate || wonRow.dateTenderReceived);
         if (month) {
           allMonthKeys.add(month);
-          const row = monthlyStatusMap.get(month) || { month: month, Received: 0, Submitted: 0, Won: 0, Lost: 0 };
+          const row = monthlyStatusMap.get(month) || { month: month, Received: 0, Submitted: 0, Won: 0, Outcome: 0 };
           row.Won += 1;
           monthlyStatusMap.set(month, row);
         }
@@ -587,19 +615,19 @@ const Analytics = () => {
         const month = getMonthKey(outcomeRow.postBidDetailUpdatedAt || outcomeRow.tenderSubmittedDate || outcomeRow.dateTenderReceived);
         if (month) {
           allMonthKeys.add(month);
-          const row = monthlyStatusMap.get(month) || { month, Received: 0, Submitted: 0, Won: 0, Lost: 0 };
-          row.Lost += 1;
+          const row = monthlyStatusMap.get(month) || { month, Received: 0, Submitted: 0, Won: 0, Outcome: 0 };
+          row.Outcome += 1;
           monthlyStatusMap.set(month, row);
         }
       }
     });
 
-    const monthColumns = Array.from(allMonthKeys).sort((a, b) => a.localeCompare(b)).slice(-12);
-    const monthlyHeatmap = ['Received', 'Submitted', 'Won', 'Lost'].map((status) => ({
+    const monthColumns = Array.from(allMonthKeys).sort((a, b) => a.localeCompare(b));
+    const monthlyHeatmap = ['Received', 'Submitted', 'Won', 'Outcome'].map((status) => ({
       status,
       values: monthColumns.map((month) => ({
         month,
-        value: monthlyStatusMap.get(month)?.[status as 'Received' | 'Submitted' | 'Won' | 'Lost'] || 0,
+        value: monthlyStatusMap.get(month)?.[status as 'Received' | 'Submitted' | 'Won' | 'Outcome'] || 0,
       })),
     }));
 
@@ -654,15 +682,15 @@ const Analytics = () => {
         avgValue: average(directTenderGroups.map(getGroupValue)),
       },
       overall: {
-        submittedCount: kpis.submitted,
-        wonCount: kpis.won,
-        lostCount: kpis.lost,
-        regrettedCount: regrettedGroups.length,
-        holdCount: holdGroups.length,
-        noDecisionCount: kpis.noDecision,
-        countWinRate: safePercent(kpis.won, lifecycleGroups.length),
+        submittedCount: submittedRows.length,
+        wonCount: wonRows.length,
+        lostCount: lostRows.length,
+        regrettedCount: regrettedRows.length,
+        holdCount: holdRows.length,
+        noDecisionCount: noDecisionRows.length,
+        countWinRate: safePercent(wonRows.length, lifecycleRows.length),
         valueWinRate: safePercent(wonValue, lifecycleValue),
-        decisionRate: safePercent(kpis.won, kpis.won + kpis.lost + regrettedGroups.length + holdGroups.length),
+        decisionRate: safePercent(wonRows.length, wonRows.length + lostRows.length + regrettedRows.length + holdRows.length),
         submittedValue,
         wonValue,
       },
@@ -684,25 +712,25 @@ const Analytics = () => {
       monthColumns,
       monthlyHeatmap,
       staleEoiRows,
-      sparklineSeed: [kpis.submitted, kpis.won, kpis.lost, kpis.noDecision],
+      sparklineSeed: [submittedRows.length, wonRows.length, lostRows.length, noDecisionRows.length],
       drilldowns: {
         lifecycle: rowsForGroups(lifecycleGroups, getLifecycleTenderRow),
-        submitted: rowsForGroups(submittedGroups, getSubmittedRow),
+        submitted: submittedRows,
         eoiSubmitted: rowsForGroups(eoiOriginSubmittedGroups, getSubmittedRow),
         directSubmitted: rowsForGroups(directSubmittedGroups, getSubmittedRow),
-        won: rowsForGroups(wonGroups, getAwardedRow),
+        won: wonRows,
         eoiWon: rowsForGroups(eoiOriginAwardedGroups, getAwardedRow),
         directWon: rowsForGroups(directAwardedGroups, getAwardedRow),
-        lost: rowsForGroups(lostGroups, getLostRow),
+        lost: lostRows,
         eoiLost: rowsForGroups(eoiOriginLostGroups, getLostRow),
         directLost: rowsForGroups(directLostGroups, getLostRow),
-        regretted: rowsForGroups(regrettedGroups, getRegrettedRow),
+        regretted: regrettedRows,
         eoiRegretted: rowsForGroups(eoiOriginRegrettedGroups, getRegrettedRow),
         directRegretted: rowsForGroups(directRegrettedGroups, getRegrettedRow),
-        hold: rowsForGroups(holdGroups, getHoldRow),
+        hold: holdRows,
         eoiHold: rowsForGroups(eoiOriginHoldGroups, getHoldRow),
         directHold: rowsForGroups(directHoldGroups, getHoldRow),
-        noDecision: rowsForGroups(noDecisionGroups, getNoDecisionRow),
+        noDecision: noDecisionRows,
         eoiNoDecision: rowsForGroups(eoiOriginOpenDecisionGroups, getNoDecisionRow),
         directNoDecision: rowsForGroups(directOpenDecisionGroups, getNoDecisionRow),
         eoiReceived: rowsForGroups(eoiOriginGroups, getPureEoiRow),
@@ -718,6 +746,28 @@ const Analytics = () => {
       },
     };
   }, [groupedOpportunities, selectedGroup]);
+
+  const availableHeatmapYears = useMemo(
+    () => Array.from(new Set(analytics.monthColumns.map((month) => month.slice(0, 4)))).sort((a, b) => a.localeCompare(b)),
+    [analytics.monthColumns],
+  );
+  const effectiveHeatmapYear = heatmapYear === 'LATEST' ? (availableHeatmapYears.at(-1) || 'ALL') : heatmapYear;
+  const filteredHeatmapMonths = useMemo(() => {
+    const searchTerm = heatmapSearch.trim().toLowerCase();
+    return analytics.monthColumns.filter((month) => {
+      if (effectiveHeatmapYear !== 'ALL' && !month.startsWith(`${effectiveHeatmapYear}-`)) return false;
+      if (!searchTerm) return true;
+      return formatMonthLabel(month).toLowerCase().includes(searchTerm) || month.toLowerCase().includes(searchTerm);
+    });
+  }, [analytics.monthColumns, effectiveHeatmapYear, heatmapSearch]);
+  const filteredHeatmapMonthSet = useMemo(() => new Set(filteredHeatmapMonths), [filteredHeatmapMonths]);
+  const displayedHeatmap = useMemo(
+    () => analytics.monthlyHeatmap.map((row) => ({
+      ...row,
+      values: row.values.filter((cell) => filteredHeatmapMonthSet.has(cell.month)),
+    })),
+    [analytics.monthlyHeatmap, filteredHeatmapMonthSet],
+  );
 
   const openDrilldown = (title: string, rows: Opportunity[]) => {
     setDrilldown({ title, rows });
@@ -903,6 +953,9 @@ const Analytics = () => {
           <div className="mb-4">
             <div className="dash-label">Side-by-Side</div>
             <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">Pipeline Comparison</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              EOI-Origin means grouped opportunities that have at least one EOI row. Direct Tender means grouped tender opportunities with no EOI row attached.
+            </p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-separate border-spacing-y-2">
@@ -1200,19 +1253,43 @@ const Analytics = () => {
         <div className="mb-5">
           <div className="dash-label">Monthly Signals</div>
           <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">Monthly Heatmap</h2>
-          <p className="mt-2 text-sm text-slate-500">Received and submitted use explicit dates from your records. Won and Lost are plotted against the best available tender-side date currently in the dataset.</p>
+          <p className="mt-2 text-sm text-slate-500">Received and submitted use explicit dates from your records. Won and Outcome are plotted against the best available tender-side date currently in the dataset.</p>
+        </div>
+        <div className="mb-5 grid gap-3 sm:grid-cols-[200px_minmax(0,1fr)]">
+          <Select value={heatmapYear} onValueChange={setHeatmapYear}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select year" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="LATEST">Latest Year</SelectItem>
+              <SelectItem value="ALL">All Years</SelectItem>
+              {availableHeatmapYears.map((year) => (
+                <SelectItem key={year} value={year}>{year}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            value={heatmapSearch}
+            onChange={(event) => setHeatmapSearch(event.target.value)}
+            placeholder="Search month or YYYY-MM"
+          />
         </div>
         <div className="overflow-x-auto">
           <div className="min-w-[720px]">
-            <div className="grid" style={{ gridTemplateColumns: `160px repeat(${analytics.monthColumns.length}, minmax(48px, 1fr))` }}>
+            {filteredHeatmapMonths.length === 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                No months match the selected year or search term.
+              </div>
+            )}
+            <div className="grid" style={{ gridTemplateColumns: `160px repeat(${filteredHeatmapMonths.length}, minmax(48px, 1fr))` }}>
               <div />
-              {analytics.monthColumns.map((month) => (
+              {filteredHeatmapMonths.map((month) => (
                 <div key={month} className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                   {formatMonthLabel(month)}
                 </div>
               ))}
 
-              {analytics.monthlyHeatmap.map((row) => (
+              {displayedHeatmap.map((row) => (
                 <Fragment key={row.status}>
                   <div className="flex items-center px-3 py-3 text-sm font-semibold text-slate-700">{row.status}</div>
                   {row.values.map((cell) => {
