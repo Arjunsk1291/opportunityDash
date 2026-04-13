@@ -166,6 +166,7 @@ const BDEngagements = () => {
   const [bulkAccessInput, setBulkAccessInput] = useState('');
   const [bulkAccessEmails, setBulkAccessEmails] = useState<string[]>([]);
   const [bulkText, setBulkText] = useState('');
+  const [uploadReport, setUploadReport] = useState<{ title: string; lines: string[] } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BDEngagement | null>(null);
   const [editingRow, setEditingRow] = useState<BDEngagement | null>(null);
   const [drilldown, setDrilldown] = useState<{ title: string; rows: BDEngagement[] } | null>(null);
@@ -311,42 +312,149 @@ const BDEngagements = () => {
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       if (!worksheet) throw new Error('No worksheet found in uploaded file.');
-      const rowsData = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
-      const timestamp = new Date().toISOString();
-      const parsedRows = rowsData.map((row, index) => {
-        const ref = String(row['Ref.'] || row['Ref'] || row['ref'] || '').trim();
-        const date = String(row['Date'] || row['date'] || '').trim();
-        const clientName = String(row['Client Name'] || row['clientName'] || row['Client'] || '').trim();
-        const meetingType = String(row['Meeting Type'] || row['meetingType'] || '').trim();
-        if (!ref || !date || !clientName || !meetingType) {
-          throw new Error(`Row ${index + 2} missing required fields (Ref, Date, Client Name, Meeting Type).`);
+      const rowsMatrix = XLSX.utils.sheet_to_json<Array<unknown[]>>(worksheet, { header: 1, defval: '' }) as unknown[][];
+      if (!rowsMatrix.length) throw new Error('No data found in the uploaded file.');
+
+      const normalizeHeader = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const headerCandidates: Record<string, string[]> = {
+        ref: ['ref', 'ref.', 'reference', 'ref no', 'ref no.'],
+        date: ['date'],
+        clientName: ['client name', 'client'],
+        meetingType: ['meeting type', 'meeting'],
+        discussionPoints: ['discussion points', 'discussion'],
+        reportSubmitted: ['report y/n', 'report submitted', 'report'],
+        leadGenerated: ['lead y/n', 'lead generated', 'lead'],
+        focalPerson: ['focal person', 'focal'],
+        designation: ['designation', 'title'],
+        email: ['email', 'e-mail'],
+        mobileNumber: ['mobile number', 'mobile', 'phone'],
+        leadDescription: ['lead description', 'lead desc'],
+        nextSteps: ['next steps', 'next step'],
+        lastContact: ['last contact', 'last contact date'],
+        status: ['status'],
+        location: ['location', 'place'],
+      };
+
+      const scoreHeaderRow = (row: unknown[]) => {
+        const normalized = row.map(normalizeHeader);
+        let score = 0;
+        Object.values(headerCandidates).forEach((candidates) => {
+          if (normalized.some((cell) => candidates.includes(cell))) score += 1;
+        });
+        return score;
+      };
+
+      let headerRowIndex = 0;
+      let bestScore = -1;
+      rowsMatrix.slice(0, 10).forEach((row, index) => {
+        const score = scoreHeaderRow(row);
+        if (score > bestScore) {
+          bestScore = score;
+          headerRowIndex = index;
         }
-        const reportSubmitted = ['y', 'yes', 'true', '1'].includes(String(row['Report Y/N'] || row['Report Submitted'] || row['reportSubmitted'] || '').toLowerCase());
-        const leadGenerated = ['y', 'yes', 'true', '1'].includes(String(row['Lead Y/N'] || row['Lead Generated'] || row['leadGenerated'] || '').toLowerCase());
-        return {
+      });
+
+      const headerRow = rowsMatrix[headerRowIndex] || [];
+      const normalizedHeader = headerRow.map(normalizeHeader);
+      const columnIndex: Record<string, number> = {};
+      Object.entries(headerCandidates).forEach(([key, candidates]) => {
+        const index = normalizedHeader.findIndex((cell) => candidates.includes(cell));
+        if (index >= 0) columnIndex[key] = index;
+      });
+
+      const timestamp = new Date().toISOString();
+      const warnings: string[] = [];
+      const parsedRows: BDEngagement[] = [];
+
+      const parseDateValue = (value: unknown) => {
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+          return value.toISOString().slice(0, 10);
+        }
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const isoMatch = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+        if (isoMatch) {
+          const [_, year, month, day] = isoMatch;
+          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+        const dmy = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+        if (dmy) {
+          const year = dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3];
+          return `${year}-${String(dmy[2]).padStart(2, '0')}-${String(dmy[1]).padStart(2, '0')}`;
+        }
+        return raw;
+      };
+
+      const lastSeen: Record<number, string> = {};
+      const startRow = headerRowIndex + 1;
+      rowsMatrix.slice(startRow).forEach((row, rowOffset) => {
+        const rowIndex = startRow + rowOffset + 1;
+        const filledRow = row.map((cell, idx) => {
+          const value = String(cell ?? '').trim();
+          if (value) {
+            lastSeen[idx] = value;
+            return value;
+          }
+          return lastSeen[idx] || '';
+        });
+
+        const getCell = (key: string) => {
+          const idx = columnIndex[key];
+          if (idx === undefined) return '';
+          return String(filledRow[idx] ?? '').trim();
+        };
+
+        const ref = getCell('ref');
+        const date = parseDateValue(getCell('date'));
+        const clientName = getCell('clientName');
+        const meetingType = getCell('meetingType');
+        if (!ref && !clientName && !meetingType && !date) return;
+        if (!ref || !date || !clientName || !meetingType) {
+          warnings.push(`Row ${rowIndex}: missing required fields (Ref, Date, Client Name, Meeting Type).`);
+          return;
+        }
+
+        const reportSubmitted = ['y', 'yes', 'true', '1'].includes(getCell('reportSubmitted').toLowerCase());
+        const leadGenerated = ['y', 'yes', 'true', '1'].includes(getCell('leadGenerated').toLowerCase());
+
+        parsedRows.push({
           id: createBDEngagementId(),
           ref,
           date,
           clientName,
           meetingType,
-          status: String(row['Status'] || row['status'] || 'Open').trim() || 'Open',
-          location: String(row['Location'] || row['location'] || '').trim(),
-          discussionPoints: String(row['Discussion Points'] || row['discussionPoints'] || '').trim(),
+          status: getCell('status') || 'Open',
+          location: getCell('location'),
+          discussionPoints: getCell('discussionPoints'),
           reportSubmitted,
           leadGenerated,
-          focalPerson: String(row['Focal Person'] || row['focalPerson'] || '').trim(),
-          designation: String(row['Designation'] || row['designation'] || '').trim(),
-          email: String(row['Email'] || row['email'] || '').trim(),
-          mobileNumber: String(row['Mobile Number'] || row['mobileNumber'] || '').trim(),
-          leadDescription: leadGenerated ? String(row['Lead Description'] || row['leadDescription'] || '').trim() : '',
-          nextSteps: String(row['Next Steps'] || row['nextSteps'] || '').trim(),
-          lastContact: String(row['Last Contact'] || row['lastContact'] || date).trim() || date,
+          focalPerson: getCell('focalPerson'),
+          designation: getCell('designation'),
+          email: getCell('email'),
+          mobileNumber: getCell('mobileNumber'),
+          leadDescription: leadGenerated ? getCell('leadDescription') : '',
+          nextSteps: getCell('nextSteps'),
+          lastContact: parseDateValue(getCell('lastContact') || date) || date,
           createdAt: timestamp,
           updatedAt: timestamp,
-        } as BDEngagement;
+        });
       });
+
+      if (!parsedRows.length) {
+        throw new Error('No valid engagement rows found. Check the template headers and required fields.');
+      }
+
       setRows((current) => [...parsedRows, ...current]);
       toast.success(`Uploaded ${parsedRows.length} engagement${parsedRows.length === 1 ? '' : 's'}.`);
+      setUploadReport({
+        title: 'Bulk Upload Report',
+        lines: [
+          `Processed ${rowsMatrix.length - startRow} row(s).`,
+          `Imported ${parsedRows.length} row(s).`,
+          warnings.length ? `Skipped ${warnings.length} row(s) due to missing required fields.` : 'No rows skipped.',
+          ...warnings,
+        ],
+      });
     } catch (error) {
       console.error('Bulk upload failed:', error);
       toast.error((error as Error).message || 'Failed to upload bulk file.');
@@ -1251,6 +1359,22 @@ const BDEngagements = () => {
               Save Access
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(uploadReport)} onOpenChange={(open) => { if (!open) setUploadReport(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{uploadReport?.title || 'Upload Report'}</DialogTitle>
+            <DialogDescription>Deviations and skipped rows from the last bulk upload.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+            <ul className="list-disc pl-5">
+              {(uploadReport?.lines || []).map((line, index) => (
+                <li key={`${line}-${index}`}>{line}</li>
+              ))}
+            </ul>
+          </div>
         </DialogContent>
       </Dialog>
 
