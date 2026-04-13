@@ -7,9 +7,14 @@ export type BDEngagement = {
   clientName: string;
   meetingType: string;
   status: string;
+  location: string;
   discussionPoints: string;
   reportSubmitted: boolean;
   leadGenerated: boolean;
+  focalPerson: string;
+  designation: string;
+  email: string;
+  mobileNumber: string;
   leadDescription: string;
   nextSteps: string;
   lastContact: string;
@@ -117,9 +122,14 @@ const buildSeedEngagements = (): BDEngagement[] => {
       clientName,
       meetingType,
       status: 'Open',
+      location: '',
       discussionPoints: DISCUSSION_SNIPPETS[index % DISCUSSION_SNIPPETS.length],
       reportSubmitted,
       leadGenerated,
+      focalPerson: '',
+      designation: '',
+      email: '',
+      mobileNumber: '',
       leadDescription: leadGenerated ? LEAD_SNIPPETS[index % LEAD_SNIPPETS.length] : '',
       nextSteps: NEXT_STEP_SNIPPETS[index % NEXT_STEP_SNIPPETS.length],
       lastContact,

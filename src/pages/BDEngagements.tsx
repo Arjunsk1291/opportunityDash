@@ -41,9 +41,14 @@ type FormState = {
   clientName: string;
   meetingType: string;
   status: string;
+  location: string;
   discussionPoints: string;
   reportSubmitted: boolean;
   leadGenerated: boolean;
+  focalPerson: string;
+  designation: string;
+  email: string;
+  mobileNumber: string;
   leadDescription: string;
   nextSteps: string;
   lastContact: string;
@@ -57,9 +62,14 @@ const emptyForm: FormState = {
   clientName: '',
   meetingType: MEETING_TYPES[0],
   status: 'Open',
+  location: '',
   discussionPoints: '',
   reportSubmitted: false,
   leadGenerated: false,
+  focalPerson: '',
+  designation: '',
+  email: '',
+  mobileNumber: '',
   leadDescription: '',
   nextSteps: '',
   lastContact: '',
@@ -85,9 +95,14 @@ const buildFormFromRow = (row: BDEngagement): FormState => ({
   clientName: row.clientName,
   meetingType: row.meetingType,
   status: row.status || 'Open',
+  location: row.location || '',
   discussionPoints: row.discussionPoints,
   reportSubmitted: row.reportSubmitted,
   leadGenerated: row.leadGenerated,
+  focalPerson: row.focalPerson || '',
+  designation: row.designation || '',
+  email: row.email || '',
+  mobileNumber: row.mobileNumber || '',
   leadDescription: row.leadDescription,
   nextSteps: row.nextSteps,
   lastContact: row.lastContact,
@@ -102,9 +117,14 @@ const buildRowFromForm = (form: FormState, current?: BDEngagement): BDEngagement
     clientName: form.clientName.trim(),
     meetingType: form.meetingType.trim(),
     status: form.status.trim() || 'Open',
+    location: form.location.trim(),
     discussionPoints: form.discussionPoints.trim(),
     reportSubmitted: form.reportSubmitted,
     leadGenerated: form.leadGenerated,
+    focalPerson: form.focalPerson.trim(),
+    designation: form.designation.trim(),
+    email: form.email.trim(),
+    mobileNumber: form.mobileNumber.trim(),
     leadDescription: form.leadGenerated ? form.leadDescription.trim() : '',
     nextSteps: form.nextSteps.trim(),
     lastContact: form.lastContact,
@@ -179,13 +199,18 @@ const BDEngagements = () => {
         date,
         clientName,
         meetingType,
-        status,
         discussionPoints,
         reportSubmittedRaw,
         leadGeneratedRaw,
+        focalPerson,
+        designation,
+        email,
+        mobileNumber,
         leadDescription,
         nextSteps,
         lastContact,
+        status,
+        location,
       ] = parts;
       if (!ref || !date || !clientName || !meetingType) {
         throw new Error(`Line ${index + 1} missing required fields (ref, date, client, meetingType).`);
@@ -199,9 +224,14 @@ const BDEngagements = () => {
         clientName: clientName.trim(),
         meetingType: meetingType.trim(),
         status: (status || 'Open').trim() || 'Open',
+        location: (location || '').trim(),
         discussionPoints: (discussionPoints || '').trim(),
         reportSubmitted,
         leadGenerated,
+        focalPerson: (focalPerson || '').trim(),
+        designation: (designation || '').trim(),
+        email: (email || '').trim(),
+        mobileNumber: (mobileNumber || '').trim(),
         leadDescription: leadGenerated ? String(leadDescription || '').trim() : '',
         nextSteps: (nextSteps || '').trim(),
         lastContact: (lastContact || date || '').trim(),
@@ -228,30 +258,40 @@ const BDEngagements = () => {
     try {
       const XLSX = await import('xlsx');
       const headers = [
-        'Ref',
+        'Ref.',
         'Date',
         'Client Name',
         'Meeting Type',
-        'Status',
         'Discussion Points',
-        'Report Submitted',
-        'Lead Generated',
+        'Report Y/N',
+        'Lead Y/N',
+        'Focal Person',
+        'Designation',
+        'Email',
+        'Mobile Number',
         'Lead Description',
         'Next Steps',
-        'Last Contact',
+        'Last contact',
+        'Status',
+        'Location',
       ];
       const sample = {
-        Ref: 'BD-2026-001',
+        'Ref.': 'BD-2026-001',
         Date: new Date().toISOString().slice(0, 10),
         'Client Name': 'Client A',
         'Meeting Type': MEETING_TYPES[0],
-        Status: 'Open',
         'Discussion Points': 'Discussed scope and next steps.',
-        'Report Submitted': 'YES',
-        'Lead Generated': 'NO',
+        'Report Y/N': 'Y',
+        'Lead Y/N': 'N',
+        'Focal Person': 'Jane Doe',
+        Designation: 'Project Manager',
+        Email: 'jane@client.com',
+        'Mobile Number': '0500000000',
         'Lead Description': '',
         'Next Steps': 'Share capability deck.',
         'Last Contact': new Date().toISOString().slice(0, 10),
+        Status: 'Open',
+        Location: 'Abu Dhabi',
       };
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.json_to_sheet([sample], { header: headers });
@@ -274,15 +314,15 @@ const BDEngagements = () => {
       const rowsData = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
       const timestamp = new Date().toISOString();
       const parsedRows = rowsData.map((row, index) => {
-        const ref = String(row['Ref'] || row['ref'] || '').trim();
+        const ref = String(row['Ref.'] || row['Ref'] || row['ref'] || '').trim();
         const date = String(row['Date'] || row['date'] || '').trim();
         const clientName = String(row['Client Name'] || row['clientName'] || row['Client'] || '').trim();
         const meetingType = String(row['Meeting Type'] || row['meetingType'] || '').trim();
         if (!ref || !date || !clientName || !meetingType) {
           throw new Error(`Row ${index + 2} missing required fields (Ref, Date, Client Name, Meeting Type).`);
         }
-        const reportSubmitted = ['yes', 'true', '1'].includes(String(row['Report Submitted'] || row['reportSubmitted'] || '').toLowerCase());
-        const leadGenerated = ['yes', 'true', '1'].includes(String(row['Lead Generated'] || row['leadGenerated'] || '').toLowerCase());
+        const reportSubmitted = ['y', 'yes', 'true', '1'].includes(String(row['Report Y/N'] || row['Report Submitted'] || row['reportSubmitted'] || '').toLowerCase());
+        const leadGenerated = ['y', 'yes', 'true', '1'].includes(String(row['Lead Y/N'] || row['Lead Generated'] || row['leadGenerated'] || '').toLowerCase());
         return {
           id: createBDEngagementId(),
           ref,
@@ -290,9 +330,14 @@ const BDEngagements = () => {
           clientName,
           meetingType,
           status: String(row['Status'] || row['status'] || 'Open').trim() || 'Open',
+          location: String(row['Location'] || row['location'] || '').trim(),
           discussionPoints: String(row['Discussion Points'] || row['discussionPoints'] || '').trim(),
           reportSubmitted,
           leadGenerated,
+          focalPerson: String(row['Focal Person'] || row['focalPerson'] || '').trim(),
+          designation: String(row['Designation'] || row['designation'] || '').trim(),
+          email: String(row['Email'] || row['email'] || '').trim(),
+          mobileNumber: String(row['Mobile Number'] || row['mobileNumber'] || '').trim(),
           leadDescription: leadGenerated ? String(row['Lead Description'] || row['leadDescription'] || '').trim() : '',
           nextSteps: String(row['Next Steps'] || row['nextSteps'] || '').trim(),
           lastContact: String(row['Last Contact'] || row['lastContact'] || date).trim() || date,
@@ -861,9 +906,11 @@ const BDEngagements = () => {
                     <TableHead>Client Name</TableHead>
                     <TableHead>Meeting Type</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Location</TableHead>
                     <TableHead>Discussion Points</TableHead>
                     <TableHead>Report</TableHead>
                     <TableHead>Lead</TableHead>
+                    <TableHead>Focal Person</TableHead>
                     <TableHead>Lead Description</TableHead>
                     <TableHead>Next Steps</TableHead>
                     <TableHead>Last Contact</TableHead>
@@ -878,9 +925,11 @@ const BDEngagements = () => {
                       <TableCell>{row.clientName}</TableCell>
                       <TableCell>{row.meetingType}</TableCell>
                       <TableCell>{row.status || '—'}</TableCell>
+                      <TableCell>{row.location || '—'}</TableCell>
                       <TableCell className="max-w-[240px] truncate">{row.discussionPoints}</TableCell>
                       <TableCell>{row.reportSubmitted ? <Badge className="border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
                       <TableCell>{row.leadGenerated ? <Badge className="border border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
+                      <TableCell>{row.focalPerson || '—'}</TableCell>
                       <TableCell className="max-w-[220px] truncate">{row.leadDescription || '—'}</TableCell>
                       <TableCell className="max-w-[220px] truncate">{row.nextSteps || '—'}</TableCell>
                       <TableCell>{formatPrettyDate(row.lastContact)}</TableCell>
@@ -893,7 +942,7 @@ const BDEngagements = () => {
                   ))}
                   {filteredRows.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={12} className="py-12 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={14} className="py-12 text-center text-sm text-muted-foreground">
                         No engagement records match the current filters.
                       </TableCell>
                     </TableRow>
@@ -1047,6 +1096,26 @@ const BDEngagements = () => {
               <Textarea value={form.discussionPoints} onChange={(event) => setForm((current) => ({ ...current, discussionPoints: event.target.value }))} />
             </div>
             <div className="space-y-2">
+              <label className="text-sm font-medium">Location</label>
+              <Input value={form.location} onChange={(event) => setForm((current) => ({ ...current, location: event.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Focal Person</label>
+              <Input value={form.focalPerson} onChange={(event) => setForm((current) => ({ ...current, focalPerson: event.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Designation</label>
+              <Input value={form.designation} onChange={(event) => setForm((current) => ({ ...current, designation: event.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Email</label>
+              <Input value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Mobile Number</label>
+              <Input value={form.mobileNumber} onChange={(event) => setForm((current) => ({ ...current, mobileNumber: event.target.value }))} />
+            </div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Report Submitted</label>
               <Select value={form.reportSubmitted ? 'YES' : 'NO'} onValueChange={(value) => setForm((current) => ({ ...current, reportSubmitted: value === 'YES' }))}>
                 <SelectTrigger><SelectValue placeholder="Report submitted" /></SelectTrigger>
@@ -1114,7 +1183,7 @@ const BDEngagements = () => {
             <div className="rounded-lg border bg-muted/40 px-3 py-2 text-xs">
               Format:
               {' '}
-              <span className="font-semibold text-foreground">ref,date,clientName,meetingType,status,discussionPoints,reportSubmitted,leadGenerated,leadDescription,nextSteps,lastContact</span>
+              <span className="font-semibold text-foreground">ref,date,clientName,meetingType,discussionPoints,reportYn,leadYn,focalPerson,designation,email,mobileNumber,leadDescription,nextSteps,lastContact,status,location</span>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={downloadBulkTemplate}>
@@ -1200,8 +1269,10 @@ const BDEngagements = () => {
                   <TableHead>Client</TableHead>
                   <TableHead>Meeting</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Location</TableHead>
                   <TableHead>Report</TableHead>
                   <TableHead>Lead</TableHead>
+                  <TableHead>Focal Person</TableHead>
                   <TableHead>Last Contact</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1213,14 +1284,16 @@ const BDEngagements = () => {
                     <TableCell>{row.clientName}</TableCell>
                     <TableCell>{row.meetingType}</TableCell>
                     <TableCell>{row.status || '—'}</TableCell>
+                    <TableCell>{row.location || '—'}</TableCell>
                     <TableCell>{row.reportSubmitted ? 'Yes' : 'No'}</TableCell>
                     <TableCell>{row.leadGenerated ? 'Yes' : 'No'}</TableCell>
+                    <TableCell>{row.focalPerson || '—'}</TableCell>
                     <TableCell>{formatPrettyDate(row.lastContact)}</TableCell>
                   </TableRow>
                 ))}
                 {(drilldown?.rows || []).length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={10} className="py-10 text-center text-sm text-muted-foreground">
                       No engagement rows available.
                     </TableCell>
                   </TableRow>
@@ -1244,10 +1317,15 @@ const BDEngagements = () => {
                 <div><span className="font-semibold">Status:</span> {selectedEngagement.status || '—'}</div>
                 <div><span className="font-semibold">Client:</span> {selectedEngagement.clientName}</div>
                 <div><span className="font-semibold">Meeting Type:</span> {selectedEngagement.meetingType}</div>
+                <div><span className="font-semibold">Location:</span> {selectedEngagement.location || '—'}</div>
                 <div><span className="font-semibold">Date:</span> {formatPrettyDate(selectedEngagement.date)}</div>
                 <div><span className="font-semibold">Last Contact:</span> {formatPrettyDate(selectedEngagement.lastContact)}</div>
                 <div><span className="font-semibold">Report Submitted:</span> {selectedEngagement.reportSubmitted ? 'Yes' : 'No'}</div>
                 <div><span className="font-semibold">Lead Generated:</span> {selectedEngagement.leadGenerated ? 'Yes' : 'No'}</div>
+                <div><span className="font-semibold">Focal Person:</span> {selectedEngagement.focalPerson || '—'}</div>
+                <div><span className="font-semibold">Designation:</span> {selectedEngagement.designation || '—'}</div>
+                <div><span className="font-semibold">Email:</span> {selectedEngagement.email || '—'}</div>
+                <div><span className="font-semibold">Mobile:</span> {selectedEngagement.mobileNumber || '—'}</div>
               </div>
               <div><span className="font-semibold">Discussion Points:</span> {selectedEngagement.discussionPoints || '—'}</div>
               <div><span className="font-semibold">Lead Description:</span> {selectedEngagement.leadDescription || '—'}</div>
