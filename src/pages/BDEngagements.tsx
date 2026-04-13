@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, FunnelChart, Funnel, LabelList } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, Sankey } from 'recharts';
 import { AlertTriangle, BarChart3, BriefcaseBusiness, Building2, CalendarDays, FileCheck2, Plus, Search, Users } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -107,11 +107,17 @@ const buildRowFromForm = (form: FormState, current?: BDEngagement): BDEngagement
 };
 
 const chartTooltipStyle = {
-  backgroundColor: '#020617',
-  border: '1px solid rgba(148, 163, 184, 0.24)',
+  backgroundColor: 'hsl(var(--card))',
+  border: '1px solid hsl(var(--border))',
   borderRadius: '0.9rem',
-  color: '#e2e8f0',
+  color: 'hsl(var(--foreground))',
 };
+
+const chartAxisStroke = 'hsl(var(--muted-foreground))';
+const chartGridStroke = 'hsl(var(--border))';
+const chartNodeFill = 'hsl(var(--muted))';
+const chartNodeStroke = 'hsl(var(--border))';
+const chartLinkFill = 'hsl(var(--primary))';
 
 const BDEngagements = () => {
   const [rows, setRows] = useState<BDEngagement[]>([]);
@@ -206,12 +212,22 @@ const BDEngagements = () => {
       .map(([name, value]) => ({ name, value }));
   }, [rows]);
 
-  const pipelineData = useMemo(() => ([
-    { value: rows.length, name: 'Engagements', fill: '#2dd4bf' },
-    { value: rows.filter((row) => row.reportSubmitted).length, name: 'Reports Submitted', fill: '#38bdf8' },
-    { value: rows.filter((row) => row.leadGenerated).length, name: 'Leads Generated', fill: '#818cf8' },
-    { value: rows.filter((row) => row.nextSteps.trim()).length, name: 'Follow-Ups Planned', fill: '#f59e0b' },
-  ]), [rows]);
+  const pipelineData = useMemo(() => ({
+    nodes: [
+      { name: 'Engagements' },
+      { name: 'Reports Submitted' },
+      { name: 'No Report Yet' },
+      { name: 'Leads Generated' },
+      { name: 'Follow-Ups Planned' },
+    ],
+    links: [
+      { source: 0, target: 1, value: rows.filter((row) => row.reportSubmitted).length },
+      { source: 0, target: 2, value: rows.filter((row) => !row.reportSubmitted).length },
+      { source: 1, target: 3, value: rows.filter((row) => row.reportSubmitted && row.leadGenerated).length },
+      { source: 2, target: 3, value: rows.filter((row) => !row.reportSubmitted && row.leadGenerated).length },
+      { source: 3, target: 4, value: rows.filter((row) => row.leadGenerated && row.nextSteps.trim()).length },
+    ].filter((link) => link.value > 0),
+  }), [rows]);
 
   const topClients = useMemo(() => {
     const grouped = rows.reduce<Record<string, number>>((acc, row) => {
@@ -403,7 +419,7 @@ const BDEngagements = () => {
       </section>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="bg-slate-900 text-slate-300">
+        <TabsList className="bg-muted text-muted-foreground">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="engagements">Engagements</TabsTrigger>
           <TabsTrigger value="clients">Clients</TabsTrigger>
@@ -412,16 +428,16 @@ const BDEngagements = () => {
         <TabsContent value="dashboard" className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             {statCards.map((card, index) => (
-              <Card key={card.label} className="group relative overflow-hidden border-slate-800 bg-slate-950 text-slate-50 shadow-xl shadow-slate-950/20">
+              <Card key={card.label} className="group relative overflow-hidden border-border bg-card text-card-foreground shadow-xl">
                 <div className={`absolute inset-0 bg-gradient-to-br ${card.accent} opacity-70 transition-opacity duration-300 group-hover:opacity-100`} />
                 <CardContent className="relative flex items-start justify-between p-5">
                   <div>
-                    <div className="text-xs uppercase tracking-[0.22em] text-slate-400">{card.label}</div>
+                    <div className="text-xs uppercase tracking-[0.22em] text-muted-foreground">{card.label}</div>
                     <div className="mt-3 text-3xl font-black tracking-tight">{card.value}</div>
-                    <div className="mt-2 text-xs text-slate-400">Card {String(index + 1).padStart(2, '0')}</div>
+                    <div className="mt-2 text-xs text-muted-foreground">Card {String(index + 1).padStart(2, '0')}</div>
                   </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                    <card.icon className="h-5 w-5 text-teal-300" />
+                  <div className="rounded-2xl border border-border bg-background/70 p-3">
+                    <card.icon className="h-5 w-5 text-primary" />
                   </div>
                 </CardContent>
               </Card>
@@ -429,16 +445,16 @@ const BDEngagements = () => {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-2">
-            <Card className="border-slate-800 bg-slate-950 text-slate-50">
+            <Card className="border-border bg-card text-card-foreground">
               <CardHeader>
                 <CardTitle>Engagements Over Time</CardTitle>
               </CardHeader>
               <CardContent className="h-[320px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={monthlyData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.14)" />
-                    <XAxis dataKey="label" stroke="#94a3b8" tickLine={false} axisLine={false} />
-                    <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
+                    <XAxis dataKey="label" stroke={chartAxisStroke} tickLine={false} axisLine={false} />
+                    <YAxis stroke={chartAxisStroke} tickLine={false} axisLine={false} />
                     <Tooltip contentStyle={chartTooltipStyle} />
                     <Bar dataKey="count" radius={[10, 10, 0, 0]} fill="#2dd4bf" />
                   </BarChart>
@@ -446,7 +462,7 @@ const BDEngagements = () => {
               </CardContent>
             </Card>
 
-            <Card className="border-slate-800 bg-slate-950 text-slate-50">
+            <Card className="border-border bg-card text-card-foreground">
               <CardHeader>
                 <CardTitle>Meeting Type Breakdown</CardTitle>
               </CardHeader>
@@ -465,12 +481,12 @@ const BDEngagements = () => {
                 </div>
                 <div className="space-y-3">
                   {meetingTypeBreakdown.map((entry, index) => (
-                    <div key={entry.name} className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/60 px-3 py-2">
+                    <div key={entry.name} className="flex items-center justify-between rounded-2xl border border-border bg-muted/40 px-3 py-2">
                       <div className="flex items-center gap-3">
                         <span className="h-3 w-3 rounded-full" style={{ backgroundColor: DASHBOARD_COLORS[index % DASHBOARD_COLORS.length] }} />
-                        <span className="text-sm text-slate-200">{entry.name}</span>
+                        <span className="text-sm text-foreground">{entry.name}</span>
                       </div>
-                      <span className="text-sm font-semibold text-slate-50">{entry.value}</span>
+                      <span className="text-sm font-semibold text-foreground">{entry.value}</span>
                     </div>
                   ))}
                 </div>
@@ -479,32 +495,37 @@ const BDEngagements = () => {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-            <Card className="border-slate-800 bg-slate-950 text-slate-50">
+            <Card className="border-border bg-card text-card-foreground">
               <CardHeader>
                 <CardTitle>Lead Pipeline</CardTitle>
               </CardHeader>
               <CardContent className="h-[320px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <FunnelChart>
+                  <Sankey
+                    data={pipelineData}
+                    nodePadding={28}
+                    nodeWidth={18}
+                    iterations={32}
+                    margin={{ top: 16, right: 120, bottom: 16, left: 16 }}
+                    link={{ fill: chartLinkFill, fillOpacity: 0.22 }}
+                    node={{ fill: chartNodeFill, stroke: chartNodeStroke, strokeWidth: 1.25 }}
+                  >
                     <Tooltip contentStyle={chartTooltipStyle} />
-                    <Funnel dataKey="value" data={pipelineData} isAnimationActive>
-                      <LabelList position="right" fill="#e2e8f0" stroke="none" dataKey="name" />
-                    </Funnel>
-                  </FunnelChart>
+                  </Sankey>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
 
-            <Card className="border-slate-800 bg-slate-950 text-slate-50">
+            <Card className="border-border bg-card text-card-foreground">
               <CardHeader>
                 <CardTitle>Top Clients by Engagement Count</CardTitle>
               </CardHeader>
               <CardContent className="h-[320px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart layout="vertical" data={topClients}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.14)" />
-                    <XAxis type="number" stroke="#94a3b8" tickLine={false} axisLine={false} />
-                    <YAxis type="category" dataKey="client" width={120} stroke="#94a3b8" tickLine={false} axisLine={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
+                    <XAxis type="number" stroke={chartAxisStroke} tickLine={false} axisLine={false} />
+                    <YAxis type="category" dataKey="client" width={120} stroke={chartAxisStroke} tickLine={false} axisLine={false} />
                     <Tooltip contentStyle={chartTooltipStyle} />
                     <Bar dataKey="count" radius={[0, 10, 10, 0]} fill="#818cf8" />
                   </BarChart>
@@ -515,11 +536,11 @@ const BDEngagements = () => {
         </TabsContent>
 
         <TabsContent value="engagements" className="space-y-6">
-          <Card className="border-slate-200">
+          <Card className="border-border bg-card text-card-foreground">
             <CardContent className="p-5">
               <div className="grid gap-3 lg:grid-cols-[minmax(0,1.6fr)_repeat(4,minmax(0,0.7fr))]">
                 <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search ref, client, meeting, notes..." className="pl-9" />
                 </div>
                 <Select value={meetingTypeFilter} onValueChange={setMeetingTypeFilter}>
@@ -566,7 +587,7 @@ const BDEngagements = () => {
             <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle>Engagement Records</CardTitle>
-                <p className="mt-1 text-sm text-slate-500">{filteredRows.length} visible of {rows.length} stored engagements</p>
+                <p className="mt-1 text-sm text-muted-foreground">{filteredRows.length} visible of {rows.length} stored engagements</p>
               </div>
               <Button type="button" onClick={openCreateDialog}>
                 <Plus className="mr-2 h-4 w-4" />
@@ -598,8 +619,8 @@ const BDEngagements = () => {
                       <TableCell>{row.clientName}</TableCell>
                       <TableCell>{row.meetingType}</TableCell>
                       <TableCell className="max-w-[240px] truncate">{row.discussionPoints}</TableCell>
-                      <TableCell>{row.reportSubmitted ? <Badge className="bg-emerald-100 text-emerald-900">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
-                      <TableCell>{row.leadGenerated ? <Badge className="bg-violet-100 text-violet-900">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
+                      <TableCell>{row.reportSubmitted ? <Badge className="border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
+                      <TableCell>{row.leadGenerated ? <Badge className="border border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
                       <TableCell className="max-w-[220px] truncate">{row.leadDescription || '—'}</TableCell>
                       <TableCell className="max-w-[220px] truncate">{row.nextSteps || '—'}</TableCell>
                       <TableCell>{formatPrettyDate(row.lastContact)}</TableCell>
@@ -613,7 +634,7 @@ const BDEngagements = () => {
                   ))}
                   {filteredRows.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={11} className="py-12 text-center text-sm text-slate-500">
+                      <TableCell colSpan={11} className="py-12 text-center text-sm text-muted-foreground">
                         No engagement records match the current filters.
                       </TableCell>
                     </TableRow>
@@ -625,10 +646,10 @@ const BDEngagements = () => {
         </TabsContent>
 
         <TabsContent value="clients" className="space-y-6">
-          <Card className="border-slate-200">
+          <Card className="border-border bg-card text-card-foreground">
             <CardContent className="grid gap-3 p-5 lg:grid-cols-[minmax(0,1fr)_220px]">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Search client or meeting type..." className="pl-9" />
               </div>
               <Select value={clientSort} onValueChange={(value) => setClientSort(value as 'engagements' | 'leads' | 'reports' | 'name' | 'lastContact')}>
@@ -651,31 +672,31 @@ const BDEngagements = () => {
                   key={client.clientName}
                   type="button"
                   onClick={() => setSelectedClient(client.clientName)}
-                  className={`rounded-[24px] border p-5 text-left shadow-sm transition-all hover:-translate-y-1 ${selectedClientSummary?.clientName === client.clientName ? 'border-teal-300 bg-teal-50 shadow-teal-100' : 'border-slate-200 bg-white'}`}
+                  className={`rounded-[24px] border p-5 text-left shadow-sm transition-all hover:-translate-y-1 ${selectedClientSummary?.clientName === client.clientName ? 'border-teal-400/50 bg-teal-500/10 shadow-teal-500/10' : 'border-border bg-card'}`}
                   style={{ animationDelay: `${index * 35}ms` }}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-lg font-bold text-slate-950">{client.clientName}</div>
-                      <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">{client.primaryMeetingType}</div>
+                      <div className="text-lg font-bold text-foreground">{client.clientName}</div>
+                      <div className="mt-1 text-xs uppercase tracking-[0.18em] text-muted-foreground">{client.primaryMeetingType}</div>
                     </div>
-                    <CalendarDays className="h-5 w-5 text-slate-400" />
+                    <CalendarDays className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div className="mt-5 grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl bg-slate-950 px-3 py-2 text-slate-50">
-                      <div className="text-xs text-slate-400">Engagements</div>
+                    <div className="rounded-2xl bg-muted px-3 py-2 text-foreground">
+                      <div className="text-xs text-muted-foreground">Engagements</div>
                       <div className="mt-1 text-2xl font-black">{client.engagements}</div>
                     </div>
-                    <div className="rounded-2xl bg-violet-50 px-3 py-2 text-violet-950">
-                      <div className="text-xs text-violet-500">Leads</div>
+                    <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 px-3 py-2 text-violet-700 dark:text-violet-300">
+                      <div className="text-xs text-violet-600 dark:text-violet-300/80">Leads</div>
                       <div className="mt-1 text-2xl font-black">{client.leads}</div>
                     </div>
-                    <div className="rounded-2xl bg-emerald-50 px-3 py-2 text-emerald-950">
-                      <div className="text-xs text-emerald-500">Reports</div>
+                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-emerald-700 dark:text-emerald-300">
+                      <div className="text-xs text-emerald-600 dark:text-emerald-300/80">Reports</div>
                       <div className="mt-1 text-2xl font-black">{client.reports}</div>
                     </div>
-                    <div className="rounded-2xl bg-amber-50 px-3 py-2 text-amber-950">
-                      <div className="text-xs text-amber-500">Last Contact</div>
+                    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-amber-700 dark:text-amber-300">
+                      <div className="text-xs text-amber-600 dark:text-amber-300/80">Last Contact</div>
                       <div className="mt-1 text-sm font-bold">{formatPrettyDate(client.lastContact)}</div>
                     </div>
                   </div>
@@ -683,33 +704,33 @@ const BDEngagements = () => {
               ))}
             </div>
 
-            <Card className="border-slate-200">
+            <Card className="border-border bg-card text-card-foreground">
               <CardHeader>
                 <CardTitle>{selectedClientSummary?.clientName || 'Client Details'}</CardTitle>
-                <p className="text-sm text-slate-500">Full engagement history in reverse chronological order.</p>
+                <p className="text-sm text-muted-foreground">Full engagement history in reverse chronological order.</p>
               </CardHeader>
               <CardContent className="space-y-4">
                 {!selectedClientSummary && (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+                  <div className="rounded-2xl border border-dashed border-border bg-muted/40 px-4 py-10 text-center text-sm text-muted-foreground">
                     No client selected.
                   </div>
                 )}
                 {selectedClientSummary?.rows.map((row) => (
-                  <div key={row.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div key={row.id} className="rounded-2xl border border-border bg-background p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <div className="text-sm font-semibold text-slate-950">{row.ref} · {row.meetingType}</div>
-                        <div className="mt-1 text-xs text-slate-500">{formatPrettyDate(row.date)} · Last contact {formatPrettyDate(row.lastContact)}</div>
+                        <div className="text-sm font-semibold text-foreground">{row.ref} · {row.meetingType}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">{formatPrettyDate(row.date)} · Last contact {formatPrettyDate(row.lastContact)}</div>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {row.reportSubmitted ? <Badge className="bg-emerald-100 text-emerald-900">Report Submitted</Badge> : <Badge variant="outline">No Report</Badge>}
-                        {row.leadGenerated ? <Badge className="bg-violet-100 text-violet-900">Lead Generated</Badge> : <Badge variant="outline">No Lead</Badge>}
+                        {row.reportSubmitted ? <Badge className="border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">Report Submitted</Badge> : <Badge variant="outline">No Report</Badge>}
+                        {row.leadGenerated ? <Badge className="border border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300">Lead Generated</Badge> : <Badge variant="outline">No Lead</Badge>}
                       </div>
                     </div>
-                    <div className="mt-4 grid gap-3 text-sm text-slate-700">
-                      <div><span className="font-semibold text-slate-950">Discussion:</span> {row.discussionPoints}</div>
-                      <div><span className="font-semibold text-slate-950">Lead Description:</span> {row.leadDescription || '—'}</div>
-                      <div><span className="font-semibold text-slate-950">Next Steps:</span> {row.nextSteps || '—'}</div>
+                    <div className="mt-4 grid gap-3 text-sm text-muted-foreground">
+                      <div><span className="font-semibold text-foreground">Discussion:</span> {row.discussionPoints}</div>
+                      <div><span className="font-semibold text-foreground">Lead Description:</span> {row.leadDescription || '—'}</div>
+                      <div><span className="font-semibold text-foreground">Next Steps:</span> {row.nextSteps || '—'}</div>
                     </div>
                   </div>
                 ))}
@@ -787,7 +808,7 @@ const BDEngagements = () => {
               <Input type="date" value={form.lastContact} onChange={(event) => setForm((current) => ({ ...current, lastContact: event.target.value }))} />
             </div>
             {!form.clientName.trim() || !form.ref.trim() || !form.date ? (
-              <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 md:col-span-2">
+              <div className="flex items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300 md:col-span-2">
                 <AlertTriangle className="h-4 w-4" />
                 Ref, date, client, and meeting type are required to save.
               </div>
