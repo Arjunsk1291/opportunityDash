@@ -252,7 +252,20 @@ const renderTemplatePreview = (template: string, values: Record<string, string>)
   Object.entries(values).reduce((output, [key, value]) => output.split(`{{${key}}}`).join(value), String(template || ''));
 
 export default function Admin() {
-  const { user, isMaster, token, pagePermissions, pageEmailPermissions, updatePagePermissions, canAccessPage, actionPermissions, actionEmailPermissions, updateActionPermissions, canPerformAction } = useAuth();
+  const {
+    user,
+    isMaster,
+    token,
+    pagePermissions,
+    pageExcludePermissions,
+    pageEmailPermissions,
+    updatePagePermissions,
+    canAccessPage,
+    actionPermissions,
+    actionEmailPermissions,
+    updateActionPermissions,
+    canPerformAction,
+  } = useAuth();
   const canAccessPanel = isMaster || user?.role === 'Admin';
   const navigate = useNavigate();
   const [users, setUsers] = useState<AuthorizedUser[]>([]);
@@ -360,6 +373,7 @@ export default function Admin() {
   const [leadEmailSaving, setLeadEmailSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
   const [draftPagePermissions, setDraftPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
+  const [draftPageExcludePermissions, setDraftPageExcludePermissions] = useState<Record<PageKey, UserRole[]>>({} as Record<PageKey, UserRole[]>);
   const [draftPageEmailPermissions, setDraftPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
   const [draftActionPermissions, setDraftActionPermissions] = useState<Record<ActionKey, UserRole[]>>(DEFAULT_ACTION_ROLE_ACCESS as Record<ActionKey, UserRole[]>);
   const [draftActionEmailPermissions, setDraftActionEmailPermissions] = useState<Record<ActionKey, string[]>>({} as Record<ActionKey, string[]>);
@@ -429,6 +443,10 @@ export default function Admin() {
   useEffect(() => {
     setDraftPagePermissions((pagePermissions || DEFAULT_PAGE_ROLE_ACCESS) as Record<PageKey, UserRole[]>);
   }, [pagePermissions]);
+
+  useEffect(() => {
+    setDraftPageExcludePermissions((pageExcludePermissions || {}) as Record<PageKey, UserRole[]>);
+  }, [pageExcludePermissions]);
 
   useEffect(() => {
     setDraftPageEmailPermissions((pageEmailPermissions || {}) as Record<PageKey, string[]>);
@@ -1563,9 +1581,18 @@ export default function Admin() {
     }));
   };
 
+  const togglePageExcludePermission = (pageKey: PageKey, role: UserRole, checked: boolean) => {
+    setDraftPageExcludePermissions((prev) => {
+      const current = new Set(prev[pageKey] || []);
+      if (checked) current.add(role);
+      else current.delete(role);
+      return { ...prev, [pageKey]: Array.from(current) as UserRole[] };
+    });
+  };
+
   const savePagePermissions = async () => {
     try {
-      await updatePagePermissions(draftPagePermissions, draftPageEmailPermissions);
+      await updatePagePermissions(draftPagePermissions, draftPageEmailPermissions, draftPageExcludePermissions);
       setMessage({ type: 'success', text: '✅ Page visibility permissions updated' });
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
@@ -2085,10 +2112,19 @@ export default function Admin() {
                   <thead>
                     <tr className="border-b">
                       <th className="text-left py-2 pr-3">Page</th>
-                      {ROLE_OPTIONS.map((role) => (
-                        <th key={role} className="text-center py-2 px-3">{role}</th>
-                      ))}
+                      <th className="text-center py-2 px-3" colSpan={ROLE_OPTIONS.length}>Allow Roles</th>
+                      <th className="text-center py-2 px-3" colSpan={ROLE_OPTIONS.length}>Exclude Roles</th>
                       <th className="text-left py-2 pl-3 min-w-[260px]">Custom Emails</th>
+                    </tr>
+                    <tr className="border-b">
+                      <th className="text-left py-2 pr-3 text-xs text-muted-foreground"> </th>
+                      {ROLE_OPTIONS.map((role) => (
+                        <th key={`allow-${role}`} className="text-center py-2 px-3 text-xs">{role}</th>
+                      ))}
+                      {ROLE_OPTIONS.map((role) => (
+                        <th key={`exclude-${role}`} className="text-center py-2 px-3 text-xs">{role}</th>
+                      ))}
+                      <th className="text-left py-2 pl-3 min-w-[260px] text-xs text-muted-foreground">Always Allowed Emails</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2110,6 +2146,15 @@ export default function Admin() {
                               />
                             </td>
                           ))}
+                          {ROLE_OPTIONS.map((role) => (
+                            <td key={`exclude-${pageKey}-${role}`} className="text-center py-2 px-3">
+                              <Checkbox
+                                checked={(draftPageExcludePermissions[pageKey] || []).includes(role)}
+                                onCheckedChange={(checked) => togglePageExcludePermission(pageKey, role, Boolean(checked))}
+                                disabled={!isMaster}
+                              />
+                            </td>
+                          ))}
                           <td className="py-2 pl-3">
                             <Input
                               value={(draftPageEmailPermissions[pageKey] || []).join(', ')}
@@ -2125,6 +2170,9 @@ export default function Admin() {
                   </tbody>
                 </table>
               </div>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Explicit email access overrides excluded roles. This lets you block a role from a page while still allowing specific users by email.
+              </p>
               {isMaster && (
                 <div className="mt-4">
                   <Button onClick={savePagePermissions}>Save Page Permissions</Button>

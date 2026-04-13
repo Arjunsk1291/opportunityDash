@@ -67,6 +67,7 @@ const systemConfigSchema = new mongoose.Schema(
       default: [],
     },
     pageRoleAccess: { type: Object, default: {} },
+    pageRoleExcludeAccess: { type: Object, default: {} },
     pageEmailAccess: { type: Object, default: {} },
     actionRoleAccess: { type: Object, default: {} },
     actionEmailAccess: { type: Object, default: {} },
