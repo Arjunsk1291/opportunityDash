@@ -11,6 +11,7 @@ import TenderUpdates from "./pages/TenderUpdates";
 import VendorDirectory from "./pages/VendorDirectory";
 import Clients from "./pages/Clients";
 import Analytics from "./pages/Analytics";
+import BDEngagements from "./pages/BDEngagements";
 import Admin from "./pages/Admin";
 import PendingApproval from "./pages/PendingApproval";
 import NotFound from "./pages/NotFound";
@@ -82,6 +83,7 @@ function AppRoutes() {
             <Route path="vendors" element={<PageAccessRoute pageKey="vendor_directory"><VendorDirectory /></PageAccessRoute>} />
             <Route path="clients" element={<PageAccessRoute pageKey="clients"><Clients /></PageAccessRoute>} />
             <Route path="analytics" element={<PageAccessRoute pageKey="analytics"><Analytics /></PageAccessRoute>} />
+            <Route path="bd-engagements" element={<PageAccessRoute pageKey="bd_engagements"><BDEngagements /></PageAccessRoute>} />
             <Route path="master" element={<PageAccessRoute pageKey="master"><Admin /></PageAccessRoute>} />
 
             <Route path="status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />
