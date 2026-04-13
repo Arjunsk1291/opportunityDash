@@ -136,11 +136,14 @@ const getQuickRangeDateConfig = (days: number): Pick<FilterState, 'datePreset' |
 };
 
 const getNormalizedDisplayStatus = (opp: Partial<Opportunity>) => normalizeText(getDisplayStatus(opp)).toUpperCase();
-const isTenderRecord = (opp: Opportunity) => normalizeText(opp.opportunityClassification).toUpperCase() === 'TENDER';
-const isEoiRecord = (opp: Opportunity) => {
+const getAnalyticsJourneyType = (opp: Opportunity) => {
   const type = normalizeText(opp.opportunityClassification).toUpperCase();
-  return type === 'EOI' || isEoiRefNo(opp.opportunityRefNo);
+  if (type === 'TENDER') return 'tender';
+  if (type.includes('EOI') || isEoiRefNo(opp.opportunityRefNo)) return 'eoi';
+  return 'tender';
 };
+const isTenderRecord = (opp: Opportunity) => getAnalyticsJourneyType(opp) === 'tender';
+const isEoiRecord = (opp: Opportunity) => getAnalyticsJourneyType(opp) === 'eoi';
 const isLifecycleTenderStatus = (status: string) => ['SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'HOLD / CLOSED', 'HOLD/CLOSED'].includes(status);
 const isHoldStatus = (status: string) => status === 'HOLD / CLOSED' || status === 'HOLD/CLOSED';
 const hasPostBidDetails = (opp: Partial<Opportunity>) => Boolean(normalizeText(opp.postBidDetailType));
