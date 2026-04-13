@@ -17,8 +17,10 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
+import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
 import { AdvancedFilters, applyFilters, defaultFilters, type FilterState } from '@/components/Dashboard/AdvancedFilters';
 import { useData } from '@/contexts/DataContext';
+import { useCurrency } from '@/contexts/CurrencyContext';
 import type { Opportunity } from '@/data/opportunityData';
 import { getDisplayStatus } from '@/lib/opportunityStatus';
 
@@ -94,15 +96,6 @@ const formatCompactNumber = (value: number) => new Intl.NumberFormat('en-US', {
   maximumFractionDigits: value >= 1000 ? 1 : 0,
 }).format(value || 0);
 
-const formatCurrencyCompact = (value: number) => {
-  if (!value) return 'AED 0';
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000_000) return `AED ${(value / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `AED ${(value / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `AED ${(value / 1_000).toFixed(1)}K`;
-  return `AED ${Math.round(value)}`;
-};
-
 const formatPercent = (value: number) => `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`;
 const QUICK_RANGE_CUSTOM = -1;
 
@@ -160,6 +153,25 @@ const getStageRank = (opp: Opportunity) => {
   return 0;
 };
 
+const hideConvertedEoiDuplicates = (data: Opportunity[]) => (
+  data.filter((opp) => {
+    if (!isEoiRefNo(opp.opportunityRefNo)) return true;
+
+    const baseRefNo = normalizeComparisonText(getBaseRefNo(opp.opportunityRefNo));
+    const tenderName = normalizeComparisonText(opp.tenderName);
+    if (!baseRefNo || !tenderName) return true;
+
+    const convertedTenderExists = data.some((candidate) => (
+      candidate.id !== opp.id
+      && getAnalyticsJourneyType(candidate) === 'tender'
+      && normalizeComparisonText(candidate.opportunityRefNo) === baseRefNo
+      && normalizeComparisonText(candidate.tenderName) === tenderName
+    ));
+
+    return !convertedTenderExists;
+  })
+);
+
 const pickPrimaryOpportunity = (items: Opportunity[]) => {
   if (!items.length) return null;
   return [...items].sort((a, b) => {
@@ -176,7 +188,9 @@ const pickPrimaryOpportunity = (items: Opportunity[]) => {
 const getBusinessKey = (opp: Opportunity, index: number) => {
   const ref = getBaseRefNo(opp.opportunityRefNo);
   const tenderName = normalizeTextLower(opp.tenderName);
-  if (ref && tenderName) return `${ref}::${tenderName}`;
+  const clientName = normalizeTextLower(opp.clientName);
+  if (ref) return `ref::${ref}`;
+  if (clientName && tenderName) return `client::${clientName}::${tenderName}`;
   if (ref) return ref;
   if (tenderName) return tenderName;
   return `untitled-${index}`;
@@ -221,14 +235,7 @@ const average = (values: number[]) => (values.length ? values.reduce((sum, value
 
 const getMatchedTenderRows = (group: OpportunityGroup) => {
   if (!group.eoiRows.length) return group.tenderRows;
-  const baseRefs = new Set(group.eoiRows.map((row) => normalizeComparisonText(getBaseRefNo(row.opportunityRefNo))).filter(Boolean));
-  const eoiNames = new Set(group.eoiRows.map((row) => normalizeComparisonText(row.tenderName)).filter(Boolean));
-
-  return group.tenderRows.filter((row) => (
-    baseRefs.has(normalizeComparisonText(row.opportunityRefNo))
-    && eoiNames.has(normalizeComparisonText(row.tenderName))
-    && isTenderRecord(row)
-  ));
+  return group.tenderRows.filter((row) => isTenderRecord(row));
 };
 
 const getLifecycleTenderRows = (group: OpportunityGroup) => group.tenderRows.filter((row) => isLifecycleTenderStatus(getNormalizedDisplayStatus(row)));
@@ -417,10 +424,12 @@ const FlowNode = ({
 
 const Analytics = () => {
   const { opportunities, isLoading, error } = useData();
+  const { formatCurrency } = useCurrency();
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [quickRange, setQuickRange] = useState<number>(3650);
   const [refreshKey, setRefreshKey] = useState(0);
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null);
+  const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
   const [heatmapYear, setHeatmapYear] = useState('LATEST');
   const [heatmapSearch, setHeatmapSearch] = useState('');
 
@@ -791,30 +800,51 @@ const Analytics = () => {
     : filters.groups.length === 1
       ? filters.groups[0]
       : `${filters.groups.length} Verticals`;
+  const submittedOpportunityRows = useMemo(
+    () => scopedOpportunities.filter((row) => getNormalizedDisplayStatus(row) === 'SUBMITTED'),
+    [scopedOpportunities],
+  );
+  const visibleSubmittedOpportunityRows = useMemo(
+    () => hideConvertedEoiDuplicates(submittedOpportunityRows),
+    [submittedOpportunityRows],
+  );
+  const submittedTenderCount = useMemo(
+    () => visibleSubmittedOpportunityRows.filter((row) => getAnalyticsJourneyType(row) === 'tender').length,
+    [visibleSubmittedOpportunityRows],
+  );
+  const submittedEoiCount = useMemo(
+    () => visibleSubmittedOpportunityRows.filter((row) => getAnalyticsJourneyType(row) === 'eoi').length,
+    [visibleSubmittedOpportunityRows],
+  );
   const monthHeatMax = Math.max(
     1,
     ...analytics.monthlyHeatmap.flatMap((row) => row.values.map((value) => value.value)),
   );
+  const negativeOutcomeCount = analytics.overall.lostCount + analytics.overall.regrettedCount + analytics.overall.holdCount;
+  const negativeOutcomeEoiCount = analytics.eoiOrigin.lostCount + analytics.eoiOrigin.regrettedCount + analytics.eoiOrigin.holdCount;
+  const negativeOutcomeDirectCount = analytics.directTender.lostCount + analytics.directTender.regrettedCount + analytics.directTender.holdCount;
 
   const kpiCards = [
     {
       label: 'Submitted',
-      value: analytics.overall.submittedCount,
+      value: submittedOpportunityRows.length,
       delta: analytics.eoiOrigin.submittedCount,
       direct: analytics.directTender.submittedCount,
-      chip: `Quoted value ${formatCurrencyCompact(analytics.overall.submittedValue)}`,
+      meta: [
+        { label: 'Tender', value: submittedTenderCount, tone: 'bg-blue-500' },
+        { label: 'EOI', value: submittedEoiCount, tone: 'bg-amber-500' },
+      ],
       tone: 'text-sky-600',
       glow: 'analytics-kpi-glow-sky',
       icon: Send,
-      sparkline: [analytics.eoiOrigin.submittedCount, analytics.directTender.submittedCount, analytics.overall.submittedCount, analytics.overall.submittedCount * 0.9],
-      onClick: () => openDrilldown('Submitted Tenders', analytics.drilldowns.submitted),
+      sparkline: [submittedTenderCount, submittedEoiCount, submittedOpportunityRows.length, Math.max(submittedOpportunityRows.length - 1, 0)],
+      onClick: () => openDrilldown('Submitted Opportunities', submittedOpportunityRows),
     },
     {
       label: 'Won',
       value: analytics.overall.wonCount,
       delta: analytics.eoiOrigin.awardedCount,
       direct: analytics.directTender.awardedCount,
-      chip: `Awarded value ${formatCurrencyCompact(analytics.overall.wonValue)}`,
       tone: 'text-emerald-600',
       glow: 'analytics-kpi-glow-emerald',
       icon: Trophy,
@@ -822,16 +852,16 @@ const Analytics = () => {
       onClick: () => openDrilldown('Awarded Tenders', analytics.drilldowns.won),
     },
     {
-      label: 'Lost',
-      value: analytics.overall.lostCount,
-      delta: analytics.eoiOrigin.lostCount,
-      direct: analytics.directTender.lostCount,
+      label: 'Negative Outcome',
+      value: negativeOutcomeCount,
+      delta: negativeOutcomeEoiCount,
+      direct: negativeOutcomeDirectCount,
       chip: `${analytics.overall.regrettedCount} regretted and ${analytics.overall.holdCount} hold`,
       tone: 'text-rose-600',
       glow: 'analytics-kpi-glow-rose',
       icon: XCircle,
-      sparkline: [analytics.eoiOrigin.lostCount, analytics.directTender.lostCount, analytics.overall.lostCount, Math.max(analytics.overall.lostCount - 1, 0)],
-      onClick: () => openDrilldown('Lost Tenders', analytics.drilldowns.lost),
+      sparkline: [negativeOutcomeEoiCount, negativeOutcomeDirectCount, negativeOutcomeCount, Math.max(negativeOutcomeCount - 1, 0)],
+      onClick: () => openDrilldown('Negative Outcomes', [...analytics.drilldowns.lost, ...analytics.drilldowns.regretted, ...analytics.drilldowns.hold]),
     },
     {
       label: 'No Decision',
@@ -885,7 +915,6 @@ const Analytics = () => {
               <div className="analytics-chip">Rows: {scopedOpportunities.length}</div>
               <div className="analytics-chip">EOI to Tender: {formatPercent(analytics.eoiOrigin.conversionRate)}</div>
               <div className="analytics-chip">Count Win: {formatPercent(analytics.overall.countWinRate)}</div>
-              <div className="analytics-chip">Value Win: {formatPercent(analytics.overall.valueWinRate)}</div>
             </div>
           </div>
 
@@ -991,7 +1020,18 @@ const Analytics = () => {
               <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
                 <div className={`h-full rounded-full ${card.tone.replace('text', 'bg')}`} style={{ width: `${clampPercent(safePercent(card.value, Math.max(analytics.overall.submittedCount, card.value, 1)))}%` }} />
               </div>
-              <div className="text-xs text-slate-500">{card.chip}</div>
+              {card.meta ? (
+                <div className="flex flex-wrap gap-2 text-[10px] text-slate-500">
+                  {card.meta.map((item) => (
+                    <span key={item.label} className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5">
+                      <span className={`h-2 w-2 rounded-full ${item.tone}`} />
+                      {item.label} {item.value}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-500">{card.chip}</div>
+              )}
             </div>
           </button>
         ))}
@@ -1003,7 +1043,7 @@ const Analytics = () => {
             <div className="dash-label">Side-by-Side</div>
             <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">Pipeline Comparison</h2>
             <p className="mt-2 text-sm text-slate-500">
-              EOI-Origin means grouped opportunities that have at least one EOI row. Direct Tender means grouped tender opportunities with no EOI row attached.
+              EOI-Origin means an analytics journey group that contains at least one EOI row. Direct Tender means a journey group with tender-side records only. Became Tender means an EOI-Origin group that later picked up at least one tender-side row.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -1392,9 +1432,18 @@ const Analytics = () => {
           <DialogHeader>
             <DialogTitle>{drilldown?.title || 'Drilldown'}</DialogTitle>
           </DialogHeader>
-          <OpportunitiesTable data={drilldown?.rows || []} maxHeight="max-h-[65vh]" />
+          <OpportunitiesTable data={drilldown?.rows || []} maxHeight="max-h-[65vh]" onSelectOpportunity={setSelectedOpportunity} />
         </DialogContent>
       </Dialog>
+
+      <OpportunityDetailDialog
+        open={!!selectedOpportunity}
+        opportunity={selectedOpportunity}
+        onOpenChange={(open) => {
+          if (!open) setSelectedOpportunity(null);
+        }}
+        formatCurrency={formatCurrency}
+      />
     </div>
   );
 };
