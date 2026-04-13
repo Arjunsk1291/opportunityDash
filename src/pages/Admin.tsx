@@ -25,7 +25,7 @@ import { DEFAULT_EXPORT_TEMPLATE, ExportTemplateConfig, normalizeExportTemplate 
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
-const ROLE_OPTIONS: UserRole[] = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
+const ROLE_OPTIONS: UserRole[] = ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'];
 const GROUP_OPTIONS = ['GES', 'GDS', 'GTS'] as const;
 
 const DEFAULT_SERVICE_ACCOUNT = (import.meta.env.VITE_DEFAULT_SERVICE_ACCOUNT || import.meta.env.VITE_DEFAULT_MASTER_USERNAME || 'tender-notify@avenirengineering.com').toLowerCase();
@@ -47,7 +47,7 @@ function parseApiErrorPayload(payload: unknown, fallback: string): string {
 interface AuthorizedUser {
   _id: string;
   email: string;
-  role: 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'Basic' | 'MASTER' | 'PROPOSAL_HEAD';
+  role: 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'BDTeam' | 'Basic' | 'MASTER' | 'PROPOSAL_HEAD';
   assignedGroup?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   lastLogin?: Date;
@@ -2491,6 +2491,7 @@ export default function Admin() {
                     <SelectItem value="Admin">Admin</SelectItem>
                     <SelectItem value="ProposalHead">Tender Manager</SelectItem>
                     <SelectItem value="SVP">SVP</SelectItem>
+                    <SelectItem value="BDTeam">BD Team</SelectItem>
                     <SelectItem value="Basic">Basic</SelectItem>
                   </SelectContent>
                 </Select>
@@ -2603,6 +2604,7 @@ export default function Admin() {
                                   <SelectItem value="Admin">Admin</SelectItem>
                                   <SelectItem value="ProposalHead">Tender Manager</SelectItem>
                                   <SelectItem value="SVP">SVP</SelectItem>
+                                  <SelectItem value="BDTeam">BD Team</SelectItem>
                                   <SelectItem value="Basic">Basic</SelectItem>
                                 </SelectContent>
                               </Select>

@@ -13,7 +13,7 @@ const authorizedUserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'MASTER', 'PROPOSAL_HEAD'],
+    enum: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'MASTER', 'PROPOSAL_HEAD'],
     required: true,
   },
   assignedGroup: {

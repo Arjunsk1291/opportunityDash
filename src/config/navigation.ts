@@ -38,13 +38,13 @@ export const PAGE_GROUPS: Array<{ label: string; pages: PageKey[] }> = [
 ];
 
 export const DEFAULT_PAGE_ROLE_ACCESS: Record<PageKey, string[]> = {
-  dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  bd_engagements: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  bd_engagements: ['Master', 'Admin', 'BDTeam'],
   master: ['Master', 'Admin'],
   master_general: ['Master', 'Admin'],
   master_users: ['Master', 'Admin'],

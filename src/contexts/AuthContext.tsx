@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useCallback, ReactNode, use
 import { DEFAULT_PAGE_ROLE_ACCESS, PageKey } from '@/config/navigation';
 import { ActionKey, DEFAULT_ACTION_ROLE_ACCESS } from '@/config/actionPermissions';
 
-export type UserRole = 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'Basic';
+export type UserRole = 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'BDTeam' | 'Basic';
 export type UserStatus = 'approved' | 'pending' | 'rejected';
 
 export interface User {

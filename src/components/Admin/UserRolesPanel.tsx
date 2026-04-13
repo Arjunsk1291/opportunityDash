@@ -20,6 +20,8 @@ export default function UserRolesPanel() {
         return <FileCheck className="h-4 w-4 text-info" />;
       case 'SVP':
         return <Briefcase className="h-4 w-4 text-warning" />;
+      case 'BDTeam':
+        return <Briefcase className="h-4 w-4 text-cyan-600" />;
       default:
         return <User className="h-4 w-4 text-muted-foreground" />;
     }
@@ -61,6 +63,7 @@ export default function UserRolesPanel() {
                         <SelectItem value="Admin">Admin</SelectItem>
                         <SelectItem value="ProposalHead">Tender Manager</SelectItem>
                         <SelectItem value="SVP">SVP</SelectItem>
+                        <SelectItem value="BDTeam">BD Team</SelectItem>
                         <SelectItem value="Basic">Basic</SelectItem>
                       </SelectContent>
                     </Select>
