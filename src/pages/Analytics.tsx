@@ -739,9 +739,9 @@ const Analytics = () => {
         directTenders: rowsForGroups(directTenderGroups, getConvertedTenderRow),
         receivedAll: rowsForGroups(groupedOpportunities, (group) => getPureEoiRow(group) || getConvertedTenderRow(group) || group.primary),
         outcomeAll: [
-          ...rowsForGroups(lostGroups, getLostRow),
-          ...rowsForGroups(regrettedGroups, getRegrettedRow),
-          ...rowsForGroups(holdGroups, getHoldRow),
+          ...lostRows,
+          ...regrettedRows,
+          ...holdRows,
         ],
       },
     };
