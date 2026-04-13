@@ -481,8 +481,12 @@ const FlowNode = ({
 const Analytics = () => {
   const { opportunities, isLoading, error } = useData();
   const { formatCurrency } = useCurrency();
-  const [filters, setFilters] = useState<FilterState>(defaultFilters);
-  const [quickRange, setQuickRange] = useState<number>(3650);
+  const initialQuickRange = 3650;
+  const [filters, setFilters] = useState<FilterState>(() => ({
+    ...defaultFilters,
+    ...getQuickRangeDateConfig(initialQuickRange),
+  }));
+  const [quickRange, setQuickRange] = useState<number>(initialQuickRange);
   const [refreshKey, setRefreshKey] = useState(0);
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null);
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
