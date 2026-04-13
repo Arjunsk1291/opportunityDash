@@ -110,6 +110,11 @@ const getExportReceivedTimestamp = (opp: Opportunity) => {
 
 const stripHexHash = (value: string) => value.replace(/^#/, '').toUpperCase();
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const rangesOverlap = (a: [number, number, number, number], b: [number, number, number, number]) => {
+  const [aRowStart, aColStart, aRowEnd, aColEnd] = a;
+  const [bRowStart, bColStart, bRowEnd, bColEnd] = b;
+  return !(aRowEnd < bRowStart || aRowStart > bRowEnd || aColEnd < bColStart || aColStart > bColEnd);
+};
 
 const getWorksheetSafeName = (value: string) => {
   const sanitized = String(value || '')
@@ -273,6 +278,18 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       const introEndColumn = clamp(introStartColumn + exportTemplate.introColumnSpan - 1, introStartColumn, 12);
       const introEndRow = clamp(introRowIndex + exportTemplate.introRowSpan - 1, introRowIndex, 24);
       const headerEndColumn = headerStartColumn + selectedColumns.length - 1;
+      const mergedRanges: Array<[number, number, number, number]> = [];
+      const mergeIfSafe = (range: [number, number, number, number], label: string) => {
+        const overlap = mergedRanges.find((existing) => rangesOverlap(existing, range));
+        if (overlap) {
+          console.warn(`Export merge skipped for ${label}: overlaps existing merge`, { range, overlap });
+          toast.warning(`Export layout overlap: ${label} merge skipped.`);
+          return false;
+        }
+        worksheet.mergeCells(...range);
+        mergedRanges.push(range);
+        return true;
+      };
 
       worksheet.columns = Array.from({ length: Math.max(12, headerEndColumn) }, (_, index) => ({
         width: exportTemplate.columnWidths[index] || 18,
@@ -296,24 +313,26 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
         }
       }
 
-      worksheet.mergeCells(titleRowIndex, titleStartColumn, titleEndRow, titleEndColumn);
-      worksheet.getCell(titleRowIndex, titleStartColumn).value = exportTemplate.title;
-      worksheet.getCell(titleRowIndex, titleStartColumn).font = { size: 16, bold: true, color: { argb: `FF${stripHexHash(exportTemplate.titleColor)}` } };
-      worksheet.getCell(titleRowIndex, titleStartColumn).alignment = {
-        vertical: mapVerticalAlign(exportTemplate.titleVerticalAlign),
-        horizontal: mapHorizontalAlign(exportTemplate.titleHorizontalAlign),
-        wrapText: true,
-      };
-
-      if (exportTemplate.introText) {
-        worksheet.mergeCells(introRowIndex, introStartColumn, introEndRow, introEndColumn);
-        worksheet.getCell(introRowIndex, introStartColumn).value = exportTemplate.introText;
-        worksheet.getCell(introRowIndex, introStartColumn).font = { size: 11, color: { argb: `FF${stripHexHash(exportTemplate.introColor)}` } };
-        worksheet.getCell(introRowIndex, introStartColumn).alignment = {
-          vertical: mapVerticalAlign(exportTemplate.introVerticalAlign),
-          horizontal: mapHorizontalAlign(exportTemplate.introHorizontalAlign),
+      if (mergeIfSafe([titleRowIndex, titleStartColumn, titleEndRow, titleEndColumn], 'Title')) {
+        worksheet.getCell(titleRowIndex, titleStartColumn).value = exportTemplate.title;
+        worksheet.getCell(titleRowIndex, titleStartColumn).font = { size: 16, bold: true, color: { argb: `FF${stripHexHash(exportTemplate.titleColor)}` } };
+        worksheet.getCell(titleRowIndex, titleStartColumn).alignment = {
+          vertical: mapVerticalAlign(exportTemplate.titleVerticalAlign),
+          horizontal: mapHorizontalAlign(exportTemplate.titleHorizontalAlign),
           wrapText: true,
         };
+      }
+
+      if (exportTemplate.introText) {
+        if (mergeIfSafe([introRowIndex, introStartColumn, introEndRow, introEndColumn], 'Intro')) {
+          worksheet.getCell(introRowIndex, introStartColumn).value = exportTemplate.introText;
+          worksheet.getCell(introRowIndex, introStartColumn).font = { size: 11, color: { argb: `FF${stripHexHash(exportTemplate.introColor)}` } };
+          worksheet.getCell(introRowIndex, introStartColumn).alignment = {
+            vertical: mapVerticalAlign(exportTemplate.introVerticalAlign),
+            horizontal: mapHorizontalAlign(exportTemplate.introHorizontalAlign),
+            wrapText: true,
+          };
+        }
       }
 
       const headerRow = worksheet.getRow(headerRowIndex);
