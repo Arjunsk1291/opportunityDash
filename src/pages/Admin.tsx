@@ -22,6 +22,7 @@ import { ACTION_DESCRIPTIONS, ACTION_LABELS, ActionKey, DEFAULT_ACTION_ROLE_ACCE
 import { RecipientBlockSelector } from '@/components/Admin/RecipientBlockSelector';
 import defaultExportLogo from '@/assets/avenir-logo.png';
 import { DEFAULT_EXPORT_TEMPLATE, ExportTemplateConfig, normalizeExportTemplate } from '@/lib/exportTemplate';
+import { ExportTemplateSpreadsheet } from '@/components/Admin/ExportTemplateSpreadsheet';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -3224,120 +3225,15 @@ export default function Admin() {
             <Card>
               <CardHeader>
                 <CardTitle>Live Excel Designer</CardTitle>
-                <CardDescription>Click cells to move the active block. The preview uses the same spans, alignments, row heights, and column widths that the exported workbook will follow.</CardDescription>
+                <CardDescription>Use a real spreadsheet surface to drag, merge, and size your template. Move the marker cells, then apply the layout.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-                  <div className="border-b bg-slate-50 px-4 py-3 text-xs font-medium text-slate-500">
-                    Sheet:
-                    {' '}
-                    {exportTemplate.sheetName}
-                  </div>
-                  <div className="overflow-x-auto p-4">
-                    <div
-                      className="grid min-w-[980px] gap-px rounded-xl border bg-slate-200"
-                      style={{ gridTemplateColumns: `48px repeat(${EXPORT_DESIGNER_COLUMNS.length}, minmax(72px, 1fr))` }}
-                    >
-                      <div className="bg-slate-100" />
-                      {EXPORT_DESIGNER_COLUMNS.map((column) => (
-                        <div key={column} className="bg-slate-100 px-2 py-2 text-center text-xs font-semibold text-slate-500">
-                          {column}
-                          <div className="mt-1 text-[10px] font-normal text-slate-400">
-                            {exportTemplate.columnWidths[EXPORT_DESIGNER_COLUMNS.indexOf(column)] ?? 18}
-                          </div>
-                        </div>
-                      ))}
-
-                      {EXPORT_DESIGNER_ROWS.map((row) => (
-                        <Fragment key={`preview-row-${row}`}>
-                          <div className="bg-slate-100 px-2 py-3 text-center text-xs font-semibold text-slate-500">
-                            {row}
-                            <div className="mt-1 text-[10px] font-normal text-slate-400">
-                              {exportTemplate.rowHeights[row - 1] ?? 24}
-                            </div>
-                          </div>
-                          {EXPORT_DESIGNER_COLUMNS.map((column, columnIndex) => {
-                            const currentColumn = columnIndex + 1;
-                            const headerOffset = currentColumn - exportTemplate.headerColumn;
-                            const isHeaderRow = row === exportTemplate.headerRow && headerOffset >= 0 && headerOffset < EXPORT_TEMPLATE_PREVIEW_HEADERS.length;
-                            const headerLabel = isHeaderRow ? EXPORT_TEMPLATE_PREVIEW_HEADERS[headerOffset] : '';
-                            const sampleRowIndex = exportTemplate.headerRow + 1;
-                            const isSampleRow = row === sampleRowIndex && headerOffset >= 0 && headerOffset < EXPORT_TEMPLATE_PREVIEW_ROW.length;
-                            const sampleCell = isSampleRow ? EXPORT_TEMPLATE_PREVIEW_ROW[headerOffset] : '';
-                            const showLogoCell = exportTemplate.showLogo && row === exportTemplate.logoRow && currentColumn === exportTemplate.logoColumn;
-                            const showTitleCell = row === exportTemplate.titleRow && currentColumn === exportTemplate.titleColumn;
-                            const showIntroCell = row === exportTemplate.introRow && currentColumn === exportTemplate.introColumn;
-
-                            return (
-                              <button
-                                type="button"
-                                key={`cell-${row}-${column}`}
-                                onClick={() => placeSelectedExportBlock(row, currentColumn)}
-                                disabled={!canManageExportTemplate}
-                                className={`relative min-h-[52px] bg-white px-2 py-2 text-left text-xs text-slate-600 transition-colors ${selectedExportBlock === 'title' && showTitleCell ? 'ring-2 ring-violet-300' : ''} ${selectedExportBlock === 'intro' && showIntroCell ? 'ring-2 ring-emerald-300' : ''} ${selectedExportBlock === 'logo' && showLogoCell ? 'ring-2 ring-sky-300' : ''} ${selectedExportBlock === 'header' && row === exportTemplate.headerRow && currentColumn === exportTemplate.headerColumn ? 'ring-2 ring-blue-300' : ''}`}
-                              >
-                                {isHeaderRow && (
-                                  <div
-                                    className="absolute inset-0 flex items-center px-2 font-semibold"
-                                    style={{ backgroundColor: exportTemplate.headerBackgroundColor, color: exportTemplate.headerTextColor }}
-                                  >
-                                    {headerLabel}
-                                  </div>
-                                )}
-                                {!isHeaderRow && isSampleRow && (
-                                  <div className="absolute inset-0 flex items-center px-2 text-slate-700">
-                                    {sampleCell}
-                                  </div>
-                                )}
-                                {!isHeaderRow && showLogoCell && (
-                                  <div className="absolute inset-1 rounded border border-sky-200 bg-sky-50 p-1">
-                                    <img
-                                      src={exportTemplateLogoPreview}
-                                      alt="Preview logo"
-                                      className="h-full max-h-[44px] w-auto object-contain"
-                                    />
-                                  </div>
-                                )}
-                                {!isHeaderRow && showTitleCell && (
-                                  <div className="absolute inset-1 overflow-hidden rounded border border-violet-200 bg-violet-50 px-2 py-1 text-sm font-semibold"
-                                    style={{ color: exportTemplate.titleColor }}>
-                                    {exportTemplate.title || 'Export title'}
-                                    <div className="mt-1 text-[10px] text-violet-500">
-                                      {exportTemplate.titleRowSpan}x{exportTemplate.titleColumnSpan} merge
-                                    </div>
-                                  </div>
-                                )}
-                                {!isHeaderRow && showIntroCell && (
-                                  <div className="absolute inset-1 overflow-hidden rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] leading-4"
-                                    style={{ color: exportTemplate.introColor }}>
-                                    {exportTemplate.introText || 'Intro text'}
-                                    <div className="mt-1 text-[10px] text-emerald-500">
-                                      {exportTemplate.introRowSpan}x{exportTemplate.introColumnSpan} merge
-                                    </div>
-                                  </div>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </Fragment>
-                      ))}
-                    </div>
-                    <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                      <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
-                        Title starts at {EXPORT_DESIGNER_COLUMNS[exportTemplate.titleColumn - 1]}{exportTemplate.titleRow}
-                      </div>
-                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-                        Intro starts at {EXPORT_DESIGNER_COLUMNS[exportTemplate.introColumn - 1]}{exportTemplate.introRow}
-                      </div>
-                      <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
-                        Logo starts at {EXPORT_DESIGNER_COLUMNS[exportTemplate.logoColumn - 1]}{exportTemplate.logoRow}
-                      </div>
-                      <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
-                        Header row starts at {EXPORT_DESIGNER_COLUMNS[exportTemplate.headerColumn - 1]}{exportTemplate.headerRow}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <ExportTemplateSpreadsheet
+                  exportTemplate={exportTemplate}
+                  onTemplateChange={setExportTemplate}
+                  canEdit={canManageExportTemplate}
+                  previewHeaders={EXPORT_TEMPLATE_PREVIEW_HEADERS}
+                />
               </CardContent>
             </Card>
           </div>
