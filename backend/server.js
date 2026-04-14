@@ -18,6 +18,7 @@ import LoginLog from './models/LoginLog.js';
 import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
 import ProjectUpdate from './models/ProjectUpdate.js';
+import BDEngagement from './models/BDEngagement.js';
 import { buildDateDisplay, parseDate as parseGraphDate, syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig } from './services/graphExcelService.js';
@@ -2281,6 +2282,7 @@ async function ensureInitialMongoState() {
   await ensureCollectionExists(OpportunityChangeLog, 'opportunitychangelogs');
   await ensureCollectionExists(OpportunityFieldConflict, 'opportunityfieldconflicts');
   await ensureCollectionExists(ProjectUpdate, 'projectupdates');
+  await ensureCollectionExists(BDEngagement, 'bdengagements');
   await ensureBootstrapMasterUser('arjun.s@avenirengineering.com');
 }
 
@@ -5433,6 +5435,69 @@ app.post('/api/clients/seed', verifyToken, async (req, res) => {
     res.json({ success: true, created: result.created || 0, updated: result.updated || 0 });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+const canAccessBDEngagements = (user) => ['Master', 'Admin', 'BDTeam'].includes(String(user?.role || '').trim());
+
+app.get('/api/bd-engagements', verifyToken, async (req, res) => {
+  try {
+    if (!canAccessBDEngagements(req.user)) return res.status(403).json({ error: 'Access denied' });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const rows = await BDEngagement.find().sort({ date: -1, updatedAt: -1 }).lean();
+    res.json(rows.map((row) => mapIdField(row)));
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to load BD engagements' });
+  }
+});
+
+app.post('/api/bd-engagements', verifyToken, async (req, res) => {
+  try {
+    if (!canAccessBDEngagements(req.user)) return res.status(403).json({ error: 'Access denied' });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const created = await BDEngagement.create(req.body || {});
+    res.json({ success: true, row: mapIdField(created.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to create BD engagement' });
+  }
+});
+
+app.put('/api/bd-engagements/:id', verifyToken, async (req, res) => {
+  try {
+    if (!canAccessBDEngagements(req.user)) return res.status(403).json({ error: 'Access denied' });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const existing = await BDEngagement.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'BD engagement not found' });
+    Object.assign(existing, req.body || {});
+    await existing.save();
+    res.json({ success: true, row: mapIdField(existing.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to update BD engagement' });
+  }
+});
+
+app.delete('/api/bd-engagements/:id', verifyToken, async (req, res) => {
+  try {
+    if (!canAccessBDEngagements(req.user)) return res.status(403).json({ error: 'Access denied' });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const result = await BDEngagement.deleteOne({ _id: req.params.id });
+    if (!result.deletedCount) return res.status(404).json({ error: 'BD engagement not found' });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to delete BD engagement' });
+  }
+});
+
+app.post('/api/bd-engagements/clear', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(String(req.user?.role || '').trim())) {
+      return res.status(403).json({ error: 'Only Master/Admin can clear BD engagements' });
+    }
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const result = await BDEngagement.deleteMany({});
+    res.json({ success: true, deleted: result.deletedCount || 0 });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to clear BD engagements' });
   }
 });
 
