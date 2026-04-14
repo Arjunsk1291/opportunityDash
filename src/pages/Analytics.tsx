@@ -1,12 +1,16 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ComponentType } from 'react';
 import {
   BarChart3,
   Building2,
   Clock3,
+  DollarSign,
+  PauseCircle,
   RefreshCcw,
   Send,
+  Target,
   TimerReset,
   Trophy,
+  ThumbsDown,
   Waves,
   XCircle,
 } from 'lucide-react';
@@ -21,7 +25,7 @@ import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetai
 import { AdvancedFilters, applyFilters, defaultFilters, type FilterState } from '@/components/Dashboard/AdvancedFilters';
 import { useData } from '@/contexts/DataContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
-import type { Opportunity } from '@/data/opportunityData';
+import { getQuotedValueDedupedOpportunities, type Opportunity } from '@/data/opportunityData';
 import { getDisplayStatus } from '@/lib/opportunityStatus';
 
 type OpportunityGroup = {
@@ -480,7 +484,7 @@ const FlowNode = ({
 
 const Analytics = () => {
   const { opportunities, isLoading, error } = useData();
-  const { formatCurrency } = useCurrency();
+  const { currency, convertValue, formatCurrency } = useCurrency();
   const initialQuickRange = 3650;
   const [filters, setFilters] = useState<FilterState>(() => ({
     ...defaultFilters,
@@ -492,6 +496,24 @@ const Analytics = () => {
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
   const [heatmapYear, setHeatmapYear] = useState('ALL');
   const [heatmapSearch, setHeatmapSearch] = useState('');
+
+  const formatCompactCurrency = (value: number) => {
+    const converted = convertValue(value || 0);
+    const absValue = Math.abs(converted);
+    const { divisor, suffix } = absValue >= 1_000_000_000
+      ? { divisor: 1_000_000_000, suffix: 'B' }
+      : absValue >= 1_000_000
+        ? { divisor: 1_000_000, suffix: 'M' }
+        : absValue >= 1_000
+          ? { divisor: 1_000, suffix: 'K' }
+          : { divisor: 1, suffix: '' };
+
+    const compact = divisor === 1
+      ? Math.round(converted).toLocaleString('en-US')
+      : `${(converted / divisor).toFixed(1).replace(/\\.0$/, '')}${suffix}`;
+
+    return currency === 'AED' ? `AED ${compact}` : `$${compact}`;
+  };
 
   const groupOptions = useMemo(() => {
     const groups = Array.from(new Set(opportunities.map((opp) => normalizeText(opp.groupClassification)).filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -888,15 +910,137 @@ const Analytics = () => {
     () => visibleSubmittedOpportunityRows.filter((row) => getAnalyticsJourneyType(row) === 'eoi').length,
     [visibleSubmittedOpportunityRows],
   );
+  const activeOpportunityRows = useMemo(
+    () => scopedOpportunities.filter((row) => ['WORKING', 'SUBMITTED', 'AWARDED'].includes(getNormalizedDisplayStatus(row))),
+    [scopedOpportunities],
+  );
+  const visibleActiveOpportunityRows = useMemo(
+    () => hideConvertedEoiDuplicates(activeOpportunityRows),
+    [activeOpportunityRows],
+  );
+  const activeTenderCount = useMemo(
+    () => visibleActiveOpportunityRows.filter((row) => getAnalyticsJourneyType(row) === 'tender').length,
+    [visibleActiveOpportunityRows],
+  );
+  const activeEoiCount = useMemo(
+    () => visibleActiveOpportunityRows.filter((row) => getAnalyticsJourneyType(row) === 'eoi').length,
+    [visibleActiveOpportunityRows],
+  );
+  const quotedValueRows = useMemo(
+    () => getQuotedValueDedupedOpportunities(scopedOpportunities),
+    [scopedOpportunities],
+  );
+  const quotedValue = useMemo(
+    () => quotedValueRows.reduce((sum, row) => sum + Number(row.opportunityValue || 0), 0),
+    [quotedValueRows],
+  );
   const monthHeatMax = Math.max(
     1,
     ...analytics.monthlyHeatmap.flatMap((row) => row.values.map((value) => value.value)),
   );
-  const negativeOutcomeCount = analytics.overall.lostCount + analytics.overall.regrettedCount + analytics.overall.holdCount;
-  const negativeOutcomeEoiCount = analytics.eoiOrigin.lostCount + analytics.eoiOrigin.regrettedCount + analytics.eoiOrigin.holdCount;
-  const negativeOutcomeDirectCount = analytics.directTender.lostCount + analytics.directTender.regrettedCount + analytics.directTender.holdCount;
 
-  const kpiCards = [
+  type KpiCard = {
+    label: string;
+    value: number;
+    valueFormat?: (value: number) => string;
+    totalLabel?: string;
+    meta?: Array<{ label: string; value: number; tone: string }>;
+    chip?: string;
+    tone: string;
+    glow: string;
+    icon: ComponentType<{ className?: string }>;
+    sparkline: number[];
+    onClick: () => void;
+  };
+
+  const kpiCards: KpiCard[] = [
+    {
+      label: 'Active Tenders',
+      value: activeOpportunityRows.length,
+      meta: [
+        { label: 'Tender', value: activeTenderCount, tone: 'bg-blue-500' },
+        { label: 'EOI', value: activeEoiCount, tone: 'bg-amber-500' },
+      ],
+      tone: 'text-sky-600',
+      glow: 'analytics-kpi-glow-sky',
+      icon: Target,
+      sparkline: [activeTenderCount, activeEoiCount, activeOpportunityRows.length, Math.max(activeOpportunityRows.length - 1, 0)],
+      onClick: () => openDrilldown('Active Tenders', activeOpportunityRows),
+    },
+    {
+      label: 'Total Quoted Value',
+      value: quotedValue,
+      valueFormat: (next: number) => formatCompactCurrency(next),
+      totalLabel: `Total ${formatCompactCurrency(quotedValue)}`,
+      chip: `${quotedValueRows.length} unique tenders`,
+      tone: 'text-violet-600',
+      glow: 'analytics-kpi-glow-emerald',
+      icon: DollarSign,
+      sparkline: [analytics.overall.submittedValue, analytics.overall.wonValue, quotedValue, quotedValue * 0.85],
+      onClick: () => openDrilldown('Quoted Value (Deduped)', quotedValueRows),
+    },
+    {
+      label: 'Awarded',
+      value: analytics.overall.wonCount,
+      meta: [
+        { label: 'EOI-Origin', value: analytics.eoiOrigin.awardedCount, tone: 'bg-sky-500' },
+        { label: 'Direct', value: analytics.directTender.awardedCount, tone: 'bg-cyan-500' },
+      ],
+      tone: 'text-emerald-600',
+      glow: 'analytics-kpi-glow-emerald',
+      icon: Trophy,
+      sparkline: [analytics.eoiOrigin.awardedCount, analytics.directTender.awardedCount, analytics.overall.wonCount, Math.max(analytics.overall.wonCount - 1, 0)],
+      onClick: () => openDrilldown('Awarded Tenders', analytics.drilldowns.won),
+    },
+    {
+      label: 'Lost',
+      value: analytics.overall.lostCount,
+      meta: [
+        { label: 'EOI-Origin', value: analytics.eoiOrigin.lostCount, tone: 'bg-sky-500' },
+        { label: 'Direct', value: analytics.directTender.lostCount, tone: 'bg-cyan-500' },
+      ],
+      tone: 'text-rose-600',
+      glow: 'analytics-kpi-glow-rose',
+      icon: XCircle,
+      sparkline: [analytics.eoiOrigin.lostCount, analytics.directTender.lostCount, analytics.overall.lostCount, Math.max(analytics.overall.lostCount - 1, 0)],
+      onClick: () => openDrilldown('Lost Tenders', analytics.drilldowns.lost),
+    },
+    {
+      label: 'Regretted',
+      value: analytics.overall.regrettedCount,
+      meta: [
+        { label: 'EOI-Origin', value: analytics.eoiOrigin.regrettedCount, tone: 'bg-sky-500' },
+        { label: 'Direct', value: analytics.directTender.regrettedCount, tone: 'bg-cyan-500' },
+      ],
+      tone: 'text-slate-700',
+      glow: 'analytics-kpi-glow-amber',
+      icon: ThumbsDown,
+      sparkline: [analytics.eoiOrigin.regrettedCount, analytics.directTender.regrettedCount, analytics.overall.regrettedCount, Math.max(analytics.overall.regrettedCount - 1, 0)],
+      onClick: () => openDrilldown('Regretted Tenders', analytics.drilldowns.regretted),
+    },
+    {
+      label: 'Hold / Closed',
+      value: analytics.overall.holdCount,
+      meta: [
+        { label: 'EOI-Origin', value: analytics.eoiOrigin.holdCount, tone: 'bg-sky-500' },
+        { label: 'Direct', value: analytics.directTender.holdCount, tone: 'bg-cyan-500' },
+      ],
+      tone: 'text-amber-600',
+      glow: 'analytics-kpi-glow-amber',
+      icon: PauseCircle,
+      sparkline: [analytics.eoiOrigin.holdCount, analytics.directTender.holdCount, analytics.overall.holdCount, Math.max(analytics.overall.holdCount - 1, 0)],
+      onClick: () => openDrilldown('Hold / Closed', analytics.drilldowns.hold),
+    },
+    {
+      label: 'No Decision',
+      value: analytics.overall.noDecisionCount,
+      chip: selectedGroup === 'GTS' ? 'Submitted with no post-bid detail yet' : 'Only shown for GTS scope',
+      tone: 'text-amber-600',
+      glow: 'analytics-kpi-glow-amber',
+      icon: Clock3,
+      sparkline: [analytics.eoiOrigin.noDecisionCount, analytics.directTender.noDecisionCount, analytics.overall.noDecisionCount, analytics.overall.noDecisionCount * 0.85],
+      onClick: () => openDrilldown('No Decision Tenders', analytics.drilldowns.noDecision),
+    },
     {
       label: 'Submitted',
       value: visibleSubmittedOpportunityRows.length,
@@ -909,35 +1053,6 @@ const Analytics = () => {
       icon: Send,
       sparkline: [submittedTenderCount, submittedEoiCount, visibleSubmittedOpportunityRows.length, Math.max(visibleSubmittedOpportunityRows.length - 1, 0)],
       onClick: () => openDrilldown('Submitted Opportunities', submittedOpportunityRows),
-    },
-    {
-      label: 'Won',
-      value: analytics.overall.wonCount,
-      tone: 'text-emerald-600',
-      glow: 'analytics-kpi-glow-emerald',
-      icon: Trophy,
-      sparkline: [analytics.eoiOrigin.awardedCount, analytics.directTender.awardedCount, analytics.overall.wonCount, Math.max(analytics.overall.wonCount - 1, 0)],
-      onClick: () => openDrilldown('Awarded Tenders', analytics.drilldowns.won),
-    },
-    {
-      label: 'Negative Outcome',
-      value: negativeOutcomeCount,
-      chip: `${analytics.overall.regrettedCount} regretted and ${analytics.overall.holdCount} hold`,
-      tone: 'text-rose-600',
-      glow: 'analytics-kpi-glow-rose',
-      icon: XCircle,
-      sparkline: [negativeOutcomeEoiCount, negativeOutcomeDirectCount, negativeOutcomeCount, Math.max(negativeOutcomeCount - 1, 0)],
-      onClick: () => openDrilldown('Negative Outcomes', [...analytics.drilldowns.lost, ...analytics.drilldowns.regretted, ...analytics.drilldowns.hold]),
-    },
-    {
-      label: 'No Decision',
-      value: analytics.overall.noDecisionCount,
-      chip: selectedGroup === 'GTS' ? 'Submitted with no post-bid detail yet' : 'Only shown for GTS scope',
-      tone: 'text-amber-600',
-      glow: 'analytics-kpi-glow-amber',
-      icon: Clock3,
-      sparkline: [analytics.eoiOrigin.noDecisionCount, analytics.directTender.noDecisionCount, analytics.overall.noDecisionCount, analytics.overall.noDecisionCount * 0.85],
-      onClick: () => openDrilldown('No Decision Tenders', analytics.drilldowns.noDecision),
     },
   ];
 
@@ -1070,7 +1185,7 @@ const Analytics = () => {
                 <div>
                   <div className="dash-label">{card.label}</div>
                   <div className="mt-2 analytics-kpi-number text-slate-950">
-                    <AnimatedCounter value={card.value} animateKey={refreshKey} />
+                    <AnimatedCounter value={card.value} format={card.valueFormat} animateKey={refreshKey} />
                   </div>
                 </div>
                 <div className={`rounded-2xl border border-white/70 bg-white/90 p-3 shadow-sm ${card.tone}`}>
@@ -1078,7 +1193,7 @@ const Analytics = () => {
                 </div>
               </div>
               <div className="mb-3 flex items-center justify-between gap-3">
-                <span className={`text-xs font-semibold ${card.tone}`}>Total {formatCompactNumber(card.value)}</span>
+                <span className={`text-xs font-semibold ${card.tone}`}>{card.totalLabel ?? `Total ${formatCompactNumber(card.value)}`}</span>
                 <Sparkline values={card.sparkline} className={`h-8 w-20 ${card.tone}`} />
               </div>
               <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-slate-100">

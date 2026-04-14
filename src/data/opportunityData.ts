@@ -179,7 +179,7 @@ const shouldReplaceDedupCandidate = (candidate: Opportunity, current: Opportunit
   return false;
 };
 
-const sumQuotedValueWithDedup = (data: Opportunity[]) => {
+const getQuotedValueDedupedOpportunitiesInternal = (data: Opportunity[]) => {
   const uniqueTenders = new Map<string, Opportunity>();
   let untitledIndex = 0;
 
@@ -192,8 +192,16 @@ const sumQuotedValueWithDedup = (data: Opportunity[]) => {
     }
   });
 
-  return Array.from(uniqueTenders.values()).reduce((sum, opp) => sum + Number(opp.opportunityValue || 0), 0);
+  return Array.from(uniqueTenders.values());
 };
+
+export const getQuotedValueDedupedOpportunities = (data: Opportunity[]) => (
+  getQuotedValueDedupedOpportunitiesInternal(data)
+);
+
+export const sumQuotedValueWithDedup = (data: Opportunity[]) => (
+  getQuotedValueDedupedOpportunitiesInternal(data).reduce((sum, opp) => sum + Number(opp.opportunityValue || 0), 0)
+);
 
 export function calculateSummaryStats(data: Opportunity[]) {
 
