@@ -975,7 +975,6 @@ const Analytics = () => {
     {
       label: 'Recieved',
       value: groupedBuckets.received.groups.length,
-      totalLabel: 'No of Active',
       meta: [
         { label: 'Tender', value: groupedBuckets.received.tender, tone: 'bg-blue-500' },
         { label: 'EOI', value: groupedBuckets.received.eoi, tone: 'bg-amber-500' },
@@ -1014,14 +1013,6 @@ const Analytics = () => {
       onClick: () => openDrilldown('Hold / Closed', groupedBuckets.hold.rows),
     },
     {
-      label: 'Lost',
-      value: groupedBuckets.lost.groups.length,
-      tone: 'text-rose-600',
-      glow: 'analytics-kpi-glow-rose',
-      icon: XCircle,
-      onClick: () => openDrilldown('Lost', groupedBuckets.lost.rows),
-    },
-    {
       label: 'Won',
       value: groupedBuckets.won.groups.length,
       tone: 'text-emerald-600',
@@ -1049,6 +1040,14 @@ const Analytics = () => {
         }));
         openDrilldown('Awarded Value', groupedBuckets.won.rows);
       },
+    },
+    {
+      label: 'Lost',
+      value: groupedBuckets.lost.groups.length,
+      tone: 'text-rose-600',
+      glow: 'analytics-kpi-glow-rose',
+      icon: XCircle,
+      onClick: () => openDrilldown('Lost', groupedBuckets.lost.rows),
     },
   ];
 
