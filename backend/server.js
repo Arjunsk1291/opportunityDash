@@ -4716,11 +4716,191 @@ app.get('/api/opportunities', async (req, res) => {
       return respondDatabaseUnavailable(res);
     }
 
-    const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
-    const mapped = opportunities.map((opp) => mapIdField(applyOpportunityDateFields(applyOpportunityStatusFields(opp))));
+    const [opportunities, manualValueUpdates] = await Promise.all([
+      SyncedOpportunity.find().sort({ createdAt: -1 }).lean(),
+      OpportunityManualUpdate.find(
+        { opportunityValue: { $ne: null } },
+        { refKey: 1, opportunityRefNo: 1, opportunityValue: 1, opportunityValueSheetSnapshot: 1 }
+      ).lean(),
+    ]);
+
+    const manualByRefKey = new Map(
+      manualValueUpdates
+        .map((row) => [normalizeRefKey(row?.opportunityRefNo || row?.refKey || ''), row])
+        .filter(([ref]) => Boolean(ref))
+    );
+
+    const mapped = opportunities.map((opp) => {
+      const base = mapIdField(applyOpportunityDateFields(applyOpportunityStatusFields(opp)));
+      const refKey = normalizeRefKey(base?.opportunityRefNo || '');
+      const manualSnapshot = refKey ? manualByRefKey.get(refKey) : null;
+      const sheetValue = Object.prototype.hasOwnProperty.call(base, 'opportunityValue') ? base.opportunityValue : null;
+      const manualValue = manualSnapshot?.opportunityValue ?? null;
+      const effectiveValue = manualValue !== null && manualValue !== undefined ? manualValue : sheetValue;
+      const conflict = manualValue !== null
+        && sheetValue !== null
+        && sheetValue !== undefined
+        && Number(manualValue) !== Number(sheetValue)
+        && (manualSnapshot?.opportunityValueSheetSnapshot === null || Number(manualSnapshot?.opportunityValueSheetSnapshot) !== Number(sheetValue));
+
+      return {
+        ...base,
+        opportunityValue: effectiveValue,
+        opportunityValueSheet: sheetValue ?? null,
+        opportunityValueManual: manualValue,
+        opportunityValueSource: manualValue !== null && manualValue !== undefined ? 'manual' : 'sheet',
+        opportunityValueConflict: conflict,
+      };
+    });
     res.json(mapped);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/opportunities/value-conflicts', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
+    if (!isDatabaseReady()) {
+      return respondDatabaseUnavailable(res);
+    }
+
+    const [opportunities, manualValueUpdates] = await Promise.all([
+      SyncedOpportunity.find({}, { opportunityRefNo: 1, tenderName: 1, opportunityValue: 1 }).lean(),
+      OpportunityManualUpdate.find(
+        { opportunityValue: { $ne: null } },
+        { refKey: 1, opportunityRefNo: 1, opportunityValue: 1, opportunityValueSheetSnapshot: 1 }
+      ).lean(),
+    ]);
+
+    const oppByRefKey = new Map(
+      opportunities
+        .map((row) => [normalizeRefKey(row?.opportunityRefNo || ''), row])
+        .filter(([ref]) => Boolean(ref))
+    );
+
+    const conflicts = manualValueUpdates
+      .map((manual) => {
+        const refKey = normalizeRefKey(manual?.opportunityRefNo || manual?.refKey || '');
+        const opp = refKey ? oppByRefKey.get(refKey) : null;
+        if (!opp) return null;
+        const sheetValue = opp?.opportunityValue ?? null;
+        const manualValue = manual?.opportunityValue ?? null;
+        if (sheetValue === null || manualValue === null) return null;
+        if (Number(sheetValue) === Number(manualValue)) return null;
+        if (manual?.opportunityValueSheetSnapshot !== null && Number(manual.opportunityValueSheetSnapshot) === Number(sheetValue)) return null;
+        return {
+          refKey,
+          opportunityRefNo: opp?.opportunityRefNo || manual?.opportunityRefNo || '',
+          tenderName: opp?.tenderName || '',
+          sheetValue,
+          manualValue,
+        };
+      })
+      .filter(Boolean);
+
+    res.json({ success: true, conflicts });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to load value conflicts' });
+  }
+});
+
+app.post('/api/opportunities/manual-value', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
+    if (!isDatabaseReady()) {
+      return respondDatabaseUnavailable(res);
+    }
+
+    const opportunityRefNo = String(req.body?.opportunityRefNo || '').trim();
+    const refKey = normalizeRefKey(opportunityRefNo);
+    if (!refKey) return res.status(400).json({ error: 'Missing opportunityRefNo' });
+
+    const rawValue = req.body?.opportunityValue;
+    const opportunityValue = rawValue === null || rawValue === undefined || rawValue === '' ? null : Number(rawValue);
+    if (opportunityValue !== null && !Number.isFinite(opportunityValue)) {
+      return res.status(400).json({ error: 'Invalid opportunityValue' });
+    }
+
+    const existingOpp = await SyncedOpportunity.findOne({ opportunityRefNo }).lean();
+    const sheetValue = existingOpp?.opportunityValue ?? null;
+
+    await OpportunityManualUpdate.updateOne(
+      { refKey },
+      {
+        $set: {
+          opportunityRefNo,
+          refKey,
+          opportunityValue,
+          opportunityValueSheetSnapshot: sheetValue,
+          updatedBy: req.user?.email || 'unknown',
+        },
+        $setOnInsert: {
+          adnocRftNo: '',
+          tenderName: existingOpp?.tenderName || '',
+          opportunityClassification: existingOpp?.opportunityClassification || '',
+          clientName: existingOpp?.clientName || '',
+          dateTenderReceived: existingOpp?.dateTenderReceived || '',
+          tenderPlannedSubmissionDate: existingOpp?.tenderPlannedSubmissionDate || '',
+        },
+      },
+      { upsert: true }
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to save manual value' });
+  }
+});
+
+app.post('/api/opportunities/value-conflicts/resolve', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
+    if (!isDatabaseReady()) {
+      return respondDatabaseUnavailable(res);
+    }
+
+    const action = String(req.body?.action || '').trim();
+    const refKeys = Array.isArray(req.body?.refKeys) ? req.body.refKeys.map((key) => normalizeRefKey(key)).filter(Boolean) : [];
+    if (!['use_sheet', 'keep_manual'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
+    if (!refKeys.length) return res.status(400).json({ error: 'No refKeys provided' });
+
+    const opportunities = await SyncedOpportunity.find({}, { opportunityRefNo: 1, opportunityValue: 1 }).lean();
+    const sheetByRefKey = new Map(
+      opportunities
+        .map((row) => [normalizeRefKey(row?.opportunityRefNo || ''), row?.opportunityValue ?? null])
+        .filter(([ref]) => Boolean(ref))
+    );
+
+    const ops = refKeys.map((refKey) => {
+      const sheetValue = sheetByRefKey.get(refKey) ?? null;
+      return {
+        updateOne: {
+          filter: { refKey },
+          update: {
+            $set: {
+              opportunityValue: action === 'use_sheet' ? null : undefined,
+              opportunityValueSheetSnapshot: sheetValue,
+              updatedBy: req.user?.email || 'unknown',
+            },
+          },
+        },
+      };
+    });
+
+    // Remove undefined fields so we don't accidentally set them.
+    ops.forEach((op) => {
+      const set = op.updateOne.update.$set;
+      Object.keys(set).forEach((key) => {
+        if (set[key] === undefined) delete set[key];
+      });
+    });
+
+    await OpportunityManualUpdate.bulkWrite(ops, { ordered: false });
+
+    res.json({ success: true, resolved: refKeys.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to resolve conflicts' });
   }
 });
 

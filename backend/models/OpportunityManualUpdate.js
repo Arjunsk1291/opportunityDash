@@ -9,6 +9,7 @@ const opportunityManualUpdateSchema = new mongoose.Schema(
     opportunityClassification: { type: String, default: '' },
     clientName: { type: String, default: '' },
     opportunityValue: { type: Number, default: null },
+    opportunityValueSheetSnapshot: { type: Number, default: null },
     dateTenderReceived: { type: String, default: '' },
     tenderPlannedSubmissionDate: { type: String, default: '' },
     updatedBy: { type: String, default: '' },

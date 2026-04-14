@@ -68,6 +68,11 @@ export interface Opportunity {
     rowSnapshot?: Record<string, unknown>;
     [key: string]: unknown;
   };
+
+  opportunityValueSheet?: number | null;
+  opportunityValueManual?: number | null;
+  opportunityValueSource?: 'sheet' | 'manual';
+  opportunityValueConflict?: boolean;
 }
 
 export const STATUS_MAPPING: Record<string, string> = {
