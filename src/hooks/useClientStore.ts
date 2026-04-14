@@ -36,12 +36,17 @@ export const useClientStore = () => {
   });
 
   const fetchClients = useCallback(async () => {
+    if (!token) {
+      setClients([]);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
       const response = await fetch(`${API_URL}/clients`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: writeHeaders(),
       });
       if (!response.ok) throw new Error('Failed to load clients');
       const data = await response.json();
@@ -53,7 +58,7 @@ export const useClientStore = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     fetchClients();

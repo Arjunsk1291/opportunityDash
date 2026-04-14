@@ -16,10 +16,15 @@ export const useVendorStore = () => {
   });
 
   const fetchVendors = useCallback(async () => {
+    if (!token) {
+      setVendors([]);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_URL}/vendors`, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+      const response = await fetch(`${API_URL}/vendors`, { method: 'GET', headers: writeHeaders() });
       if (!response.ok) throw new Error('Failed to load vendors');
       const data = await response.json();
       setVendors(Array.isArray(data) ? data : []);
@@ -30,7 +35,7 @@ export const useVendorStore = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     fetchVendors();
