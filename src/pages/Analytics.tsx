@@ -25,7 +25,7 @@ import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetai
 import { AdvancedFilters, applyFilters, defaultFilters, type FilterState } from '@/components/Dashboard/AdvancedFilters';
 import { useData } from '@/contexts/DataContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
-import { getQuotedValueDedupedOpportunities, type Opportunity } from '@/data/opportunityData';
+import type { Opportunity } from '@/data/opportunityData';
 import { getDisplayStatus } from '@/lib/opportunityStatus';
 
 type OpportunityGroup = {
@@ -899,46 +899,83 @@ const Analytics = () => {
     : filters.groups.length === 1
       ? filters.groups[0]
       : `${filters.groups.length} Verticals`;
-  const submittedOpportunityRows = useMemo(
-    () => scopedOpportunities.filter((row) => getNormalizedDisplayStatus(row) === 'SUBMITTED'),
-    [scopedOpportunities],
-  );
-  const visibleSubmittedOpportunityRows = useMemo(
-    () => hideConvertedEoiDuplicates(submittedOpportunityRows),
-    [submittedOpportunityRows],
-  );
-  const submittedTenderCount = useMemo(
-    () => visibleSubmittedOpportunityRows.filter((row) => getAnalyticsJourneyType(row) === 'tender').length,
-    [visibleSubmittedOpportunityRows],
-  );
-  const submittedEoiCount = useMemo(
-    () => visibleSubmittedOpportunityRows.filter((row) => getAnalyticsJourneyType(row) === 'eoi').length,
-    [visibleSubmittedOpportunityRows],
-  );
-  const activeOpportunityRows = useMemo(
-    () => scopedOpportunities.filter((row) => ['WORKING', 'SUBMITTED', 'AWARDED'].includes(getNormalizedDisplayStatus(row))),
-    [scopedOpportunities],
-  );
-  const visibleActiveOpportunityRows = useMemo(
-    () => hideConvertedEoiDuplicates(activeOpportunityRows),
-    [activeOpportunityRows],
-  );
-  const activeTenderCount = useMemo(
-    () => visibleActiveOpportunityRows.filter((row) => getAnalyticsJourneyType(row) === 'tender').length,
-    [visibleActiveOpportunityRows],
-  );
-  const activeEoiCount = useMemo(
-    () => visibleActiveOpportunityRows.filter((row) => getAnalyticsJourneyType(row) === 'eoi').length,
-    [visibleActiveOpportunityRows],
-  );
-  const quotedValueRows = useMemo(
-    () => getQuotedValueDedupedOpportunities(scopedOpportunities),
-    [scopedOpportunities],
-  );
-  const quotedValue = useMemo(
-    () => quotedValueRows.reduce((sum, row) => sum + Number(row.opportunityValue || 0), 0),
-    [quotedValueRows],
-  );
+  const groupedBuckets = useMemo(() => {
+    const activeGroups: OpportunityGroup[] = [];
+    const submittedGroups: OpportunityGroup[] = [];
+    const regrettedGroups: OpportunityGroup[] = [];
+    const wonGroups: OpportunityGroup[] = [];
+    const holdGroups: OpportunityGroup[] = [];
+    const lostGroups: OpportunityGroup[] = [];
+    const noDecisionGroups: OpportunityGroup[] = [];
+
+    groupedOpportunities.forEach((group) => {
+      const status = getGroupStatus(group);
+      const isNoDecision = isNoDecisionGroup(group, selectedGroup);
+
+      if (status === 'AWARDED') {
+        wonGroups.push(group);
+        return;
+      }
+      if (status === 'REGRETTED') {
+        regrettedGroups.push(group);
+        return;
+      }
+      if (isHoldStatus(status)) {
+        holdGroups.push(group);
+        return;
+      }
+      if (status === 'LOST') {
+        lostGroups.push(group);
+        return;
+      }
+      if (status === 'SUBMITTED') {
+        if (isNoDecision) {
+          noDecisionGroups.push(group);
+          return;
+        }
+        submittedGroups.push(group);
+        return;
+      }
+
+      // Default bucket keeps the KPI set exhaustive (value = sum of surrounding buckets).
+      activeGroups.push(group);
+    });
+
+    const groupRows = (groups: OpportunityGroup[]) => (
+      groups.map((group) => group.primary).filter(Boolean) as Opportunity[]
+    );
+    const countJourneyTypes = (groups: OpportunityGroup[]) => {
+      const counts = { tender: 0, eoi: 0 };
+      groups.forEach((group) => {
+        const row = group.primary || group.tenderRows[0] || group.eoiRows[0];
+        if (!row) return;
+        const type = getAnalyticsJourneyType(row);
+        counts[type] += 1;
+      });
+      return counts;
+    };
+
+    const sumValue = (groups: OpportunityGroup[]) => groups.reduce((sum, group) => sum + getGroupValue(group), 0);
+
+    const valueTotal = sumValue(activeGroups)
+      + sumValue(submittedGroups)
+      + sumValue(regrettedGroups)
+      + sumValue(wonGroups)
+      + sumValue(holdGroups)
+      + sumValue(lostGroups)
+      + sumValue(noDecisionGroups);
+
+    return {
+      active: { groups: activeGroups, rows: groupRows(activeGroups), ...countJourneyTypes(activeGroups), value: sumValue(activeGroups) },
+      submitted: { groups: submittedGroups, rows: groupRows(submittedGroups), ...countJourneyTypes(submittedGroups), value: sumValue(submittedGroups) },
+      value: { total: valueTotal },
+      regretted: { groups: regrettedGroups, rows: groupRows(regrettedGroups), value: sumValue(regrettedGroups) },
+      won: { groups: wonGroups, rows: groupRows(wonGroups), value: sumValue(wonGroups) },
+      hold: { groups: holdGroups, rows: groupRows(holdGroups), value: sumValue(holdGroups) },
+      lost: { groups: lostGroups, rows: groupRows(lostGroups), value: sumValue(lostGroups) },
+      noDecision: { groups: noDecisionGroups, rows: groupRows(noDecisionGroups), value: sumValue(noDecisionGroups) },
+    };
+  }, [groupedOpportunities, selectedGroup]);
   const monthHeatMax = Math.max(
     1,
     ...analytics.monthlyHeatmap.flatMap((row) => row.values.map((value) => value.value)),
@@ -961,119 +998,93 @@ const Analytics = () => {
 
   const kpiCards: KpiCard[] = [
     {
-      label: 'Active Tenders',
-      value: activeOpportunityRows.length,
+      label: 'Active',
+      value: groupedBuckets.active.groups.length,
       meta: [
-        { label: 'Tender', value: activeTenderCount, tone: 'bg-blue-500' },
-        { label: 'EOI', value: activeEoiCount, tone: 'bg-amber-500' },
+        { label: 'Tender', value: groupedBuckets.active.tender, tone: 'bg-blue-500' },
+        { label: 'EOI', value: groupedBuckets.active.eoi, tone: 'bg-amber-500' },
       ],
       tone: 'text-sky-600',
       glow: 'analytics-kpi-glow-sky',
       icon: Target,
-      sparkline: [activeTenderCount, activeEoiCount, activeOpportunityRows.length, Math.max(activeOpportunityRows.length - 1, 0)],
-      onClick: () => openDrilldown('Active Tenders', activeOpportunityRows),
-    },
-    {
-      label: 'Awarded',
-      value: analytics.overall.wonCount,
-      meta: [
-        { label: 'EOI-Origin', value: analytics.eoiOrigin.awardedCount, tone: 'bg-sky-500' },
-        { label: 'Direct', value: analytics.directTender.awardedCount, tone: 'bg-cyan-500' },
-      ],
-      tone: 'text-emerald-600',
-      glow: 'analytics-kpi-glow-emerald',
-      icon: Trophy,
-      sparkline: [analytics.eoiOrigin.awardedCount, analytics.directTender.awardedCount, analytics.overall.wonCount, Math.max(analytics.overall.wonCount - 1, 0)],
-      onClick: () => openDrilldown('Awarded Tenders', analytics.drilldowns.won),
-    },
-    {
-      label: 'Lost',
-      value: analytics.overall.lostCount,
-      meta: [
-        { label: 'EOI-Origin', value: analytics.eoiOrigin.lostCount, tone: 'bg-sky-500' },
-        { label: 'Direct', value: analytics.directTender.lostCount, tone: 'bg-cyan-500' },
-      ],
-      tone: 'text-rose-600',
-      glow: 'analytics-kpi-glow-rose',
-      icon: XCircle,
-      sparkline: [analytics.eoiOrigin.lostCount, analytics.directTender.lostCount, analytics.overall.lostCount, Math.max(analytics.overall.lostCount - 1, 0)],
-      onClick: () => openDrilldown('Lost Tenders', analytics.drilldowns.lost),
-    },
-    {
-      label: 'Regretted',
-      value: analytics.overall.regrettedCount,
-      meta: [
-        { label: 'EOI-Origin', value: analytics.eoiOrigin.regrettedCount, tone: 'bg-sky-500' },
-        { label: 'Direct', value: analytics.directTender.regrettedCount, tone: 'bg-cyan-500' },
-      ],
-      tone: 'text-slate-700',
-      glow: 'analytics-kpi-glow-amber',
-      icon: ThumbsDown,
-      sparkline: [analytics.eoiOrigin.regrettedCount, analytics.directTender.regrettedCount, analytics.overall.regrettedCount, Math.max(analytics.overall.regrettedCount - 1, 0)],
-      onClick: () => openDrilldown('Regretted Tenders', analytics.drilldowns.regretted),
-    },
-    {
-      label: 'Hold / Closed',
-      value: analytics.overall.holdCount,
-      meta: [
-        { label: 'EOI-Origin', value: analytics.eoiOrigin.holdCount, tone: 'bg-sky-500' },
-        { label: 'Direct', value: analytics.directTender.holdCount, tone: 'bg-cyan-500' },
-      ],
-      tone: 'text-amber-600',
-      glow: 'analytics-kpi-glow-amber',
-      icon: PauseCircle,
-      sparkline: [analytics.eoiOrigin.holdCount, analytics.directTender.holdCount, analytics.overall.holdCount, Math.max(analytics.overall.holdCount - 1, 0)],
-      onClick: () => openDrilldown('Hold / Closed', analytics.drilldowns.hold),
-    },
-    {
-      label: 'No Decision',
-      value: analytics.overall.noDecisionCount,
-      chip: selectedGroup === 'GTS' ? 'Submitted with no post-bid detail yet' : 'Only shown for GTS scope',
-      tone: 'text-amber-600',
-      glow: 'analytics-kpi-glow-amber',
-      icon: Clock3,
-      sparkline: [analytics.eoiOrigin.noDecisionCount, analytics.directTender.noDecisionCount, analytics.overall.noDecisionCount, analytics.overall.noDecisionCount * 0.85],
-      onClick: () => openDrilldown('No Decision Tenders', analytics.drilldowns.noDecision),
+      sparkline: [groupedBuckets.active.tender, groupedBuckets.active.eoi, groupedBuckets.active.groups.length, Math.max(groupedBuckets.active.groups.length - 1, 0)],
+      onClick: () => openDrilldown('Active', groupedBuckets.active.rows),
     },
     {
       label: 'Submitted',
-      value: visibleSubmittedOpportunityRows.length,
+      value: groupedBuckets.submitted.groups.length,
       meta: [
-        { label: 'Tender', value: submittedTenderCount, tone: 'bg-blue-500' },
-        { label: 'EOI', value: submittedEoiCount, tone: 'bg-amber-500' },
+        { label: 'Tender', value: groupedBuckets.submitted.tender, tone: 'bg-blue-500' },
+        { label: 'EOI', value: groupedBuckets.submitted.eoi, tone: 'bg-amber-500' },
       ],
       tone: 'text-sky-600',
       glow: 'analytics-kpi-glow-sky',
       icon: Send,
-      sparkline: [submittedTenderCount, submittedEoiCount, visibleSubmittedOpportunityRows.length, Math.max(visibleSubmittedOpportunityRows.length - 1, 0)],
-      onClick: () => openDrilldown('Submitted Opportunities', submittedOpportunityRows),
+      sparkline: [groupedBuckets.submitted.tender, groupedBuckets.submitted.eoi, groupedBuckets.submitted.groups.length, Math.max(groupedBuckets.submitted.groups.length - 1, 0)],
+      onClick: () => openDrilldown('Submitted', groupedBuckets.submitted.rows),
     },
-  ];
-
-  const orderedKpiCards = [
-    kpiCards.find((card) => card.label === 'Active Tenders'),
-    kpiCards.find((card) => card.label === 'Submitted'),
-    kpiCards.find((card) => card.label === 'Lost'),
-    kpiCards.find((card) => card.label === 'Regretted'),
-    kpiCards.find((card) => card.label === 'Hold / Closed'),
     {
-      label: 'Total Quoted Value',
-      value: quotedValue,
+      label: 'Value',
+      value: groupedBuckets.value.total,
       valueFormat: (next: number) => formatCompactCurrencyNumber(next),
       valuePrefix: currency === 'AED'
         ? { kind: 'img', src: aedSymbolUrl, alt: 'AED' }
         : { kind: 'text', text: '$' },
-      totalLabel: `Total ${formatCompactCurrencyNumber(quotedValue)}`,
-      chip: `${quotedValueRows.length} unique tenders`,
+      totalLabel: `Total ${currency === 'AED' ? 'AED ' : '$'}${formatCompactCurrencyNumber(groupedBuckets.value.total)}`,
+      chip: 'Sum of the surrounding status buckets',
       tone: 'text-violet-600',
       glow: 'analytics-kpi-glow-emerald',
       icon: CurrencyHeaderIcon,
-      sparkline: [analytics.overall.submittedValue, analytics.overall.wonValue, quotedValue, quotedValue * 0.85],
-      onClick: () => openDrilldown('Quoted Value (Deduped)', quotedValueRows),
-    } satisfies KpiCard,
-    kpiCards.find((card) => card.label === 'Awarded'),
-    kpiCards.find((card) => card.label === 'No Decision'),
-  ].filter(Boolean) as KpiCard[];
+      sparkline: [groupedBuckets.submitted.value, groupedBuckets.won.value, groupedBuckets.value.total, groupedBuckets.value.total * 0.85],
+      onClick: () => openDrilldown('Value (Unique Tenders)', groupedOpportunities.map((group) => group.primary).filter(Boolean) as Opportunity[]),
+    },
+    {
+      label: 'Regretted',
+      value: groupedBuckets.regretted.groups.length,
+      tone: 'text-slate-700',
+      glow: 'analytics-kpi-glow-amber',
+      icon: ThumbsDown,
+      sparkline: [groupedBuckets.regretted.value, groupedBuckets.lost.value, groupedBuckets.regretted.groups.length, Math.max(groupedBuckets.regretted.groups.length - 1, 0)],
+      onClick: () => openDrilldown('Regretted', groupedBuckets.regretted.rows),
+    },
+    {
+      label: 'Won',
+      value: groupedBuckets.won.groups.length,
+      tone: 'text-emerald-600',
+      glow: 'analytics-kpi-glow-emerald',
+      icon: Trophy,
+      sparkline: [groupedBuckets.won.value, groupedBuckets.won.groups.length, groupedBuckets.won.groups.length, Math.max(groupedBuckets.won.groups.length - 1, 0)],
+      onClick: () => openDrilldown('Won', groupedBuckets.won.rows),
+    },
+    {
+      label: 'Hold / Closed',
+      value: groupedBuckets.hold.groups.length,
+      tone: 'text-amber-600',
+      glow: 'analytics-kpi-glow-amber',
+      icon: PauseCircle,
+      sparkline: [groupedBuckets.hold.value, groupedBuckets.hold.groups.length, groupedBuckets.hold.groups.length, Math.max(groupedBuckets.hold.groups.length - 1, 0)],
+      onClick: () => openDrilldown('Hold / Closed', groupedBuckets.hold.rows),
+    },
+    {
+      label: 'Lost',
+      value: groupedBuckets.lost.groups.length,
+      tone: 'text-rose-600',
+      glow: 'analytics-kpi-glow-rose',
+      icon: XCircle,
+      sparkline: [groupedBuckets.lost.value, groupedBuckets.lost.groups.length, groupedBuckets.lost.groups.length, Math.max(groupedBuckets.lost.groups.length - 1, 0)],
+      onClick: () => openDrilldown('Lost', groupedBuckets.lost.rows),
+    },
+    {
+      label: 'No Decision',
+      value: groupedBuckets.noDecision.groups.length,
+      chip: selectedGroup === 'GTS' ? 'Submitted with no post-bid detail yet' : 'Only shown for GTS scope',
+      tone: 'text-amber-600',
+      glow: 'analytics-kpi-glow-amber',
+      icon: Clock3,
+      sparkline: [groupedBuckets.noDecision.value, groupedBuckets.noDecision.groups.length, groupedBuckets.noDecision.groups.length, groupedBuckets.noDecision.groups.length * 0.85],
+      onClick: () => openDrilldown('No Decision', groupedBuckets.noDecision.rows),
+    },
+  ];
 
   return (
     <div key={refreshKey} className="relative mx-auto max-w-[1400px] px-4 pb-10 sm:px-6 lg:px-8">
@@ -1191,7 +1202,7 @@ const Analytics = () => {
       )}
 
       <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:mb-8 lg:grid-cols-4">
-        {orderedKpiCards.map((card, index) => (
+        {kpiCards.map((card, index) => (
           <button
             key={card.label}
             type="button"
