@@ -168,6 +168,7 @@ const BDEngagements = () => {
   const [bulkText, setBulkText] = useState('');
   const [uploadReport, setUploadReport] = useState<{ title: string; lines: string[] } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BDEngagement | null>(null);
+  const [clearDbOpen, setClearDbOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<BDEngagement | null>(null);
   const [drilldown, setDrilldown] = useState<{ title: string; rows: BDEngagement[] } | null>(null);
   const [selectedEngagement, setSelectedEngagement] = useState<BDEngagement | null>(null);
@@ -697,6 +698,7 @@ const BDEngagements = () => {
     const seed = resetBDEngagements();
     setRows(seed);
     setSelectedClient('');
+    toast.success('BD engagements cleared from local DB.');
   };
 
   const deleteRow = () => {
@@ -986,6 +988,12 @@ const BDEngagements = () => {
                 <p className="mt-1 text-sm text-muted-foreground">{filteredRows.length} visible of {rows.length} stored engagements</p>
               </div>
               <div className="flex flex-wrap gap-2">
+                {(isAdmin || isMaster) && (
+                  <Button type="button" variant="destructive" onClick={() => setClearDbOpen(true)}>
+                    <Database className="mr-2 h-4 w-4" />
+                    Clear DB
+                  </Button>
+                )}
                 {canManageBulkAccess && (
                   <Button type="button" variant="outline" onClick={() => {
                     setBulkAccessInput(bulkAccessEmails.join(', '));
@@ -1470,6 +1478,26 @@ const BDEngagements = () => {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={deleteRow}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={clearDbOpen} onOpenChange={setClearDbOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear BD engagement DB?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes all BD engagements from the local BD storage for this environment.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={resetSeedData}
+            >
+              Clear DB
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
