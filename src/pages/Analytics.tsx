@@ -354,17 +354,6 @@ const getPostBidLabel = (opp: Partial<Opportunity>) => {
   return 'No Activity';
 };
 
-const buildSparklinePoints = (values: number[]) => {
-  if (!values.length) return '0,18 100,18';
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const range = max - min || 1;
-  return values.map((value, index) => {
-    const x = (index / Math.max(values.length - 1, 1)) * 100;
-    const y = 20 - (((value - min) / range) * 18 + 1);
-    return `${x},${y}`;
-  }).join(' ');
-};
 
 const AnimatedCounter = ({
   value,
@@ -396,19 +385,6 @@ const AnimatedCounter = ({
 
   return <>{format(displayValue)}</>;
 };
-
-const Sparkline = ({ values, className = '' }: { values: number[]; className?: string }) => (
-  <svg viewBox="0 0 100 24" className={className} preserveAspectRatio="none">
-    <polyline
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      points={buildSparklinePoints(values)}
-    />
-  </svg>
-);
 
 const GaugeCard = ({
   label,
@@ -830,7 +806,6 @@ const Analytics = () => {
       monthColumns,
       monthlyHeatmap,
       staleEoiRows,
-      sparklineSeed: [submittedRows.length, wonRows.length, lostRows.length, noDecisionRows.length],
       drilldowns: {
         lifecycle: rowsForGroups(lifecycleGroups, getLifecycleTenderRow),
         submitted: submittedRows,
@@ -993,7 +968,6 @@ const Analytics = () => {
     tone: string;
     glow: string;
     icon: ComponentType<{ className?: string }>;
-    sparkline: number[];
     onClick: () => void;
   };
 
@@ -1001,7 +975,7 @@ const Analytics = () => {
     {
       label: 'Recieved',
       value: groupedBuckets.received.groups.length,
-      totalLabel: 'Active Active',
+      totalLabel: 'No of Active',
       meta: [
         { label: 'Tender', value: groupedBuckets.received.tender, tone: 'bg-blue-500' },
         { label: 'EOI', value: groupedBuckets.received.eoi, tone: 'bg-amber-500' },
@@ -1009,7 +983,6 @@ const Analytics = () => {
       tone: 'text-sky-600',
       glow: 'analytics-kpi-glow-sky',
       icon: Target,
-      sparkline: [groupedBuckets.received.tender, groupedBuckets.received.eoi, groupedBuckets.received.groups.length, Math.max(groupedBuckets.received.groups.length - 1, 0)],
       onClick: () => openDrilldown('Recieved', groupedBuckets.received.rows),
     },
     {
@@ -1022,7 +995,6 @@ const Analytics = () => {
       tone: 'text-sky-600',
       glow: 'analytics-kpi-glow-sky',
       icon: Send,
-      sparkline: [groupedBuckets.submitted.tender, groupedBuckets.submitted.eoi, groupedBuckets.submitted.groups.length, Math.max(groupedBuckets.submitted.groups.length - 1, 0)],
       onClick: () => openDrilldown('Submitted', groupedBuckets.submitted.rows),
     },
     {
@@ -1031,7 +1003,6 @@ const Analytics = () => {
       tone: 'text-slate-700',
       glow: 'analytics-kpi-glow-amber',
       icon: ThumbsDown,
-      sparkline: [groupedBuckets.regretted.value, groupedBuckets.lost.value, groupedBuckets.regretted.groups.length, Math.max(groupedBuckets.regretted.groups.length - 1, 0)],
       onClick: () => openDrilldown('Regretted', groupedBuckets.regretted.rows),
     },
     {
@@ -1040,7 +1011,6 @@ const Analytics = () => {
       tone: 'text-amber-600',
       glow: 'analytics-kpi-glow-amber',
       icon: PauseCircle,
-      sparkline: [groupedBuckets.hold.value, groupedBuckets.hold.groups.length, groupedBuckets.hold.groups.length, Math.max(groupedBuckets.hold.groups.length - 1, 0)],
       onClick: () => openDrilldown('Hold / Closed', groupedBuckets.hold.rows),
     },
     {
@@ -1049,7 +1019,6 @@ const Analytics = () => {
       tone: 'text-rose-600',
       glow: 'analytics-kpi-glow-rose',
       icon: XCircle,
-      sparkline: [groupedBuckets.lost.value, groupedBuckets.lost.groups.length, groupedBuckets.lost.groups.length, Math.max(groupedBuckets.lost.groups.length - 1, 0)],
       onClick: () => openDrilldown('Lost', groupedBuckets.lost.rows),
     },
     {
@@ -1058,7 +1027,6 @@ const Analytics = () => {
       tone: 'text-emerald-600',
       glow: 'analytics-kpi-glow-emerald',
       icon: Trophy,
-      sparkline: [groupedBuckets.won.value, groupedBuckets.won.groups.length, groupedBuckets.won.groups.length, Math.max(groupedBuckets.won.groups.length - 1, 0)],
       onClick: () => openDrilldown('Won', groupedBuckets.won.rows),
     },
     {
@@ -1073,7 +1041,6 @@ const Analytics = () => {
       tone: 'text-violet-600',
       glow: 'analytics-kpi-glow-emerald',
       icon: CurrencyHeaderIcon,
-      sparkline: [groupedBuckets.submitted.value, groupedBuckets.won.value, groupedBuckets.won.value, groupedBuckets.won.value * 0.85],
       onClick: () => {
         setFilters((prev) => ({
           ...prev,
@@ -1234,7 +1201,6 @@ const Analytics = () => {
               </div>
               <div className="mb-3 flex items-center justify-between gap-3">
                 <span className={`text-xs font-semibold ${card.tone}`}>{card.totalLabel ?? `Total ${formatCompactNumber(card.value)}`}</span>
-                <Sparkline values={card.sparkline} className={`h-8 w-20 ${card.tone}`} />
               </div>
               <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
                 <div className={`h-full rounded-full ${card.tone.replace('text', 'bg')}`} style={{ width: `${clampPercent(safePercent(card.value, Math.max(analytics.overall.submittedCount, card.value, 1)))}%` }} />
