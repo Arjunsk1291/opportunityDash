@@ -5221,7 +5221,7 @@ app.post('/api/opportunities/value-conflicts/resolve', verifyToken, async (req, 
   }
 });
 
-app.get('/api/vendors', async (_req, res) => {
+app.get('/api/vendors', verifyToken, async (_req, res) => {
   try {
     await cleanupDummyVendors();
     const vendors = await Vendor.find().sort({ updatedAt: -1, companyName: 1 }).lean();
@@ -5399,7 +5399,7 @@ app.post('/api/vendors/import', verifyToken, async (req, res) => {
   }
 });
 
-app.get('/api/clients', async (_req, res) => {
+app.get('/api/clients', verifyToken, async (_req, res) => {
   try {
     const clients = await Client.find().sort({ updatedAt: -1 }).lean();
     res.json(clients.map((client) => mapIdField(client)));
