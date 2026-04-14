@@ -56,6 +56,12 @@ interface AuthorizedUserResponse {
   status: UserStatus;
   assignedGroup?: string | null;
 }
+interface VerifyTokenResponse {
+  success: boolean;
+  user: AuthorizedUserResponse;
+  sessionToken?: string;
+  error?: string;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -81,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!response.ok) {
       throw new Error('Failed to refresh user');
     }
-    const data = await response.json();
+    const data = (await response.json()) as VerifyTokenResponse;
     const nextUser: User = {
       email: data.email,
       displayName: data.displayName || data.email,
@@ -136,7 +142,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     setUser(nextUser);
-    setToken(normalizedUsername);
+    if (!data.sessionToken) {
+      throw new Error('Session token missing from auth response');
+    }
+    setToken(data.sessionToken);
     setAuthError(null);
 
     if (nextUser.status === 'pending') {
@@ -149,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + normalizedUsername,
+        Authorization: 'Bearer ' + data.sessionToken,
       },
     });
   }, []);
@@ -162,7 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearAuthState();
         return;
       }
-      if (nextUsername === token) {
+      if (nextUsername && nextUsername === user?.email?.toLowerCase()) {
         setIsLoading(false);
         return;
       }
@@ -178,7 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener('msal:user', handleMsalUser as EventListener);
     return () => window.removeEventListener('msal:user', handleMsalUser as EventListener);
-  }, [clearAuthState, loginWithUsername, token]);
+  }, [clearAuthState, loginWithUsername, user?.email]);
 
   const getAllUsers = useCallback(() => allUsers, [allUsers]);
 

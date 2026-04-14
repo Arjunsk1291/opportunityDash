@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
+import jwt from 'jsonwebtoken';
+import helmet from 'helmet';
 import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import OpportunityManualUpdate from './models/OpportunityManualUpdate.js';
@@ -57,7 +59,14 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
 const DISABLE_MONGODB = String(process.env.DISABLE_MONGODB || '').toLowerCase() === 'true';
+const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || '10mb';
+const SESSION_TOKEN_TTL = process.env.SESSION_TOKEN_TTL || '12h';
+const SESSION_JWT_SECRET = process.env.SESSION_JWT_SECRET || process.env.JWT_SECRET || `${randomUUID()}-${randomUUID()}`;
+const ALLOW_LEGACY_EMAIL_BEARER = String(process.env.ALLOW_LEGACY_EMAIL_BEARER || '').toLowerCase() === 'true';
 console.log('Debug flags:', { MAIL_DEBUG: String(process.env.MAIL_DEBUG || '').toLowerCase() === 'true', NOTIFICATION_DEBUG: String(process.env.NOTIFICATION_DEBUG || '').toLowerCase() === 'true', GRAPH_TOKEN_DEBUG: String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true' });
+if (!process.env.SESSION_JWT_SECRET && !process.env.JWT_SECRET) {
+  console.warn('⚠️ SESSION_JWT_SECRET is not set. Using an ephemeral in-memory secret for this process only.');
+}
 
 const DEFAULT_CORS_ORIGINS = [
   'http://localhost:5173',
@@ -82,6 +91,11 @@ app.use(cors((req, callback) => {
   const origin = req.header('Origin');
   const allowed = isCorsOriginAllowed(origin, req);
   callback(null, { origin: allowed });
+}));
+app.disable('x-powered-by');
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
 }));
 
 const createRateLimiter = ({ windowMs, max, keyPrefix }) => {
@@ -118,6 +132,13 @@ const respondDatabaseUnavailable = (res) => (
 
 const authRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 20, keyPrefix: 'auth' });
 const privilegedRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 120, keyPrefix: 'priv' });
+const graphAuthBootstrapLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5, keyPrefix: 'graph-bootstrap' });
+const GRAPH_BOOTSTRAP_ALLOWED_USERS = new Set(
+  String(process.env.GRAPH_BOOTSTRAP_ALLOWED_USERS || '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+);
 
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api/')) return next();
@@ -127,8 +148,8 @@ app.use((req, res, next) => {
   return privilegedRateLimiter(req, res, next);
 });
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
+app.use(express.urlencoded({ limit: REQUEST_BODY_LIMIT, extended: true }));
 
 app.get('/healthz', (_req, res) => {
   res.status(200).json({ ok: true, service: 'backend', timestamp: new Date().toISOString() });
@@ -2164,10 +2185,52 @@ const scheduleDailyNotificationCheck = () => {
   console.log('⏰ Notification check scheduler active (hourly, 24/7).');
 };
 
-const getUsernameFromRequest = (req) => {
+const getBearerToken = (req) => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    return authHeader.substring(7).trim().toLowerCase();
+    return authHeader.substring(7).trim();
+  }
+  return '';
+};
+
+const createSessionToken = (user = {}) => jwt.sign(
+  {
+    email: String(user.email || '').toLowerCase(),
+    displayName: String(user.displayName || user.email || ''),
+    role: String(user.role || ''),
+    status: String(user.status || ''),
+    assignedGroup: user.assignedGroup || null,
+  },
+  SESSION_JWT_SECRET,
+  {
+    expiresIn: SESSION_TOKEN_TTL,
+    audience: 'opportunity-dashboard',
+    issuer: 'opportunitydash-auth',
+    subject: String(user.email || '').toLowerCase(),
+  }
+);
+
+const parseSessionToken = (token = '') => {
+  try {
+    if (!token || !token.includes('.')) return null;
+    return jwt.verify(token, SESSION_JWT_SECRET, {
+      audience: 'opportunity-dashboard',
+      issuer: 'opportunitydash-auth',
+    });
+  } catch {
+    return null;
+  }
+};
+
+const getUsernameFromRequest = (req) => {
+  const bearer = getBearerToken(req);
+  const parsed = parseSessionToken(bearer);
+  if (parsed?.email) {
+    return String(parsed.email).trim().toLowerCase();
+  }
+
+  if (ALLOW_LEGACY_EMAIL_BEARER && bearer) {
+    return bearer.trim().toLowerCase();
   }
 
   const headerUsername = req.headers['x-username'];
@@ -2404,6 +2467,7 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
           status: user.status,
           assignedGroup: user.assignedGroup,
         },
+        sessionToken: createSessionToken(user),
         message: user.status === 'pending'
           ? 'User pending approval. Master will review your request.'
           : 'Login successful',
@@ -2436,6 +2500,7 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
           status: user.status,
           assignedGroup: user.assignedGroup,
         },
+        sessionToken: createSessionToken(user),
         message: bootstrapMaster
           ? 'Login successful as bootstrap Master user.'
           : 'User pending approval. Please wait for Master to approve your access.',
@@ -2465,6 +2530,7 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
         status: user.status,
         assignedGroup: user.assignedGroup,
       },
+      sessionToken: createSessionToken(user),
       message: user.status === 'pending' ? 'User pending approval. Master will review your request.' : 'Login successful',
     });
   } catch (error) {
@@ -3233,7 +3299,7 @@ app.get('/api/graph/auth/status', verifyToken, async (req, res) => {
   }
 });
 
-app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
+app.post('/api/graph/auth/bootstrap', graphAuthBootstrapLimiter, verifyToken, async (req, res) => {
   const username = req.body?.username || '';
   try {
     if (!await requireActionPermission(req, res, 'graph_auth_write')) return;
@@ -3242,15 +3308,19 @@ app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
     if (!username || !password) {
       return res.status(400).json({ error: 'username and password are required' });
     }
+    const normalizedUsername = String(username).trim().toLowerCase();
+    if (GRAPH_BOOTSTRAP_ALLOWED_USERS.size > 0 && !GRAPH_BOOTSTRAP_ALLOWED_USERS.has(normalizedUsername)) {
+      return res.status(403).json({ error: 'This username is not allow-listed for delegated Graph bootstrap' });
+    }
 
-    const tokenResult = await bootstrapDelegatedToken({ username, password });
+    const tokenResult = await bootstrapDelegatedToken({ username: normalizedUsername, password });
     if (!tokenResult.refreshToken) {
       return res.status(500).json({ error: 'No refresh token returned. Check Azure app delegated permissions and token settings.' });
     }
 
     const config = await getGraphConfig();
     config.graphAuthMode = 'delegated';
-    config.graphAccountUsername = String(username).toLowerCase();
+    config.graphAccountUsername = normalizedUsername;
     config.graphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
     config.graphTokenUpdatedAt = new Date();
     config.updatedBy = req.user.email;
@@ -3269,7 +3339,7 @@ app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'USER_NOT_FOUND', message: 'User not found in this tenant.' });
     }
     if (msg.includes('AADSTS65001')) {
-      const consentUrl = buildDelegatedConsentUrl({ loginHint: username });
+      const consentUrl = buildDelegatedConsentUrl({ loginHint: String(username || '').trim().toLowerCase() });
       return res.status(400).json({
         error: 'CONSENT_REQUIRED',
         message: 'This account has not granted consent to the app yet. Open consent URL and accept once, then retry bootstrap.',
@@ -4820,7 +4890,7 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
   }
 });
 
-app.get('/api/opportunities', async (req, res) => {
+app.get('/api/opportunities', verifyToken, async (req, res) => {
   try {
     if (DISABLE_MONGODB) {
       return res.json([]);

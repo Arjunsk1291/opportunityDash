@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { Opportunity } from '@/data/opportunityData';
 import { isSubmissionWithinDays } from '@/lib/submissionDate';
+import { useAuth } from '@/contexts/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const LIVE_REFRESH_INTERVAL = 5 * 60 * 1000;
@@ -37,6 +38,7 @@ interface DataContextType {
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export function DataProvider({ children }: { children: ReactNode }) {
+  const { token, isLoading: isAuthLoading } = useAuth();
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [isLiveRefreshActive, setIsLiveRefreshActive] = useState(true);
 
   const refreshData = useCallback(async (options?: { background?: boolean }) => {
+    if (isAuthLoading) return;
+    if (!token) {
+      setIsLoading(false);
+      setOpportunities([]);
+      return;
+    }
     const isBackground = Boolean(options?.background);
     if (!isBackground) {
       setIsLoading(true);
@@ -55,7 +63,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       
       const response = await fetch(API_URL + '/opportunities', {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
       });
       
       if (!response.ok) {
@@ -95,7 +106,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [isAuthLoading, token]);
 
   React.useEffect(() => {
     refreshData();

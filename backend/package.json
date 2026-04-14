@@ -10,8 +10,9 @@
     "cors": "^2.8.5",
     "docx": "^9.5.1",
     "dotenv": "^16.6.1",
-    "express": "^4.18.2",
+    "express": "^4.22.1",
     "express-jwt": "^8.5.1",
+    "helmet": "^7.2.0",
     "jsonwebtoken": "^9.0.3",
     "mongodb": "^7.0.0",
     "mongoose": "^8.21.0"
