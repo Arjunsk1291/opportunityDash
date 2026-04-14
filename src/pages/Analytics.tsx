@@ -484,7 +484,7 @@ const FlowNode = ({
 
 const Analytics = () => {
   const { opportunities, isLoading, error } = useData();
-  const { currency, convertValue, formatCurrency } = useCurrency();
+  const { currency, convertValue, formatCurrency, aedSymbolUrl } = useCurrency();
   const initialQuickRange = 3650;
   const [filters, setFilters] = useState<FilterState>(() => ({
     ...defaultFilters,
@@ -497,7 +497,7 @@ const Analytics = () => {
   const [heatmapYear, setHeatmapYear] = useState('ALL');
   const [heatmapSearch, setHeatmapSearch] = useState('');
 
-  const formatCompactCurrency = (value: number) => {
+  const formatCompactCurrencyNumber = (value: number) => {
     const converted = convertValue(value || 0);
     const absValue = Math.abs(converted);
     const { divisor, suffix } = absValue >= 1_000_000_000
@@ -508,11 +508,16 @@ const Analytics = () => {
           ? { divisor: 1_000, suffix: 'K' }
           : { divisor: 1, suffix: '' };
 
-    const compact = divisor === 1
+    return divisor === 1
       ? Math.round(converted).toLocaleString('en-US')
       : `${(converted / divisor).toFixed(1).replace(/\\.0$/, '')}${suffix}`;
+  };
 
-    return currency === 'AED' ? `AED ${compact}` : `$${compact}`;
+  const CurrencyHeaderIcon = ({ className }: { className?: string }) => {
+    if (currency === 'AED') {
+      return <img src={aedSymbolUrl} alt="AED" className={className} />;
+    }
+    return <DollarSign className={className} />;
   };
 
   const groupOptions = useMemo(() => {
@@ -943,6 +948,7 @@ const Analytics = () => {
     label: string;
     value: number;
     valueFormat?: (value: number) => string;
+    valuePrefix?: { kind: 'img'; src: string; alt: string } | { kind: 'text'; text: string };
     totalLabel?: string;
     meta?: Array<{ label: string; value: number; tone: string }>;
     chip?: string;
@@ -966,18 +972,6 @@ const Analytics = () => {
       icon: Target,
       sparkline: [activeTenderCount, activeEoiCount, activeOpportunityRows.length, Math.max(activeOpportunityRows.length - 1, 0)],
       onClick: () => openDrilldown('Active Tenders', activeOpportunityRows),
-    },
-    {
-      label: 'Total Quoted Value',
-      value: quotedValue,
-      valueFormat: (next: number) => formatCompactCurrency(next),
-      totalLabel: `Total ${formatCompactCurrency(quotedValue)}`,
-      chip: `${quotedValueRows.length} unique tenders`,
-      tone: 'text-violet-600',
-      glow: 'analytics-kpi-glow-emerald',
-      icon: DollarSign,
-      sparkline: [analytics.overall.submittedValue, analytics.overall.wonValue, quotedValue, quotedValue * 0.85],
-      onClick: () => openDrilldown('Quoted Value (Deduped)', quotedValueRows),
     },
     {
       label: 'Awarded',
@@ -1055,6 +1049,31 @@ const Analytics = () => {
       onClick: () => openDrilldown('Submitted Opportunities', submittedOpportunityRows),
     },
   ];
+
+  const orderedKpiCards = [
+    kpiCards.find((card) => card.label === 'Active Tenders'),
+    kpiCards.find((card) => card.label === 'Submitted'),
+    kpiCards.find((card) => card.label === 'Lost'),
+    kpiCards.find((card) => card.label === 'Regretted'),
+    kpiCards.find((card) => card.label === 'Hold / Closed'),
+    {
+      label: 'Total Quoted Value',
+      value: quotedValue,
+      valueFormat: (next: number) => formatCompactCurrencyNumber(next),
+      valuePrefix: currency === 'AED'
+        ? { kind: 'img', src: aedSymbolUrl, alt: 'AED' }
+        : { kind: 'text', text: '$' },
+      totalLabel: `Total ${formatCompactCurrencyNumber(quotedValue)}`,
+      chip: `${quotedValueRows.length} unique tenders`,
+      tone: 'text-violet-600',
+      glow: 'analytics-kpi-glow-emerald',
+      icon: CurrencyHeaderIcon,
+      sparkline: [analytics.overall.submittedValue, analytics.overall.wonValue, quotedValue, quotedValue * 0.85],
+      onClick: () => openDrilldown('Quoted Value (Deduped)', quotedValueRows),
+    } satisfies KpiCard,
+    kpiCards.find((card) => card.label === 'Awarded'),
+    kpiCards.find((card) => card.label === 'No Decision'),
+  ].filter(Boolean) as KpiCard[];
 
   return (
     <div key={refreshKey} className="relative mx-auto max-w-[1400px] px-4 pb-10 sm:px-6 lg:px-8">
@@ -1172,7 +1191,7 @@ const Analytics = () => {
       )}
 
       <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:mb-8 lg:grid-cols-4">
-        {kpiCards.map((card, index) => (
+        {orderedKpiCards.map((card, index) => (
           <button
             key={card.label}
             type="button"
@@ -1185,7 +1204,18 @@ const Analytics = () => {
                 <div>
                   <div className="dash-label">{card.label}</div>
                   <div className="mt-2 analytics-kpi-number text-slate-950">
-                    <AnimatedCounter value={card.value} format={card.valueFormat} animateKey={refreshKey} />
+                    {card.valuePrefix ? (
+                      <span className="inline-flex items-center gap-2">
+                        {card.valuePrefix.kind === 'img' ? (
+                          <img src={card.valuePrefix.src} alt={card.valuePrefix.alt} className="h-6 w-6 object-contain" />
+                        ) : (
+                          <span className="text-xl font-extrabold leading-none">{card.valuePrefix.text}</span>
+                        )}
+                        <AnimatedCounter value={card.value} format={card.valueFormat} animateKey={refreshKey} />
+                      </span>
+                    ) : (
+                      <AnimatedCounter value={card.value} format={card.valueFormat} animateKey={refreshKey} />
+                    )}
                   </div>
                 </div>
                 <div className={`rounded-2xl border border-white/70 bg-white/90 p-3 shadow-sm ${card.tone}`}>
