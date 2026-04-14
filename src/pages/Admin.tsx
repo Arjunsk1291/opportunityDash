@@ -2004,6 +2004,16 @@ export default function Admin() {
     }
   };
 
+  const activeTabMeta = allowedTabs.find((tab) => tab.value === activeTab);
+  const activeTabDescriptions: Record<string, string> = {
+    general: 'User context and privilege overview.',
+    users: 'Role access, user management, and approval controls.',
+    update: 'Manual opportunity updates and update templates.',
+    export: 'Export layout designer and template configuration.',
+    'data-sync': 'Graph workbook sync configuration and controls.',
+    telecast: 'Telecast rules, template styles, and notification status.',
+  };
+
   if (!canAccessPanel) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -2044,16 +2054,26 @@ export default function Admin() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="w-full flex flex-wrap h-auto justify-start gap-1">
-          {allowedTabs.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value}>
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <Card className="border bg-card/70 backdrop-blur-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Admin Sections</CardTitle>
+            <CardDescription>
+              {activeTabMeta ? `${activeTabMeta.label}: ${activeTabDescriptions[activeTabMeta.value] || 'Configuration panel.'}` : 'Configuration panel.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TabsList className="w-full flex flex-wrap h-auto justify-start gap-2 bg-muted/40 p-1.5 rounded-md">
+              {allowedTabs.map((tab) => (
+                <TabsTrigger key={tab.value} value={tab.value} className="data-[state=active]:shadow-sm data-[state=active]:bg-background">
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </CardContent>
+        </Card>
 
         {allowedTabValues.has('general') && (
-        <TabsContent value="general">
+        <TabsContent value="general" className="mt-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card>
               <CardHeader>
@@ -2101,7 +2121,7 @@ export default function Admin() {
         )}
 
         {allowedTabValues.has('users') && (
-        <TabsContent value="users">
+        <TabsContent value="users" className="mt-6">
           <Card className="mb-6">
             <CardHeader>
               <CardTitle>Sidebar Page Visibility by Role</CardTitle>
@@ -2738,7 +2758,7 @@ export default function Admin() {
         )}
 
         {allowedTabValues.has('update') && (
-        <TabsContent value="update">
+        <TabsContent value="update" className="mt-6">
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
             <Card>
               <CardHeader>
@@ -2845,7 +2865,7 @@ export default function Admin() {
         )}
 
         {allowedTabValues.has('export') && (
-        <TabsContent value="export">
+        <TabsContent value="export" className="mt-6">
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
             <Card>
               <CardHeader>
@@ -3241,7 +3261,7 @@ export default function Admin() {
         )}
 
         {allowedTabValues.has('data-sync') && (
-        <TabsContent value="data-sync">
+        <TabsContent value="data-sync" className="mt-6">
           <div className="space-y-4 sm:space-y-6 md:space-y-8">
             <Card>
               <CardHeader>
@@ -3510,7 +3530,7 @@ export default function Admin() {
         )}
 
         {allowedTabValues.has('telecast') && (
-        <TabsContent value="telecast">
+        <TabsContent value="telecast" className="mt-6">
           <div className="space-y-6">
             <Card>
               <CardHeader>
