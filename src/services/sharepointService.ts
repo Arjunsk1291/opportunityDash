@@ -40,6 +40,8 @@ export interface SyncStatus {
   error: string | null;
   recordCount: number;
 }
+const MAX_SHAREPOINT_EXCEL_BYTES = 8 * 1024 * 1024;
+const MAX_SHAREPOINT_EXCEL_ROWS = 10000;
 
 class SharePointService {
   private sharePointUrl: string;
@@ -112,6 +114,9 @@ class SharePointService {
    * Parse Excel blob to JSON data
    */
   private async parseExcelBlob(blob: Blob): Promise<ExcelRow[]> {
+    if (blob.size > MAX_SHAREPOINT_EXCEL_BYTES) {
+      throw new Error('SharePoint workbook exceeds the 8MB safety limit.');
+    }
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       
@@ -131,6 +136,9 @@ class SharePointService {
             raw: false,
             defval: null 
           });
+          if (jsonData.length > MAX_SHAREPOINT_EXCEL_ROWS) {
+            throw new Error(`SharePoint workbook has too many rows (${jsonData.length}). Limit is ${MAX_SHAREPOINT_EXCEL_ROWS}.`);
+          }
 
           // Map Excel columns to our interface
           const mappedData = jsonData.map(this.mapExcelRowToInterface);

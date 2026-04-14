@@ -248,6 +248,8 @@ const DEADLINE_TEMPLATE_PRESETS = [
     style: 'avenir_blue',
   },
 ];
+const MAX_MANUAL_UPDATE_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_MANUAL_UPDATE_ROWS = 5000;
 
 const renderTemplatePreview = (template: string, values: Record<string, string>) =>
   Object.entries(values).reduce((output, [key, value]) => output.split(`{{${key}}}`).join(value), String(template || ''));
@@ -767,6 +769,11 @@ export default function Admin() {
   const handleManualUpdateUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !token) return;
+    if (file.size > MAX_MANUAL_UPDATE_UPLOAD_BYTES) {
+      toast.error('File too large. Maximum allowed size is 5MB.');
+      event.target.value = '';
+      return;
+    }
 
     setManualUpdateUploading(true);
     setManualUpdateFileName(file.name);
@@ -782,6 +789,9 @@ export default function Admin() {
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '', raw: true });
       if (!rows.length) {
         throw new Error('No data rows found in the first sheet.');
+      }
+      if (rows.length > MAX_MANUAL_UPDATE_ROWS) {
+        throw new Error(`Too many rows (${rows.length}). Limit is ${MAX_MANUAL_UPDATE_ROWS}.`);
       }
 
       const response = await fetch(API_URL + '/opportunities/manual-sheet-updates', {

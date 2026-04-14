@@ -43,6 +43,8 @@ export const VENDOR_IMPORT_HEADERS = [
   'Partners',
   'Sources',
 ] as const;
+const MAX_VENDOR_IMPORT_BYTES = 5 * 1024 * 1024;
+const MAX_VENDOR_IMPORT_ROWS = 5000;
 
 const splitCommaSeparated = (value: unknown): string[] =>
   String(value ?? '')
@@ -153,11 +155,17 @@ const parseVendorRow = (row: Record<string, unknown>): Omit<VendorData, 'id'> | 
 };
 
 export const previewVendorImport = async (file: File, existingVendors: VendorData[]): Promise<VendorImportPreview> => {
+  if (file.size > MAX_VENDOR_IMPORT_BYTES) {
+    throw new Error('File too large. Maximum allowed size is 5MB.');
+  }
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: 'array' });
   const firstSheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[firstSheetName];
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+  if (rows.length > MAX_VENDOR_IMPORT_ROWS) {
+    throw new Error(`Too many rows (${rows.length}). Limit is ${MAX_VENDOR_IMPORT_ROWS}.`);
+  }
 
   const seen = new Set(existingVendors.map((vendor) => normalizeCompanyName(vendor.companyName).toLowerCase()));
   const newVendors: VendorData[] = [];

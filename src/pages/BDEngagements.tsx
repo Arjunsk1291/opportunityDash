@@ -144,6 +144,8 @@ const chartNodeFill = 'hsl(var(--muted))';
 const chartNodeStroke = 'hsl(var(--border))';
 const chartLinkFill = 'hsl(var(--primary))';
 const BULK_ADD_ACCESS_KEY = 'bd_engagement_bulk_add_access';
+const MAX_BD_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_BD_UPLOAD_ROWS = 5000;
 
 const BDEngagements = () => {
   const { isAdmin, isMaster, user, token } = useAuth();
@@ -322,6 +324,9 @@ const BDEngagements = () => {
 
   const handleBulkUpload = async (file: File) => {
     try {
+      if (file.size > MAX_BD_UPLOAD_BYTES) {
+        throw new Error('File too large. Maximum allowed size is 5MB.');
+      }
       const buffer = await file.arrayBuffer();
       const XLSX = await import('xlsx');
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
@@ -329,6 +334,9 @@ const BDEngagements = () => {
       if (!worksheet) throw new Error('No worksheet found in uploaded file.');
       const rowsMatrix = XLSX.utils.sheet_to_json<Array<unknown[]>>(worksheet, { header: 1, defval: '' }) as unknown[][];
       if (!rowsMatrix.length) throw new Error('No data found in the uploaded file.');
+      if (rowsMatrix.length > MAX_BD_UPLOAD_ROWS) {
+        throw new Error(`Too many rows (${rowsMatrix.length}). Limit is ${MAX_BD_UPLOAD_ROWS}.`);
+      }
 
       const normalizeHeader = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
       const headerCandidates: Record<string, string[]> = {
