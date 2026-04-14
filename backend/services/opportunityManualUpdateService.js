@@ -3,7 +3,10 @@ export const MANUAL_UPDATE_FIELD_KEYS = [
   'tenderName',
   'opportunityClassification',
   'clientName',
+  'groupClassification',
+  'internalLead',
   'opportunityValue',
+  'avenirStatus',
   'dateTenderReceived',
   'tenderPlannedSubmissionDate',
 ];
@@ -14,7 +17,10 @@ export const MANUAL_UPDATE_COLUMN_ALIASES = {
   tenderName: ['TENDER NAME'],
   opportunityClassification: ['TENDER TYPE', 'OPPORTUNITY CLASSIFICATION'],
   clientName: ['CLIENT'],
+  groupClassification: ['GROUP'],
+  internalLead: ['LEAD', 'INTERNAL LEAD'],
   opportunityValue: ['VALUE (AED)', 'VALUE', 'VALUE AED'],
+  avenirStatus: ['STATUS', 'AVENIR STATUS'],
   dateTenderReceived: ['RFP RECEIVED', 'DATE TENDER RECD', 'DATE RECEIVED'],
   tenderPlannedSubmissionDate: ['SUBMISSION', 'SUBMISSION DATE'],
 };
@@ -188,11 +194,14 @@ export const buildManualOpportunityPatch = (manualRow, existingOpportunity = nul
 
 export const getManualTemplateColumns = () => [
   { key: 'opportunityRefNo', label: 'Avenir Ref', required: true },
+  { key: 'tenderName', label: 'Tender Name', required: true },
+  { key: 'opportunityClassification', label: 'Tender Type', required: true },
+  { key: 'clientName', label: 'Client', required: true },
+  { key: 'groupClassification', label: 'Group', required: true },
+  { key: 'dateTenderReceived', label: 'RFP Received', required: true },
+  { key: 'tenderPlannedSubmissionDate', label: 'Submission', required: true },
+  { key: 'internalLead', label: 'Lead', required: true },
+  { key: 'opportunityValue', label: 'Value (AED)', required: true },
+  { key: 'avenirStatus', label: 'Status', required: true },
   { key: 'adnocRftNo', label: 'CLIENT Ref', required: false },
-  { key: 'tenderName', label: 'Tender Name', required: false },
-  { key: 'opportunityClassification', label: 'Tender Type', required: false },
-  { key: 'clientName', label: 'Client', required: false },
-  { key: 'opportunityValue', label: 'Value (AED)', required: false },
-  { key: 'dateTenderReceived', label: 'RFP Received', required: false },
-  { key: 'tenderPlannedSubmissionDate', label: 'Submission', required: false },
 ];

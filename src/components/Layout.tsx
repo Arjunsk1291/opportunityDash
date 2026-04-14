@@ -1,15 +1,16 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { SidebarProvider, SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { BarChart3, User, LogOut, Shield } from 'lucide-react';
+import { BarChart3, Search, User, LogOut, Shield } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { ReportIssueButton } from '@/components/ReportIssueButton';
 import logo from '@/assets/Avenir_Logo.avif';
+import { UniversalSearchDialog } from '@/components/UniversalSearch/UniversalSearchDialog';
 
 interface LayoutProps {
   children: ReactNode;
@@ -18,11 +19,23 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const { user, isAdmin, logout, token } = useAuth();
   const navigate = useNavigate();
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
     navigate('/');
   };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'k') return;
+      if (!(event.metaKey || event.ctrlKey)) return;
+      event.preventDefault();
+      setSearchOpen(true);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   return (
     <SidebarProvider>
@@ -44,6 +57,17 @@ export function Layout({ children }: LayoutProps) {
                 alt="Avenir Engineering"
                 className="hidden md:block h-7 w-auto"
               />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => setSearchOpen(true)}
+                title="Universal Search (Ctrl+K / Cmd+K)"
+              >
+                <Search className="h-4 w-4" />
+                <span className="hidden lg:inline">Search</span>
+              </Button>
               <ThemeToggle />
               
               {/* User Menu */}
@@ -83,6 +107,7 @@ export function Layout({ children }: LayoutProps) {
         </SidebarInset>
       </div>
       <ReportIssueButton authToken={token} reporter={user ? { displayName: user.displayName, role: user.role, email: user.email } : null} />
+      <UniversalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
     </SidebarProvider>
   );
 }

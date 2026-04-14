@@ -8,6 +8,9 @@ import { randomUUID } from 'crypto';
 import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import OpportunityManualUpdate from './models/OpportunityManualUpdate.js';
+import OpportunityProbation from './models/OpportunityProbation.js';
+import OpportunityChangeLog from './models/OpportunityChangeLog.js';
+import OpportunityFieldConflict from './models/OpportunityFieldConflict.js';
 import LeadEmailMapping from './models/LeadEmailMapping.js';
 import Approval from './models/Approval.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
@@ -26,6 +29,7 @@ import {
   applyManualOverridesToOpportunity,
   buildManualOpportunityPatch,
   buildManualUpdatePatch,
+  MANUAL_UPDATE_FIELD_KEYS,
   parseManualUpdateRows,
   normalizeRefKey,
 } from './services/opportunityManualUpdateService.js';
@@ -634,6 +638,82 @@ const buildRowSignature = (opportunity) => {
 };
 
 const normalizeRefNo = (value = '') => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+const normalizeTextValue = (value) => String(value ?? '').trim();
+const hasFieldValue = (fieldKey, value) => (
+  fieldKey === 'opportunityValue'
+    ? value !== null && value !== undefined && Number.isFinite(Number(value))
+    : normalizeTextValue(value) !== ''
+);
+const fieldValuesMatch = (fieldKey, left, right) => {
+  if (!hasFieldValue(fieldKey, left) && !hasFieldValue(fieldKey, right)) return true;
+  if (fieldKey === 'opportunityValue') return Number(left) === Number(right);
+  return normalizeTextValue(left).toLowerCase() === normalizeTextValue(right).toLowerCase();
+};
+const FIELD_LABELS = {
+  opportunityRefNo: 'Avenir Ref',
+  tenderName: 'Tender Name',
+  opportunityClassification: 'Tender Type',
+  clientName: 'Client',
+  groupClassification: 'Group',
+  dateTenderReceived: 'RFP Received',
+  tenderPlannedSubmissionDate: 'Submission',
+  internalLead: 'Lead',
+  opportunityValue: 'Value',
+  avenirStatus: 'Status',
+};
+const FORM_REQUIRED_FIELDS = [
+  'opportunityRefNo',
+  'tenderName',
+  'opportunityClassification',
+  'clientName',
+  'groupClassification',
+  'dateTenderReceived',
+  'tenderPlannedSubmissionDate',
+  'internalLead',
+  'opportunityValue',
+  'avenirStatus',
+];
+const FORM_EDITABLE_FIELDS = [
+  'opportunityRefNo',
+  'adnocRftNo',
+  'tenderName',
+  'opportunityClassification',
+  'clientName',
+  'groupClassification',
+  'dateTenderReceived',
+  'tenderPlannedSubmissionDate',
+  'internalLead',
+  'opportunityValue',
+  'avenirStatus',
+];
+
+const parseOpportunityValue = (rawValue) => {
+  if (rawValue === null || rawValue === undefined || rawValue === '') return null;
+  const parsed = Number(rawValue);
+  return Number.isFinite(parsed) ? parsed : NaN;
+};
+
+const buildManualEntryPayload = (raw = {}) => {
+  const payload = {};
+  FORM_EDITABLE_FIELDS.forEach((fieldKey) => {
+    if (fieldKey === 'opportunityValue') {
+      payload[fieldKey] = parseOpportunityValue(raw[fieldKey]);
+      return;
+    }
+    payload[fieldKey] = normalizeTextValue(raw[fieldKey]);
+  });
+  payload.refKey = normalizeRefKey(payload.opportunityRefNo);
+  return payload;
+};
+
+const buildAuditActor = (req) => ({
+  changedBy: req.user?.email || 'unknown',
+  changedByDisplayName: req.user?.displayName || req.user?.email || 'unknown',
+  changedByRole: req.user?.role || '',
+  ipAddress: req.ip || '',
+  userAgent: String(req.headers['user-agent'] || ''),
+  authUser: getUsernameFromRequest(req) || '',
+});
 
 const getTenderRefNo = (opportunity) => {
   const direct = normalizeRefNo(opportunity?.opportunityRefNo || '');
@@ -1845,6 +1925,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   );
   const manualUpdatesByRef = await loadManualUpdateSnapshots();
   const manualAlignmentByRef = new Map();
+  const pendingConflictOps = [];
 
   const opportunitiesForInsert = opportunities.map((opportunity) => {
     const key = buildNotificationKey(opportunity);
@@ -1871,6 +1952,31 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
         return acc;
       }, {});
       manualAlignmentByRef.set(normalizeRefKey(ref), nextFields);
+
+      staleFields.forEach((fieldKey) => {
+        pendingConflictOps.push({
+          updateOne: {
+            filter: {
+              refKey: normalizeRefKey(ref),
+              fieldKey,
+              status: 'pending',
+            },
+            update: {
+              $set: {
+                opportunityRefNo: ref || mergedOpportunity?.opportunityRefNo || '',
+                refKey: normalizeRefKey(ref),
+                fieldKey,
+                fieldLabel: FIELD_LABELS[fieldKey] || fieldKey,
+                sheetValue: opportunity?.[fieldKey] ?? null,
+                existingValue: manualSnapshot?.[fieldKey] ?? mergedOpportunity?.[fieldKey] ?? null,
+                status: 'pending',
+                detectedAt: now,
+              },
+            },
+            upsert: true,
+          },
+        });
+      });
     }
 
     return {
@@ -1897,6 +2003,9 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   await SyncedOpportunity.deleteMany({});
   const inserted = await SyncedOpportunity.insertMany(opportunitiesForInsert);
   await alignManualSnapshotsToSyncedValues(manualAlignmentByRef, `sync:${source}`);
+  if (pendingConflictOps.length) {
+    await OpportunityFieldConflict.bulkWrite(pendingConflictOps, { ordered: false });
+  }
   const clientSyncResult = await syncClientsFromOpportunities(opportunities);
 
   config.lastSyncAt = now;
@@ -2168,6 +2277,9 @@ async function ensureInitialMongoState() {
   await ensureCollectionExists(AuthorizedUser, 'authorizedusers');
   await ensureCollectionExists(SyncedOpportunity, 'syncedopportunities');
   await ensureCollectionExists(OpportunityManualUpdate, 'opportunitymanualupdates');
+  await ensureCollectionExists(OpportunityProbation, 'opportunityprobations');
+  await ensureCollectionExists(OpportunityChangeLog, 'opportunitychangelogs');
+  await ensureCollectionExists(OpportunityFieldConflict, 'opportunityfieldconflicts');
   await ensureCollectionExists(ProjectUpdate, 'projectupdates');
   await ensureBootstrapMasterUser('arjun.s@avenirengineering.com');
 }
@@ -4716,12 +4828,10 @@ app.get('/api/opportunities', async (req, res) => {
       return respondDatabaseUnavailable(res);
     }
 
-    const [opportunities, manualValueUpdates] = await Promise.all([
+    const [opportunities, manualValueUpdates, pendingConflicts] = await Promise.all([
       SyncedOpportunity.find().sort({ createdAt: -1 }).lean(),
-      OpportunityManualUpdate.find(
-        { opportunityValue: { $ne: null } },
-        { refKey: 1, opportunityRefNo: 1, opportunityValue: 1, opportunityValueSheetSnapshot: 1 }
-      ).lean(),
+      OpportunityManualUpdate.find({}, { _id: 0 }).lean(),
+      OpportunityFieldConflict.find({ status: 'pending' }, { refKey: 1, fieldKey: 1 }).lean(),
     ]);
 
     const manualByRefKey = new Map(
@@ -4729,27 +4839,32 @@ app.get('/api/opportunities', async (req, res) => {
         .map((row) => [normalizeRefKey(row?.opportunityRefNo || row?.refKey || ''), row])
         .filter(([ref]) => Boolean(ref))
     );
+    const conflictByRef = new Map();
+    pendingConflicts.forEach((row) => {
+      const ref = normalizeRefKey(row?.refKey || '');
+      if (!ref) return;
+      if (!conflictByRef.has(ref)) conflictByRef.set(ref, []);
+      conflictByRef.get(ref).push(row.fieldKey);
+    });
 
     const mapped = opportunities.map((opp) => {
       const base = mapIdField(applyOpportunityDateFields(applyOpportunityStatusFields(opp)));
       const refKey = normalizeRefKey(base?.opportunityRefNo || '');
       const manualSnapshot = refKey ? manualByRefKey.get(refKey) : null;
-      const sheetValue = Object.prototype.hasOwnProperty.call(base, 'opportunityValue') ? base.opportunityValue : null;
-      const manualValue = manualSnapshot?.opportunityValue ?? null;
-      const effectiveValue = manualValue !== null && manualValue !== undefined ? manualValue : sheetValue;
-      const conflict = manualValue !== null
-        && sheetValue !== null
-        && sheetValue !== undefined
-        && Number(manualValue) !== Number(sheetValue)
-        && (manualSnapshot?.opportunityValueSheetSnapshot === null || Number(manualSnapshot?.opportunityValueSheetSnapshot) !== Number(sheetValue));
+      const effective = { ...base };
+      if (manualSnapshot) {
+        MANUAL_UPDATE_FIELD_KEYS.forEach((fieldKey) => {
+          if (!hasFieldValue(fieldKey, manualSnapshot[fieldKey])) return;
+          effective[fieldKey] = manualSnapshot[fieldKey];
+        });
+      }
+      const conflictFields = conflictByRef.get(refKey) || [];
 
       return {
-        ...base,
-        opportunityValue: effectiveValue,
-        opportunityValueSheet: sheetValue ?? null,
-        opportunityValueManual: manualValue,
-        opportunityValueSource: manualValue !== null && manualValue !== undefined ? 'manual' : 'sheet',
-        opportunityValueConflict: conflict,
+        ...effective,
+        manualFieldOverrides: manualSnapshot || null,
+        hasPendingConflicts: conflictFields.length > 0,
+        pendingConflictFields: conflictFields,
       };
     });
     res.json(mapped);
@@ -4765,12 +4880,9 @@ app.get('/api/opportunities/value-conflicts', verifyToken, async (req, res) => {
       return respondDatabaseUnavailable(res);
     }
 
-    const [opportunities, manualValueUpdates] = await Promise.all([
-      SyncedOpportunity.find({}, { opportunityRefNo: 1, tenderName: 1, opportunityValue: 1 }).lean(),
-      OpportunityManualUpdate.find(
-        { opportunityValue: { $ne: null } },
-        { refKey: 1, opportunityRefNo: 1, opportunityValue: 1, opportunityValueSheetSnapshot: 1 }
-      ).lean(),
+    const [conflicts, opportunities] = await Promise.all([
+      OpportunityFieldConflict.find({ status: 'pending' }).sort({ detectedAt: -1 }).lean(),
+      SyncedOpportunity.find({}, { opportunityRefNo: 1, tenderName: 1 }).lean(),
     ]);
 
     const oppByRefKey = new Map(
@@ -4779,126 +4891,259 @@ app.get('/api/opportunities/value-conflicts', verifyToken, async (req, res) => {
         .filter(([ref]) => Boolean(ref))
     );
 
-    const conflicts = manualValueUpdates
-      .map((manual) => {
-        const refKey = normalizeRefKey(manual?.opportunityRefNo || manual?.refKey || '');
-        const opp = refKey ? oppByRefKey.get(refKey) : null;
-        if (!opp) return null;
-        const sheetValue = opp?.opportunityValue ?? null;
-        const manualValue = manual?.opportunityValue ?? null;
-        if (sheetValue === null || manualValue === null) return null;
-        if (Number(sheetValue) === Number(manualValue)) return null;
-        if (manual?.opportunityValueSheetSnapshot !== null && Number(manual.opportunityValueSheetSnapshot) === Number(sheetValue)) return null;
-        return {
+    const grouped = new Map();
+    conflicts.forEach((row) => {
+      const refKey = normalizeRefKey(row?.refKey || row?.opportunityRefNo || '');
+      if (!refKey) return;
+      if (!grouped.has(refKey)) {
+        const opp = oppByRefKey.get(refKey);
+        grouped.set(refKey, {
           refKey,
-          opportunityRefNo: opp?.opportunityRefNo || manual?.opportunityRefNo || '',
+          opportunityRefNo: row.opportunityRefNo || opp?.opportunityRefNo || '',
           tenderName: opp?.tenderName || '',
-          sheetValue,
-          manualValue,
-        };
-      })
-      .filter(Boolean);
+          fields: [],
+        });
+      }
+      grouped.get(refKey).fields.push({
+        id: row._id?.toString?.() || '',
+        fieldKey: row.fieldKey,
+        fieldLabel: row.fieldLabel || FIELD_LABELS[row.fieldKey] || row.fieldKey,
+        sheetValue: row.sheetValue ?? null,
+        existingValue: row.existingValue ?? null,
+        detectedAt: row.detectedAt || row.createdAt || null,
+      });
+    });
 
-    res.json({ success: true, conflicts });
+    res.json({ success: true, conflicts: Array.from(grouped.values()) });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to load value conflicts' });
   }
 });
 
-app.post('/api/opportunities/manual-value', verifyToken, async (req, res) => {
+app.post('/api/opportunities/manual-entry/preview', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
     if (!isDatabaseReady()) {
       return respondDatabaseUnavailable(res);
     }
 
-    const opportunityRefNo = String(req.body?.opportunityRefNo || '').trim();
-    const refKey = normalizeRefKey(opportunityRefNo);
+    const mode = String(req.body?.mode || 'update').trim().toLowerCase();
+    if (!['new', 'update'].includes(mode)) return res.status(400).json({ error: 'Invalid mode' });
+    const payload = buildManualEntryPayload(req.body || {});
+    const refKey = payload.refKey;
     if (!refKey) return res.status(400).json({ error: 'Missing opportunityRefNo' });
+    if (Number.isNaN(payload.opportunityValue)) return res.status(400).json({ error: 'Value must be numeric' });
 
-    const rawValue = req.body?.opportunityValue;
-    const opportunityValue = rawValue === null || rawValue === undefined || rawValue === '' ? null : Number(rawValue);
-    if (opportunityValue !== null && !Number.isFinite(opportunityValue)) {
-      return res.status(400).json({ error: 'Invalid opportunityValue' });
+    const missing = FORM_REQUIRED_FIELDS.filter((fieldKey) => !hasFieldValue(fieldKey, payload[fieldKey]));
+    if (missing.length) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.map((field) => FIELD_LABELS[field] || field).join(', ')}` });
     }
 
-    const existingOpp = await SyncedOpportunity.findOne({ opportunityRefNo }).lean();
-    const sheetValue = existingOpp?.opportunityValue ?? null;
+    const [existingOpp, previousManual] = await Promise.all([
+      SyncedOpportunity.findOne({ opportunityRefNo: payload.opportunityRefNo }).lean(),
+      OpportunityManualUpdate.findOne({ refKey }).lean(),
+    ]);
 
-    await OpportunityManualUpdate.updateOne(
-      { refKey },
-      {
-        $set: {
-          opportunityRefNo,
-          refKey,
-          opportunityValue,
-          opportunityValueSheetSnapshot: sheetValue,
-          updatedBy: req.user?.email || 'unknown',
-        },
-        $setOnInsert: {
-          adnocRftNo: '',
-          tenderName: existingOpp?.tenderName || '',
-          opportunityClassification: existingOpp?.opportunityClassification || '',
-          clientName: existingOpp?.clientName || '',
-          dateTenderReceived: existingOpp?.dateTenderReceived || '',
-          tenderPlannedSubmissionDate: existingOpp?.tenderPlannedSubmissionDate || '',
-        },
-      },
-      { upsert: true }
-    );
+    if (mode === 'new' && existingOpp) return res.status(409).json({ error: 'A row with this Avenir Ref already exists. Use Update.' });
+    if (mode === 'update' && !existingOpp) return res.status(404).json({ error: 'No existing row found. Use New.' });
 
-    res.json({ success: true });
+    const baseline = existingOpp || previousManual || {};
+    const fieldDiffs = FORM_EDITABLE_FIELDS
+      .filter((fieldKey) => fieldKey !== 'opportunityRefNo')
+      .map((fieldKey) => ({
+        fieldKey,
+        fieldLabel: FIELD_LABELS[fieldKey] || fieldKey,
+        previousValue: baseline[fieldKey] ?? null,
+        nextValue: payload[fieldKey] ?? null,
+        changed: !fieldValuesMatch(fieldKey, baseline[fieldKey], payload[fieldKey]),
+        hasExistingValue: hasFieldValue(fieldKey, baseline[fieldKey]),
+      }))
+      .filter((row) => row.changed);
+
+    const overwrites = fieldDiffs.filter((row) => row.hasExistingValue);
+    res.json({
+      success: true,
+      mode,
+      requiresConfirmation: overwrites.length > 0,
+      overwrites,
+      allChanges: fieldDiffs,
+      existingFound: Boolean(existingOpp),
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to save manual value' });
+    res.status(500).json({ error: error.message || 'Failed to preview entry update' });
+  }
+});
+
+app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+
+    const mode = String(req.body?.mode || 'update').trim().toLowerCase();
+    const confirmed = Boolean(req.body?.confirmed);
+    if (!['new', 'update'].includes(mode)) return res.status(400).json({ error: 'Invalid mode' });
+    const payload = buildManualEntryPayload(req.body || {});
+    const refKey = payload.refKey;
+    if (!refKey) return res.status(400).json({ error: 'Missing opportunityRefNo' });
+    if (Number.isNaN(payload.opportunityValue)) return res.status(400).json({ error: 'Value must be numeric' });
+
+    const missing = FORM_REQUIRED_FIELDS.filter((fieldKey) => !hasFieldValue(fieldKey, payload[fieldKey]));
+    if (missing.length) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.map((field) => FIELD_LABELS[field] || field).join(', ')}` });
+    }
+
+    const [existingOpp, previousManual] = await Promise.all([
+      SyncedOpportunity.findOne({ opportunityRefNo: payload.opportunityRefNo }).lean(),
+      OpportunityManualUpdate.findOne({ refKey }).lean(),
+    ]);
+    if (mode === 'new' && existingOpp) return res.status(409).json({ error: 'A row with this Avenir Ref already exists. Use Update.' });
+    if (mode === 'update' && !existingOpp) return res.status(404).json({ error: 'No existing row found. Use New.' });
+
+    const baseline = existingOpp || previousManual || {};
+    const diffs = FORM_EDITABLE_FIELDS
+      .filter((fieldKey) => fieldKey !== 'opportunityRefNo')
+      .map((fieldKey) => ({
+        fieldKey,
+        previousValue: baseline[fieldKey] ?? null,
+        nextValue: payload[fieldKey] ?? null,
+        changed: !fieldValuesMatch(fieldKey, baseline[fieldKey], payload[fieldKey]),
+        hasExistingValue: hasFieldValue(fieldKey, baseline[fieldKey]),
+      }))
+      .filter((row) => row.changed);
+    const overwriteCount = diffs.filter((row) => row.hasExistingValue).length;
+    if (overwriteCount > 0 && !confirmed) {
+      return res.status(409).json({ error: 'Confirmation required for overwrite', confirmationRequired: true });
+    }
+
+    const expiresAt = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000));
+    const actor = buildAuditActor(req);
+    await OpportunityProbation.create({
+      opportunityRefNo: payload.opportunityRefNo,
+      refKey,
+      action: mode,
+      source: 'manual_form',
+      ...actor,
+      changedAt: new Date(),
+      expiresAt,
+      previousSyncedOpportunity: existingOpp || null,
+      previousManualSnapshot: previousManual || null,
+    });
+
+    const syncedPatch = {};
+    FORM_EDITABLE_FIELDS.forEach((fieldKey) => {
+      if (fieldKey === 'opportunityRefNo') return;
+      syncedPatch[fieldKey] = payload[fieldKey];
+    });
+
+    if (mode === 'new') {
+      await SyncedOpportunity.create({
+        opportunityRefNo: payload.opportunityRefNo,
+        ...syncedPatch,
+        rawGraphData: { rowSnapshot: {} },
+      });
+    } else {
+      await SyncedOpportunity.updateOne({ opportunityRefNo: payload.opportunityRefNo }, { $set: syncedPatch });
+    }
+
+    const manualSet = {
+      opportunityRefNo: payload.opportunityRefNo,
+      refKey,
+      updatedBy: req.user?.email || 'unknown',
+    };
+    MANUAL_UPDATE_FIELD_KEYS.forEach((fieldKey) => {
+      manualSet[fieldKey] = payload[fieldKey];
+    });
+    await OpportunityManualUpdate.updateOne({ refKey }, { $set: manualSet }, { upsert: true });
+
+    await OpportunityChangeLog.create({
+      opportunityRefNo: payload.opportunityRefNo,
+      refKey,
+      action: mode === 'new' ? 'manual_new_row' : 'manual_update_row',
+      source: 'manual_form',
+      ...actor,
+      changedAt: new Date(),
+      fieldDiffs: diffs.map((row) => ({
+        fieldKey: row.fieldKey,
+        previousValue: row.previousValue,
+        nextValue: row.nextValue,
+        note: row.hasExistingValue ? 'overwrite' : 'new_value',
+      })),
+    });
+
+    res.json({ success: true, mode, changedFields: diffs.length, overwriteCount });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to save manual entry' });
   }
 });
 
 app.post('/api/opportunities/value-conflicts/resolve', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
-    if (!isDatabaseReady()) {
-      return respondDatabaseUnavailable(res);
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+
+    const decisions = Array.isArray(req.body?.decisions) ? req.body.decisions : [];
+    if (!decisions.length) return res.status(400).json({ error: 'No conflict decisions provided' });
+
+    const actor = buildAuditActor(req);
+    let resolved = 0;
+    for (const decision of decisions) {
+      const conflictId = String(decision?.conflictId || '').trim();
+      const action = String(decision?.action || '').trim();
+      if (!conflictId || !['use_sheet', 'keep_existing'].includes(action)) continue;
+
+      const conflict = await OpportunityFieldConflict.findById(conflictId);
+      if (!conflict || conflict.status !== 'pending') continue;
+
+      const refKey = normalizeRefKey(conflict.refKey || conflict.opportunityRefNo || '');
+      if (!refKey) continue;
+      const manualDoc = await OpportunityManualUpdate.findOne({ refKey });
+      if (!manualDoc) continue;
+
+      const previousManual = manualDoc.toObject();
+      if (action === 'use_sheet') {
+        if (conflict.fieldKey === 'opportunityValue') manualDoc[conflict.fieldKey] = null;
+        else manualDoc[conflict.fieldKey] = '';
+      }
+      manualDoc.updatedBy = req.user?.email || 'unknown';
+      await manualDoc.save();
+
+      conflict.status = 'resolved';
+      conflict.resolvedAt = new Date();
+      conflict.resolvedBy = req.user?.email || 'unknown';
+      conflict.resolutionAction = action;
+      await conflict.save();
+
+      await OpportunityProbation.create({
+        opportunityRefNo: conflict.opportunityRefNo,
+        refKey,
+        action: 'resolve_conflict',
+        source: 'sync_conflict',
+        ...actor,
+        changedAt: new Date(),
+        expiresAt: new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)),
+        previousSyncedOpportunity: null,
+        previousManualSnapshot: previousManual,
+      });
+
+      await OpportunityChangeLog.create({
+        opportunityRefNo: conflict.opportunityRefNo,
+        refKey,
+        action: 'resolve_sync_conflict',
+        source: 'sync_conflict',
+        ...actor,
+        changedAt: new Date(),
+        fieldDiffs: [{
+          fieldKey: conflict.fieldKey,
+          previousValue: previousManual?.[conflict.fieldKey] ?? null,
+          nextValue: action === 'use_sheet' ? conflict.sheetValue : previousManual?.[conflict.fieldKey] ?? null,
+          note: action,
+        }],
+      });
+
+      resolved += 1;
     }
 
-    const action = String(req.body?.action || '').trim();
-    const refKeys = Array.isArray(req.body?.refKeys) ? req.body.refKeys.map((key) => normalizeRefKey(key)).filter(Boolean) : [];
-    if (!['use_sheet', 'keep_manual'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
-    if (!refKeys.length) return res.status(400).json({ error: 'No refKeys provided' });
-
-    const opportunities = await SyncedOpportunity.find({}, { opportunityRefNo: 1, opportunityValue: 1 }).lean();
-    const sheetByRefKey = new Map(
-      opportunities
-        .map((row) => [normalizeRefKey(row?.opportunityRefNo || ''), row?.opportunityValue ?? null])
-        .filter(([ref]) => Boolean(ref))
-    );
-
-    const ops = refKeys.map((refKey) => {
-      const sheetValue = sheetByRefKey.get(refKey) ?? null;
-      return {
-        updateOne: {
-          filter: { refKey },
-          update: {
-            $set: {
-              opportunityValue: action === 'use_sheet' ? null : undefined,
-              opportunityValueSheetSnapshot: sheetValue,
-              updatedBy: req.user?.email || 'unknown',
-            },
-          },
-        },
-      };
-    });
-
-    // Remove undefined fields so we don't accidentally set them.
-    ops.forEach((op) => {
-      const set = op.updateOne.update.$set;
-      Object.keys(set).forEach((key) => {
-        if (set[key] === undefined) delete set[key];
-      });
-    });
-
-    await OpportunityManualUpdate.bulkWrite(ops, { ordered: false });
-
-    res.json({ success: true, resolved: refKeys.length });
+    res.json({ success: true, resolved });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to resolve conflicts' });
   }
@@ -4950,6 +5195,108 @@ app.put('/api/vendors/:id', verifyToken, async (req, res) => {
     return res.json(mapIdField(existing.toObject()));
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/universal-search', verifyToken, async (req, res) => {
+  try {
+    const rawQuery = String(req.query?.q || '').trim();
+    const query = rawQuery.replace(/\s+/g, ' ').trim();
+    if (!query) return res.json({ success: true, query: '', results: [] });
+
+    const limit = Math.min(Math.max(Number(req.query?.limit || 20) || 20, 1), 50);
+    const regexSafe = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const rx = new RegExp(regexSafe, 'i');
+
+    const [opportunities, vendors, clients] = await Promise.all([
+      SyncedOpportunity.find(
+        {
+          $or: [
+            { opportunityRefNo: rx },
+            { tenderName: rx },
+            { clientName: rx },
+            { groupClassification: rx },
+            { opportunityClassification: rx },
+            { internalLead: rx },
+            { avenirStatus: rx },
+            { tenderResult: rx },
+          ],
+        },
+        { opportunityRefNo: 1, tenderName: 1, clientName: 1, avenirStatus: 1 }
+      ).limit(limit).lean(),
+      Vendor.find(
+        {
+          $or: [
+            { companyName: rx },
+            { focusArea: rx },
+            { contactPerson: rx },
+            { emails: rx },
+            { primaryIndustries: rx },
+            { confirmedServices: rx },
+            { partners: rx },
+            { confirmedTechStack: rx },
+            { nonSpecializedTechStack: rx },
+            { certifications: rx },
+            { sampleProjects: rx },
+            { sources: rx },
+            { companySize: rx },
+          ],
+        },
+        { companyName: 1, agreementStatus: 1, focusArea: 1, companySize: 1 }
+      ).limit(limit).lean(),
+      Client.find(
+        {
+          $or: [
+            { companyName: rx },
+            { domain: rx },
+            { group: rx },
+            { 'location.city': rx },
+            { 'location.country': rx },
+            { 'contacts.firstName': rx },
+            { 'contacts.lastName': rx },
+            { 'contacts.email': rx },
+            { 'contacts.phone': rx },
+          ],
+        },
+        { companyName: 1, domain: 1, group: 1, location: 1 }
+      ).limit(limit).lean(),
+    ]);
+
+    const results = [
+      ...opportunities.map((row) => ({
+        type: 'opportunity',
+        id: row._id?.toString?.() || row.opportunityRefNo,
+        key: row.opportunityRefNo,
+        title: row.opportunityRefNo || 'Opportunity',
+        subtitle: [row.tenderName, row.clientName, row.avenirStatus].filter(Boolean).join(' • '),
+        route: '/opportunities',
+        params: { editOpportunityValueRef: row.opportunityRefNo },
+      })),
+      ...vendors.map((row) => ({
+        type: 'vendor',
+        id: row._id?.toString?.() || row.companyName,
+        key: row._id?.toString?.() || row.companyName,
+        title: row.companyName || 'Vendor',
+        subtitle: [row.focusArea, row.companySize, row.agreementStatus].filter(Boolean).join(' • '),
+        route: '/vendors',
+        params: { editVendorId: row._id?.toString?.() || '' },
+      })),
+      ...clients.map((row) => ({
+        type: 'client',
+        id: row._id?.toString?.() || row.companyName,
+        key: row._id?.toString?.() || row.companyName,
+        title: row.companyName || 'Client',
+        subtitle: [row.domain || row.group, row.location?.city, row.location?.country].filter(Boolean).join(' • '),
+        route: '/clients',
+        params: { editClientId: row._id?.toString?.() || '' },
+      })),
+    ]
+      .filter((row) => row?.key)
+      .slice(0, limit * 3);
+
+    res.json({ success: true, query, results });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to search' });
   }
 });
 

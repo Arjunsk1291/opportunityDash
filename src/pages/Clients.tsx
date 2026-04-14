@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Check, Copy, Globe, MapPin, Plus, Search, Upload } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -246,6 +247,8 @@ const CopyButton = ({ value, label }: { value: string; label: string }) => {
 const Clients = () => {
   const { clients, stats, addClient, importClients, updateClient, normalizeCompanyName, isLoading, error } = useClientStore();
   const { canPerformAction } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const canManageClients = canPerformAction('clients_import');
   const canEditClients = canPerformAction('clients_write');
   const [search, setSearch] = useState('');
@@ -265,6 +268,39 @@ const Clients = () => {
     contacts: [{ firstName: '', lastName: '', email: '', phone: '' }],
   });
   const [editClient, setEditClient] = useState<{ id: string; data: ClientInput } | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const editClientId = params.get('editClientId') || '';
+    if (!editClientId) return;
+    if (clients.length === 0) return;
+
+    const match = clients.find((client) => String(client.id || '').trim() === editClientId.trim()) || null;
+    if (!match) return;
+
+    setSelectedClient(match);
+    setIsDetailOpen(false);
+    setEditClient({
+      id: match.id,
+      data: {
+        companyName: match.companyName,
+        group: match.group || '',
+        domain: match.domain || '',
+        city: match.location.city || '',
+        country: match.location.country || '',
+        contacts: match.contacts.map((contact) => ({
+          firstName: contact.firstName || '',
+          lastName: contact.lastName || '',
+          email: contact.email || '',
+          phone: contact.phone || '',
+        })),
+      },
+    });
+    setIsEditOpen(true);
+
+    params.delete('editClientId');
+    navigate({ pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true });
+  }, [clients, location.pathname, location.search, navigate]);
 
   const topFilters = useMemo(() => {
     const domainCounts = new Map<string, number>();

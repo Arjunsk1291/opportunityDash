@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   downloadVendorTemplate,
   exportVendors,
@@ -343,6 +344,8 @@ function CompareBlock({ label, value }: { label: string; value: string }) {
 export default function VendorDirectory() {
   const { isMaster, canPerformAction } = useAuth();
   const { vendors, isLoading, error, addVendor, updateVendor, importVendors } = useVendorStore();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [quickFilters, setQuickFilters] = useState<string[]>([]);
   const [agreementFilter, setAgreementFilter] = useState<AgreementFilter>('ALL');
@@ -360,6 +363,22 @@ export default function VendorDirectory() {
 
   const canAddVendor = canPerformAction('vendors_write');
   const canImportVendors = canPerformAction('vendors_import');
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const editVendorId = params.get('editVendorId') || '';
+    if (!editVendorId) return;
+    if (vendors.length === 0) return;
+
+    const match = vendors.find((vendor) => String(vendor.id || '').trim() === editVendorId.trim()) || null;
+    if (!match) return;
+
+    setSelectedVendor(match);
+    setEditOpen(true);
+
+    params.delete('editVendorId');
+    navigate({ pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true });
+  }, [location.pathname, location.search, navigate, vendors]);
 
   const searchTerms = useMemo(() => {
     const queryTerms = search.split(/\s+/).map((term) => term.trim()).filter(Boolean);
