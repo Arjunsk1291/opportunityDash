@@ -900,13 +900,14 @@ const Analytics = () => {
       ? filters.groups[0]
       : `${filters.groups.length} Verticals`;
   const groupedBuckets = useMemo(() => {
-    const activeGroups: OpportunityGroup[] = [];
+    const openOtherGroups: OpportunityGroup[] = [];
     const submittedGroups: OpportunityGroup[] = [];
     const regrettedGroups: OpportunityGroup[] = [];
     const wonGroups: OpportunityGroup[] = [];
     const holdGroups: OpportunityGroup[] = [];
     const lostGroups: OpportunityGroup[] = [];
     const noDecisionGroups: OpportunityGroup[] = [];
+    const activeGroups: OpportunityGroup[] = [];
 
     groupedOpportunities.forEach((group) => {
       const status = getGroupStatus(group);
@@ -937,8 +938,8 @@ const Analytics = () => {
         return;
       }
 
-      // Default bucket keeps the KPI set exhaustive (value = sum of surrounding buckets).
-      activeGroups.push(group);
+      // Open statuses that don't fall into the above outcomes.
+      openOtherGroups.push(group);
     });
 
     const groupRows = (groups: OpportunityGroup[]) => (
@@ -957,13 +958,16 @@ const Analytics = () => {
 
     const sumValue = (groups: OpportunityGroup[]) => groups.reduce((sum, group) => sum + getGroupValue(group), 0);
 
-    const valueTotal = sumValue(activeGroups)
+    const valueTotal = sumValue(openOtherGroups)
       + sumValue(submittedGroups)
       + sumValue(regrettedGroups)
       + sumValue(wonGroups)
       + sumValue(holdGroups)
       + sumValue(lostGroups)
       + sumValue(noDecisionGroups);
+
+    // Active = everything except lost/hold/regretted/won (deduped at group level).
+    activeGroups.push(...openOtherGroups, ...submittedGroups, ...noDecisionGroups);
 
     return {
       active: { groups: activeGroups, rows: groupRows(activeGroups), ...countJourneyTypes(activeGroups), value: sumValue(activeGroups) },
@@ -1039,15 +1043,6 @@ const Analytics = () => {
       onClick: () => openDrilldown('Value (Unique Tenders)', groupedOpportunities.map((group) => group.primary).filter(Boolean) as Opportunity[]),
     },
     {
-      label: 'Regretted',
-      value: groupedBuckets.regretted.groups.length,
-      tone: 'text-slate-700',
-      glow: 'analytics-kpi-glow-amber',
-      icon: ThumbsDown,
-      sparkline: [groupedBuckets.regretted.value, groupedBuckets.lost.value, groupedBuckets.regretted.groups.length, Math.max(groupedBuckets.regretted.groups.length - 1, 0)],
-      onClick: () => openDrilldown('Regretted', groupedBuckets.regretted.rows),
-    },
-    {
       label: 'Won',
       value: groupedBuckets.won.groups.length,
       tone: 'text-emerald-600',
@@ -1055,6 +1050,15 @@ const Analytics = () => {
       icon: Trophy,
       sparkline: [groupedBuckets.won.value, groupedBuckets.won.groups.length, groupedBuckets.won.groups.length, Math.max(groupedBuckets.won.groups.length - 1, 0)],
       onClick: () => openDrilldown('Won', groupedBuckets.won.rows),
+    },
+    {
+      label: 'Regretted',
+      value: groupedBuckets.regretted.groups.length,
+      tone: 'text-slate-700',
+      glow: 'analytics-kpi-glow-amber',
+      icon: ThumbsDown,
+      sparkline: [groupedBuckets.regretted.value, groupedBuckets.lost.value, groupedBuckets.regretted.groups.length, Math.max(groupedBuckets.regretted.groups.length - 1, 0)],
+      onClick: () => openDrilldown('Regretted', groupedBuckets.regretted.rows),
     },
     {
       label: 'Hold / Closed',
