@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, Sankey } from 'recharts';
-import { AlertTriangle, BarChart3, BriefcaseBusiness, Building2, CalendarDays, FileCheck2, Plus, Search, Upload, Users } from 'lucide-react';
+import { AlertTriangle, BarChart3, BriefcaseBusiness, Building2, CalendarDays, Database, FileCheck2, Plus, Search, Upload, Users } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
