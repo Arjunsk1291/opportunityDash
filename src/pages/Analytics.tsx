@@ -907,7 +907,7 @@ const Analytics = () => {
     const holdGroups: OpportunityGroup[] = [];
     const lostGroups: OpportunityGroup[] = [];
     const noDecisionGroups: OpportunityGroup[] = [];
-    const activeGroups: OpportunityGroup[] = [];
+    const receivedGroups: OpportunityGroup[] = [...groupedOpportunities];
 
     groupedOpportunities.forEach((group) => {
       const status = getGroupStatus(group);
@@ -930,10 +930,7 @@ const Analytics = () => {
         return;
       }
       if (status === 'SUBMITTED') {
-        if (isNoDecision) {
-          noDecisionGroups.push(group);
-          return;
-        }
+        if (isNoDecision) noDecisionGroups.push(group);
         submittedGroups.push(group);
         return;
       }
@@ -966,12 +963,12 @@ const Analytics = () => {
       + sumValue(lostGroups)
       + sumValue(noDecisionGroups);
 
-    // Active = everything except lost/hold/regretted/won (deduped at group level).
-    activeGroups.push(...openOtherGroups, ...submittedGroups, ...noDecisionGroups);
+    // Submitted KPI = everything except regretted/hold/lost/won (deduped at group level).
+    const activeSubmittedGroups = [...openOtherGroups, ...submittedGroups];
 
     return {
-      active: { groups: activeGroups, rows: groupRows(activeGroups), ...countJourneyTypes(activeGroups), value: sumValue(activeGroups) },
-      submitted: { groups: submittedGroups, rows: groupRows(submittedGroups), ...countJourneyTypes(submittedGroups), value: sumValue(submittedGroups) },
+      received: { groups: receivedGroups, rows: groupRows(receivedGroups), ...countJourneyTypes(receivedGroups), value: sumValue(receivedGroups) },
+      submitted: { groups: activeSubmittedGroups, rows: groupRows(activeSubmittedGroups), ...countJourneyTypes(activeSubmittedGroups), value: sumValue(activeSubmittedGroups) },
       value: { total: valueTotal },
       regretted: { groups: regrettedGroups, rows: groupRows(regrettedGroups), value: sumValue(regrettedGroups) },
       won: { groups: wonGroups, rows: groupRows(wonGroups), value: sumValue(wonGroups) },
@@ -1002,17 +999,18 @@ const Analytics = () => {
 
   const kpiCards: KpiCard[] = [
     {
-      label: 'Active',
-      value: groupedBuckets.active.groups.length,
+      label: 'Recieved',
+      value: groupedBuckets.received.groups.length,
+      totalLabel: 'Active Active',
       meta: [
-        { label: 'Tender', value: groupedBuckets.active.tender, tone: 'bg-blue-500' },
-        { label: 'EOI', value: groupedBuckets.active.eoi, tone: 'bg-amber-500' },
+        { label: 'Tender', value: groupedBuckets.received.tender, tone: 'bg-blue-500' },
+        { label: 'EOI', value: groupedBuckets.received.eoi, tone: 'bg-amber-500' },
       ],
       tone: 'text-sky-600',
       glow: 'analytics-kpi-glow-sky',
       icon: Target,
-      sparkline: [groupedBuckets.active.tender, groupedBuckets.active.eoi, groupedBuckets.active.groups.length, Math.max(groupedBuckets.active.groups.length - 1, 0)],
-      onClick: () => openDrilldown('Active', groupedBuckets.active.rows),
+      sparkline: [groupedBuckets.received.tender, groupedBuckets.received.eoi, groupedBuckets.received.groups.length, Math.max(groupedBuckets.received.groups.length - 1, 0)],
+      onClick: () => openDrilldown('Recieved', groupedBuckets.received.rows),
     },
     {
       label: 'Submitted',
@@ -1026,37 +1024,6 @@ const Analytics = () => {
       icon: Send,
       sparkline: [groupedBuckets.submitted.tender, groupedBuckets.submitted.eoi, groupedBuckets.submitted.groups.length, Math.max(groupedBuckets.submitted.groups.length - 1, 0)],
       onClick: () => openDrilldown('Submitted', groupedBuckets.submitted.rows),
-    },
-    {
-      label: 'Value',
-      value: groupedBuckets.won.value,
-      valueFormat: (next: number) => formatCompactCurrencyNumber(next),
-      valuePrefix: currency === 'AED'
-        ? { kind: 'img', src: aedSymbolUrl, alt: 'AED' }
-        : { kind: 'text', text: '$' },
-      totalLabel: `Total ${currency === 'AED' ? 'AED ' : '$'}${formatCompactCurrencyNumber(groupedBuckets.won.value)}`,
-      chip: 'Awarded only',
-      tone: 'text-violet-600',
-      glow: 'analytics-kpi-glow-emerald',
-      icon: CurrencyHeaderIcon,
-      sparkline: [groupedBuckets.submitted.value, groupedBuckets.won.value, groupedBuckets.won.value, groupedBuckets.won.value * 0.85],
-      onClick: () => {
-        setFilters((prev) => ({
-          ...prev,
-          statuses: ['AWARDED'],
-          excludeLostOutcomes: false,
-        }));
-        openDrilldown('Awarded Value', groupedBuckets.won.rows);
-      },
-    },
-    {
-      label: 'Won',
-      value: groupedBuckets.won.groups.length,
-      tone: 'text-emerald-600',
-      glow: 'analytics-kpi-glow-emerald',
-      icon: Trophy,
-      sparkline: [groupedBuckets.won.value, groupedBuckets.won.groups.length, groupedBuckets.won.groups.length, Math.max(groupedBuckets.won.groups.length - 1, 0)],
-      onClick: () => openDrilldown('Won', groupedBuckets.won.rows),
     },
     {
       label: 'Regretted',
@@ -1086,14 +1053,35 @@ const Analytics = () => {
       onClick: () => openDrilldown('Lost', groupedBuckets.lost.rows),
     },
     {
-      label: 'No Decision',
-      value: groupedBuckets.noDecision.groups.length,
-      chip: selectedGroup === 'GTS' ? 'Submitted with no post-bid detail yet' : 'Only shown for GTS scope',
-      tone: 'text-amber-600',
-      glow: 'analytics-kpi-glow-amber',
-      icon: Clock3,
-      sparkline: [groupedBuckets.noDecision.value, groupedBuckets.noDecision.groups.length, groupedBuckets.noDecision.groups.length, groupedBuckets.noDecision.groups.length * 0.85],
-      onClick: () => openDrilldown('No Decision', groupedBuckets.noDecision.rows),
+      label: 'Won',
+      value: groupedBuckets.won.groups.length,
+      tone: 'text-emerald-600',
+      glow: 'analytics-kpi-glow-emerald',
+      icon: Trophy,
+      sparkline: [groupedBuckets.won.value, groupedBuckets.won.groups.length, groupedBuckets.won.groups.length, Math.max(groupedBuckets.won.groups.length - 1, 0)],
+      onClick: () => openDrilldown('Won', groupedBuckets.won.rows),
+    },
+    {
+      label: 'Value',
+      value: groupedBuckets.won.value,
+      valueFormat: (next: number) => formatCompactCurrencyNumber(next),
+      valuePrefix: currency === 'AED'
+        ? { kind: 'img', src: aedSymbolUrl, alt: 'AED' }
+        : { kind: 'text', text: '$' },
+      totalLabel: `Total ${currency === 'AED' ? 'AED ' : '$'}${formatCompactCurrencyNumber(groupedBuckets.won.value)}`,
+      chip: 'Awarded only',
+      tone: 'text-violet-600',
+      glow: 'analytics-kpi-glow-emerald',
+      icon: CurrencyHeaderIcon,
+      sparkline: [groupedBuckets.submitted.value, groupedBuckets.won.value, groupedBuckets.won.value, groupedBuckets.won.value * 0.85],
+      onClick: () => {
+        setFilters((prev) => ({
+          ...prev,
+          statuses: ['AWARDED'],
+          excludeLostOutcomes: false,
+        }));
+        openDrilldown('Awarded Value', groupedBuckets.won.rows);
+      },
     },
   ];
 
