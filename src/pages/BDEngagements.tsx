@@ -28,10 +28,8 @@ import {
   BDEngagement,
   MEETING_TYPES,
   createBDEngagementId,
-  loadBDEngagements,
-  resetBDEngagements,
-  saveBDEngagements,
 } from '@/lib/bdEngagements';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 type MeetingTypeOption = typeof MEETING_TYPES[number];
 
@@ -148,7 +146,7 @@ const chartLinkFill = 'hsl(var(--primary))';
 const BULK_ADD_ACCESS_KEY = 'bd_engagement_bulk_add_access';
 
 const BDEngagements = () => {
-  const { isAdmin, isMaster, user } = useAuth();
+  const { isAdmin, isMaster, user, token } = useAuth();
   const [rows, setRows] = useState<BDEngagement[]>([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [meetingTypeFilter, setMeetingTypeFilter] = useState<string>('ALL');
@@ -243,10 +241,26 @@ const BDEngagements = () => {
     });
   };
 
-  const handleBulkAdd = () => {
+  const createEngagement = async (row: BDEngagement) => {
+    if (!token) throw new Error('Missing auth token');
+    const response = await fetch(`${API_URL}/bd-engagements`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(row),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data?.error || 'Failed to create BD engagement');
+    return data?.row as BDEngagement;
+  };
+
+  const handleBulkAdd = async () => {
     try {
       const newRows = parseBulkRows(bulkText);
-      setRows((current) => [...newRows, ...current]);
+      const createdRows = await Promise.all(newRows.map((row) => createEngagement(row)));
+      setRows((current) => [...createdRows, ...current]);
       setBulkText('');
       setBulkDialogOpen(false);
       toast.success(`Added ${newRows.length} engagement${newRows.length === 1 ? '' : 's'}.`);
@@ -445,7 +459,8 @@ const BDEngagements = () => {
         throw new Error('No valid engagement rows found. Check the template headers and required fields.');
       }
 
-      setRows((current) => [...parsedRows, ...current]);
+      const createdRows = await Promise.all(parsedRows.map((row) => createEngagement(row)));
+      setRows((current) => [...createdRows, ...current]);
       toast.success(`Uploaded ${parsedRows.length} engagement${parsedRows.length === 1 ? '' : 's'}.`);
       setUploadReport({
         title: 'Bulk Upload Report',
@@ -463,9 +478,25 @@ const BDEngagements = () => {
   };
 
   useEffect(() => {
-    const initialRows = loadBDEngagements();
-    setRows(initialRows);
-    setSelectedClient(initialRows[0]?.clientName || '');
+    const loadFromDb = async () => {
+      if (!token) return;
+      try {
+        const response = await fetch(`${API_URL}/bd-engagements`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data?.error || 'Failed to load BD engagements');
+        const initialRows = Array.isArray(data) ? data : [];
+        setRows(initialRows);
+        setSelectedClient(initialRows[0]?.clientName || '');
+      } catch (error) {
+        console.error('Failed to load BD engagements from DB:', error);
+        setRows(BD_ENGAGEMENTS_SEED);
+      }
+    };
+
+    loadFromDb();
+
     if (typeof window !== 'undefined') {
       const raw = window.localStorage.getItem(BULK_ADD_ACCESS_KEY);
       if (raw) {
@@ -479,12 +510,7 @@ const BDEngagements = () => {
         }
       }
     }
-  }, []);
-
-  useEffect(() => {
-    if (!rows.length) return;
-    saveBDEngagements(rows);
-  }, [rows]);
+  }, [token]);
 
   const uniqueClientNames = useMemo(
     () => Array.from(new Set(rows.map((row) => row.clientName).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
@@ -682,29 +708,82 @@ const BDEngagements = () => {
     setDialogOpen(true);
   };
 
-  const saveRow = () => {
+  const saveRow = async () => {
     if (!form.ref.trim() || !form.date || !form.clientName.trim() || !form.meetingType.trim()) return;
     const nextRow = buildRowFromForm(form, editingRow || undefined);
-    setRows((current) => {
-      const nextRows = editingRow
-        ? current.map((row) => (row.id === editingRow.id ? nextRow : row))
-        : [nextRow, ...current];
-      return nextRows.sort((a, b) => sortByDateDesc(a.date, b.date));
-    });
-    setDialogOpen(false);
+    if (!token) {
+      toast.error('Missing auth token');
+      return;
+    }
+    try {
+      if (editingRow?._id || editingRow?.id) {
+        const response = await fetch(`${API_URL}/bd-engagements/${editingRow._id || editingRow.id}`, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(nextRow),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data?.error || 'Failed to update engagement');
+        setRows((current) => current.map((row) => ((row as unknown as { _id?: string })._id === (editingRow as unknown as { _id?: string })._id || row.id === editingRow.id ? data.row : row)));
+      } else {
+        const created = await createEngagement(nextRow);
+        setRows((current) => [created, ...current]);
+      }
+      setRows((current) => [...current].sort((a, b) => sortByDateDesc(a.date, b.date)));
+      setDialogOpen(false);
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to save engagement');
+    }
   };
 
-  const resetSeedData = () => {
-    const seed = resetBDEngagements();
-    setRows(seed);
-    setSelectedClient('');
-    toast.success('BD engagements cleared from local DB.');
+  const resetSeedData = async () => {
+    if (!token) {
+      toast.error('Missing auth token');
+      return;
+    }
+    try {
+      const response = await fetch(`${API_URL}/bd-engagements/clear`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || 'Failed to clear BD engagements');
+      setRows([]);
+      setSelectedClient('');
+      toast.success('BD engagements cleared from DB.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to clear BD engagements');
+    }
   };
 
-  const deleteRow = () => {
+  const deleteRow = async () => {
     if (!deleteTarget) return;
-    setRows((current) => current.filter((row) => row.id !== deleteTarget.id));
-    setDeleteTarget(null);
+    if (!token) {
+      toast.error('Missing auth token');
+      return;
+    }
+    try {
+      const targetId = (deleteTarget as unknown as { _id?: string })._id || deleteTarget.id;
+      const response = await fetch(`${API_URL}/bd-engagements/${targetId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || 'Failed to delete engagement');
+      setRows((current) => current.filter((row) => {
+        const rowId = (row as unknown as { _id?: string })._id || row.id;
+        return rowId !== targetId;
+      }));
+      setDeleteTarget(null);
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to delete engagement');
+    }
   };
 
   const statCards = [
