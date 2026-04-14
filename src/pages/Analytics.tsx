@@ -1029,18 +1029,25 @@ const Analytics = () => {
     },
     {
       label: 'Value',
-      value: groupedBuckets.value.total,
+      value: groupedBuckets.won.value,
       valueFormat: (next: number) => formatCompactCurrencyNumber(next),
       valuePrefix: currency === 'AED'
         ? { kind: 'img', src: aedSymbolUrl, alt: 'AED' }
         : { kind: 'text', text: '$' },
-      totalLabel: `Total ${currency === 'AED' ? 'AED ' : '$'}${formatCompactCurrencyNumber(groupedBuckets.value.total)}`,
-      chip: 'Sum of the surrounding status buckets',
+      totalLabel: `Total ${currency === 'AED' ? 'AED ' : '$'}${formatCompactCurrencyNumber(groupedBuckets.won.value)}`,
+      chip: 'Awarded only',
       tone: 'text-violet-600',
       glow: 'analytics-kpi-glow-emerald',
       icon: CurrencyHeaderIcon,
-      sparkline: [groupedBuckets.submitted.value, groupedBuckets.won.value, groupedBuckets.value.total, groupedBuckets.value.total * 0.85],
-      onClick: () => openDrilldown('Value (Unique Tenders)', groupedOpportunities.map((group) => group.primary).filter(Boolean) as Opportunity[]),
+      sparkline: [groupedBuckets.submitted.value, groupedBuckets.won.value, groupedBuckets.won.value, groupedBuckets.won.value * 0.85],
+      onClick: () => {
+        setFilters((prev) => ({
+          ...prev,
+          statuses: ['AWARDED'],
+          excludeLostOutcomes: false,
+        }));
+        openDrilldown('Awarded Value', groupedBuckets.won.rows);
+      },
     },
     {
       label: 'Won',
