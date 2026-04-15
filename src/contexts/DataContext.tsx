@@ -72,10 +72,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const refreshPromise = (async () => {
       const totalStart = performance.now();
+      const url = API_URL + '/opportunities';
+      const route = typeof window !== 'undefined' ? window.location.pathname : 'unknown';
+      const trigger = isBackground ? 'background' : 'foreground';
       try {
-        console.log('🔄 Loading opportunities from MongoDB...');
+        console.log(`🔄 Loading opportunities from MongoDB... route=${route} trigger=${trigger}`);
         const fetchStart = performance.now();
-        const response = await fetch(API_URL + '/opportunities', {
+        const response = await fetch(url, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
@@ -88,34 +91,99 @@ export function DataProvider({ children }: { children: ReactNode }) {
           throw new Error('HTTP ' + response.status + ': ' + response.statusText);
         }
 
-        const transformStart = performance.now();
+        const parseStart = performance.now();
         const data = await response.json();
+        const parseEnd = performance.now();
         console.log('✅ Loaded ' + data.length + ' opportunities from MongoDB');
         
         // ✅ UPDATED: Filter out opportunities with empty opportunityRefNo
+        const filterStart = performance.now();
         const validData = (data as OpportunityApiRecord[]).filter((opp) => (
           opp.opportunityRefNo
           && opp.opportunityRefNo.trim() !== ''
           && !shouldHideOpportunity(opp)
         ));
+        const filterEnd = performance.now();
         
+        const mapStart = performance.now();
         const dataWithIds = validData.map((opp) => ({
           ...opp,
           id: opp.id || opp._id || opp.opportunityRefNo,
           isAtRisk: computeSubmissionNear(opp),
         }));
+        const mapEnd = performance.now();
         
         // Log filtered count
         if (validData.length < data.length) {
           console.log(`⚠️  Filtered out ${data.length - validData.length} opportunities with empty refNo or hidden groups`);
         }
         
+        const stateStart = performance.now();
         setOpportunities(dataWithIds as Opportunity[]);
-        const transformEnd = performance.now();
-        const totalMs = Math.round(transformEnd - totalStart);
+        const stateEnd = performance.now();
+        const totalEnd = performance.now();
+        const totalMs = Math.round(totalEnd - totalStart);
         const fetchMs = Math.round(fetchEnd - fetchStart);
-        const transformMs = Math.round(transformEnd - transformStart);
-        console.log(`⏱️ Opportunities load time: total=${totalMs}ms (network=${fetchMs}ms, processing=${transformMs}ms)`);
+        const parseMs = Math.round(parseEnd - parseStart);
+        const filterMs = Math.round(filterEnd - filterStart);
+        const mapMs = Math.round(mapEnd - mapStart);
+        const stateMs = Math.round(stateEnd - stateStart);
+        const processingMs = Math.round(totalEnd - parseStart);
+
+        const backendTotalMs = Number(response.headers.get('X-Opps-Total-Ms') || 0);
+        const backendAuthMs = Number(response.headers.get('X-Opps-Auth-Ms') || 0);
+        const backendFetchMs = Number(response.headers.get('X-Opps-Fetch-Ms') || 0);
+        const backendMergeMs = Number(response.headers.get('X-Opps-Merge-Ms') || 0);
+        const backendMapMs = Number(response.headers.get('X-Opps-Map-Ms') || 0);
+        const backendFetchOppsMs = Number(response.headers.get('X-Opps-Fetch-Opps-Ms') || 0);
+        const backendFetchManualMs = Number(response.headers.get('X-Opps-Fetch-Manual-Ms') || 0);
+        const backendFetchConflictsMs = Number(response.headers.get('X-Opps-Fetch-Conflicts-Ms') || 0);
+
+        const performanceEntries = performance.getEntriesByName(url);
+        const resourceEntry = performanceEntries.length
+          ? performanceEntries[performanceEntries.length - 1] as PerformanceResourceTiming
+          : null;
+        const ttfbMs = resourceEntry ? Math.round(resourceEntry.responseStart - resourceEntry.requestStart) : -1;
+        const downloadMs = resourceEntry ? Math.round(resourceEntry.responseEnd - resourceEntry.responseStart) : -1;
+        const transferSize = resourceEntry?.transferSize ?? 0;
+        const encodedBodySize = resourceEntry?.encodedBodySize ?? 0;
+        const decodedBodySize = resourceEntry?.decodedBodySize ?? 0;
+
+        console.log(`⏱️ Opportunities load time: total=${totalMs}ms (network=${fetchMs}ms, processing=${processingMs}ms)`);
+        console.log('[perf.opportunities.detail]', {
+          route,
+          trigger,
+          rowsRaw: Array.isArray(data) ? data.length : 0,
+          rowsKept: dataWithIds.length,
+          frontend: {
+            totalMs,
+            fetchMs,
+            parseMs,
+            filterMs,
+            mapMs,
+            stateSetMs: stateMs,
+            processingMs,
+          },
+          browserNetwork: {
+            ttfbMs,
+            downloadMs,
+            transferSize,
+            encodedBodySize,
+            decodedBodySize,
+          },
+          backend: {
+            totalMs: backendTotalMs,
+            authMs: backendAuthMs,
+            fetchMs: backendFetchMs,
+            mergeMs: backendMergeMs,
+            mapMs: backendMapMs,
+            fetchBreakdownMs: {
+              opportunities: backendFetchOppsMs,
+              manual: backendFetchManualMs,
+              conflicts: backendFetchConflictsMs,
+            },
+          },
+        });
         setLastSyncTime(new Date());
         setError(null);
         hasLoadedOnceRef.current = true;

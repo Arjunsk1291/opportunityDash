@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { DataProvider } from "@/contexts/DataContext";
 import { CurrencyProvider } from "@/contexts/CurrencyContext";
@@ -56,6 +57,7 @@ function AppRoutes() {
 
   return (
     <BrowserRouter>
+      <RoutePerfLogger />
       <Routes>
         <Route
           path="/auth/callback"
@@ -103,6 +105,23 @@ function AppRoutes() {
       </Routes>
     </BrowserRouter>
   );
+}
+
+function RoutePerfLogger() {
+  const location = useLocation();
+
+  React.useEffect(() => {
+    const startedAt = performance.now();
+    const path = location.pathname;
+    const onNextFrame = () => {
+      const frameMs = Math.round(performance.now() - startedAt);
+      console.log('[perf.route]', { path, frameMs, timestamp: new Date().toISOString() });
+    };
+    const raf = window.requestAnimationFrame(onNextFrame);
+    return () => window.cancelAnimationFrame(raf);
+  }, [location.pathname]);
+
+  return null;
 }
 
 const App = () => (

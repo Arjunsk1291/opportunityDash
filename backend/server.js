@@ -2353,6 +2353,7 @@ async function ensureInitialMongoState() {
 }
 
 const verifyToken = async (req, res, next) => {
+  const startedAt = Date.now();
   try {
     if (!isDatabaseReady()) {
       return respondDatabaseUnavailable(res);
@@ -2385,7 +2386,7 @@ const verifyToken = async (req, res, next) => {
         assignedGroup: user.assignedGroup || null,
         userId: user._id,
       };
-
+      req.authVerifyMs = Date.now() - startedAt;
       return next();
     }
 
@@ -2410,7 +2411,7 @@ const verifyToken = async (req, res, next) => {
       assignedGroup: user.assignedGroup || null,
       userId: user._id,
     };
-
+    req.authVerifyMs = Date.now() - startedAt;
     next();
   } catch (error) {
     console.error('Username verification error:', error.message);
@@ -4905,13 +4906,32 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
     }
 
     const fetchStartedAt = Date.now();
-    const [opportunities, manualValueUpdates, pendingConflicts] = await Promise.all([
-      SyncedOpportunity.find({}, { rawGoogleData: 0, __v: 0 }).lean(),
-      OpportunityManualUpdate.find({}, { _id: 0 }).lean(),
-      OpportunityFieldConflict.find({ status: 'pending' }, { refKey: 1, fieldKey: 1 }).lean(),
+    const [opportunitiesResult, manualResult, conflictsResult] = await Promise.all([
+      (async () => {
+        const startedAt = Date.now();
+        const rows = await SyncedOpportunity.find({}, { rawGoogleData: 0, __v: 0 }).lean();
+        return { rows, ms: Date.now() - startedAt };
+      })(),
+      (async () => {
+        const startedAt = Date.now();
+        const rows = await OpportunityManualUpdate.find({}, { _id: 0 }).lean();
+        return { rows, ms: Date.now() - startedAt };
+      })(),
+      (async () => {
+        const startedAt = Date.now();
+        const rows = await OpportunityFieldConflict.find({ status: 'pending' }, { refKey: 1, fieldKey: 1 }).lean();
+        return { rows, ms: Date.now() - startedAt };
+      })(),
     ]);
     const fetchCompletedAt = Date.now();
+    const opportunities = opportunitiesResult.rows;
+    const manualValueUpdates = manualResult.rows;
+    const pendingConflicts = conflictsResult.rows;
+    const oppFetchMs = opportunitiesResult.ms;
+    const manualFetchMs = manualResult.ms;
+    const conflictsFetchMs = conflictsResult.ms;
 
+    const mergeStartedAt = Date.now();
     const manualByRefKey = new Map(
       manualValueUpdates
         .map((row) => [normalizeRefKey(row?.opportunityRefNo || row?.refKey || ''), row])
@@ -4924,6 +4944,7 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
       if (!conflictByRef.has(ref)) conflictByRef.set(ref, []);
       conflictByRef.get(ref).push(row.fieldKey);
     });
+    const mergeCompletedAt = Date.now();
 
     const mapStartedAt = Date.now();
     const mapped = opportunities.map((opp) => {
@@ -4949,14 +4970,28 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
     const mapCompletedAt = Date.now();
     const totalMs = Date.now() - endpointStartedAt;
     const fetchMs = fetchCompletedAt - fetchStartedAt;
+    const mergeMs = mergeCompletedAt - mergeStartedAt;
     const mapMs = mapCompletedAt - mapStartedAt;
+    const authMs = Number(req.authVerifyMs || 0);
     res.setHeader('X-Opps-Total-Ms', String(totalMs));
+    res.setHeader('X-Opps-Auth-Ms', String(authMs));
     res.setHeader('X-Opps-Fetch-Ms', String(fetchMs));
+    res.setHeader('X-Opps-Merge-Ms', String(mergeMs));
     res.setHeader('X-Opps-Map-Ms', String(mapMs));
+    res.setHeader('X-Opps-Fetch-Opps-Ms', String(oppFetchMs));
+    res.setHeader('X-Opps-Fetch-Manual-Ms', String(manualFetchMs));
+    res.setHeader('X-Opps-Fetch-Conflicts-Ms', String(conflictsFetchMs));
     console.log('[api.opportunities.timing]', JSON.stringify({
       totalMs,
+      authMs,
       fetchMs,
+      mergeMs,
       mapMs,
+      fetchBreakdownMs: {
+        opportunities: oppFetchMs,
+        manual: manualFetchMs,
+        conflicts: conflictsFetchMs,
+      },
       rows: mapped.length,
       timestamp: new Date().toISOString(),
     }));
