@@ -7,6 +7,23 @@ import { ReportIssueButton } from "@/components/ReportIssueButton";
 export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => {
   const { loading, loginInProgress, isAuthenticated, login } = React.useContext(AuthContext);
   const isPopupWindow = typeof window !== "undefined" && window.opener && window.opener !== window;
+  const isMsalCallbackWindow = typeof window !== "undefined"
+    && window.location.pathname === "/auth/callback"
+    && /(?:^#|&)(code|error)=/.test(window.location.hash || "");
+
+  React.useEffect(() => {
+    if (!isMsalCallbackWindow) return;
+    const closeAttempt = () => {
+      try {
+        window.close();
+      } catch {
+        // Ignore close failures; fallback UI is shown below.
+      }
+    };
+    closeAttempt();
+    const timer = window.setTimeout(closeAttempt, 250);
+    return () => window.clearTimeout(timer);
+  }, [isMsalCallbackWindow]);
 
   if (loading) {
     return (
@@ -28,7 +45,7 @@ export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => 
   }
 
   if (!isAuthenticated) {
-    if (isPopupWindow) {
+    if (isPopupWindow || isMsalCallbackWindow) {
       return (
         <>
           <AuthScene title="Completing Sign-In">
