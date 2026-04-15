@@ -93,7 +93,11 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       authDebug("login.popup.success");
     } catch (e: any) {
       console.warn("[auth.msal] login.popup.failed", e);
-      if (e?.errorCode === "popup_window_error" || e?.errorCode === "user_cancelled") {
+      if (e?.errorCode === "user_cancelled") {
+        authDebug("login.popup.dismissed", { errorCode: e?.errorCode || "unknown" });
+        return;
+      }
+      if (e?.errorCode === "popup_window_error") {
         authDebug("login.redirect.fallback", { errorCode: e?.errorCode || "unknown" });
         msalInstance.loginRedirect(loginRequest);
         return;
