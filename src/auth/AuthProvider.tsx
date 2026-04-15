@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { getMsalInstance } from "./msalClient";
 import { loginRequest } from "./msalConfig";
 
@@ -24,7 +24,6 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginInProgress, setLoginInProgress] = useState(false);
   const [accountUpn, setAccountUpn] = useState<string | undefined>(undefined);
-  const loginLockRef = useRef(false);
   const authDebug = React.useCallback((message: string, details?: Record<string, unknown>) => {
     if (details) {
       console.info(`[auth.msal] ${message}`, details);
@@ -81,58 +80,20 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     setIsAuthenticated(false);
     setAccountUpn(undefined);
     window.dispatchEvent(new CustomEvent("msal:user", { detail: { username: null } }));
-    msalInstance.logoutPopup({ account })
-      .then(() => authDebug("logout.popup.success"))
-      .catch((error) => {
-        console.warn("[auth.msal] logout.popup.failed", error);
-        msalInstance.logoutRedirect({ account });
-      });
+    msalInstance.logoutRedirect({ account });
   }, [authDebug]);
 
   const login = useCallback(async () => {
-    if (loginLockRef.current) return;
-    loginLockRef.current = true;
+    if (loginInProgress) return;
     setLoginInProgress(true);
     const msalInstance = getMsalInstance();
-    authDebug("login.popup.start");
+    authDebug("login.redirect.start");
     try {
-      await msalInstance.loginPopup(loginRequest);
-      authDebug("login.popup.success");
-    } catch (e: any) {
-      console.warn("[auth.msal] login.popup.failed", e);
-      if (e?.errorCode === "user_cancelled") {
-        const recoveredAccount = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
-        if (recoveredAccount) {
-          msalInstance.setActiveAccount(recoveredAccount);
-          setIsAuthenticated(true);
-          setAccountUpn(recoveredAccount.username);
-          window.dispatchEvent(new CustomEvent("msal:user", { detail: { username: recoveredAccount.username } }));
-          authDebug("login.popup.recovered", { account: recoveredAccount.username });
-          return;
-        }
-        authDebug("login.redirect.fallback", { errorCode: e?.errorCode || "unknown" });
-        msalInstance.loginRedirect(loginRequest);
-        return;
-      }
-      if (e?.errorCode === "popup_window_error") {
-        authDebug("login.redirect.fallback", { errorCode: e?.errorCode || "unknown" });
-        msalInstance.loginRedirect(loginRequest);
-        return;
-      }
-      throw e;
+      await msalInstance.loginRedirect(loginRequest);
     } finally {
-      loginLockRef.current = false;
       setLoginInProgress(false);
     }
-    const acct = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
-    if (acct) {
-      msalInstance.setActiveAccount(acct);
-      setIsAuthenticated(true);
-      setAccountUpn(acct.username);
-      window.dispatchEvent(new CustomEvent("msal:user", { detail: { username: acct.username } }));
-      authDebug("login.complete", { account: acct.username });
-    }
-  }, [authDebug]);
+  }, [authDebug, loginInProgress]);
 
   const logout = () => {
     performLogout();
