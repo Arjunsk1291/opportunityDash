@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { KPICards } from '@/components/Dashboard/KPICards';
 import { FunnelChart } from '@/components/Dashboard/FunnelChart';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AtRiskWidget } from '@/components/Dashboard/AtRiskWidget';
@@ -11,45 +10,208 @@ import { ExportButton } from '@/components/Dashboard/ExportButton';
 import { ReportButton } from '@/components/Dashboard/ReportButton';
 import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
-import { 
-  calculateSummaryStats, 
-  calculateFunnelData, 
-  getClientData, 
+import {
+  AlertCircle,
+  Loader2,
+  RefreshCw,
+  Target,
+  Send,
+  ThumbsDown,
+  PauseCircle,
+  Trophy,
+  XCircle,
+  TimerReset,
+} from 'lucide-react';
+import {
+  calculateFunnelData,
+  getClientData,
   calculateDataHealth,
-  Opportunity 
+  Opportunity,
 } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { getDisplayStatus } from '@/lib/opportunityStatus';
+import { isSubmissionWithinDays } from '@/lib/submissionDate';
+import aedSymbol from '@/assets/aed-symbol.png';
+
+type DashboardKpiType = 'received' | 'submitted' | 'regretted' | 'hold' | 'won' | 'value' | 'lost' | 'submission';
+
+type OpportunityGroup = {
+  key: string;
+  primary: Opportunity | null;
+  items: Opportunity[];
+};
+
+const normalizeText = (value: string | null | undefined) => String(value || '').trim();
+const normalizeRefNo = (value: string | null | undefined) => normalizeText(value).toUpperCase();
+const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_EOI$/i, '');
+const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(normalizeRefNo(value));
+const isHoldStatus = (status: string) => status === 'HOLD / CLOSED' || status === 'HOLD/CLOSED';
+
+const getJourneyType = (opp: Opportunity | null) => {
+  if (!opp) return 'tender';
+  const type = normalizeText(opp.opportunityClassification).toUpperCase();
+  if (type === 'TENDER') return 'tender';
+  if (type.includes('EOI') || isEoiRefNo(opp.opportunityRefNo)) return 'eoi';
+  return 'tender';
+};
+
+const getBusinessKey = (opp: Opportunity, index: number) => {
+  const ref = getBaseRefNo(opp.opportunityRefNo);
+  const tenderName = normalizeText(opp.tenderName).toLowerCase();
+  const clientName = normalizeText(opp.clientName).toLowerCase();
+  if (ref) return `ref::${ref}`;
+  if (clientName && tenderName) return `client::${clientName}::${tenderName}`;
+  return `fallback::${opp.id || index}`;
+};
+
+const pickPrimaryOpportunity = (items: Opportunity[]) => {
+  if (!items.length) return null;
+  const rank = (opp: Opportunity) => {
+    const status = normalizeText(getDisplayStatus(opp)).toUpperCase();
+    if (status === 'AWARDED') return 6;
+    if (status === 'LOST' || status === 'REGRETTED') return 5;
+    if (status === 'SUBMITTED') return 4;
+    if (status === 'ONGOING') return 3;
+    if (status === 'WORKING') return 2;
+    if (status === 'TO START') return 1;
+    return 0;
+  };
+  return [...items].sort((a, b) => rank(b) - rank(a))[0];
+};
+
+const formatCompactNumber = (value: number) => new Intl.NumberFormat('en-US', {
+  notation: 'compact',
+  maximumFractionDigits: value >= 1000 ? 1 : 0,
+}).format(value || 0);
 
 const Dashboard = () => {
   const { opportunities, isLoading, error, lastSyncTime, isLiveRefreshActive } = useData();
-  const { formatCurrency } = useCurrency();
+  const { formatCurrency, currency, convertValue } = useCurrency();
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
-  const stats = useMemo(() => calculateSummaryStats(filteredData), [filteredData]);
   const funnelData = useMemo(() => calculateFunnelData(filteredData), [filteredData]);
   const clientData = useMemo(() => getClientData(filteredData), [filteredData]);
   const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
 
-  const handleKPIClick = (kpiType: 'active' | 'quoted' | 'awarded' | 'lost' | 'regretted' | 'working' | 'tostart' | 'ongoing' | 'submission') => {
+  const groupedOpportunities = useMemo(() => {
+    const groups = new Map<string, Opportunity[]>();
+    filteredData.forEach((opp, index) => {
+      const key = getBusinessKey(opp, index);
+      const bucket = groups.get(key) || [];
+      bucket.push(opp);
+      groups.set(key, bucket);
+    });
+
+    return Array.from(groups.entries()).map(([key, items]) => ({
+      key,
+      primary: pickPrimaryOpportunity(items),
+      items,
+    })) as OpportunityGroup[];
+  }, [filteredData]);
+
+  const groupedBuckets = useMemo(() => {
+    const openOtherGroups: OpportunityGroup[] = [];
+    const submittedGroups: OpportunityGroup[] = [];
+    const regrettedGroups: OpportunityGroup[] = [];
+    const wonGroups: OpportunityGroup[] = [];
+    const holdGroups: OpportunityGroup[] = [];
+    const lostGroups: OpportunityGroup[] = [];
+    const receivedGroups: OpportunityGroup[] = [...groupedOpportunities];
+    const submissionNearGroups: OpportunityGroup[] = [];
+
+    groupedOpportunities.forEach((group) => {
+      const primary = group.primary;
+      if (!primary) return;
+
+      if (group.items.some((item) => isSubmissionWithinDays(item, 10))) {
+        submissionNearGroups.push(group);
+      }
+
+      const status = normalizeText(getDisplayStatus(primary)).toUpperCase();
+
+      if (status === 'AWARDED') {
+        wonGroups.push(group);
+        return;
+      }
+      if (status === 'REGRETTED') {
+        regrettedGroups.push(group);
+        return;
+      }
+      if (isHoldStatus(status)) {
+        holdGroups.push(group);
+        return;
+      }
+      if (status === 'LOST') {
+        lostGroups.push(group);
+        return;
+      }
+      if (status === 'SUBMITTED') {
+        submittedGroups.push(group);
+        return;
+      }
+
+      openOtherGroups.push(group);
+    });
+
+    const groupRows = (groups: OpportunityGroup[]) => groups
+      .map((group) => group.primary)
+      .filter(Boolean) as Opportunity[];
+
+    const countJourneyTypes = (groups: OpportunityGroup[]) => {
+      const counts = { tender: 0, eoi: 0 };
+      groups.forEach((group) => {
+        const type = getJourneyType(group.primary);
+        counts[type] += 1;
+      });
+      return counts;
+    };
+
+    const sumValue = (groups: OpportunityGroup[]) => groups.reduce((sum, group) => {
+      const primary = group.primary;
+      return sum + Number(primary?.opportunityValue || 0);
+    }, 0);
+
+    const activeSubmittedGroups = [...openOtherGroups, ...submittedGroups];
+
+    return {
+      received: {
+        groups: receivedGroups,
+        rows: groupRows(receivedGroups),
+        ...countJourneyTypes(receivedGroups),
+      },
+      submitted: {
+        groups: activeSubmittedGroups,
+        rows: groupRows(activeSubmittedGroups),
+        ...countJourneyTypes(activeSubmittedGroups),
+      },
+      regretted: { groups: regrettedGroups, rows: groupRows(regrettedGroups) },
+      hold: { groups: holdGroups, rows: groupRows(holdGroups) },
+      won: { groups: wonGroups, rows: groupRows(wonGroups), value: sumValue(wonGroups) },
+      lost: { groups: lostGroups, rows: groupRows(lostGroups) },
+      submission: { groups: submissionNearGroups, rows: groupRows(submissionNearGroups) },
+    };
+  }, [groupedOpportunities]);
+
+  const handleKPIClick = (kpiType: DashboardKpiType) => {
     setFilters((prevFilters) => {
       switch (kpiType) {
-        case 'active':
-          return {
-            ...prevFilters,
-            statuses: ['WORKING', 'SUBMITTED', 'AWARDED'],
-            excludeLostOutcomes: true,
-          };
-        case 'quoted':
+        case 'received':
           return {
             ...prevFilters,
             statuses: [],
             excludeLostOutcomes: false,
           };
-        case 'awarded':
+        case 'submitted':
+          return {
+            ...prevFilters,
+            statuses: ['WORKING', 'TO START', 'ONGOING', 'SUBMITTED'],
+            excludeLostOutcomes: false,
+          };
+        case 'won':
+        case 'value':
           return {
             ...prevFilters,
             statuses: ['AWARDED'],
@@ -67,22 +229,10 @@ const Dashboard = () => {
             statuses: ['REGRETTED'],
             excludeLostOutcomes: false,
           };
-        case 'working':
+        case 'hold':
           return {
             ...prevFilters,
-            statuses: ['WORKING'],
-            excludeLostOutcomes: false,
-          };
-        case 'tostart':
-          return {
-            ...prevFilters,
-            statuses: ['TO START'],
-            excludeLostOutcomes: false,
-          };
-        case 'ongoing':
-          return {
-            ...prevFilters,
-            statuses: ['ONGOING'],
+            statuses: ['HOLD / CLOSED'],
             excludeLostOutcomes: false,
           };
         case 'submission':
@@ -137,6 +287,84 @@ const Dashboard = () => {
     );
   }
 
+  const kpiCards = [
+    {
+      label: 'Recieved',
+      value: groupedBuckets.received.groups.length,
+      meta: [
+        { label: 'Tender', value: groupedBuckets.received.tender, tone: 'bg-blue-500' },
+        { label: 'EOI', value: groupedBuckets.received.eoi, tone: 'bg-amber-500' },
+      ],
+      tone: 'text-sky-600',
+      glow: 'analytics-kpi-glow-sky',
+      icon: Target,
+      type: 'received' as const,
+    },
+    {
+      label: 'Submitted',
+      value: groupedBuckets.submitted.groups.length,
+      meta: [
+        { label: 'Tender', value: groupedBuckets.submitted.tender, tone: 'bg-blue-500' },
+        { label: 'EOI', value: groupedBuckets.submitted.eoi, tone: 'bg-amber-500' },
+      ],
+      tone: 'text-sky-600',
+      glow: 'analytics-kpi-glow-sky',
+      icon: Send,
+      type: 'submitted' as const,
+    },
+    {
+      label: 'Regretted',
+      value: groupedBuckets.regretted.groups.length,
+      tone: 'text-slate-700',
+      glow: 'analytics-kpi-glow-amber',
+      icon: ThumbsDown,
+      type: 'regretted' as const,
+    },
+    {
+      label: 'Hold / Closed',
+      value: groupedBuckets.hold.groups.length,
+      tone: 'text-amber-600',
+      glow: 'analytics-kpi-glow-amber',
+      icon: PauseCircle,
+      type: 'hold' as const,
+    },
+    {
+      label: 'Won',
+      value: groupedBuckets.won.groups.length,
+      tone: 'text-emerald-600',
+      glow: 'analytics-kpi-glow-emerald',
+      icon: Trophy,
+      type: 'won' as const,
+    },
+    {
+      label: 'Value',
+      value: groupedBuckets.won.value,
+      displayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.won.value))}`,
+      valuePrefix: currency === 'AED' ? 'aed' : 'text',
+      tone: 'text-violet-600',
+      glow: 'analytics-kpi-glow-emerald',
+      icon: Target,
+      chip: 'Awarded only',
+      type: 'value' as const,
+    },
+    {
+      label: 'Lost',
+      value: groupedBuckets.lost.groups.length,
+      tone: 'text-rose-600',
+      glow: 'analytics-kpi-glow-rose',
+      icon: XCircle,
+      type: 'lost' as const,
+    },
+    {
+      label: 'Submission Near',
+      value: groupedBuckets.submission.groups.length,
+      tone: 'text-orange-600',
+      glow: 'analytics-kpi-glow-amber',
+      icon: TimerReset,
+      type: 'submission' as const,
+    },
+  ];
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Sync Status Bar */}
@@ -154,7 +382,7 @@ const Dashboard = () => {
           {isLiveRefreshActive ? '✅ Live refresh active' : '⏸️ Live refresh inactive'}
         </div>
       </div>
-      
+
       {/* Filter & Export Bar */}
       <div className="sticky top-14 z-40 -mx-3 sm:-mx-4 lg:-mx-6 px-3 sm:px-4 lg:px-6 py-3 sm:py-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4 lg:gap-6 min-w-0">
@@ -173,8 +401,49 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <KPICards stats={stats} onKPIClick={handleKPIClick} />
+      {/*
+        Legacy dashboard KPI cards intentionally disabled.
+        Kept commented for traceability: this was <KPICards stats={stats} onKPIClick={handleKPIClick} />.
+        Reason: dashboard now uses Analytics-style KPI card design and grouping semantics for consistency.
+        Data mapping/import logic is unchanged; this is presentation-layer aggregation only.
+      */}
+      {/* <KPICards stats={stats} onKPIClick={handleKPIClick} /> */}
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {kpiCards.map((card, index) => (
+          <button
+            key={card.label}
+            type="button"
+            className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5`}
+            style={{ animationDelay: `${index * 0.07}s` }}
+            onClick={() => handleKPIClick(card.type)}
+          >
+            <div className="relative z-10 flex items-start justify-between p-5">
+              <div className="space-y-1.5">
+                <p className="dash-label">{card.label}</p>
+                <div className="mt-2 analytics-kpi-number text-slate-950 flex items-center gap-2">
+                  {card.valuePrefix === 'aed' ? <img src={aedSymbol} alt="AED" className="h-7 w-7" /> : null}
+                  <span>{card.displayValue || card.value}</span>
+                </div>
+                {card.meta ? (
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                    {card.meta.map((item) => (
+                      <span key={item.label} className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5">
+                        <span className={`h-2 w-2 rounded-full ${item.tone}`} />
+                        {item.label} {item.value}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {card.chip ? <p className="pt-1 text-[11px] text-slate-500">{card.chip}</p> : null}
+              </div>
+              <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
+                <card.icon className="h-5 w-5" />
+              </div>
+            </div>
+          </button>
+        ))}
+      </section>
 
       {/* Opportunities Table */}
       <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} responsiveMode="dashboard" />
