@@ -10,9 +10,10 @@ export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => 
   const isMsalCallbackWindow = typeof window !== "undefined"
     && window.location.pathname === "/auth/callback"
     && /(?:^#|&)(code|error)=/.test(window.location.hash || "");
+  const isMsalCallbackPopup = isPopupWindow && isMsalCallbackWindow;
 
   React.useEffect(() => {
-    if (!isMsalCallbackWindow) return;
+    if (!isMsalCallbackPopup) return;
     const closeAttempt = () => {
       try {
         window.close();
@@ -23,7 +24,7 @@ export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => 
     closeAttempt();
     const timer = window.setTimeout(closeAttempt, 250);
     return () => window.clearTimeout(timer);
-  }, [isMsalCallbackWindow]);
+  }, [isMsalCallbackPopup]);
 
   if (loading) {
     return (
@@ -45,7 +46,7 @@ export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => 
   }
 
   if (!isAuthenticated) {
-    if (isPopupWindow || isMsalCallbackWindow) {
+    if (isPopupWindow || isMsalCallbackPopup) {
       return (
         <>
           <AuthScene title="Completing Sign-In">
