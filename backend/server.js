@@ -4909,7 +4909,7 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
     const opportunitiesListProjection = {
       __v: 0,
       rawGoogleData: 0,
-      'rawGraphData.rowSnapshot': 0,
+      rawGraphData: 0,
     };
 
     const [opportunitiesResult, manualResult, conflictsResult] = await Promise.all([
@@ -4965,9 +4965,16 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
         });
       }
       const conflictFields = conflictByRef.get(refKey) || [];
+      const rawGraphDataLite = {
+        year: effective?.rawSheetYear || '',
+        rfpReceivedDisplay: buildDateDisplay(effective?.rawDateReceived),
+        plannedSubmissionDisplay: buildDateDisplay(effective?.rawSubmissionDeadline),
+        tenderSubmittedDisplay: buildDateDisplay(effective?.rawTenderSubmittedDate),
+      };
 
       return {
         ...effective,
+        rawGraphData: rawGraphDataLite,
         manualFieldOverrides: manualSnapshot || null,
         hasPendingConflicts: conflictFields.length > 0,
         pendingConflictFields: conflictFields,
