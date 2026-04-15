@@ -101,6 +101,15 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     } catch (e: any) {
       console.warn("[auth.msal] login.popup.failed", e);
       if (e?.errorCode === "user_cancelled") {
+        const recoveredAccount = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
+        if (recoveredAccount) {
+          msalInstance.setActiveAccount(recoveredAccount);
+          setIsAuthenticated(true);
+          setAccountUpn(recoveredAccount.username);
+          window.dispatchEvent(new CustomEvent("msal:user", { detail: { username: recoveredAccount.username } }));
+          authDebug("login.popup.recovered", { account: recoveredAccount.username });
+          return;
+        }
         authDebug("login.popup.dismissed", { errorCode: e?.errorCode || "unknown" });
         return;
       }
