@@ -62,6 +62,13 @@ interface VerifyTokenResponse {
   sessionToken?: string;
   error?: string;
 }
+interface CurrentUserResponse {
+  email: string;
+  displayName?: string;
+  role: UserRole;
+  status: UserStatus;
+  assignedGroup?: string | null;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -87,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!response.ok) {
       throw new Error('Failed to refresh user');
     }
-    const data = (await response.json()) as VerifyTokenResponse;
+    const data = (await response.json()) as CurrentUserResponse;
     const nextUser: User = {
       email: data.email,
       displayName: data.displayName || data.email,
@@ -142,10 +149,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     setUser(nextUser);
-    if (!data.sessionToken) {
-      throw new Error('Session token missing from auth response');
-    }
-    setToken(data.sessionToken);
+    const nextToken = data.sessionToken || normalizedUsername;
+    setToken(nextToken);
     setAuthError(null);
 
     if (nextUser.status === 'pending') {
@@ -158,7 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + data.sessionToken,
+        Authorization: 'Bearer ' + nextToken,
       },
     });
   }, []);

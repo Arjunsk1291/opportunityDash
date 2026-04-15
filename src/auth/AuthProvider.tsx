@@ -21,6 +21,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [accountUpn, setAccountUpn] = useState<string | undefined>(undefined);
+  const [loginInProgress, setLoginInProgress] = useState(false);
   const authDebug = React.useCallback((message: string, details?: Record<string, unknown>) => {
     if (details) {
       console.info(`[auth.msal] ${message}`, details);
@@ -63,13 +64,6 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     })();
   }, []);
 
-  useEffect(() => {
-    if (loading) return;
-    window.dispatchEvent(
-      new CustomEvent("msal:user", { detail: { username: accountUpn ?? null } })
-    );
-  }, [accountUpn, loading]);
-
   const performLogout = React.useCallback(() => {
     const msalInstance = getMsalInstance();
     const account = msalInstance.getActiveAccount();
@@ -86,6 +80,8 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, [authDebug]);
 
   const login = async () => {
+    if (loginInProgress) return;
+    setLoginInProgress(true);
     const msalInstance = getMsalInstance();
     authDebug("login.popup.start");
     try {
@@ -99,6 +95,8 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         return;
       }
       throw e;
+    } finally {
+      setLoginInProgress(false);
     }
     const acct = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
     if (acct) {
