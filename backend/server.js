@@ -135,11 +135,12 @@ const respondDatabaseUnavailable = (res) => (
 const authRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 20, keyPrefix: 'auth' });
 const privilegedRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 120, keyPrefix: 'priv' });
 const graphAuthBootstrapLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5, keyPrefix: 'graph-bootstrap' });
-const OPPORTUNITIES_CACHE_TTL_MS = 20 * 1000;
+const OPPORTUNITIES_CACHE_TTL_MS = 10 * 60 * 1000;
 const opportunitiesListCache = {
   payload: null,
   generatedAt: 0,
   meta: null,
+  warmingPromise: null,
 };
 const GRAPH_BOOTSTRAP_ALLOWED_USERS = new Set(
   String(process.env.GRAPH_BOOTSTRAP_ALLOWED_USERS || '')
@@ -218,6 +219,7 @@ if (DISABLE_MONGODB) {
       await initializeBootSync();
       await scheduleGraphAutoSync();
       scheduleDailyNotificationCheck();
+      await warmOpportunitiesCache('startup');
       startServer();
     })
     .catch(err => {
@@ -236,6 +238,118 @@ const mapIdField = (doc) => {
     ...doc,
     id: doc._id?.toString() || doc._id || null,
   };
+};
+
+const buildOpportunitiesListPayload = async () => {
+  const fetchStartedAt = Date.now();
+  const opportunitiesListProjection = {
+    __v: 0,
+    rawGoogleData: 0,
+    'rawGraphData.rowSnapshot': 0,
+  };
+
+  const [opportunitiesResult, manualResult, conflictsResult] = await Promise.all([
+    (async () => {
+      const startedAt = Date.now();
+      const rows = await SyncedOpportunity.find({}, opportunitiesListProjection).lean();
+      return { rows, ms: Date.now() - startedAt };
+    })(),
+    (async () => {
+      const startedAt = Date.now();
+      const rows = await OpportunityManualUpdate.find({}, { _id: 0 }).lean();
+      return { rows, ms: Date.now() - startedAt };
+    })(),
+    (async () => {
+      const startedAt = Date.now();
+      const rows = await OpportunityFieldConflict.find({ status: 'pending' }, { refKey: 1, fieldKey: 1 }).lean();
+      return { rows, ms: Date.now() - startedAt };
+    })(),
+  ]);
+  const fetchCompletedAt = Date.now();
+
+  const opportunities = opportunitiesResult.rows;
+  const manualValueUpdates = manualResult.rows;
+  const pendingConflicts = conflictsResult.rows;
+  const oppFetchMs = opportunitiesResult.ms;
+  const manualFetchMs = manualResult.ms;
+  const conflictsFetchMs = conflictsResult.ms;
+
+  const mergeStartedAt = Date.now();
+  const manualByRefKey = new Map(
+    manualValueUpdates
+      .map((row) => [normalizeRefKey(row?.opportunityRefNo || row?.refKey || ''), row])
+      .filter(([ref]) => Boolean(ref))
+  );
+  const conflictByRef = new Map();
+  pendingConflicts.forEach((row) => {
+    const ref = normalizeRefKey(row?.refKey || '');
+    if (!ref) return;
+    if (!conflictByRef.has(ref)) conflictByRef.set(ref, []);
+    conflictByRef.get(ref).push(row.fieldKey);
+  });
+  const mergeCompletedAt = Date.now();
+
+  const mapStartedAt = Date.now();
+  const mapped = opportunities.map((opp) => {
+    const base = mapIdField(applyOpportunityDateFields(applyOpportunityStatusFields(opp)));
+    const refKey = normalizeRefKey(base?.opportunityRefNo || '');
+    const manualSnapshot = refKey ? manualByRefKey.get(refKey) : null;
+    const effective = { ...base };
+    if (manualSnapshot) {
+      MANUAL_UPDATE_FIELD_KEYS.forEach((fieldKey) => {
+        if (!hasFieldValue(fieldKey, manualSnapshot[fieldKey])) return;
+        effective[fieldKey] = manualSnapshot[fieldKey];
+      });
+    }
+    const conflictFields = conflictByRef.get(refKey) || [];
+
+    return {
+      ...effective,
+      manualFieldOverrides: manualSnapshot || null,
+      hasPendingConflicts: conflictFields.length > 0,
+      pendingConflictFields: conflictFields,
+    };
+  });
+  const mapCompletedAt = Date.now();
+
+  return {
+    mapped,
+    timing: {
+      fetchMs: fetchCompletedAt - fetchStartedAt,
+      mergeMs: mergeCompletedAt - mergeStartedAt,
+      mapMs: mapCompletedAt - mapStartedAt,
+      fetchBreakdownMs: {
+        opportunities: oppFetchMs,
+        manual: manualFetchMs,
+        conflicts: conflictsFetchMs,
+      },
+    },
+  };
+};
+
+const warmOpportunitiesCache = async (reason = 'unknown') => {
+  if (opportunitiesListCache.warmingPromise) return opportunitiesListCache.warmingPromise;
+  opportunitiesListCache.warmingPromise = (async () => {
+    if (!isDatabaseReady()) return;
+    const warmStartedAt = Date.now();
+    const { mapped, timing } = await buildOpportunitiesListPayload();
+    opportunitiesListCache.payload = mapped;
+    opportunitiesListCache.generatedAt = Date.now();
+    opportunitiesListCache.meta = {
+      totalMs: Date.now() - warmStartedAt,
+      fetchMs: timing.fetchMs,
+      mergeMs: timing.mergeMs,
+      mapMs: timing.mapMs,
+      fetchBreakdownMs: timing.fetchBreakdownMs,
+      rows: mapped.length,
+      reason,
+      timestamp: new Date().toISOString(),
+    };
+    console.log('[api.opportunities.cache.warm]', JSON.stringify(opportunitiesListCache.meta));
+  })().finally(() => {
+    opportunitiesListCache.warmingPromise = null;
+  });
+  return opportunitiesListCache.warmingPromise;
 };
 
 const getMergedReportStatus = (item = {}) => {
@@ -4916,117 +5030,59 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
     if (opportunitiesListCache.payload && cacheAgeMs <= OPPORTUNITIES_CACHE_TTL_MS) {
       const totalMs = Date.now() - endpointStartedAt;
       const authMs = Number(req.authVerifyMs || 0);
+      const meta = opportunitiesListCache.meta || {};
       res.setHeader('X-Opps-Cache', 'HIT');
       res.setHeader('X-Opps-Cache-Age-Ms', String(cacheAgeMs));
       res.setHeader('X-Opps-Total-Ms', String(totalMs));
       res.setHeader('X-Opps-Auth-Ms', String(authMs));
-      res.setHeader('X-Opps-Fetch-Ms', '0');
-      res.setHeader('X-Opps-Merge-Ms', '0');
-      res.setHeader('X-Opps-Map-Ms', '0');
-      res.setHeader('X-Opps-Fetch-Opps-Ms', '0');
-      res.setHeader('X-Opps-Fetch-Manual-Ms', '0');
-      res.setHeader('X-Opps-Fetch-Conflicts-Ms', '0');
+      res.setHeader('X-Opps-Fetch-Ms', String(meta.fetchMs || 0));
+      res.setHeader('X-Opps-Merge-Ms', String(meta.mergeMs || 0));
+      res.setHeader('X-Opps-Map-Ms', String(meta.mapMs || 0));
+      res.setHeader('X-Opps-Fetch-Opps-Ms', String(meta.fetchBreakdownMs?.opportunities || 0));
+      res.setHeader('X-Opps-Fetch-Manual-Ms', String(meta.fetchBreakdownMs?.manual || 0));
+      res.setHeader('X-Opps-Fetch-Conflicts-Ms', String(meta.fetchBreakdownMs?.conflicts || 0));
       return res.json(opportunitiesListCache.payload);
     }
-
-    const fetchStartedAt = Date.now();
-    const opportunitiesListProjection = {
-      __v: 0,
-      rawGoogleData: 0,
-      'rawGraphData.rowSnapshot': 0,
+    const buildStartedAt = Date.now();
+    const { mapped, timing } = await buildOpportunitiesListPayload();
+    const buildCompletedAt = Date.now();
+    opportunitiesListCache.payload = mapped;
+    opportunitiesListCache.generatedAt = Date.now();
+    opportunitiesListCache.meta = {
+      totalMs: buildCompletedAt - buildStartedAt,
+      fetchMs: timing.fetchMs,
+      mergeMs: timing.mergeMs,
+      mapMs: timing.mapMs,
+      fetchBreakdownMs: timing.fetchBreakdownMs,
+      rows: mapped.length,
+      reason: 'request',
+      timestamp: new Date().toISOString(),
     };
-
-    const [opportunitiesResult, manualResult, conflictsResult] = await Promise.all([
-      (async () => {
-        const startedAt = Date.now();
-        const rows = await SyncedOpportunity.find({}, opportunitiesListProjection).lean();
-        return { rows, ms: Date.now() - startedAt };
-      })(),
-      (async () => {
-        const startedAt = Date.now();
-        const rows = await OpportunityManualUpdate.find({}, { _id: 0 }).lean();
-        return { rows, ms: Date.now() - startedAt };
-      })(),
-      (async () => {
-        const startedAt = Date.now();
-        const rows = await OpportunityFieldConflict.find({ status: 'pending' }, { refKey: 1, fieldKey: 1 }).lean();
-        return { rows, ms: Date.now() - startedAt };
-      })(),
-    ]);
-    const fetchCompletedAt = Date.now();
-    const opportunities = opportunitiesResult.rows;
-    const manualValueUpdates = manualResult.rows;
-    const pendingConflicts = conflictsResult.rows;
-    const oppFetchMs = opportunitiesResult.ms;
-    const manualFetchMs = manualResult.ms;
-    const conflictsFetchMs = conflictsResult.ms;
-
-    const mergeStartedAt = Date.now();
-    const manualByRefKey = new Map(
-      manualValueUpdates
-        .map((row) => [normalizeRefKey(row?.opportunityRefNo || row?.refKey || ''), row])
-        .filter(([ref]) => Boolean(ref))
-    );
-    const conflictByRef = new Map();
-    pendingConflicts.forEach((row) => {
-      const ref = normalizeRefKey(row?.refKey || '');
-      if (!ref) return;
-      if (!conflictByRef.has(ref)) conflictByRef.set(ref, []);
-      conflictByRef.get(ref).push(row.fieldKey);
-    });
-    const mergeCompletedAt = Date.now();
-
-    const mapStartedAt = Date.now();
-    const mapped = opportunities.map((opp) => {
-      const base = mapIdField(applyOpportunityDateFields(applyOpportunityStatusFields(opp)));
-      const refKey = normalizeRefKey(base?.opportunityRefNo || '');
-      const manualSnapshot = refKey ? manualByRefKey.get(refKey) : null;
-      const effective = { ...base };
-      if (manualSnapshot) {
-        MANUAL_UPDATE_FIELD_KEYS.forEach((fieldKey) => {
-          if (!hasFieldValue(fieldKey, manualSnapshot[fieldKey])) return;
-          effective[fieldKey] = manualSnapshot[fieldKey];
-        });
-      }
-      const conflictFields = conflictByRef.get(refKey) || [];
-
-      return {
-        ...effective,
-        manualFieldOverrides: manualSnapshot || null,
-        hasPendingConflicts: conflictFields.length > 0,
-        pendingConflictFields: conflictFields,
-      };
-    });
-    const mapCompletedAt = Date.now();
     const totalMs = Date.now() - endpointStartedAt;
-    const fetchMs = fetchCompletedAt - fetchStartedAt;
-    const mergeMs = mergeCompletedAt - mergeStartedAt;
-    const mapMs = mapCompletedAt - mapStartedAt;
+    const fetchMs = timing.fetchMs;
+    const mergeMs = timing.mergeMs;
+    const mapMs = timing.mapMs;
     const authMs = Number(req.authVerifyMs || 0);
     res.setHeader('X-Opps-Total-Ms', String(totalMs));
     res.setHeader('X-Opps-Auth-Ms', String(authMs));
+    res.setHeader('X-Opps-Cache', 'MISS');
+    res.setHeader('X-Opps-Cache-Age-Ms', '0');
     res.setHeader('X-Opps-Fetch-Ms', String(fetchMs));
     res.setHeader('X-Opps-Merge-Ms', String(mergeMs));
     res.setHeader('X-Opps-Map-Ms', String(mapMs));
-    res.setHeader('X-Opps-Fetch-Opps-Ms', String(oppFetchMs));
-    res.setHeader('X-Opps-Fetch-Manual-Ms', String(manualFetchMs));
-    res.setHeader('X-Opps-Fetch-Conflicts-Ms', String(conflictsFetchMs));
+    res.setHeader('X-Opps-Fetch-Opps-Ms', String(timing.fetchBreakdownMs.opportunities));
+    res.setHeader('X-Opps-Fetch-Manual-Ms', String(timing.fetchBreakdownMs.manual));
+    res.setHeader('X-Opps-Fetch-Conflicts-Ms', String(timing.fetchBreakdownMs.conflicts));
     console.log('[api.opportunities.timing]', JSON.stringify({
       totalMs,
       authMs,
       fetchMs,
       mergeMs,
       mapMs,
-      fetchBreakdownMs: {
-        opportunities: oppFetchMs,
-        manual: manualFetchMs,
-        conflicts: conflictsFetchMs,
-      },
+      fetchBreakdownMs: timing.fetchBreakdownMs,
       rows: mapped.length,
       timestamp: new Date().toISOString(),
     }));
-    opportunitiesListCache.payload = mapped;
-    opportunitiesListCache.generatedAt = Date.now();
     res.json(mapped);
   } catch (error) {
     res.status(500).json({ error: error.message });
