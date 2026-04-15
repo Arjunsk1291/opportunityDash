@@ -150,7 +150,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const decodedBodySize = resourceEntry?.decodedBodySize ?? 0;
 
         console.log(`⏱️ Opportunities load time: total=${totalMs}ms (network=${fetchMs}ms, processing=${processingMs}ms)`);
-        console.log('[perf.opportunities.detail]', {
+        const detailPayload = {
           route,
           trigger,
           rowsRaw: Array.isArray(data) ? data.length : 0,
@@ -183,7 +183,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
               conflicts: backendFetchConflictsMs,
             },
           },
-        });
+        };
+        console.log('[perf.opportunities.detail]', detailPayload);
+        console.log('[perf.opportunities.detail.json]', JSON.stringify(detailPayload));
         setLastSyncTime(new Date());
         setError(null);
         hasLoadedOnceRef.current = true;
