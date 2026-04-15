@@ -4904,7 +4904,7 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
     }
 
     const [opportunities, manualValueUpdates, pendingConflicts] = await Promise.all([
-      SyncedOpportunity.find().sort({ createdAt: -1 }).lean(),
+      SyncedOpportunity.find({}, { rawGoogleData: 0, __v: 0 }).sort({ createdAt: -1 }).lean(),
       OpportunityManualUpdate.find({}, { _id: 0 }).lean(),
       OpportunityFieldConflict.find({ status: 'pending' }, { refKey: 1, fieldKey: 1 }).lean(),
     ]);
