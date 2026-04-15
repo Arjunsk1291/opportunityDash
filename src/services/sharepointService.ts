@@ -1,4 +1,5 @@
 // src/services/sharepointService.ts
+import { getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToObjects } from '@/lib/excelWorkbook';
 
 export interface ExcelRow {
   srNo: number;
@@ -125,17 +126,14 @@ class SharePointService {
           const data = e.target?.result;
           if (!data) throw new Error('No data received');
 
-          // Dynamic import of xlsx to reduce bundle size
-          const XLSX = await import('xlsx');
-          const workbook = XLSX.read(data, { type: 'binary' });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
+          const buffer = data instanceof ArrayBuffer ? data : null;
+          if (!buffer) throw new Error('Invalid workbook binary data');
+          const workbook = await loadWorkbookFromArrayBuffer(buffer);
+          const worksheet = getFirstWorksheet(workbook);
+          if (!worksheet) throw new Error('Workbook is empty');
           
           // Convert to JSON
-          const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
-            raw: false,
-            defval: null 
-          });
+          const jsonData = worksheetToObjects(worksheet, { headerRow: 1, maxRows: MAX_SHAREPOINT_EXCEL_ROWS });
           if (jsonData.length > MAX_SHAREPOINT_EXCEL_ROWS) {
             throw new Error(`SharePoint workbook has too many rows (${jsonData.length}). Limit is ${MAX_SHAREPOINT_EXCEL_ROWS}.`);
           }
@@ -150,7 +148,7 @@ class SharePointService {
       };
 
       reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsBinaryString(blob);
+      reader.readAsArrayBuffer(blob);
     });
   }
 

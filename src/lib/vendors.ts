@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToObjects } from '@/lib/excelWorkbook';
 
 export type AgreementStatus = 'NDA' | 'Association Agreement' | 'Pending';
 
@@ -158,11 +159,15 @@ export const previewVendorImport = async (file: File, existingVendors: VendorDat
   if (file.size > MAX_VENDOR_IMPORT_BYTES) {
     throw new Error('File too large. Maximum allowed size is 5MB.');
   }
+  const name = String(file.name || '').toLowerCase();
+  if (!name.endsWith('.xlsx')) {
+    throw new Error('Only .xlsx files are supported.');
+  }
   const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array' });
-  const firstSheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[firstSheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+  const workbook = await loadWorkbookFromArrayBuffer(buffer);
+  const sheet = getFirstWorksheet(workbook);
+  if (!sheet) throw new Error('No worksheet found in file.');
+  const rows = worksheetToObjects(sheet, { headerRow: 1, maxRows: MAX_VENDOR_IMPORT_ROWS });
   if (rows.length > MAX_VENDOR_IMPORT_ROWS) {
     throw new Error(`Too many rows (${rows.length}). Limit is ${MAX_VENDOR_IMPORT_ROWS}.`);
   }
@@ -190,14 +195,32 @@ export const previewVendorImport = async (file: File, existingVendors: VendorDat
 };
 
 export const downloadVendorTemplate = () => {
-  const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.aoa_to_sheet([VENDOR_IMPORT_HEADERS as unknown as string[]]);
-  XLSX.utils.book_append_sheet(workbook, sheet, 'Vendor Import Template');
-  XLSX.writeFile(workbook, 'vendor-directory-template.xlsx');
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Vendor Import Template');
+  sheet.addRow([...VENDOR_IMPORT_HEADERS]);
+  void downloadWorkbook(workbook, 'vendor-directory-template.xlsx');
 };
 
 export const exportVendors = (vendors: VendorData[]) => {
-  const workbook = XLSX.utils.book_new();
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Vendors');
+  sheet.addRow([
+    'Company Name',
+    'Focus Area',
+    'Agreement Status',
+    'Agreement Documents',
+    'Company Size',
+    'Contact Person',
+    'Emails',
+    'Primary Industries',
+    'Confirmed Services',
+    'Confirmed Tech Stack',
+    'Non-Specialized Tech',
+    'Sample Projects',
+    'Certifications',
+    'Partners',
+    'Sources',
+  ]);
   const rows = vendors.map((vendor) => ({
     'Company Name': vendor.companyName,
     'Focus Area': vendor.focusArea,
@@ -215,8 +238,26 @@ export const exportVendors = (vendors: VendorData[]) => {
     Partners: vendor.partners.join(', '),
     Sources: vendor.sources.join(', '),
   }));
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'Vendors');
-  XLSX.writeFile(workbook, `vendor-directory-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  rows.forEach((row) => {
+    sheet.addRow([
+      row['Company Name'],
+      row['Focus Area'],
+      row['Agreement Status'],
+      row['Agreement Documents'],
+      row['Company Size'],
+      row['Contact Person'],
+      row['Emails'],
+      row['Primary Industries'],
+      row['Confirmed Services'],
+      row['Confirmed Tech Stack'],
+      row['Non-Specialized Tech'],
+      row['Sample Projects'],
+      row.Certifications,
+      row.Partners,
+      row.Sources,
+    ]);
+  });
+  void downloadWorkbook(workbook, `vendor-directory-${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 
 export const parseCommaInput = (value: string) => splitCommaSeparated(value);

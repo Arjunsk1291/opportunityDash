@@ -23,6 +23,7 @@ import { RecipientBlockSelector } from '@/components/Admin/RecipientBlockSelecto
 import defaultExportLogo from '@/assets/avenir-logo.png';
 import { DEFAULT_EXPORT_TEMPLATE, ExportTemplateConfig, normalizeExportTemplate } from '@/lib/exportTemplate';
 import { ExportTemplateSpreadsheet } from '@/components/Admin/ExportTemplateSpreadsheet';
+import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToObjects } from '@/lib/excelWorkbook';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -750,16 +751,13 @@ export default function Admin() {
 
   const downloadManualUpdateTemplate = async () => {
     try {
-      const XLSX = await import('xlsx');
+      const ExcelJS = await import('exceljs');
       const selectedColumns = MANUAL_UPDATE_TEMPLATE_COLUMNS.filter((column) => column.required || manualTemplateSelection[column.key]);
-      const templateRow = selectedColumns.reduce<Record<string, string>>((acc, column) => {
-        acc[column.label] = '';
-        return acc;
-      }, {});
-      const workbook = XLSX.utils.book_new();
-      const worksheet = XLSX.utils.json_to_sheet([templateRow]);
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Update Template');
-      XLSX.writeFile(workbook, `opportunity-update-template-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Update Template');
+      worksheet.addRow(selectedColumns.map((column) => column.label));
+      worksheet.addRow(selectedColumns.map(() => ''));
+      await downloadWorkbook(workbook, `opportunity-update-template-${new Date().toISOString().slice(0, 10)}.xlsx`);
       toast.success('Update template downloaded.');
     } catch (error) {
       toast.error((error as Error).message || 'Failed to download update template');
@@ -774,19 +772,20 @@ export default function Admin() {
       event.target.value = '';
       return;
     }
+    if (!String(file.name || '').toLowerCase().endsWith('.xlsx')) {
+      toast.error('Only .xlsx files are supported.');
+      event.target.value = '';
+      return;
+    }
 
     setManualUpdateUploading(true);
     setManualUpdateFileName(file.name);
     try {
-      const XLSX = await import('xlsx');
       const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-      const firstSheetName = workbook.SheetNames[0];
-      if (!firstSheetName) {
-        throw new Error('Workbook is empty.');
-      }
-      const worksheet = workbook.Sheets[firstSheetName];
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '', raw: true });
+      const workbook = await loadWorkbookFromArrayBuffer(buffer);
+      const worksheet = getFirstWorksheet(workbook);
+      if (!worksheet) throw new Error('Workbook is empty.');
+      const rows = worksheetToObjects(worksheet, { headerRow: 1, maxRows: MAX_MANUAL_UPDATE_ROWS });
       if (!rows.length) {
         throw new Error('No data rows found in the first sheet.');
       }

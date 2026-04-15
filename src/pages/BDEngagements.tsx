@@ -29,6 +29,7 @@ import {
   MEETING_TYPES,
   createBDEngagementId,
 } from '@/lib/bdEngagements';
+import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToMatrix } from '@/lib/excelWorkbook';
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 type MeetingTypeOption = typeof MEETING_TYPES[number];
@@ -274,7 +275,7 @@ const BDEngagements = () => {
 
   const downloadBulkTemplate = async () => {
     try {
-      const XLSX = await import('xlsx');
+      const ExcelJS = await import('exceljs');
       const headers = [
         'Ref.',
         'Date',
@@ -311,10 +312,11 @@ const BDEngagements = () => {
         Status: 'Open',
         Location: 'Abu Dhabi',
       };
-      const workbook = XLSX.utils.book_new();
-      const worksheet = XLSX.utils.json_to_sheet([sample], { header: headers });
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'BD Engagements');
-      XLSX.writeFile(workbook, `bd-engagements-template-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('BD Engagements');
+      worksheet.addRow(headers);
+      worksheet.addRow(headers.map((header) => sample[header as keyof typeof sample] ?? ''));
+      await downloadWorkbook(workbook, `bd-engagements-template-${new Date().toISOString().slice(0, 10)}.xlsx`);
       toast.success('Template downloaded.');
     } catch (error) {
       console.error('Template download failed:', error);
@@ -327,12 +329,14 @@ const BDEngagements = () => {
       if (file.size > MAX_BD_UPLOAD_BYTES) {
         throw new Error('File too large. Maximum allowed size is 5MB.');
       }
+      if (!String(file.name || '').toLowerCase().endsWith('.xlsx')) {
+        throw new Error('Only .xlsx files are supported.');
+      }
       const buffer = await file.arrayBuffer();
-      const XLSX = await import('xlsx');
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const workbook = await loadWorkbookFromArrayBuffer(buffer);
+      const worksheet = getFirstWorksheet(workbook);
       if (!worksheet) throw new Error('No worksheet found in uploaded file.');
-      const rowsMatrix = XLSX.utils.sheet_to_json<Array<unknown[]>>(worksheet, { header: 1, defval: '' }) as unknown[][];
+      const rowsMatrix = worksheetToMatrix(worksheet, { maxRows: MAX_BD_UPLOAD_ROWS, maxColumns: 32 });
       if (!rowsMatrix.length) throw new Error('No data found in the uploaded file.');
       if (rowsMatrix.length > MAX_BD_UPLOAD_ROWS) {
         throw new Error(`Too many rows (${rowsMatrix.length}). Limit is ${MAX_BD_UPLOAD_ROWS}.`);
