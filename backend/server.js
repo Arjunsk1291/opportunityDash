@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -151,6 +152,7 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: REQUEST_BODY_LIMIT }));
 app.use(express.urlencoded({ limit: REQUEST_BODY_LIMIT, extended: true }));
+app.use(compression());
 
 app.get('/healthz', (_req, res) => {
   res.status(200).json({ ok: true, service: 'backend', timestamp: new Date().toISOString() });
