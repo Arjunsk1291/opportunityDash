@@ -47,6 +47,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+const SESSION_REFRESH_LEEWAY_MS = 2 * 60 * 1000;
+const FALLBACK_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 interface AuthorizedUserResponse {
   id?: string;
   _id?: string;
@@ -61,6 +63,27 @@ interface VerifyTokenResponse {
   user: AuthorizedUserResponse;
   sessionToken?: string;
   error?: string;
+}
+interface CurrentUserResponse {
+  email: string;
+  displayName?: string;
+  role: UserRole;
+  status: UserStatus;
+  assignedGroup?: string | null;
+}
+
+function parseJwtExpiryMs(jwtToken: string): number | null {
+  try {
+    const parts = jwtToken.split('.');
+    if (parts.length < 2) return null;
+    const payloadPart = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payloadJson = window.atob(payloadPart.padEnd(Math.ceil(payloadPart.length / 4) * 4, '='));
+    const payload = JSON.parse(payloadJson) as { exp?: number };
+    if (!payload.exp || typeof payload.exp !== 'number') return null;
+    return payload.exp * 1000;
+  } catch {
+    return null;
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -87,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!response.ok) {
       throw new Error('Failed to refresh user');
     }
-    const data = (await response.json()) as VerifyTokenResponse;
+    const data = (await response.json()) as CurrentUserResponse;
     const nextUser: User = {
       email: data.email,
       displayName: data.displayName || data.email,
@@ -113,6 +136,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearAuthState();
     window.dispatchEvent(new CustomEvent('app:logout'));
   }, [clearAuthState]);
+
+  const refreshSessionToken = useCallback(async () => {
+    const username = String(user?.email || '').trim().toLowerCase();
+    if (!username) return;
+
+    const response = await fetch(API_URL + '/auth/verify-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
+    if (!response.ok) {
+      throw new Error('Session refresh failed');
+    }
+
+    const data = (await response.json()) as VerifyTokenResponse;
+    if (data.sessionToken) {
+      setToken(data.sessionToken);
+    }
+  }, [user?.email]);
 
   const loginWithUsername = useCallback(async (username: string) => {
     const normalizedUsername = username.trim().toLowerCase();
@@ -186,6 +228,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener('msal:user', handleMsalUser as EventListener);
     return () => window.removeEventListener('msal:user', handleMsalUser as EventListener);
   }, [clearAuthState, loginWithUsername, user?.email]);
+
+  useEffect(() => {
+    if (!token || !user?.email) return;
+
+    const expiryMs = parseJwtExpiryMs(token);
+    const refreshInMs = expiryMs
+      ? Math.max(0, expiryMs - Date.now() - SESSION_REFRESH_LEEWAY_MS)
+      : FALLBACK_REFRESH_INTERVAL_MS;
+
+    const timer = window.setTimeout(() => {
+      refreshSessionToken().catch((error) => {
+        console.error('Session refresh failed:', error);
+      });
+    }, refreshInMs);
+
+    return () => window.clearTimeout(timer);
+  }, [refreshSessionToken, token, user?.email]);
 
   const getAllUsers = useCallback(() => allUsers, [allUsers]);
 
