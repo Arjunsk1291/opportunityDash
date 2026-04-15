@@ -88,7 +88,11 @@ Core:
 
 - `PORT` (default `3001`)
 - `MONGODB_URI` (example: `mongodb://localhost:27017/opportunity-dashboard`)
-- `JWT_SECRET` (required for token verification and sessions)
+- `SESSION_JWT_SECRET` (required in production; long random value)
+- `SESSION_TOKEN_TTL` (default `12h`)
+- `ALLOW_LEGACY_EMAIL_BEARER` (`false` in production)
+- `REQUEST_BODY_LIMIT` (default `10mb`)
+- `GRAPH_BOOTSTRAP_ALLOWED_USERS` (comma-separated allowlist for delegated bootstrap login)
 
 Microsoft Graph / Excel Sync:
 
@@ -238,6 +242,58 @@ node --check backend/server.js
 
 4. Authentication issues
 - ensure token headers are present from frontend requests
+
+## Lightsail Quick Launch
+
+If you want a fast production boot after cloning, use one of these two paths.
+
+### Option A: Docker on Lightsail (easiest)
+
+1. Clone repo and enter it.
+2. Create `backend/.env` with production values (minimum):
+   - `PORT=3001`
+   - `MONGODB_URI=mongodb://mongo:27017/opportunity-dashboard`
+   - `SESSION_JWT_SECRET=<long-random-secret>`
+   - `ALLOW_LEGACY_EMAIL_BEARER=false`
+   - `REQUEST_BODY_LIMIT=10mb`
+   - Graph vars (`GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`)
+   - Optional delegated safety: `GRAPH_BOOTSTRAP_ALLOWED_USERS=service.user@yourdomain.com`
+3. Run:
+
+```sh
+docker compose up --build -d
+```
+
+4. Verify:
+
+```sh
+docker compose ps
+curl http://127.0.0.1:3001/healthz
+```
+
+### Option B: Node + local Mongo on Lightsail
+
+1. Install Node 20+ and MongoDB 7.
+2. Clone repo.
+3. Create `backend/.env` with:
+   - `PORT=3001`
+   - `MONGODB_URI=mongodb://127.0.0.1:27017/opportunity-dashboard`
+   - `SESSION_JWT_SECRET=<long-random-secret>`
+   - `ALLOW_LEGACY_EMAIL_BEARER=false`
+   - Graph vars + optional `GRAPH_BOOTSTRAP_ALLOWED_USERS`
+4. Install + build + run:
+
+```sh
+npm install
+cd backend && npm install && cd ..
+npm run build
+node backend/server.js
+```
+
+5. Serve frontend build using Nginx (recommended), reverse-proxy `/api` to `127.0.0.1:3001`.
+
+Security note for Lightsail:
+- Keep MongoDB private/local only (`bindIp: 127.0.0.1` or private subnet), never publicly exposed.
 - verify `JWT_SECRET` consistency in backend runtime
 
 ## Security Notes
