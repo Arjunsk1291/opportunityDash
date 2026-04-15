@@ -135,6 +135,12 @@ const respondDatabaseUnavailable = (res) => (
 const authRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 20, keyPrefix: 'auth' });
 const privilegedRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 120, keyPrefix: 'priv' });
 const graphAuthBootstrapLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5, keyPrefix: 'graph-bootstrap' });
+const OPPORTUNITIES_CACHE_TTL_MS = 20 * 1000;
+const opportunitiesListCache = {
+  payload: null,
+  generatedAt: 0,
+  meta: null,
+};
 const GRAPH_BOOTSTRAP_ALLOWED_USERS = new Set(
   String(process.env.GRAPH_BOOTSTRAP_ALLOWED_USERS || '')
     .split(',')
@@ -4905,6 +4911,24 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
       return respondDatabaseUnavailable(res);
     }
 
+    const now = Date.now();
+    const cacheAgeMs = now - opportunitiesListCache.generatedAt;
+    if (opportunitiesListCache.payload && cacheAgeMs <= OPPORTUNITIES_CACHE_TTL_MS) {
+      const totalMs = Date.now() - endpointStartedAt;
+      const authMs = Number(req.authVerifyMs || 0);
+      res.setHeader('X-Opps-Cache', 'HIT');
+      res.setHeader('X-Opps-Cache-Age-Ms', String(cacheAgeMs));
+      res.setHeader('X-Opps-Total-Ms', String(totalMs));
+      res.setHeader('X-Opps-Auth-Ms', String(authMs));
+      res.setHeader('X-Opps-Fetch-Ms', '0');
+      res.setHeader('X-Opps-Merge-Ms', '0');
+      res.setHeader('X-Opps-Map-Ms', '0');
+      res.setHeader('X-Opps-Fetch-Opps-Ms', '0');
+      res.setHeader('X-Opps-Fetch-Manual-Ms', '0');
+      res.setHeader('X-Opps-Fetch-Conflicts-Ms', '0');
+      return res.json(opportunitiesListCache.payload);
+    }
+
     const fetchStartedAt = Date.now();
     const opportunitiesListProjection = {
       __v: 0,
@@ -5001,6 +5025,8 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
       rows: mapped.length,
       timestamp: new Date().toISOString(),
     }));
+    opportunitiesListCache.payload = mapped;
+    opportunitiesListCache.generatedAt = Date.now();
     res.json(mapped);
   } catch (error) {
     res.status(500).json({ error: error.message });

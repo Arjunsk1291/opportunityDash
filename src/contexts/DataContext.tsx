@@ -6,6 +6,8 @@ import { useAuth } from '@/contexts/AuthContext';
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const LIVE_REFRESH_INTERVAL = 5 * 60 * 1000;
 const MIN_BACKGROUND_REFRESH_GAP_MS = 45 * 1000;
+const OPPORTUNITIES_CACHE_KEY = 'opportunities-cache-v1';
+const OPPORTUNITIES_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
 
 type OpportunityApiRecord = Partial<Opportunity> & {
   _id?: string;
@@ -48,6 +50,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const inFlightRefreshRef = useRef<Promise<void> | null>(null);
   const lastSuccessfulRefreshAtRef = useRef(0);
   const hasLoadedOnceRef = useRef(false);
+  const cacheHydratedRef = useRef(false);
 
   const refreshData = useCallback(async (options?: { background?: boolean }) => {
     if (inFlightRefreshRef.current) {
@@ -61,6 +64,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return;
     }
     const isBackground = Boolean(options?.background);
+    if (!cacheHydratedRef.current && !isBackground) {
+      cacheHydratedRef.current = true;
+      try {
+        const raw = window.sessionStorage.getItem(OPPORTUNITIES_CACHE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { ts?: number; rows?: Opportunity[] };
+          const ts = Number(parsed?.ts || 0);
+          const ageMs = ts ? Date.now() - ts : Number.POSITIVE_INFINITY;
+          const rows = Array.isArray(parsed?.rows) ? parsed.rows : [];
+          if (rows.length > 0 && ageMs <= OPPORTUNITIES_CACHE_MAX_AGE_MS) {
+            setOpportunities(rows);
+            setLastSyncTime(new Date(ts));
+            setIsLoading(false);
+            hasLoadedOnceRef.current = true;
+            console.log(`⚡ Warm-loaded ${rows.length} opportunities from session cache (age=${Math.round(ageMs / 1000)}s)`);
+          }
+        }
+      } catch {
+        // Ignore cache parse/storage errors.
+      }
+    }
     const now = Date.now();
     if (isBackground && now - lastSuccessfulRefreshAtRef.current < MIN_BACKGROUND_REFRESH_GAP_MS) {
       return;
@@ -190,6 +214,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setError(null);
         hasLoadedOnceRef.current = true;
         lastSuccessfulRefreshAtRef.current = Date.now();
+        try {
+          window.sessionStorage.setItem(OPPORTUNITIES_CACHE_KEY, JSON.stringify({
+            ts: Date.now(),
+            rows: dataWithIds,
+          }));
+        } catch {
+          // Ignore cache quota/storage errors.
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         const errorMsg = 'Failed to load data: ' + message;
