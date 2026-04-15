@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getMsalInstance } from "./msalClient";
 import { loginRequest } from "./msalConfig";
 
@@ -22,6 +22,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [accountUpn, setAccountUpn] = useState<string | undefined>(undefined);
   const [loginInProgress, setLoginInProgress] = useState(false);
+  const loginLockRef = useRef(false);
   const authDebug = React.useCallback((message: string, details?: Record<string, unknown>) => {
     if (details) {
       console.info(`[auth.msal] ${message}`, details);
@@ -80,7 +81,8 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, [authDebug]);
 
   const login = async () => {
-    if (loginInProgress) return;
+    if (loginLockRef.current || loginInProgress) return;
+    loginLockRef.current = true;
     setLoginInProgress(true);
     const msalInstance = getMsalInstance();
     authDebug("login.popup.start");
@@ -96,6 +98,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       }
       throw e;
     } finally {
+      loginLockRef.current = false;
       setLoginInProgress(false);
     }
     const acct = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
