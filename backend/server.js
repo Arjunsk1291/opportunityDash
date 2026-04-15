@@ -4906,10 +4906,16 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
     }
 
     const fetchStartedAt = Date.now();
+    const opportunitiesListProjection = {
+      __v: 0,
+      rawGoogleData: 0,
+      'rawGraphData.rowSnapshot': 0,
+    };
+
     const [opportunitiesResult, manualResult, conflictsResult] = await Promise.all([
       (async () => {
         const startedAt = Date.now();
-        const rows = await SyncedOpportunity.find({}, { rawGoogleData: 0, __v: 0 }).lean();
+        const rows = await SyncedOpportunity.find({}, opportunitiesListProjection).lean();
         return { rows, ms: Date.now() - startedAt };
       })(),
       (async () => {
