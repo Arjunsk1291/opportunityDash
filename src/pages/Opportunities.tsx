@@ -9,11 +9,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Opportunity } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { Check, ChevronDown, Calendar as CalendarIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
 
 interface OpportunitiesProps {
   statusFilter?: string;
@@ -97,6 +103,88 @@ const toDisplay = (value: unknown) => {
   return text || '—';
 };
 
+const STATUS_OPTIONS = ['WORKING', 'SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'TO START', 'ONGOING', 'HOLD / CLOSED'];
+
+const parseDateValue = (value: string) => {
+  const text = String(value || '').trim();
+  if (!text) return undefined;
+  const parsed = new Date(`${text}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+};
+
+const getDateButtonLabel = (value: string, fieldLabel: string) => {
+  const parsed = parseDateValue(value);
+  if (parsed) return format(parsed, 'PPP');
+  const text = String(value || '').trim();
+  return text || `Pick ${fieldLabel}`;
+};
+
+type SearchableSelectFieldProps = {
+  label: string;
+  placeholder: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+};
+
+function SearchableSelectField({ label, placeholder, value, options, onChange }: SearchableSelectFieldProps) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const trimmedQuery = query.trim();
+  const queryLower = trimmedQuery.toLowerCase();
+  const filteredOptions = options.filter((option) => option.toLowerCase().includes(queryLower));
+  const exactMatchExists = options.some((option) => option.toLowerCase() === queryLower);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" className="w-full justify-between font-normal">
+          <span className="truncate text-left">{value || placeholder}</span>
+          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[360px] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder={`Search ${label}...`}
+            value={query}
+            onValueChange={setQuery}
+          />
+          <CommandList>
+            <CommandEmpty>No matches found.</CommandEmpty>
+            {trimmedQuery && !exactMatchExists ? (
+              <CommandItem
+                value={`__custom__${trimmedQuery}`}
+                onSelect={() => {
+                  onChange(trimmedQuery);
+                  setOpen(false);
+                  setQuery('');
+                }}
+              >
+                Use "{trimmedQuery}"
+              </CommandItem>
+            ) : null}
+            {filteredOptions.map((option) => (
+              <CommandItem
+                key={option}
+                value={option}
+                onSelect={() => {
+                  onChange(option);
+                  setOpen(false);
+                  setQuery('');
+                }}
+              >
+                <Check className={cn('mr-2 h-4 w-4', value === option ? 'opacity-100' : 'opacity-0')} />
+                {option}
+              </CommandItem>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const { opportunities, refreshData } = useData();
   const { formatCurrency } = useCurrency();
@@ -122,6 +210,25 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
   const canEdit = canPerformAction('manual_opportunity_updates_write');
+  const formOptions = useMemo(() => {
+    const dedupeSorted = (values: Array<string | null | undefined>) => (
+      Array.from(
+        new Set(
+          values
+            .map((value) => String(value || '').trim())
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b))
+    );
+
+    return {
+      opportunityClassification: dedupeSorted(opportunities.map((row) => row.opportunityClassification)),
+      clientName: dedupeSorted(opportunities.map((row) => row.clientName)),
+      groupClassification: dedupeSorted(opportunities.map((row) => row.groupClassification)),
+      internalLead: dedupeSorted(opportunities.map((row) => row.internalLead)),
+      avenirStatus: STATUS_OPTIONS,
+    };
+  }, [opportunities]);
 
   const searchableRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -360,18 +467,75 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
             </div>
             <div className="space-y-3 rounded-md border p-3">
               <div className="grid gap-2 md:grid-cols-2">
-                {(Object.keys(form) as Array<keyof FormState>).map((key) => (
-                  <div key={key} className="space-y-1">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {LABELS[key]} {REQUIRED_KEYS.includes(key) ? <span className="text-destructive">*</span> : null}
+                {(Object.keys(form) as Array<keyof FormState>).map((key) => {
+                  const label = LABELS[key];
+                  const value = form[key];
+                  const isRequired = REQUIRED_KEYS.includes(key);
+                  const isSearchableSelect = ['opportunityClassification', 'clientName', 'groupClassification', 'internalLead', 'avenirStatus'].includes(key);
+                  const isCalendarDate = key === 'dateTenderReceived' || key === 'tenderPlannedSubmissionDate';
+
+                  return (
+                    <div key={key} className="space-y-1">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {label} {isRequired ? <span className="text-destructive">*</span> : null}
+                      </div>
+
+                      {isSearchableSelect ? (
+                        <SearchableSelectField
+                          label={label}
+                          placeholder={label}
+                          value={value}
+                          options={formOptions[key as 'opportunityClassification' | 'clientName' | 'groupClassification' | 'internalLead' | 'avenirStatus']}
+                          onChange={(next) => setForm((prev) => ({ ...prev, [key]: next }))}
+                        />
+                      ) : null}
+
+                      {isCalendarDate ? (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button type="button" variant="outline" className="w-full justify-between font-normal">
+                              <span className="truncate text-left">
+                                {getDateButtonLabel(value, label)}
+                              </span>
+                              <CalendarIcon className="ml-2 h-4 w-4 shrink-0 opacity-60" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <CalendarComponent
+                              mode="single"
+                              selected={parseDateValue(value)}
+                              onSelect={(selected) => {
+                                setForm((prev) => ({
+                                  ...prev,
+                                  [key]: selected ? format(selected, 'yyyy-MM-dd') : '',
+                                }));
+                              }}
+                              initialFocus
+                            />
+                            <div className="border-t p-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                className="w-full justify-center text-xs"
+                                onClick={() => setForm((prev) => ({ ...prev, [key]: '' }))}
+                              >
+                                Clear date
+                              </Button>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      ) : null}
+
+                      {!isSearchableSelect && !isCalendarDate ? (
+                        <Input
+                          value={value}
+                          onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                          placeholder={label}
+                        />
+                      ) : null}
                     </div>
-                    <Input
-                      value={form[key]}
-                      onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
-                      placeholder={LABELS[key]}
-                    />
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <Separator />
               <div className="flex justify-end gap-2">
