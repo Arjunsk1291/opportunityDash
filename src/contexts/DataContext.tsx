@@ -71,9 +71,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     const refreshPromise = (async () => {
+      const totalStart = performance.now();
       try {
         console.log('🔄 Loading opportunities from MongoDB...');
-        
+        const fetchStart = performance.now();
         const response = await fetch(API_URL + '/opportunities', {
           method: 'GET',
           headers: {
@@ -81,11 +82,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
             Authorization: `Bearer ${token}`,
           },
         });
+        const fetchEnd = performance.now();
         
         if (!response.ok) {
           throw new Error('HTTP ' + response.status + ': ' + response.statusText);
         }
-        
+
+        const transformStart = performance.now();
         const data = await response.json();
         console.log('✅ Loaded ' + data.length + ' opportunities from MongoDB');
         
@@ -108,6 +111,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         
         setOpportunities(dataWithIds as Opportunity[]);
+        const transformEnd = performance.now();
+        const totalMs = Math.round(transformEnd - totalStart);
+        const fetchMs = Math.round(fetchEnd - fetchStart);
+        const transformMs = Math.round(transformEnd - transformStart);
+        console.log(`⏱️ Opportunities load time: total=${totalMs}ms (network=${fetchMs}ms, processing=${transformMs}ms)`);
         setLastSyncTime(new Date());
         setError(null);
         hasLoadedOnceRef.current = true;
