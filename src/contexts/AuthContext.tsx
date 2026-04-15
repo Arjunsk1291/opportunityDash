@@ -1,7 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { DEFAULT_PAGE_ROLE_ACCESS, PageKey } from '@/config/navigation';
 import { ActionKey, DEFAULT_ACTION_ROLE_ACCESS } from '@/config/actionPermissions';
-import { getMsalInstance } from '@/auth/msalClient';
 
 export type UserRole = 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'BDTeam' | 'Basic';
 export type UserStatus = 'approved' | 'pending' | 'rejected';
@@ -57,19 +56,6 @@ interface AuthorizedUserResponse {
   status: UserStatus;
   assignedGroup?: string | null;
 }
-interface VerifyTokenResponse {
-  success: boolean;
-  user: AuthorizedUserResponse;
-  sessionToken?: string;
-  error?: string;
-}
-interface CurrentUserResponse {
-  email: string;
-  displayName?: string;
-  role: UserRole;
-  status: UserStatus;
-  assignedGroup?: string | null;
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -83,7 +69,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [pageEmailPermissions, setPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
   const [actionPermissions, setActionPermissions] = useState<Record<ActionKey, UserRole[]>>(DEFAULT_ACTION_ROLE_ACCESS as Record<ActionKey, UserRole[]>);
   const [actionEmailPermissions, setActionEmailPermissions] = useState<Record<ActionKey, string[]>>({} as Record<ActionKey, string[]>);
-  const inFlightUsernameRef = useRef<string | null>(null);
 
   const authHeaders = useCallback(
     () => token ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token } : { 'Content-Type': 'application/json' },
@@ -96,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!response.ok) {
       throw new Error('Failed to refresh user');
     }
-    const data = (await response.json()) as CurrentUserResponse;
+    const data = await response.json();
     const nextUser: User = {
       email: data.email,
       displayName: data.displayName || data.email,
@@ -151,8 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     setUser(nextUser);
-    const nextToken = data.sessionToken || normalizedUsername;
-    setToken(nextToken);
+    setToken(normalizedUsername);
     setAuthError(null);
 
     if (nextUser.status === 'pending') {
@@ -165,59 +149,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + nextToken,
+        Authorization: 'Bearer ' + normalizedUsername,
       },
     });
   }, []);
 
-  const syncMsalUsername = useCallback(async (username?: string | null) => {
-    const nextUsername = username ? String(username).trim().toLowerCase() : '';
-    if (!nextUsername) {
-      clearAuthState();
-      return;
-    }
-    if (nextUsername === user?.email?.toLowerCase() && token) {
-      setIsLoading(false);
-      return;
-    }
-    if (inFlightUsernameRef.current === nextUsername) {
-      return;
-    }
-    inFlightUsernameRef.current = nextUsername;
-    setIsLoading(true);
-    try {
-      await loginWithUsername(nextUsername);
-      setAuthError(null);
-    } catch (error) {
-      console.error('MSAL username sync failed:', error);
-      setAuthError('Auth service unavailable');
-    } finally {
-      if (inFlightUsernameRef.current === nextUsername) {
-        inFlightUsernameRef.current = null;
-      }
-      setIsLoading(false);
-    }
-  }, [clearAuthState, loginWithUsername, token, user?.email]);
-
   useEffect(() => {
     const handleMsalUser = (event: Event) => {
       const detail = (event as CustomEvent).detail as { username?: string | null };
-      void syncMsalUsername(detail?.username);
+      const nextUsername = detail?.username ? String(detail.username).toLowerCase() : '';
+      if (!nextUsername) {
+        clearAuthState();
+        return;
+      }
+      if (nextUsername === token) {
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
+      loginWithUsername(nextUsername).then(() => {
+        setIsLoading(false);
+      }).catch((error) => {
+        console.error('MSAL username sync failed:', error);
+        setAuthError('Auth service unavailable');
+        setIsLoading(false);
+      });
     };
 
     window.addEventListener('msal:user', handleMsalUser as EventListener);
     return () => window.removeEventListener('msal:user', handleMsalUser as EventListener);
-  }, [syncMsalUsername]);
-
-  useEffect(() => {
-    const msalInstance = getMsalInstance();
-    const activeAccount = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
-    if (activeAccount?.username) {
-      void syncMsalUsername(activeAccount.username);
-      return;
-    }
-    setIsLoading(false);
-  }, [syncMsalUsername]);
+  }, [clearAuthState, loginWithUsername, token]);
 
   const getAllUsers = useCallback(() => allUsers, [allUsers]);
 

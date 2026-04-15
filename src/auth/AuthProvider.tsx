@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { getMsalInstance } from "./msalClient";
 import { loginRequest } from "./msalConfig";
 
@@ -21,8 +21,6 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [accountUpn, setAccountUpn] = useState<string | undefined>(undefined);
-  const [loginInProgress, setLoginInProgress] = useState(false);
-  const loginLockRef = useRef(false);
   const authDebug = React.useCallback((message: string, details?: Record<string, unknown>) => {
     if (details) {
       console.info(`[auth.msal] ${message}`, details);
@@ -65,6 +63,13 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     })();
   }, []);
 
+  useEffect(() => {
+    if (loading) return;
+    window.dispatchEvent(
+      new CustomEvent("msal:user", { detail: { username: accountUpn ?? null } })
+    );
+  }, [accountUpn, loading]);
+
   const performLogout = React.useCallback(() => {
     const msalInstance = getMsalInstance();
     const account = msalInstance.getActiveAccount();
@@ -81,9 +86,6 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, [authDebug]);
 
   const login = async () => {
-    if (loginLockRef.current || loginInProgress) return;
-    loginLockRef.current = true;
-    setLoginInProgress(true);
     const msalInstance = getMsalInstance();
     authDebug("login.popup.start");
     try {
@@ -91,14 +93,12 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       authDebug("login.popup.success");
     } catch (e: any) {
       console.warn("[auth.msal] login.popup.failed", e);
-      if (e?.errorCode === "user_cancelled" || e?.errorCode === "popup_window_error") {
-        authDebug("login.popup.dismissed", { errorCode: e?.errorCode || "unknown" });
+      if (e?.errorCode === "popup_window_error" || e?.errorCode === "user_cancelled") {
+        authDebug("login.redirect.fallback", { errorCode: e?.errorCode || "unknown" });
+        msalInstance.loginRedirect(loginRequest);
         return;
       }
       throw e;
-    } finally {
-      loginLockRef.current = false;
-      setLoginInProgress(false);
     }
     const acct = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
     if (acct) {
