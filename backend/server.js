@@ -4894,6 +4894,7 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
 });
 
 app.get('/api/opportunities', verifyToken, async (req, res) => {
+  const endpointStartedAt = Date.now();
   try {
     if (DISABLE_MONGODB) {
       return res.json([]);
@@ -4903,11 +4904,13 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
       return respondDatabaseUnavailable(res);
     }
 
+    const fetchStartedAt = Date.now();
     const [opportunities, manualValueUpdates, pendingConflicts] = await Promise.all([
-      SyncedOpportunity.find({}, { rawGoogleData: 0, __v: 0 }).sort({ createdAt: -1 }).lean(),
+      SyncedOpportunity.find({}, { rawGoogleData: 0, __v: 0 }).lean(),
       OpportunityManualUpdate.find({}, { _id: 0 }).lean(),
       OpportunityFieldConflict.find({ status: 'pending' }, { refKey: 1, fieldKey: 1 }).lean(),
     ]);
+    const fetchCompletedAt = Date.now();
 
     const manualByRefKey = new Map(
       manualValueUpdates
@@ -4922,6 +4925,7 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
       conflictByRef.get(ref).push(row.fieldKey);
     });
 
+    const mapStartedAt = Date.now();
     const mapped = opportunities.map((opp) => {
       const base = mapIdField(applyOpportunityDateFields(applyOpportunityStatusFields(opp)));
       const refKey = normalizeRefKey(base?.opportunityRefNo || '');
@@ -4942,6 +4946,20 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
         pendingConflictFields: conflictFields,
       };
     });
+    const mapCompletedAt = Date.now();
+    const totalMs = Date.now() - endpointStartedAt;
+    const fetchMs = fetchCompletedAt - fetchStartedAt;
+    const mapMs = mapCompletedAt - mapStartedAt;
+    res.setHeader('X-Opps-Total-Ms', String(totalMs));
+    res.setHeader('X-Opps-Fetch-Ms', String(fetchMs));
+    res.setHeader('X-Opps-Map-Ms', String(mapMs));
+    console.log('[api.opportunities.timing]', JSON.stringify({
+      totalMs,
+      fetchMs,
+      mapMs,
+      rows: mapped.length,
+      timestamp: new Date().toISOString(),
+    }));
     res.json(mapped);
   } catch (error) {
     res.status(500).json({ error: error.message });
