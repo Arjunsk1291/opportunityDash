@@ -5,7 +5,7 @@ import { AuthScene, MicrosoftSignInButton } from "@/components/auth/AuthScene";
 import { ReportIssueButton } from "@/components/ReportIssueButton";
 
 export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => {
-  const { loading, isAuthenticated, login } = React.useContext(AuthContext);
+  const { loading, loginInProgress, isAuthenticated, login } = React.useContext(AuthContext);
 
   if (loading) {
     return (
@@ -36,12 +36,14 @@ export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => 
               Access is restricted to approved organizational users.
             </div>
             <MicrosoftSignInButton
+              disabled={loginInProgress}
               onClick={() => {
+                if (loginInProgress) return;
                 console.info("[auth.msal] require-auth.login.click");
                 login();
               }}
             >
-              Sign in with Microsoft
+              {loginInProgress ? "Opening Microsoft sign-in..." : "Sign in with Microsoft"}
             </MicrosoftSignInButton>
           </div>
         </AuthScene>
