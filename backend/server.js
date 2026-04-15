@@ -176,14 +176,19 @@ app.get('/api/health', (_req, res) => {
 app.get('/api/auth/msal-config', (_req, res) => {
   const tenantId = process.env.AZURE_TENANT_ID || '';
   const clientId = process.env.AZURE_CLIENT_ID || '';
-  const redirectUri = process.env.AZURE_REDIRECT_URI || 'https://opportunitydash.onrender.com/auth/callback';
-  const redirectUriDev = process.env.AZURE_REDIRECT_URI_DEV || 'http://localhost:5173';
+  const configuredRedirectUri = process.env.AZURE_REDIRECT_URI || '';
+  const configuredRedirectUriDev = process.env.AZURE_REDIRECT_URI_DEV || '';
+  const requestOrigin = `${_req.protocol}://${_req.get('host')}`;
+  const inferredRedirectUri = `${requestOrigin}/auth/callback`;
   const useDev = String(process.env.NODE_ENV || '').toLowerCase() !== 'production';
+  const redirectUri = useDev
+    ? (configuredRedirectUriDev || configuredRedirectUri || inferredRedirectUri)
+    : (configuredRedirectUri || inferredRedirectUri);
 
   res.json({
     tenantId,
     clientId,
-    redirectUri: useDev ? redirectUriDev : redirectUri,
+    redirectUri,
   });
 });
 
