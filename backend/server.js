@@ -96,6 +96,7 @@ app.disable('x-powered-by');
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
 }));
 
 const createRateLimiter = ({ windowMs, max, keyPrefix }) => {
