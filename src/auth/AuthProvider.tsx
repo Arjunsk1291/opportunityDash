@@ -110,7 +110,8 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
           authDebug("login.popup.recovered", { account: recoveredAccount.username });
           return;
         }
-        authDebug("login.popup.dismissed", { errorCode: e?.errorCode || "unknown" });
+        authDebug("login.redirect.fallback", { errorCode: e?.errorCode || "unknown" });
+        msalInstance.loginRedirect(loginRequest);
         return;
       }
       if (e?.errorCode === "popup_window_error") {

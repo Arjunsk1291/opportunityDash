@@ -6,6 +6,7 @@ import { ReportIssueButton } from "@/components/ReportIssueButton";
 
 export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => {
   const { loading, loginInProgress, isAuthenticated, login } = React.useContext(AuthContext);
+  const isPopupWindow = typeof window !== "undefined" && window.opener && window.opener !== window;
 
   if (loading) {
     return (
@@ -27,6 +28,18 @@ export const RequireAuth: React.FC<React.PropsWithChildren> = ({ children }) => 
   }
 
   if (!isAuthenticated) {
+    if (isPopupWindow) {
+      return (
+        <>
+          <AuthScene title="Completing Sign-In">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm leading-6 text-slate-600">
+              Microsoft sign-in is being completed in this window. You can close this popup if it does not close automatically.
+            </div>
+          </AuthScene>
+          <ReportIssueButton />
+        </>
+      );
+    }
     return (
       <>
         <AuthScene title="Welcome Back">
