@@ -1971,8 +1971,10 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   }
   const opportunities = await transformTendersToOpportunities(tenders);
 
-  const systemConfig = await getSystemConfig();
-  const existingTelecastState = await getExistingTelecastStateFromSyncedOpportunities();
+  const [systemConfig, existingTelecastState] = await Promise.all([
+    getSystemConfig(),
+    getExistingTelecastStateFromSyncedOpportunities(),
+  ]);
   const previousKeys = new Set(systemConfig.notificationRowSignatures || []);
   const eligibleSignatures = opportunities
     .filter(hasRequiredRowValues)
@@ -2073,7 +2075,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     telecastDispatch = { ...telecastDispatch, sent: 0, skipped: 'error' };
   }
 
-  const existingOpportunityMeta = await SyncedOpportunity.find(
+  const existingOpportunityMetaPromise = SyncedOpportunity.find(
     {},
     {
       opportunityRefNo: 1,
@@ -2090,12 +2092,16 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
       postBidDetailUpdatedAt: 1,
     }
   ).lean();
+  const manualUpdatesByRefPromise = loadManualUpdateSnapshots();
+  const [existingOpportunityMeta, manualUpdatesByRef] = await Promise.all([
+    existingOpportunityMetaPromise,
+    manualUpdatesByRefPromise,
+  ]);
   const metaByRef = new Map(
     existingOpportunityMeta
       .map((row) => [normalizeRefNo(row?.opportunityRefNo || ''), row])
       .filter(([ref]) => Boolean(ref))
   );
-  const manualUpdatesByRef = await loadManualUpdateSnapshots();
   const manualAlignmentByRef = new Map();
   const pendingConflictOps = [];
 
@@ -2174,20 +2180,22 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
 
   await SyncedOpportunity.deleteMany({});
   const inserted = await SyncedOpportunity.insertMany(opportunitiesForInsert);
-  await alignManualSnapshotsToSyncedValues(manualAlignmentByRef, `sync:${source}`);
+  const postSyncTasks = [
+    alignManualSnapshotsToSyncedValues(manualAlignmentByRef, `sync:${source}`),
+    syncClientsFromOpportunities(opportunities),
+  ];
   if (pendingConflictOps.length) {
-    await OpportunityFieldConflict.bulkWrite(pendingConflictOps, { ordered: false });
+    postSyncTasks.push(OpportunityFieldConflict.bulkWrite(pendingConflictOps, { ordered: false }));
   }
-  const clientSyncResult = await syncClientsFromOpportunities(opportunities);
+  const [_, clientSyncResult] = await Promise.all(postSyncTasks);
 
   config.lastSyncAt = now;
-  await config.save();
 
   systemConfig.telecastAlertedKeys = Array.from(alertedKeySet).slice(-MAX_ALERTED_TRACKED_KEYS);
   systemConfig.telecastAlertedRefNos = Array.from(alertedRefSet).slice(-MAX_ALERTED_TRACKED_REFS);
   pushWeeklyTelecastStats(systemConfig, newRows);
 
-  await systemConfig.save();
+  await Promise.all([config.save(), systemConfig.save()]);
 
   // Ensure subsequent /api/opportunities responses reflect newly synced rows immediately.
   invalidateOpportunitiesCache(`graph_sync:${source}`);
