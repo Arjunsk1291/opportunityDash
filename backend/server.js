@@ -352,6 +352,15 @@ const warmOpportunitiesCache = async (reason = 'unknown') => {
   return opportunitiesListCache.warmingPromise;
 };
 
+const invalidateOpportunitiesCache = (reason = 'unknown') => {
+  opportunitiesListCache.payload = null;
+  opportunitiesListCache.generatedAt = 0;
+  opportunitiesListCache.meta = {
+    invalidatedAt: new Date().toISOString(),
+    reason,
+  };
+};
+
 const getMergedReportStatus = (item = {}) => {
   return getEffectiveMergedStatus(item);
 };
@@ -2161,6 +2170,10 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   pushWeeklyTelecastStats(systemConfig, newRows);
 
   await systemConfig.save();
+
+  // Ensure subsequent /api/opportunities responses reflect newly synced rows immediately.
+  invalidateOpportunitiesCache(`graph_sync:${source}`);
+  await warmOpportunitiesCache(`graph_sync:${source}`);
 
   console.log('[sync.new-row-detection]', JSON.stringify({
     source,
@@ -4972,6 +4985,8 @@ app.post('/api/opportunities/reset-synced', verifyToken, async (req, res) => {
     if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
 
     const deleteResult = await SyncedOpportunity.deleteMany({});
+    invalidateOpportunitiesCache('reset_synced');
+    await warmOpportunitiesCache('reset_synced');
     res.json({
       success: true,
       deletedCount: Number(deleteResult?.deletedCount || 0),
