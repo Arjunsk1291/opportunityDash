@@ -163,8 +163,24 @@ const DEFAULT_MAPPING = {
   avenirStatus: ['AVENIR STATUS'],
   tenderResult: ['TENDER RESULT'],
   groupClassification: ['GDS/GES', 'GROUP'],
-  remarksReason: ['REMARKS/REASON'],
-  comments: ['REMARKS'],
+  // Keep these tolerant: client sheets use many variants for this field.
+  remarksReason: [
+    'REMARKS/REASON',
+    'REMARKS / REASON',
+    'REMARKS & REASON',
+    'REMARKS AND REASON',
+    'REASON',
+    'REASON FOR LOSS',
+    'LOSS REASON',
+    'REMARKS',
+  ],
+  comments: [
+    'COMMENTS',
+    'COMMENT',
+    'REMARKS',
+    'NOTES',
+    'OBSERVATIONS',
+  ],
   country: ['COUNTRY', 'REGION', 'LOCATION'],
   probability: ['PROBABILITY', 'WIN %', 'CHANCE'],
   submissionDeadline: ['SUBMISSION DEADLINE', 'DUE DATE', 'TENDER PLANNED SUBMISSION DATE', 'TENDER DUE DATE', 'TENDER DUE  DATE'],
@@ -480,6 +496,14 @@ export async function syncTendersFromGraph(config) {
       },
       syncedAt: new Date(),
     };
+
+    // Backward compatibility: many workbooks have a single remarks column.
+    // If one of remarks/comments is blank, mirror the available value.
+    if (!tender.remarksReason && tender.comments) {
+      tender.remarksReason = tender.comments;
+    } else if (!tender.comments && tender.remarksReason) {
+      tender.comments = tender.remarksReason;
+    }
 
     if (tender.opportunityRefNo || tender.clientName || tender.tenderName) {
       tenders.push(tender);
