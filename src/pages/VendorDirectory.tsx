@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   downloadVendorTemplate,
@@ -116,6 +116,28 @@ const agreementTone: Record<AgreementStatus, string> = {
   Pending: 'bg-warning/15 text-warning border-warning/20',
 };
 
+const YES_STATUS_TOKENS = ['yes', 'y', 'signed', 'active', 'done', 'completed'];
+
+const hasPositiveStatus = (value: string) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return YES_STATUS_TOKENS.some((token) => normalized.includes(token));
+};
+
+const partnerStatusSummary = (vendor: VendorData): AgreementStatus => {
+  if (hasPositiveStatus(vendor.ndaStatus)) return 'NDA';
+  if (hasPositiveStatus(vendor.associationAgreementStatus)) return 'Association Agreement';
+  return vendor.agreementStatus || 'Pending';
+};
+
+const partnerStatusDetail = (vendor: VendorData) => {
+  const nda = String(vendor.ndaStatus || '').trim();
+  const association = String(vendor.associationAgreementStatus || '').trim();
+  if (nda && association) return `NDA: ${nda} | Association: ${association}`;
+  if (nda) return `NDA: ${nda}`;
+  if (association) return `Association: ${association}`;
+  return partnerStatusSummary(vendor);
+};
+
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const highlightText = (text: string, terms: string[]) => {
@@ -200,12 +222,13 @@ function VendorFormDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (form: VendorFormState) => void;
+  onSubmit: (form: VendorFormState) => Promise<void> | void;
   initialVendor?: VendorData | null;
   title: string;
   description: string;
 }) {
   const [form, setForm] = useState<VendorFormState>(toFormState(initialVendor));
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setForm(toFormState(initialVendor));
@@ -215,6 +238,16 @@ function VendorFormDialog({
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      setIsSaving(true);
+      await onSubmit(form);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl">
@@ -222,6 +255,7 @@ function VendorFormDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
+        <form onSubmit={handleSubmit}>
         <div className="grid max-h-[72vh] gap-4 overflow-y-auto pr-2 scrollbar-thin md:grid-cols-2">
           <div className="space-y-2 md:col-span-2">
             <Label>Company Name</Label>
@@ -265,15 +299,16 @@ function VendorFormDialog({
           <FieldTextarea label="Certifications" value={form.certifications} onChange={(value) => setField('certifications', value)} placeholder="Comma separated" />
           <FieldTextarea label="Partners" value={form.partners} onChange={(value) => setField('partners', value)} placeholder="Comma separated" />
         </div>
-        <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+        <DialogFooter className="mt-4">
+          <Button variant="secondary" type="button" onClick={() => onOpenChange(false)} disabled={isSaving}>Cancel</Button>
           <Button
-            onClick={() => onSubmit(form)}
+            type="submit"
             disabled={!form.companyName.trim()}
           >
-            Save Vendor
+            {isSaving ? 'Saving...' : 'Save Partner'}
           </Button>
         </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
@@ -399,7 +434,7 @@ export default function VendorDirectory() {
         };
       })
       .filter(({ vendor, relevance }) => {
-        const matchesAgreement = agreementFilter === 'ALL' || vendor.agreementStatus === agreementFilter;
+        const matchesAgreement = agreementFilter === 'ALL' || partnerStatusSummary(vendor) === agreementFilter;
         const matchesSearch = searchTerms.length === 0 || relevance > 0;
         return matchesAgreement && matchesSearch;
       })
@@ -421,9 +456,9 @@ export default function VendorDirectory() {
 
   const totals = useMemo(() => ({
     total: vendors.length,
-    nda: vendors.filter((vendor) => vendor.agreementStatus === 'NDA').length,
-    association: vendors.filter((vendor) => vendor.agreementStatus === 'Association Agreement').length,
-    pending: vendors.filter((vendor) => vendor.agreementStatus === 'Pending').length,
+    nda: vendors.filter((vendor) => partnerStatusSummary(vendor) === 'NDA').length,
+    association: vendors.filter((vendor) => partnerStatusSummary(vendor) === 'Association Agreement').length,
+    pending: vendors.filter((vendor) => partnerStatusSummary(vendor) === 'Pending').length,
   }), [vendors]);
 
   const compareVendors = useMemo(() => vendors.filter((vendor) => compareIds.includes(vendor.id)), [compareIds, vendors]);
@@ -440,17 +475,25 @@ export default function VendorDirectory() {
       toast.error('Company Name is required.');
       return;
     }
-    await addVendor(toVendorPayload(form));
-    setAddOpen(false);
-    toast.success('Vendor added.');
+    try {
+      await addVendor(toVendorPayload(form));
+      setAddOpen(false);
+      toast.success('Partner added.');
+    } catch (error) {
+      toast.error((error as Error)?.message || 'Failed to add partner.');
+    }
   };
 
   const handleEditVendor = async (form: VendorFormState) => {
     if (!selectedVendor) return;
-    const saved = await updateVendor(selectedVendor.id, toVendorPayload(form));
-    setSelectedVendor(saved);
-    setEditOpen(false);
-    toast.success('Vendor updated.');
+    try {
+      const saved = await updateVendor(selectedVendor.id, toVendorPayload(form));
+      setSelectedVendor(saved);
+      setEditOpen(false);
+      toast.success('Partner updated.');
+    } catch (error) {
+      toast.error((error as Error)?.message || 'Failed to update partner.');
+    }
   };
 
   const handleImportFile = async (file: File) => {
@@ -479,7 +522,7 @@ export default function VendorDirectory() {
   };
 
   const kpiCards = [
-    { key: 'ALL' as const, label: 'Total Vendors', value: totals.total, tone: 'from-primary/15 to-primary/5' },
+    { key: 'ALL' as const, label: 'Total Partners', value: totals.total, tone: 'from-primary/15 to-primary/5' },
     { key: 'NDA' as const, label: 'NDA', value: totals.nda, tone: 'from-info/20 to-info/5' },
     { key: 'Association Agreement' as const, label: 'Association', value: totals.association, tone: 'from-success/20 to-success/5' },
     { key: 'Pending' as const, label: 'Pending', value: totals.pending, tone: 'from-warning/20 to-warning/5' },
@@ -611,7 +654,7 @@ export default function VendorDirectory() {
                           </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge className={cn('border', agreementTone[vendor.agreementStatus])}>{vendor.agreementStatus}</Badge>
+                          <Badge className={cn('border', agreementTone[partnerStatusSummary(vendor)])}>{partnerStatusSummary(vendor)}</Badge>
                           <Badge variant="outline">{vendor.companySize || 'Size n/a'}</Badge>
                           {searchTerms.length > 0 && relevance > 0 && (
                             <Badge variant="secondary">{relevance} matches</Badge>
@@ -677,7 +720,7 @@ export default function VendorDirectory() {
                       </div>
                     </TableCell>
                     <TableCell>{vendor.focusArea || '—'}</TableCell>
-                    <TableCell><Badge className={cn('border', agreementTone[vendor.agreementStatus])}>{vendor.agreementStatus}</Badge></TableCell>
+                    <TableCell><Badge className={cn('border', agreementTone[partnerStatusSummary(vendor)])}>{partnerStatusSummary(vendor)}</Badge></TableCell>
                     <TableCell>{vendor.companySize || '—'}</TableCell>
                     <TableCell>{vendor.confirmedTechStack.length}</TableCell>
                     <TableCell>{vendor.certifications.length}</TableCell>
@@ -728,7 +771,7 @@ export default function VendorDirectory() {
                     <DialogDescription className="text-primary-foreground/80">{selectedVendor.focusArea || 'Partner capability profile'}</DialogDescription>
                     <div className="flex flex-wrap gap-2">
                       <Badge className="bg-white/15 text-white">{selectedVendor.companySize || 'Size n/a'}</Badge>
-                      <Badge className="bg-white/15 text-white">{selectedVendor.agreementStatus}</Badge>
+                      <Badge className="bg-white/15 text-white">{partnerStatusSummary(selectedVendor)}</Badge>
                     </div>
                   </div>
                   {isMaster && (
@@ -763,6 +806,7 @@ export default function VendorDirectory() {
                     <div className="space-y-2 text-sm">
                       <div>NDA Status: {selectedVendor.ndaStatus || 'Not provided'}</div>
                       <div>Association Agreement Status: {selectedVendor.associationAgreementStatus || 'Not provided'}</div>
+                      <div>Summary: {partnerStatusDetail(selectedVendor)}</div>
                     </div>
                   </InfoPanel>
                   <InfoPanel title="Sources">
@@ -855,7 +899,7 @@ export default function VendorDirectory() {
                     {importPreview.newVendors.slice(0, 12).map((vendor) => (
                       <div key={vendor.id} className="rounded-md border border-border px-3 py-2">
                         <div className="font-medium">{vendor.companyName}</div>
-                        <div className="text-xs text-muted-foreground">{vendor.focusArea || 'No focus area'} • {vendor.agreementStatus}</div>
+                        <div className="text-xs text-muted-foreground">{vendor.focusArea || 'No focus area'} • {partnerStatusDetail(vendor)}</div>
                       </div>
                     ))}
                     {importPreview.skippedDuplicates.length > 0 && (
