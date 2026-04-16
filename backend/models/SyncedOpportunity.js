@@ -39,6 +39,7 @@ const syncedOpportunitySchema = new mongoose.Schema(
     postBidDetailUpdatedAt: { type: Date, default: null },
     remarksReason: String,
     comments: String,
+    tenderStatusRemark: String,
     awardedDate: { type: String, default: null },
     combinedStatuses: [String],  // ✅ NEW: Array of both statuses (no double count)
     telecastAlerted: { type: Boolean, default: false },

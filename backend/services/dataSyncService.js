@@ -181,6 +181,7 @@ const DEFAULT_MAPPING = {
     'NOTES',
     'OBSERVATIONS',
   ],
+  tenderStatusRemark: ['TENDER STATUS -', 'TENDER STATUS-', 'TENDER STATUS'],
   country: ['COUNTRY', 'REGION', 'LOCATION'],
   probability: ['PROBABILITY', 'WIN %', 'CHANCE'],
   submissionDeadline: ['SUBMISSION DEADLINE', 'DUE DATE', 'TENDER PLANNED SUBMISSION DATE', 'TENDER DUE DATE', 'TENDER DUE  DATE'],
@@ -457,8 +458,8 @@ function inferAwardedDateFromPartialText(text, fallbackYear = '') {
   return null;
 }
 
-function parseAwardedDateFromRemarks({ remarksReason = '', comments = '', year = '', status = '' }) {
-  const text = [remarksReason, comments].map((v) => String(v || '').trim()).filter(Boolean).join(' | ');
+function parseAwardedDateFromRemarks({ remarksReason = '', comments = '', tenderStatusRemark = '', year = '', status = '' }) {
+  const text = [remarksReason, comments, tenderStatusRemark].map((v) => String(v || '').trim()).filter(Boolean).join(' | ');
   if (!text) return null;
 
   const isAwardedStatus = String(status || '').trim().toUpperCase() === 'AWARDED';
@@ -542,6 +543,7 @@ export async function syncTendersFromGraph(config) {
     groupClassification: findColumn(headers, mapping.groupClassification),
     remarksReason: findColumn(headers, mapping.remarksReason),
     comments: findColumn(headers, mapping.comments),
+    tenderStatusRemark: findColumn(headers, mapping.tenderStatusRemark),
     country: findColumn(headers, mapping.country),
     probability: findColumn(headers, mapping.probability),
     submissionDeadline: findColumn(headers, mapping.submissionDeadline),
@@ -622,9 +624,11 @@ export async function syncTendersFromGraph(config) {
     });
     const remarksReason = getValue(colIndices.remarksReason);
     const comments = getValue(colIndices.comments);
+    const tenderStatusRemark = getValue(colIndices.tenderStatusRemark);
     const awardedDate = parseAwardedDateFromRemarks({
       remarksReason,
       comments,
+      tenderStatusRemark,
       year,
       status: derivedStatuses?.canonicalStage || '',
     });
@@ -649,6 +653,7 @@ export async function syncTendersFromGraph(config) {
       groupClassification: getValue(colIndices.groupClassification),
       remarksReason,
       comments,
+      tenderStatusRemark,
       awardedDate: awardedDate || null,
       rawGraphData: {
         year,

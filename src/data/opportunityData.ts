@@ -45,6 +45,7 @@ export interface Opportunity {
   country: string;
   comments?: string;
   remarksReason?: string;
+  tenderStatusRemark?: string;
   awardedDate?: string | null;
   awardStatus: string;
   rawSheetYear?: string;

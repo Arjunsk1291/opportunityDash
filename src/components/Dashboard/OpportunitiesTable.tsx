@@ -232,6 +232,7 @@ export function OpportunitiesTable({
       tender.avenirStatus,
       getSubmissionDisplay(tender),
       tender.remarksReason,
+      tender.tenderStatusRemark,
       tender.tenderResult,
       approvalSearchValue,
       tender.comments,
@@ -574,7 +575,7 @@ export function OpportunitiesTable({
                       </div>
                     </TableCell>
                     <TableCell className={`hidden md:table-cell ${cellPaddingClass}`} onClick={(e) => e.stopPropagation()}>
-                      {tender.remarksReason ? (
+                      {tender.remarksReason || tender.tenderStatusRemark ? (
                         <Popover>
                           <PopoverTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-6 w-6">
@@ -582,8 +583,16 @@ export function OpportunitiesTable({
                             </Button>
                           </PopoverTrigger>
                           <PopoverContent className="w-80">
-                            <p className="text-xs font-medium text-muted-foreground">Remarks/Reason</p>
-                            <p className="text-sm">{tender.remarksReason}</p>
+                            <div className="space-y-3">
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground">Remarks/Reason</p>
+                                <p className="text-sm">{tender.remarksReason || '—'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground">Tender Status -</p>
+                                <p className="text-sm">{tender.tenderStatusRemark || '—'}</p>
+                              </div>
+                            </div>
                           </PopoverContent>
                         </Popover>
                       ) : '—'}
