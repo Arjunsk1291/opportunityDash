@@ -72,6 +72,7 @@ export function OpportunityDetailDialog({
             <DetailRow label="Submission" value={getSubmissionDisplay()} />
             <DetailRow label="Lead" value={opportunity.internalLead || '—'} />
             <DetailRow label="Status" value={getDisplayStatus(opportunity) || '—'} />
+            <DetailRow label="Awarded Date" value={opportunity.awardedDate || '—'} />
             <DetailRow label="Remarks" value={opportunity.remarksReason || '—'} />
             <DetailRow label="Result" value={getDisplayResult(opportunity) || '—'} />
           </div>

@@ -327,6 +327,106 @@ function validateResolvedColumns(headers = [], colIndices = {}) {
   );
 }
 
+const MONTH_INDEX = {
+  jan: 1, january: 1,
+  feb: 2, february: 2,
+  mar: 3, march: 3,
+  apr: 4, april: 4,
+  may: 5,
+  jun: 6, june: 6,
+  jul: 7, july: 7,
+  aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9,
+  oct: 10, october: 10,
+  nov: 11, november: 11,
+  dec: 12, december: 12,
+};
+
+function parseYearToken(value, fallbackYear = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return Number(fallbackYear) || null;
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return Number(fallbackYear) || null;
+  if (numeric >= 1000) return numeric;
+  if (numeric >= 0 && numeric < 100) return 2000 + numeric;
+  return Number(fallbackYear) || null;
+}
+
+function parseMonthToken(value) {
+  const raw = String(value || '').trim().toLowerCase().replace(/\.$/, '');
+  if (!raw) return null;
+  if (/^\d{1,2}$/.test(raw)) {
+    const numeric = Number(raw);
+    return numeric >= 1 && numeric <= 12 ? numeric : null;
+  }
+  return MONTH_INDEX[raw] || null;
+}
+
+function toIsoDate(year, month, day) {
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  if (
+    dt.getUTCFullYear() !== year
+    || dt.getUTCMonth() + 1 !== month
+    || dt.getUTCDate() !== day
+  ) return null;
+  return dt.toISOString().slice(0, 10);
+}
+
+function findAwardedDateInText(text, fallbackYear = '') {
+  const normalized = String(text || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/(\d{1,2})(st|nd|rd|th)\b/gi, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return null;
+
+  const patterns = [
+    /(?:award(?:ed)?|awared)[^0-9a-z]{0,25}(?:on\s*)?(\d{1,2})[\/\-. ]+([a-z]{3,9}|\d{1,2})(?:[\/\-. ,]+(\d{2,4}))?/ig,
+    /(\d{1,2})[\/\-. ]+([a-z]{3,9}|\d{1,2})(?:[\/\-. ,]+(\d{2,4}))?/ig,
+  ];
+
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(normalized)) !== null) {
+      const day = Number(match[1]);
+      const month = parseMonthToken(match[2]);
+      const year = parseYearToken(match[3], fallbackYear);
+      if (!Number.isFinite(day) || day < 1 || day > 31 || !month || !year) continue;
+      const iso = toIsoDate(year, month, day);
+      if (iso) return iso;
+    }
+  }
+
+  return null;
+}
+
+function parseAwardedDateFromRemarks({ remarksReason = '', comments = '', year = '', status = '' }) {
+  const text = [remarksReason, comments].map((v) => String(v || '').trim()).filter(Boolean).join(' | ');
+  if (!text) return null;
+
+  const isAwardedStatus = String(status || '').trim().toUpperCase() === 'AWARDED';
+  const segments = text
+    .split(/\r?\n|[|;]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const awardedSegments = segments.filter((segment) => /(award(?:ed)?|awared)/i.test(segment));
+
+  for (const segment of awardedSegments) {
+    const iso = findAwardedDateInText(segment, year);
+    if (iso) return iso;
+  }
+
+  if (isAwardedStatus) {
+    for (const segment of segments) {
+      const iso = findAwardedDateInText(segment, year);
+      if (iso) return iso;
+    }
+  }
+
+  return null;
+}
+
 export async function syncTendersFromGraph(config) {
   if (!config?.driveId || !config?.fileId || !config?.worksheetName) {
     throw new Error('Graph sync config missing driveId/fileId/worksheetName');
@@ -460,6 +560,14 @@ export async function syncTendersFromGraph(config) {
       rawAvenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
       rawTenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
     });
+    const remarksReason = getValue(colIndices.remarksReason);
+    const comments = getValue(colIndices.comments);
+    const awardedDate = parseAwardedDateFromRemarks({
+      remarksReason,
+      comments,
+      year,
+      status: derivedStatuses?.canonicalStage || '',
+    });
 
     const tender = {
       opportunityRefNo: getValue(colIndices.tenderNo),
@@ -479,8 +587,9 @@ export async function syncTendersFromGraph(config) {
       tenderSubmittedDate: tenderSubmittedDate || null,
       ...derivedStatuses,
       groupClassification: getValue(colIndices.groupClassification),
-      remarksReason: getValue(colIndices.remarksReason),
-      comments: getValue(colIndices.comments),
+      remarksReason,
+      comments,
+      awardedDate: awardedDate || null,
       rawGraphData: {
         year,
         dateReceived,
