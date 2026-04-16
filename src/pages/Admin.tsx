@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Progress } from '@/components/ui/progress';
 import { Fragment, useState, useEffect, useMemo, type ChangeEvent } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
@@ -168,6 +169,13 @@ interface ManualUpdateSummary {
   syncedRowsPatched: number;
 }
 
+interface LiveActionStatus {
+  name: string;
+  percent: number;
+  detail: string;
+  startedAt: number;
+}
+
 const EXPORT_TEMPLATE_PREVIEW_HEADERS = ['Avenir Ref', 'Tender Name', 'Client', 'Status', 'RFP Received'];
 const EXPORT_TEMPLATE_PREVIEW_ROW = ['AC26144', 'HSE MONITORING SYSTEM', 'L&T', 'Submitted', '2026-04-07'];
 const EXPORT_PREVIEW_GRID_COLUMNS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -277,6 +285,7 @@ export default function Admin() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [changingRole, setChangingRole] = useState<string | null>(null);
   const [syncLoading, setSyncLoading] = useState(false);
+  const [liveActionStatus, setLiveActionStatus] = useState<LiveActionStatus | null>(null);
   const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(null);
   const [graphConfig, setGraphConfig] = useState<GraphConfig>({
     shareLink: '',
@@ -390,6 +399,35 @@ export default function Admin() {
   const [manualUpdateUploading, setManualUpdateUploading] = useState(false);
   const [manualUpdateFileName, setManualUpdateFileName] = useState('');
   const [manualUpdateSummary, setManualUpdateSummary] = useState<ManualUpdateSummary | null>(null);
+
+  const runTrackedAction = async <T,>(
+    actionName: string,
+    runner: (setProgress: (percent: number, detail: string) => void) => Promise<T>,
+  ): Promise<T> => {
+    const startedAt = performance.now();
+    const setProgress = (percent: number, detail: string) => {
+      const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+      const elapsedMs = Math.round(performance.now() - startedAt);
+      setLiveActionStatus({ name: actionName, percent: safePercent, detail, startedAt });
+      console.log(`[admin.progress] ${actionName} | ${safePercent}% | ${detail} | ${elapsedMs}ms`);
+    };
+
+    console.time(`[admin.action] ${actionName}`);
+    setProgress(10, 'Starting');
+    try {
+      const result = await runner(setProgress);
+      setProgress(100, 'Completed');
+      return result;
+    } catch (error) {
+      setProgress(100, `Failed: ${(error as Error)?.message || 'unknown error'}`);
+      throw error;
+    } finally {
+      console.timeEnd(`[admin.action] ${actionName}`);
+      setTimeout(() => {
+        setLiveActionStatus((current) => (current?.name === actionName ? null : current));
+      }, 2200);
+    }
+  };
 
   const tabConfig = useMemo(
     () => ([
@@ -958,23 +996,29 @@ export default function Admin() {
     if (!token) return;
     setSyncLoading(true);
     try {
-      const response = await fetch(API_URL + '/opportunities/sync-graph', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
+      await runTrackedAction('Sync from Graph Excel', async (setProgress) => {
+        setProgress(25, 'Calling sync endpoint');
+        const response = await fetch(API_URL + '/opportunities/sync-graph', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+        });
 
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(parseApiErrorPayload(result, 'Failed to sync data'));
-      }
-      setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Graph Excel (${result.newRowsCount || 0} new rows)` });
-      await loadCollectionStats();
-      await loadNotificationStatus();
-      toast.success(`Synced ${result.count} tenders from Graph Excel (${result.newRowsCount || 0} new rows)`);
-      setTimeout(() => setMessage(null), 3000);
+        setProgress(65, 'Reading sync response');
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(parseApiErrorPayload(result, 'Failed to sync data'));
+        }
+        setProgress(82, 'Refreshing stats');
+        setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Graph Excel (${result.newRowsCount || 0} new rows)` });
+        await loadCollectionStats();
+        setProgress(92, 'Refreshing notification status');
+        await loadNotificationStatus();
+        toast.success(`Synced ${result.count} tenders from Graph Excel (${result.newRowsCount || 0} new rows)`);
+        setTimeout(() => setMessage(null), 3000);
+      });
     } catch (error) {
       console.error('❌ Error syncing:', error);
       setMessage({ type: 'error', text: 'Failed to sync: ' + (error as Error).message });
@@ -1224,20 +1268,26 @@ export default function Admin() {
     if (!token) return;
     setSyncLoading(true);
     try {
-      const response = await fetch(API_URL + '/notifications/force-refresh', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
+      await runTrackedAction('Force Refresh Notifications', async (setProgress) => {
+        setProgress(25, 'Calling force refresh endpoint');
+        const response = await fetch(API_URL + '/notifications/force-refresh', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        setProgress(60, 'Reading response');
+        const data = await response.json();
+        if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to force refresh notifications'));
+
+        setProgress(82, 'Refreshing notification status');
+        toast.success(data.message || `Force refresh complete. ${data.newRowsCount || 0} new rows detected.`);
+        await loadNotificationStatus();
+        setProgress(92, 'Refreshing collection stats');
+        await loadCollectionStats();
       });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to force refresh notifications'));
-
-      toast.success(data.message || `Force refresh complete. ${data.newRowsCount || 0} new rows detected.`);
-      await loadNotificationStatus();
-      await loadCollectionStats();
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -1387,33 +1437,45 @@ export default function Admin() {
       toast.error('Drive ID and File ID are required');
       return;
     }
-    await loadWorksheets(graphConfig.driveId, graphConfig.fileId);
+    try {
+      await runTrackedAction('Load Worksheets', async (setProgress) => {
+        setProgress(35, 'Requesting worksheet list');
+        await loadWorksheets(graphConfig.driveId, graphConfig.fileId);
+        setProgress(90, 'Worksheet list loaded');
+      });
+    } catch {
+      // loadWorksheets already logs failure details.
+    }
   };
 
   const resolveShareLink = async () => {
     if (!token || !graphConfig.shareLink) return;
     setConfigSaving(true);
     try {
-      const response = await fetch(API_URL + '/graph/resolve-share-link', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ shareLink: graphConfig.shareLink }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(parseApiErrorPayload(data, 'Failed to resolve share link'));
-      }
+      await runTrackedAction('Resolve Share Link', async (setProgress) => {
+        setProgress(25, 'Resolving shared link');
+        const response = await fetch(API_URL + '/graph/resolve-share-link', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ shareLink: graphConfig.shareLink }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(parseApiErrorPayload(data, 'Failed to resolve share link'));
+        }
 
-      setGraphConfig((prev) => ({
-        ...prev,
-        driveId: data.driveId || prev.driveId,
-        fileId: data.fileId || prev.fileId,
-      }));
-      await loadWorksheets(data.driveId, data.fileId);
-      toast.success('Share link resolved successfully');
+        setProgress(72, 'Updating IDs and loading worksheets');
+        setGraphConfig((prev) => ({
+          ...prev,
+          driveId: data.driveId || prev.driveId,
+          fileId: data.fileId || prev.fileId,
+        }));
+        await loadWorksheets(data.driveId, data.fileId);
+        toast.success('Share link resolved successfully');
+      });
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -1429,27 +1491,32 @@ export default function Admin() {
 
     setConfigSaving(true);
     try {
-      const response = await fetch(API_URL + '/graph/preview-rows', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          driveId: graphConfig.driveId,
-          fileId: graphConfig.fileId,
-          worksheetName: graphConfig.worksheetName,
-          dataRange: graphConfig.dataRange || 'B4:Z60',
-        }),
+      await runTrackedAction('Preview Rows', async (setProgress) => {
+        setProgress(25, 'Requesting preview rows');
+        const response = await fetch(API_URL + '/graph/preview-rows', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            driveId: graphConfig.driveId,
+            fileId: graphConfig.fileId,
+            worksheetName: graphConfig.worksheetName,
+            dataRange: graphConfig.dataRange || 'B4:Z60',
+          }),
+        });
+
+        setProgress(70, 'Parsing preview payload');
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(parseApiErrorPayload(data, 'Failed to preview rows'));
+        }
+
+        setProgress(90, 'Rendering preview rows');
+        setPreviewRows(data.previewRows || []);
+        toast.success('Preview loaded. Choose the header row below.');
       });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(parseApiErrorPayload(data, 'Failed to preview rows'));
-      }
-
-      setPreviewRows(data.previewRows || []);
-      toast.success('Preview loaded. Choose the header row below.');
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -1461,34 +1528,40 @@ export default function Admin() {
     if (!token) return;
     setConfigSaving(true);
     try {
-      let mapping: Record<string, unknown> = {};
-      try {
-        mapping = JSON.parse(mappingText || '{}');
-      } catch {
-        throw new Error('Field mapping must be valid JSON');
-      }
+      await runTrackedAction('Save Graph Config', async (setProgress) => {
+        setProgress(20, 'Validating mapping JSON');
+        let mapping: Record<string, unknown> = {};
+        try {
+          mapping = JSON.parse(mappingText || '{}');
+        } catch {
+          throw new Error('Field mapping must be valid JSON');
+        }
 
-      const payload = {
-        ...graphConfig,
-        fieldMapping: mapping,
-      };
+        const payload = {
+          ...graphConfig,
+          fieldMapping: mapping,
+        };
 
-      const response = await fetch(API_URL + '/graph/config', {
-        method: 'PUT',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
+        setProgress(45, 'Saving configuration');
+        const response = await fetch(API_URL + '/graph/config', {
+          method: 'PUT',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        setProgress(78, 'Reading save response');
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to save graph config');
+        }
+
+        setProgress(92, 'Applying latest config locally');
+        setGraphConfig((prev) => ({ ...prev, ...(data.config || {}) }));
+        toast.success('Graph configuration saved');
       });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to save graph config');
-      }
-
-      setGraphConfig((prev) => ({ ...prev, ...(data.config || {}) }));
-      toast.success('Graph configuration saved');
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -2060,6 +2133,18 @@ export default function Admin() {
         <Alert variant={message.type === 'error' ? 'destructive' : 'default'}>
           <AlertDescription>{message.text}</AlertDescription>
         </Alert>
+      )}
+      {liveActionStatus && (
+        <Card className="border border-sky-200 bg-sky-50/50">
+          <CardContent className="pt-4">
+            <div className="mb-2 flex items-center justify-between text-sm">
+              <span className="font-medium">{liveActionStatus.name}</span>
+              <span>{liveActionStatus.percent}%</span>
+            </div>
+            <Progress value={liveActionStatus.percent} className="h-2" />
+            <p className="mt-2 text-xs text-muted-foreground">{liveActionStatus.detail}</p>
+          </CardContent>
+        </Card>
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
