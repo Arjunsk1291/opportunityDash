@@ -80,8 +80,8 @@ type VendorFormState = {
   companySize: string;
   sources: string;
   focusArea: string;
-  agreementStatus: AgreementStatus;
-  agreementDocuments: string;
+  ndaStatus: string;
+  associationAgreementStatus: string;
   contactPerson: string;
   emails: string;
 };
@@ -104,8 +104,8 @@ const emptyFormState: VendorFormState = {
   companySize: '',
   sources: '',
   focusArea: '',
-  agreementStatus: 'Pending',
-  agreementDocuments: '',
+  ndaStatus: '',
+  associationAgreementStatus: '',
   contactPerson: '',
   emails: '',
 };
@@ -165,8 +165,8 @@ const toFormState = (vendor?: VendorData | null): VendorFormState => {
     companySize: vendor.companySize,
     sources: vendor.sources.join(', '),
     focusArea: vendor.focusArea,
-    agreementStatus: vendor.agreementStatus,
-    agreementDocuments: vendor.agreementDocuments.join(', '),
+    ndaStatus: vendor.ndaStatus || '',
+    associationAgreementStatus: vendor.associationAgreementStatus || '',
     contactPerson: vendor.contactPerson,
     emails: vendor.emails.join(', '),
   };
@@ -184,8 +184,8 @@ const toVendorPayload = (form: VendorFormState) => ({
   companySize: form.companySize.trim(),
   sources: parseCommaInput(form.sources),
   focusArea: form.focusArea.trim(),
-  agreementStatus: form.agreementStatus,
-  agreementDocuments: parseCommaInput(form.agreementDocuments),
+  ndaStatus: form.ndaStatus.trim(),
+  associationAgreementStatus: form.associationAgreementStatus.trim(),
   contactPerson: form.contactPerson.trim(),
   emails: parseCommaInput(form.emails),
 });
@@ -236,24 +236,26 @@ function VendorFormDialog({
             <Input value={form.companySize} onChange={(e) => setField('companySize', e.target.value)} placeholder="11-50, 51-200..." />
           </div>
           <div className="space-y-2">
-            <Label>Agreement Status</Label>
-            <Select value={form.agreementStatus} onValueChange={(value) => setField('agreementStatus', value)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="NDA">NDA</SelectItem>
-                <SelectItem value="Association Agreement">Association Agreement</SelectItem>
-                <SelectItem value="Pending">Pending</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label>NDA Status</Label>
+            <Input
+              value={form.ndaStatus}
+              onChange={(e) => setField('ndaStatus', e.target.value)}
+              placeholder="Yes / No / Initiation / reason"
+            />
           </div>
           <div className="space-y-2">
             <Label>Contact Person</Label>
             <Input value={form.contactPerson} onChange={(e) => setField('contactPerson', e.target.value)} placeholder="Primary contact" />
           </div>
+          <div className="space-y-2">
+            <Label>Association Agreement Status</Label>
+            <Input
+              value={form.associationAgreementStatus}
+              onChange={(e) => setField('associationAgreementStatus', e.target.value)}
+              placeholder="Yes / No / Initiation / reason"
+            />
+          </div>
           <FieldTextarea label="Emails" value={form.emails} onChange={(value) => setField('emails', value)} placeholder="Comma separated" />
-          <FieldTextarea label="Agreement Documents" value={form.agreementDocuments} onChange={(value) => setField('agreementDocuments', value)} placeholder="Comma separated" />
           <FieldTextarea label="Sources" value={form.sources} onChange={(value) => setField('sources', value)} placeholder="Comma separated URLs or references" />
           <FieldTextarea label="Primary Industries" value={form.primaryIndustries} onChange={(value) => setField('primaryIndustries', value)} placeholder="Comma separated" />
           <FieldTextarea label="Confirmed Services" value={form.confirmedServices} onChange={(value) => setField('confirmedServices', value)} placeholder="Comma separated" />
@@ -302,8 +304,8 @@ function CompareDialog({ open, onOpenChange, vendors }: { open: boolean; onOpenC
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[96vw] lg:max-w-6xl">
         <DialogHeader>
-          <DialogTitle>Vendor Comparison</DialogTitle>
-          <DialogDescription>Side-by-side comparison of selected vendors.</DialogDescription>
+          <DialogTitle>Partner Comparison</DialogTitle>
+          <DialogDescription>Side-by-side comparison of selected partners.</DialogDescription>
         </DialogHeader>
         <div className="overflow-x-auto pb-2 scrollbar-thin">
           <div className="grid min-w-[720px] gap-4" style={{ gridTemplateColumns: `repeat(${vendors.length}, minmax(260px, 1fr))` }}>
@@ -314,7 +316,8 @@ function CompareDialog({ open, onOpenChange, vendors }: { open: boolean; onOpenC
                     <h3 className="text-lg font-semibold">{vendor.companyName}</h3>
                     <p className="text-sm text-muted-foreground">{vendor.focusArea || 'No focus area'}</p>
                   </div>
-                  <CompareBlock label="Agreement" value={vendor.agreementStatus} />
+                  <CompareBlock label="NDA Status" value={vendor.ndaStatus || '—'} />
+                  <CompareBlock label="Association Status" value={vendor.associationAgreementStatus || '—'} />
                   <CompareBlock label="Size" value={vendor.companySize || '—'} />
                   <CompareBlock label="Tech Stack" value={vendor.confirmedTechStack.join(', ') || '—'} />
                   <CompareBlock label="Certifications" value={vendor.certifications.join(', ') || '—'} />
@@ -487,7 +490,7 @@ export default function VendorDirectory() {
       <Card className="bg-card/80 p-4 backdrop-blur-sm sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">Vendor Directory</h1>
+            <h1 className="text-2xl font-semibold">Partners</h1>
             <p className="text-sm text-muted-foreground">Searchable partnership, tech, and agreement intelligence for delivery teams.</p>
           </div>
           <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
@@ -497,7 +500,7 @@ export default function VendorDirectory() {
             </Button>
             <Button className="gap-2" onClick={() => setAddOpen(true)} disabled={!canAddVendor}>
               <Plus className="h-4 w-4" />
-              Add Vendor
+              Add Partner
             </Button>
             <Button variant="outline" className="gap-2" onClick={() => exportVendors(vendors)}>
               <FileSpreadsheet className="h-4 w-4" />
@@ -689,13 +692,13 @@ export default function VendorDirectory() {
 
       {enrichedVendors.length === 0 && (
         <Card className="bg-card/80 p-10 text-center text-muted-foreground backdrop-blur-sm">
-          No vendors match the current filters.
+          No partners match the current filters.
         </Card>
       )}
 
       {isLoading && (
         <Card className="bg-card/80 p-10 text-center text-muted-foreground backdrop-blur-sm">
-          Loading vendors from MongoDB...
+          Loading partners from MongoDB...
         </Card>
       )}
 
@@ -722,7 +725,7 @@ export default function VendorDirectory() {
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-2">
                     <DialogTitle className="text-2xl">{selectedVendor.companyName}</DialogTitle>
-                    <DialogDescription className="text-primary-foreground/80">{selectedVendor.focusArea || 'Vendor capability profile'}</DialogDescription>
+                    <DialogDescription className="text-primary-foreground/80">{selectedVendor.focusArea || 'Partner capability profile'}</DialogDescription>
                     <div className="flex flex-wrap gap-2">
                       <Badge className="bg-white/15 text-white">{selectedVendor.companySize || 'Size n/a'}</Badge>
                       <Badge className="bg-white/15 text-white">{selectedVendor.agreementStatus}</Badge>
@@ -758,8 +761,8 @@ export default function VendorDirectory() {
                   </InfoPanel>
                   <InfoPanel title="Agreement Info">
                     <div className="space-y-2 text-sm">
-                      <div>Status: {selectedVendor.agreementStatus}</div>
-                      <div>Documents: {selectedVendor.agreementDocuments.join(', ') || 'None'}</div>
+                      <div>NDA Status: {selectedVendor.ndaStatus || 'Not provided'}</div>
+                      <div>Association Agreement Status: {selectedVendor.associationAgreementStatus || 'Not provided'}</div>
                     </div>
                   </InfoPanel>
                   <InfoPanel title="Sources">
@@ -785,8 +788,8 @@ export default function VendorDirectory() {
         open={addOpen}
         onOpenChange={setAddOpen}
         onSubmit={handleAddVendor}
-        title="Add Vendor"
-        description="Create a new vendor profile with agreement, capability, and contact details."
+        title="Add Partner"
+        description="Create a new partner profile with agreement, capability, and contact details."
       />
 
       <VendorFormDialog
@@ -794,14 +797,14 @@ export default function VendorDirectory() {
         onOpenChange={setEditOpen}
         onSubmit={handleEditVendor}
         initialVendor={selectedVendor}
-        title="Edit Vendor"
-        description="Update vendor information and save changes back to the directory."
+        title="Edit Partner"
+        description="Update partner information and save changes back to the directory."
       />
 
       <Dialog open={importOpen} onOpenChange={(open) => { setImportOpen(open); if (!open) setImportPreview(null); }}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Import Vendors from Excel</DialogTitle>
+            <DialogTitle>Import Partners from Excel</DialogTitle>
             <DialogDescription>Upload a workbook using the provided template. Comma-separated fields are split automatically and duplicate company names are skipped.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -840,7 +843,7 @@ export default function VendorDirectory() {
                 <div className="space-y-4 text-sm">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-lg border border-success/20 bg-success/10 p-3">
-                      <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">New Vendors</div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">New Partners</div>
                       <div className="mt-2 text-2xl font-semibold text-success">{importPreview.newVendors.length}</div>
                     </div>
                     <div className="rounded-lg border border-warning/20 bg-warning/10 p-3">

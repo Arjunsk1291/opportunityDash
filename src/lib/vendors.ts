@@ -16,6 +16,8 @@ export type VendorData = {
   companySize: string;
   sources: string[];
   focusArea: string;
+  ndaStatus: string;
+  associationAgreementStatus: string;
   agreementStatus: AgreementStatus;
   agreementDocuments: string[];
   contactPerson: string;
@@ -30,8 +32,8 @@ export type VendorImportPreview = {
 export const VENDOR_IMPORT_HEADERS = [
   'Company Name',
   'Focus Area',
-  'Agreement Status',
-  'Agreement Documents',
+  'NDA Status',
+  'Association Agreement Status',
   'Company Size',
   'Contact Person',
   'Emails',
@@ -72,6 +74,15 @@ const normalizeAgreementStatus = (value: unknown): AgreementStatus => {
   return 'Pending';
 };
 
+const inferAgreementStatus = (ndaStatus: string, associationAgreementStatus: string): AgreementStatus => {
+  const nda = String(ndaStatus || '').toLowerCase();
+  const association = String(associationAgreementStatus || '').toLowerCase();
+  const positive = ['yes', 'y', 'signed', 'active', 'done', 'completed'];
+  if (positive.some((token) => nda.includes(token))) return 'NDA';
+  if (positive.some((token) => association.includes(token))) return 'Association Agreement';
+  return 'Pending';
+};
+
 const sanitizeVendor = (vendor: VendorData): VendorData => ({
   ...vendor,
   companyName: normalizeCompanyName(vendor.companyName),
@@ -86,6 +97,8 @@ const sanitizeVendor = (vendor: VendorData): VendorData => ({
   agreementDocuments: vendor.agreementDocuments.map((item) => item.trim()).filter(Boolean),
   emails: vendor.emails.map((item) => item.trim()).filter(Boolean),
   focusArea: String(vendor.focusArea || '').trim(),
+  ndaStatus: String(vendor.ndaStatus || '').trim(),
+  associationAgreementStatus: String(vendor.associationAgreementStatus || '').trim(),
   companySize: String(vendor.companySize || '').trim(),
   contactPerson: String(vendor.contactPerson || '').trim(),
   agreementStatus: normalizeAgreementStatus(vendor.agreementStatus),
@@ -94,6 +107,8 @@ const sanitizeVendor = (vendor: VendorData): VendorData => ({
 export const getVendorFieldValues = (vendor: VendorData): string[] => [
   vendor.companyName,
   vendor.focusArea,
+  vendor.ndaStatus,
+  vendor.associationAgreementStatus,
   vendor.agreementStatus,
   vendor.companySize,
   vendor.contactPerson,
@@ -135,11 +150,18 @@ export const scoreVendorAgainstTerms = (vendor: VendorData, terms: string[]) => 
 const parseVendorRow = (row: Record<string, unknown>): Omit<VendorData, 'id'> | null => {
   const companyName = normalizeCompanyName(String(row['Company Name'] || ''));
   if (!companyName) return null;
+  const ndaStatus = String(row['NDA Status'] || '').trim();
+  const associationAgreementStatus = String(row['Association Agreement Status'] || '').trim();
+  const explicitAgreementStatus = String(row['Agreement Status'] || '').trim();
 
   return {
     companyName,
     focusArea: String(row['Focus Area'] || '').trim(),
-    agreementStatus: normalizeAgreementStatus(row['Agreement Status']),
+    ndaStatus,
+    associationAgreementStatus,
+    agreementStatus: explicitAgreementStatus
+      ? normalizeAgreementStatus(explicitAgreementStatus)
+      : inferAgreementStatus(ndaStatus, associationAgreementStatus),
     agreementDocuments: splitCommaSeparated(row['Agreement Documents']),
     companySize: String(row['Company Size'] || '').trim(),
     contactPerson: String(row['Contact Person'] || '').trim(),
@@ -207,8 +229,8 @@ export const exportVendors = (vendors: VendorData[]) => {
   sheet.addRow([
     'Company Name',
     'Focus Area',
-    'Agreement Status',
-    'Agreement Documents',
+    'NDA Status',
+    'Association Agreement Status',
     'Company Size',
     'Contact Person',
     'Emails',
@@ -224,8 +246,8 @@ export const exportVendors = (vendors: VendorData[]) => {
   const rows = vendors.map((vendor) => ({
     'Company Name': vendor.companyName,
     'Focus Area': vendor.focusArea,
-    'Agreement Status': vendor.agreementStatus,
-    'Agreement Documents': vendor.agreementDocuments.join(', '),
+    'NDA Status': vendor.ndaStatus,
+    'Association Agreement Status': vendor.associationAgreementStatus,
     'Company Size': vendor.companySize,
     'Contact Person': vendor.contactPerson,
     'Emails': vendor.emails.join(', '),
@@ -242,8 +264,8 @@ export const exportVendors = (vendors: VendorData[]) => {
     sheet.addRow([
       row['Company Name'],
       row['Focus Area'],
-      row['Agreement Status'],
-      row['Agreement Documents'],
+      row['NDA Status'],
+      row['Association Agreement Status'],
       row['Company Size'],
       row['Contact Person'],
       row['Emails'],

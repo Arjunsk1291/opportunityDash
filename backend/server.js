@@ -586,8 +586,22 @@ const normalizeAgreementStatus = (value = '') => {
   return 'Pending';
 };
 
+const normalizeFreeTextStatus = (value = '') => String(value || '').trim();
+
+const toAgreementStatusFromPartnerStatuses = (ndaStatus = '', associationAgreementStatus = '') => {
+  const nda = normalizeFreeTextStatus(ndaStatus).toLowerCase();
+  const association = normalizeFreeTextStatus(associationAgreementStatus).toLowerCase();
+  const positive = ['yes', 'y', 'signed', 'active', 'done', 'completed'];
+  if (positive.some((token) => nda.includes(token))) return 'NDA';
+  if (positive.some((token) => association.includes(token))) return 'Association Agreement';
+  return 'Pending';
+};
+
 const buildVendorPayload = (input = {}) => {
   const companyName = normalizeCompanyName(input.companyName || '');
+  const ndaStatus = normalizeFreeTextStatus(input.ndaStatus);
+  const associationAgreementStatus = normalizeFreeTextStatus(input.associationAgreementStatus);
+  const hasExplicitAgreementStatus = String(input.agreementStatus || '').trim() !== '';
   return {
     companyName,
     companyKey: normalizeCompanyKey(companyName),
@@ -601,7 +615,11 @@ const buildVendorPayload = (input = {}) => {
     companySize: String(input.companySize || '').trim(),
     sources: splitStringList(input.sources),
     focusArea: String(input.focusArea || '').trim(),
-    agreementStatus: normalizeAgreementStatus(input.agreementStatus),
+    ndaStatus,
+    associationAgreementStatus,
+    agreementStatus: hasExplicitAgreementStatus
+      ? normalizeAgreementStatus(input.agreementStatus)
+      : toAgreementStatusFromPartnerStatuses(ndaStatus, associationAgreementStatus),
     agreementDocuments: splitStringList(input.agreementDocuments),
     contactPerson: String(input.contactPerson || '').trim(),
     emails: splitStringList(input.emails).map((email) => email.toLowerCase()),

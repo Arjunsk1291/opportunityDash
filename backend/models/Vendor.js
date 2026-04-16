@@ -14,6 +14,8 @@ const vendorSchema = new mongoose.Schema(
     companySize: { type: String, default: '' },
     sources: { type: [String], default: [] },
     focusArea: { type: String, default: '' },
+    ndaStatus: { type: String, default: '' },
+    associationAgreementStatus: { type: String, default: '' },
     agreementStatus: {
       type: String,
       enum: ['NDA', 'Association Agreement', 'Pending'],
