@@ -276,55 +276,30 @@
     position: relative;
     overflow: hidden;
     border-radius: 1rem;
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    background: rgba(10, 14, 24, 0.85);
-    color: rgba(255, 255, 255, 0.96);
-    backdrop-filter: blur(30px);
-    -webkit-backdrop-filter: blur(30px);
+    border: 1px solid #E2E8F0;
+    background: rgba(255, 255, 255, 0.9);
+    color: #1E293B;
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      0 22px 60px rgba(2, 6, 23, 0.6);
-  }
-
-  .advanced-filters-glass::before,
-  .advanced-filters-glass::after {
-    content: '';
-    position: absolute;
-    inset: auto;
-    pointer-events: none;
-    border-radius: 9999px;
-    filter: blur(36px);
-    opacity: 0.55;
-  }
-
-  .advanced-filters-glass::before {
-    width: 280px;
-    height: 280px;
-    right: -90px;
-    top: -120px;
-    background: radial-gradient(circle, rgba(34, 211, 238, 0.55), rgba(34, 211, 238, 0));
-  }
-
-  .advanced-filters-glass::after {
-    width: 320px;
-    height: 320px;
-    left: -130px;
-    bottom: -160px;
-    background: radial-gradient(circle, rgba(139, 92, 246, 0.55), rgba(139, 92, 246, 0));
+      inset 0 1px 0 rgba(255, 255, 255, 0.7),
+      0 18px 44px rgba(15, 23, 42, 0.12);
   }
 
   .advanced-filters-glass-inner {
     border-radius: 0.85rem;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: rgba(15, 23, 42, 0.7);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
-    backdrop-filter: blur(22px);
-    -webkit-backdrop-filter: blur(22px);
+    border: 1px solid #E2E8F0;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.72),
+      0 10px 24px rgba(15, 23, 42, 0.08);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
   }
 
   .advanced-filters-glass label,
   .advanced-filters-glass .text-muted-foreground {
-    color: rgba(255, 255, 255, 0.86) !important;
+    color: #334155 !important;
   }
 }
 
