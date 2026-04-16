@@ -1012,10 +1012,15 @@ export default function Admin() {
           throw new Error(parseApiErrorPayload(result, 'Failed to sync data'));
         }
         if (result?.syncTiming) {
-          const timing = result.syncTiming as { totalMs?: number; stageMs?: Record<string, number> };
+          const timing = result.syncTiming as {
+            totalMs?: number;
+            stageMs?: Record<string, number>;
+            stageDetails?: Record<string, unknown>;
+          };
           console.log('[admin.sync.timing.summary]', JSON.stringify({
             totalMs: Number(timing?.totalMs || 0),
             stageMs: timing?.stageMs || {},
+            stageDetails: timing?.stageDetails || {},
           }));
           if (timing?.stageMs && typeof timing.stageMs === 'object') {
             Object.entries(timing.stageMs)
@@ -1023,6 +1028,11 @@ export default function Admin() {
               .forEach(([stage, ms]) => {
                 console.log(`[admin.sync.timing.stage] ${stage}=${Number(ms || 0)}ms`);
               });
+          }
+          if (timing?.stageDetails && typeof timing.stageDetails === 'object') {
+            Object.entries(timing.stageDetails).forEach(([stage, details]) => {
+              console.log(`[admin.sync.timing.detail] ${stage}`, details);
+            });
           }
         }
         setProgress(82, 'Refreshing stats');

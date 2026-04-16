@@ -1813,6 +1813,7 @@ const pushWeeklyTelecastStats = (config, newRows = []) => {
 };
 
 const getExistingTelecastStateFromSyncedOpportunities = async () => {
+  const startedAt = Date.now();
   const rows = await SyncedOpportunity.find(
     {},
     {
@@ -1825,15 +1826,24 @@ const getExistingTelecastStateFromSyncedOpportunities = async () => {
       rawGraphData: 1,
     }
   ).lean();
+  const fetchMs = Date.now() - startedAt;
+  const reduceStartedAt = Date.now();
 
   const alertedKeySet = new Set();
   const refSet = new Set();
   const keyAlertedAt = new Map();
   const keyState = new Map();
+  let rowsWithStoredKey = 0;
+  let rowsWithRef = 0;
+  let fallbackKeyBuilds = 0;
 
   rows.forEach((row) => {
-    const key = String(row?.telecastAlertedKey || '').trim() || buildNotificationKey(row);
+    const storedKey = String(row?.telecastAlertedKey || '').trim();
+    if (storedKey) rowsWithStoredKey += 1;
+    const key = storedKey || buildNotificationKey(row);
+    if (!storedKey && key) fallbackKeyBuilds += 1;
     const ref = normalizeRefNo(String(row?.telecastAlertedRefNo || '').trim() || getTenderRefNo(row));
+    if (ref) rowsWithRef += 1;
     const telecastAlerted = Boolean(row?.telecastAlerted);
     const alertedAt = row?.telecastAlertedAt || null;
     const telecastAlertSource = String(row?.telecastAlertSource || '').trim();
@@ -1849,8 +1859,24 @@ const getExistingTelecastStateFromSyncedOpportunities = async () => {
     }
     if (ref && telecastAlerted) refSet.add(ref);
   });
+  const reduceMs = Date.now() - reduceStartedAt;
 
-  return { keyState, alertedKeySet, refSet, keyAlertedAt, count: rows.length };
+  return {
+    keyState,
+    alertedKeySet,
+    refSet,
+    keyAlertedAt,
+    count: rows.length,
+    timing: {
+      fetchMs,
+      reduceMs,
+      totalMs: Date.now() - startedAt,
+      rows: rows.length,
+      rowsWithStoredKey,
+      rowsWithRef,
+      fallbackKeyBuilds,
+    },
+  };
 };
 
 const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
@@ -1953,6 +1979,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const syncStartedAt = Date.now();
   let stageCheckpointAt = syncStartedAt;
   const stageMs = {};
+  const stageDetails = {};
   const markStage = (name) => {
     const now = Date.now();
     stageMs[name] = now - stageCheckpointAt;
@@ -1983,10 +2010,19 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const opportunities = await transformTendersToOpportunities(tenders);
   markStage('transformTendersToOpportunities');
 
+  const systemConfigStartedAt = Date.now();
+  const systemConfigPromise = getSystemConfig();
+  const telecastStateStartedAt = Date.now();
+  const telecastStatePromise = getExistingTelecastStateFromSyncedOpportunities();
   const [systemConfig, existingTelecastState] = await Promise.all([
-    getSystemConfig(),
-    getExistingTelecastStateFromSyncedOpportunities(),
+    systemConfigPromise,
+    telecastStatePromise,
   ]);
+  stageDetails.loadSystemConfigAndTelecastState = {
+    getSystemConfigMs: Date.now() - systemConfigStartedAt,
+    getExistingTelecastStateMs: Date.now() - telecastStateStartedAt,
+    telecastStateDetails: existingTelecastState?.timing || null,
+  };
   markStage('loadSystemConfigAndTelecastState');
   const previousKeys = new Set(systemConfig.notificationRowSignatures || []);
   const eligibleSignatures = opportunities
@@ -2194,8 +2230,18 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   });
   markStage('buildMergedRowsForInsert');
 
+  const deleteStartedAt = Date.now();
   await SyncedOpportunity.deleteMany({});
+  const deleteMs = Date.now() - deleteStartedAt;
+  const insertStartedAt = Date.now();
   const inserted = await SyncedOpportunity.insertMany(opportunitiesForInsert);
+  const insertMs = Date.now() - insertStartedAt;
+  stageDetails.replaceSyncedOpportunityCollection = {
+    deleteManyMs: deleteMs,
+    insertManyMs: insertMs,
+    insertedCount: inserted.length,
+    inputCount: opportunitiesForInsert.length,
+  };
   markStage('replaceSyncedOpportunityCollection');
   const postSyncTasks = [
     alignManualSnapshotsToSyncedValues(manualAlignmentByRef, `sync:${source}`),
@@ -2205,6 +2251,10 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     postSyncTasks.push(OpportunityFieldConflict.bulkWrite(pendingConflictOps, { ordered: false }));
   }
   const [_, clientSyncResult] = await Promise.all(postSyncTasks);
+  stageDetails.postSyncWrites = {
+    manualAlignCount: manualAlignmentByRef.size,
+    pendingConflictOpsCount: pendingConflictOps.length,
+  };
   markStage('postSyncWrites');
 
   config.lastSyncAt = now;
@@ -2219,6 +2269,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   // Ensure subsequent /api/opportunities responses reflect newly synced rows immediately.
   invalidateOpportunitiesCache(`graph_sync:${source}`);
   await warmOpportunitiesCache(`graph_sync:${source}`);
+  stageDetails.warmOpportunitiesCache = opportunitiesListCache.meta || null;
   markStage('warmOpportunitiesCache');
   const syncTotalMs = Date.now() - syncStartedAt;
 
@@ -2241,6 +2292,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     syncTiming: {
       totalMs: syncTotalMs,
       stageMs,
+      stageDetails,
     },
   }));
 
@@ -2264,6 +2316,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     syncTiming: {
       totalMs: syncTotalMs,
       stageMs,
+      stageDetails,
     },
   };
 };
