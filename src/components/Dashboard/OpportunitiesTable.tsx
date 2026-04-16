@@ -550,11 +550,6 @@ export function OpportunitiesTable({
                             ADNOC Ref: {getAdnocRftNo(tender)}
                           </div>
                         ) : null}
-                        {tender.awardedDate ? (
-                          <div className="truncate font-mono text-[10px] sm:text-xs text-muted-foreground" title={tender.awardedDate}>
-                            Awarded Date: {tender.awardedDate}
-                          </div>
-                        ) : null}
                       </div>
                     </TableCell>
                     <TableCell className={`hidden md:table-cell ${cellPaddingClass}`}>
@@ -569,7 +564,14 @@ export function OpportunitiesTable({
                     <TableCell className={`hidden xl:table-cell ${cellPaddingClass}`}>{tender.internalLead || 'Unassigned'}</TableCell>
                     <TableCell className={`${cellPaddingClass} text-right font-mono`}>{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
                     <TableCell className={cellPaddingClass}>
-                      <Badge className={`max-w-[8rem] truncate ${getStatusBadgeClass(getMergedStatus(tender), tender)}`}>{getMergedStatus(tender) || '—'}</Badge>
+                      <div className="space-y-1">
+                        <Badge className={`max-w-[8rem] truncate ${getStatusBadgeClass(getMergedStatus(tender), tender)}`}>{getMergedStatus(tender) || '—'}</Badge>
+                        {getMergedStatus(tender) === 'AWARDED' && tender.awardedDate ? (
+                          <div className="truncate font-mono text-[10px] sm:text-xs text-muted-foreground" title={tender.awardedDate}>
+                            Awarded Date: {tender.awardedDate}
+                          </div>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className={`hidden md:table-cell ${cellPaddingClass}`} onClick={(e) => e.stopPropagation()}>
                       {tender.remarksReason ? (
