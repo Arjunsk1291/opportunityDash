@@ -245,7 +245,7 @@ const buildOpportunitiesListPayload = async () => {
   const opportunitiesListProjection = {
     __v: 0,
     rawGoogleData: 0,
-    'rawGraphData.rowSnapshot': 0,
+    rawGraphData: 0,
   };
 
   const [opportunitiesResult, manualResult, conflictsResult] = await Promise.all([
