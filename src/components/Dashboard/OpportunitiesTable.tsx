@@ -550,6 +550,11 @@ export function OpportunitiesTable({
                             ADNOC Ref: {getAdnocRftNo(tender)}
                           </div>
                         ) : null}
+                        {tender.awardedDate ? (
+                          <div className="truncate font-mono text-[10px] sm:text-xs text-muted-foreground" title={tender.awardedDate}>
+                            Awarded Date: {tender.awardedDate}
+                          </div>
+                        ) : null}
                       </div>
                     </TableCell>
                     <TableCell className={`hidden md:table-cell ${cellPaddingClass}`}>
