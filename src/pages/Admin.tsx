@@ -1011,6 +1011,20 @@ export default function Admin() {
         if (!response.ok) {
           throw new Error(parseApiErrorPayload(result, 'Failed to sync data'));
         }
+        if (result?.syncTiming) {
+          const timing = result.syncTiming as { totalMs?: number; stageMs?: Record<string, number> };
+          console.log('[admin.sync.timing.summary]', JSON.stringify({
+            totalMs: Number(timing?.totalMs || 0),
+            stageMs: timing?.stageMs || {},
+          }));
+          if (timing?.stageMs && typeof timing.stageMs === 'object') {
+            Object.entries(timing.stageMs)
+              .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+              .forEach(([stage, ms]) => {
+                console.log(`[admin.sync.timing.stage] ${stage}=${Number(ms || 0)}ms`);
+              });
+          }
+        }
         setProgress(82, 'Refreshing stats');
         setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Graph Excel (${result.newRowsCount || 0} new rows)` });
         await loadCollectionStats();

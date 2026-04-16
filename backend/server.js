@@ -1950,7 +1950,17 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
 };
 
 const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
+  const syncStartedAt = Date.now();
+  let stageCheckpointAt = syncStartedAt;
+  const stageMs = {};
+  const markStage = (name) => {
+    const now = Date.now();
+    stageMs[name] = now - stageCheckpointAt;
+    stageCheckpointAt = now;
+  };
+
   const config = await getGraphConfig();
+  markStage('loadGraphConfig');
   if (!config.driveId || !config.fileId || !config.worksheetName) {
     throw new Error('Graph config is incomplete. Please configure Share Link / Drive / File / Worksheet in admin panel.');
   }
@@ -1969,12 +1979,15 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     };
     throw error;
   }
+  markStage('fetchTendersFromGraph');
   const opportunities = await transformTendersToOpportunities(tenders);
+  markStage('transformTendersToOpportunities');
 
   const [systemConfig, existingTelecastState] = await Promise.all([
     getSystemConfig(),
     getExistingTelecastStateFromSyncedOpportunities(),
   ]);
+  markStage('loadSystemConfigAndTelecastState');
   const previousKeys = new Set(systemConfig.notificationRowSignatures || []);
   const eligibleSignatures = opportunities
     .filter(hasRequiredRowValues)
@@ -2074,6 +2087,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     console.error('[telecast.dispatch.error]', telecastError?.message || telecastError);
     telecastDispatch = { ...telecastDispatch, sent: 0, skipped: 'error' };
   }
+  markStage('prepareAndDispatchTelecast');
 
   const existingOpportunityMetaPromise = SyncedOpportunity.find(
     {},
@@ -2097,6 +2111,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     existingOpportunityMetaPromise,
     manualUpdatesByRefPromise,
   ]);
+  markStage('loadExistingOpportunityMetaAndManualSnapshots');
   const metaByRef = new Map(
     existingOpportunityMeta
       .map((row) => [normalizeRefNo(row?.opportunityRefNo || ''), row])
@@ -2177,9 +2192,11 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
       telecastAlertSource,
     };
   });
+  markStage('buildMergedRowsForInsert');
 
   await SyncedOpportunity.deleteMany({});
   const inserted = await SyncedOpportunity.insertMany(opportunitiesForInsert);
+  markStage('replaceSyncedOpportunityCollection');
   const postSyncTasks = [
     alignManualSnapshotsToSyncedValues(manualAlignmentByRef, `sync:${source}`),
     syncClientsFromOpportunities(opportunities),
@@ -2188,6 +2205,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     postSyncTasks.push(OpportunityFieldConflict.bulkWrite(pendingConflictOps, { ordered: false }));
   }
   const [_, clientSyncResult] = await Promise.all(postSyncTasks);
+  markStage('postSyncWrites');
 
   config.lastSyncAt = now;
 
@@ -2196,10 +2214,13 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   pushWeeklyTelecastStats(systemConfig, newRows);
 
   await Promise.all([config.save(), systemConfig.save()]);
+  markStage('saveConfigs');
 
   // Ensure subsequent /api/opportunities responses reflect newly synced rows immediately.
   invalidateOpportunitiesCache(`graph_sync:${source}`);
   await warmOpportunitiesCache(`graph_sync:${source}`);
+  markStage('warmOpportunitiesCache');
+  const syncTotalMs = Date.now() - syncStartedAt;
 
   console.log('[sync.new-row-detection]', JSON.stringify({
     source,
@@ -2217,6 +2238,10 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     telecastSkipped: telecastDispatch.skipped,
     clientsSeeded: clientSyncResult?.created || 0,
     clientsUpdated: clientSyncResult?.updated || 0,
+    syncTiming: {
+      totalMs: syncTotalMs,
+      stageMs,
+    },
   }));
 
   return {
@@ -2236,6 +2261,10 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     clientsSeeded: clientSyncResult?.created || 0,
     clientsUpdated: clientSyncResult?.updated || 0,
     newRowsPreview,
+    syncTiming: {
+      totalMs: syncTotalMs,
+      stageMs,
+    },
   };
 };
 
@@ -5000,7 +5029,14 @@ app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
     if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
 
     const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
-    res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
+    res.json({
+      success: true,
+      count: syncResult.insertedCount,
+      syncedCount: syncResult.insertedCount,
+      newRowsCount: syncResult.newRowsCount,
+      newRowSignatures: syncResult.newRowSignatures,
+      syncTiming: syncResult.syncTiming || null,
+    });
   } catch (error) {
     res.status(500).json(toApiError(error, 'GRAPH_SYNC_FAILED'));
   }
