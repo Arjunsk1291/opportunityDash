@@ -212,7 +212,7 @@ export function AdvancedFilters({
   };
 
   return (
-    <div className="space-y-3 sm:space-y-4 md:space-y-6">
+    <div className="space-y-3 sm:space-y-4 md:space-y-6 rounded-2xl border border-slate-200/80 bg-white/85 p-3 shadow-[0_8px_30px_rgba(15,23,42,0.08)] backdrop-blur-md supports-[backdrop-filter]:bg-white/75 sm:p-4">
       <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 md:gap-4">
         <div className="relative w-full sm:flex-1 sm:min-w-[250px] min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -447,7 +447,7 @@ export function AdvancedFilters({
       </div>
 
       {isExpanded && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 md:gap-4 p-2 sm:p-3 bg-muted/30 rounded-lg border">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 md:gap-4 rounded-xl border border-slate-200/80 bg-white/80 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] backdrop-blur-sm sm:p-3">
           <div className="space-y-2">
             <Label className="text-xs font-medium">Client Type</Label>
             <Select
@@ -649,6 +649,7 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
         o.opportunityClassification,
         o.clientName,
         o.groupClassification,
+        o.awardedDate,
         o.dateTenderReceived,
         o.tenderPlannedSubmissionDate,
         o.tenderSubmittedDate,
@@ -714,10 +715,18 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
     if (filters.partnerInvolvement === "yes" && !o.partnerInvolvement) return false;
     if (filters.partnerInvolvement === "no" && o.partnerInvolvement) return false;
 
-    const dateFieldValue = o[filters.dateField];
+    const getPriorityDateValue = () => (
+      o.awardedDate
+      || o.tenderSubmittedDate
+      || o.tenderPlannedSubmissionDate
+      || o.dateTenderReceived
+      || ''
+    );
+    const dateFieldValue = getPriorityDateValue();
     if (filters.dateRange.from || filters.dateRange.to) {
       if (!dateFieldValue) return false;
       const dateValue = new Date(dateFieldValue);
+      if (Number.isNaN(dateValue.getTime())) return false;
       if (filters.dateRange.from && dateValue < filters.dateRange.from) return false;
       if (filters.dateRange.to && dateValue > filters.dateRange.to) return false;
     }
