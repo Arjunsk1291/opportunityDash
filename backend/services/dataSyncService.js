@@ -341,6 +341,7 @@ const MONTH_INDEX = {
   nov: 11, november: 11,
   dec: 12, december: 12,
 };
+const AWARD_KEYWORD_REGEX = /(award(?:ed)?|aw[ae]red)/i;
 
 function parseYearToken(value, fallbackYear = '') {
   const raw = String(value || '').trim();
@@ -382,7 +383,7 @@ function findAwardedDateInText(text, fallbackYear = '') {
   if (!normalized) return null;
 
   const patterns = [
-    /(?:award(?:ed)?|awared)[^0-9a-z]{0,25}(?:on\s*)?(\d{1,2})[\/\-. ]+([a-z]{3,9}|\d{1,2})(?:[\/\-. ,]+(\d{2,4}))?/ig,
+    /(?:award(?:ed)?|aw[ae]red)[^0-9a-z]{0,25}(?:on\s*)?(\d{1,2})[\/\-. ]+([a-z]{3,9}|\d{1,2})(?:[\/\-. ,]+(\d{2,4}))?/ig,
     /(\d{1,2})[\/\-. ]+([a-z]{3,9}|\d{1,2})(?:[\/\-. ,]+(\d{2,4}))?/ig,
   ];
 
@@ -401,6 +402,61 @@ function findAwardedDateInText(text, fallbackYear = '') {
   return null;
 }
 
+function inferAwardedDateFromPartialText(text, fallbackYear = '') {
+  const normalized = String(text || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/(\d{1,2})(st|nd|rd|th)\b/gi, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return null;
+
+  const fullYear = parseYearToken(fallbackYear, '');
+
+  // month + year (e.g., "awarded jan 2026", "awarded-sep-25")
+  const monthYearPatterns = [
+    /([a-z]{3,9})[\/\-. ,]+(\d{2,4})/ig,
+    /(\d{2,4})[\/\-. ,]+([a-z]{3,9})/ig,
+  ];
+  for (const pattern of monthYearPatterns) {
+    let match;
+    while ((match = pattern.exec(normalized)) !== null) {
+      const month = parseMonthToken(pattern === monthYearPatterns[0] ? match[1] : match[2]);
+      const year = parseYearToken(pattern === monthYearPatterns[0] ? match[2] : match[1], fallbackYear);
+      if (!month || !year) continue;
+      const iso = toIsoDate(year, month, 1);
+      if (iso) return iso;
+    }
+  }
+
+  // month only (e.g., "awarded-oct") => day defaults to 1, year from sheet "Year"
+  const monthOnlyMatch = normalized.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i);
+  if (monthOnlyMatch && fullYear) {
+    const month = parseMonthToken(monthOnlyMatch[1]);
+    const iso = month ? toIsoDate(fullYear, month, 1) : null;
+    if (iso) return iso;
+  }
+
+  // year only (e.g., "awarded 2026" or "awarded 26") => defaults to Jan 1
+  const yearOnlyMatch = normalized.match(/\b(20\d{2}|\d{2})\b/);
+  if (yearOnlyMatch) {
+    const year = parseYearToken(yearOnlyMatch[1], fallbackYear);
+    if (year) {
+      const iso = toIsoDate(year, 1, 1);
+      if (iso) return iso;
+    }
+  }
+
+  // day only (e.g., "awarded on 24") => defaults to Jan + year fallback
+  const dayOnlyMatch = normalized.match(/\b([0-2]?\d|3[01])\b/);
+  if (dayOnlyMatch && fullYear) {
+    const day = Number(dayOnlyMatch[1]);
+    const iso = toIsoDate(fullYear, 1, day);
+    if (iso) return iso;
+  }
+
+  return null;
+}
+
 function parseAwardedDateFromRemarks({ remarksReason = '', comments = '', year = '', status = '' }) {
   const text = [remarksReason, comments].map((v) => String(v || '').trim()).filter(Boolean).join(' | ');
   if (!text) return null;
@@ -410,17 +466,21 @@ function parseAwardedDateFromRemarks({ remarksReason = '', comments = '', year =
     .split(/\r?\n|[|;]+/)
     .map((part) => part.trim())
     .filter(Boolean);
-  const awardedSegments = segments.filter((segment) => /(award(?:ed)?|awared)/i.test(segment));
+  const awardedSegments = segments.filter((segment) => AWARD_KEYWORD_REGEX.test(segment));
 
   for (const segment of awardedSegments) {
     const iso = findAwardedDateInText(segment, year);
     if (iso) return iso;
+    const partialIso = inferAwardedDateFromPartialText(segment, year);
+    if (partialIso) return partialIso;
   }
 
   if (isAwardedStatus) {
     for (const segment of segments) {
       const iso = findAwardedDateInText(segment, year);
       if (iso) return iso;
+      const partialIso = inferAwardedDateFromPartialText(segment, year);
+      if (partialIso) return partialIso;
     }
   }
 
