@@ -282,10 +282,27 @@ const BDEngagements = () => {
     return data?.row as BDEngagement;
   };
 
+  const createBulkEngagements = async (inputRows: BDEngagement[]) => {
+    if (!token) throw new Error('Missing auth token');
+    if (!inputRows.length) return [];
+    const response = await fetch(`${API_URL}/bd-engagements/bulk`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ rows: inputRows }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data?.error || 'Failed to create BD engagements in bulk');
+    const createdRows = Array.isArray(data?.rows) ? data.rows : [];
+    return createdRows as BDEngagement[];
+  };
+
   const handleBulkAdd = async () => {
     try {
       const newRows = parseBulkRows(bulkText);
-      const createdRows = await Promise.all(newRows.map((row) => createEngagement(row)));
+      const createdRows = await createBulkEngagements(newRows);
       setRows((current) => [...createdRows, ...current]);
       setBulkText('');
       setBulkDialogOpen(false);
@@ -494,7 +511,7 @@ const BDEngagements = () => {
         throw new Error('No valid engagement rows found. Check the template headers and required fields.');
       }
 
-      const createdRows = await Promise.all(parsedRows.map((row) => createEngagement(row)));
+      const createdRows = await createBulkEngagements(parsedRows);
       setRows((current) => [...createdRows, ...current]);
       toast.success(`Uploaded ${parsedRows.length} engagement${parsedRows.length === 1 ? '' : 's'}.`);
       setUploadReport({

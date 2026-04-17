@@ -6000,6 +6000,41 @@ app.post('/api/bd-engagements', verifyToken, async (req, res) => {
   }
 });
 
+app.post('/api/bd-engagements/bulk', verifyToken, async (req, res) => {
+  try {
+    if (!canAccessBDEngagements(req.user)) return res.status(403).json({ error: 'Access denied' });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) return res.status(400).json({ error: 'No BD engagements provided' });
+    if (rows.length > 5000) return res.status(400).json({ error: 'Too many BD engagements in one request. Limit is 5000.' });
+
+    const preparedRows = rows
+      .filter((row) => row && typeof row === 'object')
+      .map((row) => ({
+        ...row,
+        ref: String(row.ref || '').trim(),
+        date: String(row.date || '').trim(),
+        clientName: String(row.clientName || '').trim(),
+        meetingType: String(row.meetingType || '').trim(),
+      }))
+      .filter((row) => row.ref && row.date && row.clientName && row.meetingType);
+
+    if (!preparedRows.length) {
+      return res.status(400).json({ error: 'No valid BD engagement rows found (ref/date/clientName/meetingType required)' });
+    }
+
+    const insertResult = await BDEngagement.insertMany(preparedRows, { ordered: false });
+    res.json({
+      success: true,
+      imported: insertResult.length,
+      rows: insertResult.map((row) => mapIdField(row.toObject())),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to bulk create BD engagements' });
+  }
+});
+
 app.put('/api/bd-engagements/:id', verifyToken, async (req, res) => {
   try {
     if (!canAccessBDEngagements(req.user)) return res.status(403).json({ error: 'Access denied' });
