@@ -74,7 +74,29 @@ const emptyForm: FormState = {
   lastContact: '',
 };
 
-const sortByDateDesc = (left: string, right: string) => right.localeCompare(left);
+const parseBDEngagementDate = (value: string) => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) {
+    const dt = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  const dmy = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+  if (dmy) {
+    const year = dmy[3].length === 2 ? Number(`20${dmy[3]}`) : Number(dmy[3]);
+    const dt = new Date(year, Number(dmy[2]) - 1, Number(dmy[1]));
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const sortByDateDesc = (left: string, right: string) => {
+  const leftTs = parseBDEngagementDate(left)?.getTime() || 0;
+  const rightTs = parseBDEngagementDate(right)?.getTime() || 0;
+  return rightTs - leftTs;
+};
 
 const formatMonthLabel = (value: string) => {
   const parsed = new Date(`${value}-01T00:00:00`);
@@ -83,7 +105,8 @@ const formatMonthLabel = (value: string) => {
 
 const formatPrettyDate = (value: string) => {
   if (!value) return '—';
-  const parsed = new Date(`${value}T00:00:00`);
+  const parsed = parseBDEngagementDate(value);
+  if (!parsed) return value;
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
 };
@@ -203,8 +226,10 @@ const BDEngagements = () => {
         clientName,
         meetingType,
         discussionPoints,
+        location,
         reportSubmittedRaw,
         leadGeneratedRaw,
+        status,
         focalPerson,
         designation,
         email,
@@ -212,8 +237,6 @@ const BDEngagements = () => {
         leadDescription,
         nextSteps,
         lastContact,
-        status,
-        location,
       ] = parts;
       if (!ref || !date || !clientName || !meetingType) {
         throw new Error(`Line ${index + 1} missing required fields (ref, date, client, meetingType).`);
@@ -282,17 +305,17 @@ const BDEngagements = () => {
         'Client Name',
         'Meeting Type',
         'Discussion Points',
+        'Meeting location',
         'Report Y/N',
         'Lead Y/N',
+        'Status Q/N',
         'Focal Person',
         'Designation',
-        'Email',
+        'Email ',
         'Mobile Number',
         'Lead Description',
         'Next Steps',
         'Last contact',
-        'Status',
-        'Location',
       ];
       const sample = {
         'Ref.': 'BD-2026-001',
@@ -300,17 +323,17 @@ const BDEngagements = () => {
         'Client Name': 'Client A',
         'Meeting Type': MEETING_TYPES[0],
         'Discussion Points': 'Discussed scope and next steps.',
+        'Meeting location': 'Abu Dhabi',
         'Report Y/N': 'Y',
         'Lead Y/N': 'N',
+        'Status Q/N': 'Open',
         'Focal Person': 'Jane Doe',
         Designation: 'Project Manager',
-        Email: 'jane@client.com',
+        'Email ': 'jane@client.com',
         'Mobile Number': '0500000000',
         'Lead Description': '',
         'Next Steps': 'Share capability deck.',
-        'Last Contact': new Date().toISOString().slice(0, 10),
-        Status: 'Open',
-        Location: 'Abu Dhabi',
+        'Last contact': new Date().toISOString().slice(0, 10),
       };
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('BD Engagements');
@@ -349,8 +372,10 @@ const BDEngagements = () => {
         clientName: ['client name', 'client'],
         meetingType: ['meeting type', 'meeting'],
         discussionPoints: ['discussion points', 'discussion'],
+        location: ['meeting location', 'meeting location ', 'location', 'meeting place'],
         reportSubmitted: ['report y/n', 'report submitted', 'report'],
         leadGenerated: ['lead y/n', 'lead generated', 'lead'],
+        status: ['status q/n', 'status', 'status qn'],
         focalPerson: ['focal person', 'focal'],
         designation: ['designation', 'title'],
         email: ['email', 'e-mail'],
@@ -358,8 +383,6 @@ const BDEngagements = () => {
         leadDescription: ['lead description', 'lead desc'],
         nextSteps: ['next steps', 'next step'],
         lastContact: ['last contact', 'last contact date'],
-        status: ['status'],
-        location: ['location', 'place'],
       };
 
       const scoreHeaderRow = (row: unknown[]) => {
@@ -1110,17 +1133,17 @@ const BDEngagements = () => {
                   <TableRow>
                     <TableHead>Ref</TableHead>
                     <TableHead>Date</TableHead>
-                    <TableHead>Client Name</TableHead>
-                    <TableHead>Meeting Type</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Location</TableHead>
-                    <TableHead>Discussion Points</TableHead>
-                    <TableHead>Report</TableHead>
-                    <TableHead>Lead</TableHead>
+                  <TableHead>Client Name</TableHead>
+                  <TableHead>Meeting Type</TableHead>
+                  <TableHead>Status Q/N</TableHead>
+                  <TableHead>Meeting location</TableHead>
+                  <TableHead>Discussion Points</TableHead>
+                  <TableHead>Report</TableHead>
+                  <TableHead>Lead</TableHead>
                     <TableHead>Focal Person</TableHead>
                     <TableHead>Lead Description</TableHead>
                     <TableHead>Next Steps</TableHead>
-                    <TableHead>Last Contact</TableHead>
+                    <TableHead>Last contact</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1133,12 +1156,12 @@ const BDEngagements = () => {
                       <TableCell>{row.meetingType}</TableCell>
                       <TableCell>{row.status || '—'}</TableCell>
                       <TableCell>{row.location || '—'}</TableCell>
-                      <TableCell className="max-w-[240px] truncate">{row.discussionPoints}</TableCell>
+                      <TableCell className="max-w-[280px] whitespace-pre-wrap break-words text-justify align-top">{row.discussionPoints}</TableCell>
                       <TableCell>{row.reportSubmitted ? <Badge className="border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
                       <TableCell>{row.leadGenerated ? <Badge className="border border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
                       <TableCell>{row.focalPerson || '—'}</TableCell>
-                      <TableCell className="max-w-[220px] truncate">{row.leadDescription || '—'}</TableCell>
-                      <TableCell className="max-w-[220px] truncate">{row.nextSteps || '—'}</TableCell>
+                      <TableCell className="max-w-[240px] whitespace-pre-wrap break-words text-justify align-top">{row.leadDescription || '—'}</TableCell>
+                      <TableCell className="max-w-[240px] whitespace-pre-wrap break-words text-justify align-top">{row.nextSteps || '—'}</TableCell>
                       <TableCell>{formatPrettyDate(row.lastContact)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
@@ -1295,7 +1318,7 @@ const BDEngagements = () => {
               </Select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Status</label>
+              <label className="text-sm font-medium">Status Q/N</label>
               <Input value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} placeholder="Open / In Progress / Closed" />
             </div>
             <div className="space-y-2 md:col-span-2">
@@ -1303,7 +1326,7 @@ const BDEngagements = () => {
               <Textarea value={form.discussionPoints} onChange={(event) => setForm((current) => ({ ...current, discussionPoints: event.target.value }))} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Location</label>
+              <label className="text-sm font-medium">Meeting location</label>
               <Input value={form.location} onChange={(event) => setForm((current) => ({ ...current, location: event.target.value }))} />
             </div>
             <div className="space-y-2">
@@ -1351,7 +1374,7 @@ const BDEngagements = () => {
               <Textarea value={form.nextSteps} onChange={(event) => setForm((current) => ({ ...current, nextSteps: event.target.value }))} />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Last Contact</label>
+              <label className="text-sm font-medium">Last contact</label>
               <Input type="date" value={form.lastContact} onChange={(event) => setForm((current) => ({ ...current, lastContact: event.target.value }))} />
             </div>
             {!form.clientName.trim() || !form.ref.trim() || !form.date ? (
@@ -1390,7 +1413,7 @@ const BDEngagements = () => {
             <div className="rounded-lg border bg-muted/40 px-3 py-2 text-xs">
               Format:
               {' '}
-              <span className="font-semibold text-foreground">ref,date,clientName,meetingType,discussionPoints,reportYn,leadYn,focalPerson,designation,email,mobileNumber,leadDescription,nextSteps,lastContact,status,location</span>
+              <span className="font-semibold text-foreground">ref,date,clientName,meetingType,discussionPoints,meetingLocation,reportYn,leadYn,statusQn,focalPerson,designation,email,mobileNumber,leadDescription,nextSteps,lastContact</span>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={downloadBulkTemplate}>
@@ -1417,7 +1440,7 @@ const BDEngagements = () => {
               value={bulkText}
               onChange={(event) => setBulkText(event.target.value)}
               rows={10}
-              placeholder="BD-2026-001,2026-04-01,Client A,Capability Meeting,Open,Discussed scope,YES,NO,,Follow up,2026-04-03"
+              placeholder="BD-2026-001,2026-04-01,Client A,Capability Meeting,Discussed scope and next steps,Abu Dhabi,YES,NO,Open,Jane Doe,Project Manager,jane@client.com,0500000000,,Share capability deck,2026-04-03"
             />
           </div>
           <DialogFooter>
@@ -1491,12 +1514,12 @@ const BDEngagements = () => {
                   <TableHead>Date</TableHead>
                   <TableHead>Client</TableHead>
                   <TableHead>Meeting</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Location</TableHead>
+                  <TableHead>Status Q/N</TableHead>
+                  <TableHead>Meeting location</TableHead>
                   <TableHead>Report</TableHead>
                   <TableHead>Lead</TableHead>
                   <TableHead>Focal Person</TableHead>
-                  <TableHead>Last Contact</TableHead>
+                  <TableHead>Last contact</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1540,9 +1563,9 @@ const BDEngagements = () => {
                 <div><span className="font-semibold">Status:</span> {selectedEngagement.status || '—'}</div>
                 <div><span className="font-semibold">Client:</span> {selectedEngagement.clientName}</div>
                 <div><span className="font-semibold">Meeting Type:</span> {selectedEngagement.meetingType}</div>
-                <div><span className="font-semibold">Location:</span> {selectedEngagement.location || '—'}</div>
+                <div><span className="font-semibold">Meeting location:</span> {selectedEngagement.location || '—'}</div>
                 <div><span className="font-semibold">Date:</span> {formatPrettyDate(selectedEngagement.date)}</div>
-                <div><span className="font-semibold">Last Contact:</span> {formatPrettyDate(selectedEngagement.lastContact)}</div>
+                <div><span className="font-semibold">Last contact:</span> {formatPrettyDate(selectedEngagement.lastContact)}</div>
                 <div><span className="font-semibold">Report Submitted:</span> {selectedEngagement.reportSubmitted ? 'Yes' : 'No'}</div>
                 <div><span className="font-semibold">Lead Generated:</span> {selectedEngagement.leadGenerated ? 'Yes' : 'No'}</div>
                 <div><span className="font-semibold">Focal Person:</span> {selectedEngagement.focalPerson || '—'}</div>
