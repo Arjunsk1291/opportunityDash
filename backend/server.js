@@ -2171,6 +2171,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const metaByRef = existingTelecastState?.metaByRef || new Map();
   const manualAlignmentByRef = new Map();
   const pendingConflictOps = [];
+  const zeroValueConflictRefs = new Set();
 
   const opportunitiesForInsert = opportunities.map((opportunity) => {
     const initialRef = getTenderRefNo(opportunity);
@@ -2193,24 +2194,37 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     }
 
     if (manualSnapshot && staleFields.length) {
-      const nextFields = staleFields.reduce((acc, fieldKey) => {
-        acc[fieldKey] = mergedOpportunity?.[fieldKey] ?? opportunity?.[fieldKey] ?? '';
-        return acc;
-      }, {});
-      manualAlignmentByRef.set(normalizeRefKey(ref), nextFields);
+      const refKey = normalizeRefKey(ref);
+      const filteredStaleFields = staleFields.filter((fieldKey) => {
+        if (fieldKey !== 'opportunityValue') return true;
+        const sheetValue = Number(opportunity?.[fieldKey]);
+        if (Number.isFinite(sheetValue) && sheetValue === 0) {
+          if (refKey) zeroValueConflictRefs.add(refKey);
+          return false;
+        }
+        return true;
+      });
 
-      staleFields.forEach((fieldKey) => {
+      if (filteredStaleFields.length) {
+        const nextFields = filteredStaleFields.reduce((acc, fieldKey) => {
+          acc[fieldKey] = mergedOpportunity?.[fieldKey] ?? opportunity?.[fieldKey] ?? '';
+          return acc;
+        }, {});
+        manualAlignmentByRef.set(refKey, nextFields);
+      }
+
+      filteredStaleFields.forEach((fieldKey) => {
         pendingConflictOps.push({
           updateOne: {
             filter: {
-              refKey: normalizeRefKey(ref),
+              refKey,
               fieldKey,
               status: 'pending',
             },
             update: {
               $set: {
                 opportunityRefNo: ref || mergedOpportunity?.opportunityRefNo || '',
-                refKey: normalizeRefKey(ref),
+                refKey,
                 fieldKey,
                 fieldLabel: FIELD_LABELS[fieldKey] || fieldKey,
                 sheetValue: opportunity?.[fieldKey] ?? null,
@@ -2269,6 +2283,19 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   ];
   if (pendingConflictOps.length) {
     postSyncTasks.push(OpportunityFieldConflict.bulkWrite(pendingConflictOps, { ordered: false }));
+  }
+  if (zeroValueConflictRefs.size) {
+    postSyncTasks.push(OpportunityFieldConflict.deleteMany({
+      refKey: { $in: Array.from(zeroValueConflictRefs) },
+      fieldKey: 'opportunityValue',
+      status: 'pending',
+      $or: [
+        { sheetValue: 0 },
+        { sheetValue: '0' },
+        { sheetValue: '0.0' },
+        { sheetValue: '0.00' },
+      ],
+    }));
   }
   const [_, clientSyncResult] = await Promise.all(postSyncTasks);
   stageDetails.postSyncWrites = {
