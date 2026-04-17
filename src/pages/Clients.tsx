@@ -257,6 +257,8 @@ const Clients = () => {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isSavingClient, setIsSavingClient] = useState(false);
   const [filters, setFilters] = useState<{ domains: string[]; countries: string[] }>({ domains: [], countries: [] });
 
   const [newClient, setNewClient] = useState<ClientInput>({
@@ -368,6 +370,11 @@ const Clients = () => {
   };
 
   const handleImportFile = async (file: File) => {
+    if (!canManageClients) {
+      toast.error('You do not have permission to import clients');
+      return;
+    }
+    setIsImporting(true);
     try {
       const text = await file.text();
       const rows = parseCsv(text);
@@ -380,15 +387,24 @@ const Clients = () => {
         toast.error('CSV headers are missing or no valid client rows found');
         return;
       }
-      await importClients(inputs);
-      toast.success(`Imported ${inputs.length} rows`);
+      const result = await importClients(inputs);
+      const created = Number((result as { created?: number })?.created || 0);
+      const updated = Number((result as { updated?: number })?.updated || 0);
+      toast.success(`Imported ${inputs.length} rows (created ${created}, updated ${updated})`);
       setIsImportOpen(false);
     } catch (err) {
-      toast.error('Import failed');
+      console.error('[clients.import.error]', err);
+      toast.error((err as Error).message || 'Import failed');
+    } finally {
+      setIsImporting(false);
     }
   };
 
   const handleAddClient = async () => {
+    if (!canEditClients) {
+      toast.error('You do not have permission to add clients');
+      return;
+    }
     if (!newClient.companyName.trim()) {
       toast.error('Company name is required');
       return;
@@ -396,6 +412,7 @@ const Clients = () => {
     const cleanedContacts = newClient.contacts.filter((contact) =>
       [contact.firstName, contact.lastName, contact.email, contact.phone].some((value) => String(value || '').trim())
     );
+    setIsSavingClient(true);
     try {
       await addClient({
         ...newClient,
@@ -413,7 +430,10 @@ const Clients = () => {
       setIsAddOpen(false);
       toast.success('Client added');
     } catch (err) {
-      toast.error('Failed to add client');
+      console.error('[clients.add.error]', err);
+      toast.error((err as Error).message || 'Failed to add client');
+    } finally {
+      setIsSavingClient(false);
     }
   };
 
@@ -439,6 +459,10 @@ const Clients = () => {
 
   const handleUpdateClient = async () => {
     if (!editClient) return;
+    if (!canEditClients) {
+      toast.error('You do not have permission to edit clients');
+      return;
+    }
     if (!editClient.data.companyName.trim()) {
       toast.error('Company name is required');
       return;
@@ -446,6 +470,7 @@ const Clients = () => {
     const cleanedContacts = editClient.data.contacts.filter((contact) =>
       [contact.firstName, contact.lastName, contact.email, contact.phone].some((value) => String(value || '').trim())
     );
+    setIsSavingClient(true);
     try {
       await updateClient(editClient.id, {
         ...editClient.data,
@@ -455,7 +480,10 @@ const Clients = () => {
       toast.success('Client updated');
       setIsEditOpen(false);
     } catch (err) {
-      toast.error('Failed to update client');
+      console.error('[clients.update.error]', err);
+      toast.error((err as Error).message || 'Failed to update client');
+    } finally {
+      setIsSavingClient(false);
     }
   };
 
@@ -490,19 +518,24 @@ const Clients = () => {
                   className="border border-dashed border-border/50 rounded-lg p-6 text-center bg-muted/30"
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={(event) => {
+                    if (isImporting) return;
                     event.preventDefault();
                     const file = event.dataTransfer.files?.[0];
                     if (file) handleImportFile(file);
                   }}
                 >
-                  <p className="text-sm text-muted-foreground">Drag and drop CSV here, or click to upload.</p>
+                  <p className="text-sm text-muted-foreground">
+                    {isImporting ? 'Importing CSV...' : 'Drag and drop CSV here, or click to upload.'}
+                  </p>
                   <input
                     type="file"
                     accept=".csv"
                     className="mt-3 block w-full text-sm"
+                    disabled={isImporting}
                     onChange={(event) => {
                       const file = event.target.files?.[0];
                       if (file) handleImportFile(file);
+                      event.currentTarget.value = '';
                     }}
                   />
                 </div>
@@ -694,7 +727,7 @@ const Clients = () => {
                 </div>
               </div>
               <DialogFooter>
-                <Button onClick={handleAddClient}>Save Client</Button>
+                <Button onClick={handleAddClient} disabled={isSavingClient}>{isSavingClient ? 'Saving...' : 'Save Client'}</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -1040,8 +1073,8 @@ const Clients = () => {
             </div>
           )}
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setIsEditOpen(false)}>Cancel</Button>
-            <Button onClick={handleUpdateClient}>Save Changes</Button>
+            <Button variant="secondary" onClick={() => setIsEditOpen(false)} disabled={isSavingClient}>Cancel</Button>
+            <Button onClick={handleUpdateClient} disabled={isSavingClient}>{isSavingClient ? 'Saving...' : 'Save Changes'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

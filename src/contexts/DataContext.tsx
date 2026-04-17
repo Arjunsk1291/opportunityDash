@@ -33,7 +33,7 @@ interface DataContextType {
   opportunities: Opportunity[];
   isLoading: boolean;
   error: string | null;
-  refreshData: (options?: { background?: boolean }) => Promise<void>;
+  refreshData: (options?: { background?: boolean; force?: boolean }) => Promise<void>;
   lastSyncTime: Date | null;
   isLiveRefreshActive: boolean;
 }
@@ -52,7 +52,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const hasLoadedOnceRef = useRef(false);
   const cacheHydratedRef = useRef(false);
 
-  const refreshData = useCallback(async (options?: { background?: boolean }) => {
+  const refreshData = useCallback(async (options?: { background?: boolean; force?: boolean }) => {
     if (inFlightRefreshRef.current) {
       return inFlightRefreshRef.current;
     }
@@ -64,6 +64,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return;
     }
     const isBackground = Boolean(options?.background);
+    const forceRefresh = Boolean(options?.force);
     if (!cacheHydratedRef.current && !isBackground) {
       cacheHydratedRef.current = true;
       try {
@@ -86,7 +87,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     }
     const now = Date.now();
-    if (isBackground && now - lastSuccessfulRefreshAtRef.current < MIN_BACKGROUND_REFRESH_GAP_MS) {
+    if (!forceRefresh && isBackground && now - lastSuccessfulRefreshAtRef.current < MIN_BACKGROUND_REFRESH_GAP_MS) {
       return;
     }
     if (!isBackground) {

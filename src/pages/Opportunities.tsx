@@ -202,11 +202,13 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const [selectedRow, setSelectedRow] = useState<Opportunity | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [previewDiffs, setPreviewDiffs] = useState<PreviewDiff[]>([]);
   const [conflictsOpen, setConflictsOpen] = useState(false);
   const [conflicts, setConflicts] = useState<ConflictGroup[]>([]);
   const [conflictsLoading, setConflictsLoading] = useState(false);
+  const [resolvingConflictId, setResolvingConflictId] = useState<string | null>(null);
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
   const canEdit = canPerformAction('manual_opportunity_updates_write');
@@ -314,7 +316,10 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   }, [location.pathname, location.search, navigate, opportunities]);
 
   const saveEntry = async (confirmed: boolean) => {
-    if (!token || !canEdit) return;
+    if (!token || !canEdit) {
+      toast.error('You do not have permission to save manual entries.');
+      return;
+    }
     setSaving(true);
     try {
       const response = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
@@ -327,9 +332,11 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       toast.success(editorMode === 'new' ? 'New row added.' : 'Row updated.');
       setConfirmOpen(false);
       setEditorOpen(false);
-      await refreshData({ background: true });
+      setPreviewDiffs([]);
+      await refreshData({ background: true, force: true });
       await loadConflicts();
     } catch (error) {
+      console.error('[opportunities.manual-entry.save.error]', error);
       toast.error((error as Error).message || 'Failed to save');
     } finally {
       setSaving(false);
@@ -337,13 +344,17 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   };
 
   const handlePreviewAndSave = async () => {
-    if (!token || !canEdit) return;
+    if (!token || !canEdit) {
+      toast.error('You do not have permission to preview or save manual entries.');
+      return;
+    }
     const missing = REQUIRED_KEYS.filter((key) => !String(form[key] ?? '').trim());
     if (missing.length) {
       toast.error(`Fill required fields: ${missing.map((key) => LABELS[key]).join(', ')}`);
       return;
     }
 
+    setPreviewing(true);
     try {
       const response = await fetch(`${API_URL}/opportunities/manual-entry/preview`, {
         method: 'POST',
@@ -360,12 +371,19 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       }
       await saveEntry(true);
     } catch (error) {
+      console.error('[opportunities.manual-entry.preview.error]', error);
       toast.error((error as Error).message || 'Failed to preview changes');
+    } finally {
+      setPreviewing(false);
     }
   };
 
   const resolveFieldConflict = async (conflictId: string, action: 'use_sheet' | 'keep_existing') => {
-    if (!token || !canEdit) return;
+    if (!token || !canEdit) {
+      toast.error('You do not have permission to resolve conflicts.');
+      return;
+    }
+    setResolvingConflictId(conflictId);
     try {
       const response = await fetch(`${API_URL}/opportunities/value-conflicts/resolve`, {
         method: 'POST',
@@ -375,10 +393,13 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || 'Failed to resolve conflict');
       toast.success(action === 'use_sheet' ? 'Sheet value applied.' : 'Existing value kept.');
-      await refreshData({ background: true });
+      await refreshData({ background: true, force: true });
       await loadConflicts();
     } catch (error) {
+      console.error('[opportunities.conflict.resolve.error]', error);
       toast.error((error as Error).message || 'Failed to resolve conflict');
+    } finally {
+      setResolvingConflictId(null);
     }
   };
 
@@ -428,7 +449,12 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         formatCurrency={formatCurrency}
       />
 
-      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
+      <Dialog
+        open={editorOpen}
+        onOpenChange={(open) => {
+          if (!saving && !previewing) setEditorOpen(open);
+        }}
+      >
         <DialogContent className="max-w-5xl">
           <DialogHeader>
             <DialogTitle>{editorMode === 'new' ? 'New Opportunity Row' : 'Update Opportunity Row'}</DialogTitle>
@@ -452,6 +478,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
                           setSelectedRow(row);
                           setFormFromOpportunity(row);
                         }}
+                        disabled={saving || previewing}
                       >
                         <div className="font-semibold">{row.opportunityRefNo} — {row.tenderName || 'Untitled'}</div>
                         <div className="text-xs text-muted-foreground">{row.clientName || '—'} • {row.groupClassification || '—'}</div>
@@ -531,6 +558,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
                           value={value}
                           onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
                           placeholder={label}
+                          disabled={saving || previewing}
                         />
                       ) : null}
                     </div>
@@ -539,9 +567,9 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
               </div>
               <Separator />
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setEditorOpen(false)}>Cancel</Button>
-                <Button type="button" onClick={handlePreviewAndSave} disabled={saving}>
-                  {editorMode === 'new' ? 'Create Row' : 'Preview Update'}
+                <Button type="button" variant="outline" onClick={() => setEditorOpen(false)} disabled={saving || previewing}>Cancel</Button>
+                <Button type="button" onClick={handlePreviewAndSave} disabled={saving || previewing}>
+                  {previewing ? 'Previewing...' : saving ? 'Saving...' : (editorMode === 'new' ? 'Create Row' : 'Preview Update')}
                 </Button>
               </div>
             </div>
@@ -564,8 +592,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
             ))}
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
-            <Button type="button" onClick={() => saveEntry(true)} disabled={saving}>Confirm Save</Button>
+            <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)} disabled={saving}>Cancel</Button>
+            <Button type="button" onClick={() => saveEntry(true)} disabled={saving}>{saving ? 'Saving...' : 'Confirm Save'}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -590,10 +618,22 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
                       <div className="rounded border px-2 py-1 text-muted-foreground">Existing: {toDisplay(field.existingValue)}</div>
                       <div className="rounded border px-2 py-1">Sheet: {toDisplay(field.sheetValue)}</div>
                       <div className="flex gap-2">
-                        <Button type="button" size="sm" variant="outline" onClick={() => resolveFieldConflict(field.id, 'keep_existing')}>
-                          Keep Existing
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => resolveFieldConflict(field.id, 'keep_existing')}
+                          disabled={Boolean(resolvingConflictId)}
+                        >
+                          {resolvingConflictId === field.id ? 'Applying...' : 'Keep Existing'}
                         </Button>
-                        <Button type="button" size="sm" variant="destructive" onClick={() => resolveFieldConflict(field.id, 'use_sheet')}>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => resolveFieldConflict(field.id, 'use_sheet')}
+                          disabled={Boolean(resolvingConflictId)}
+                        >
                           Use Sheet
                         </Button>
                       </div>

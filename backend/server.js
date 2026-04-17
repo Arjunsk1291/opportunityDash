@@ -4377,6 +4377,10 @@ app.post('/api/opportunities/manual-sheet-updates', verifyToken, async (req, res
 
     if (manualOps.length) await OpportunityManualUpdate.bulkWrite(manualOps, { ordered: false });
     if (syncedOps.length) await SyncedOpportunity.bulkWrite(syncedOps, { ordered: false });
+    invalidateOpportunitiesCache('manual_sheet_updates');
+    warmOpportunitiesCache('manual_sheet_updates').catch((error) => {
+      console.error('[api.opportunities.cache.warm.async.error]', error?.message || error);
+    });
 
     res.json({
       success: true,
@@ -5489,6 +5493,11 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
       })),
     });
 
+    invalidateOpportunitiesCache(`manual_entry_save:${mode}`);
+    warmOpportunitiesCache(`manual_entry_save:${mode}`).catch((error) => {
+      console.error('[api.opportunities.cache.warm.async.error]', error?.message || error);
+    });
+
     res.json({ success: true, mode, changedFields: diffs.length, overwriteCount });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to save manual entry' });
@@ -5561,6 +5570,11 @@ app.post('/api/opportunities/value-conflicts/resolve', verifyToken, async (req, 
 
       resolved += 1;
     }
+
+    invalidateOpportunitiesCache('manual_conflict_resolution');
+    warmOpportunitiesCache('manual_conflict_resolution').catch((error) => {
+      console.error('[api.opportunities.cache.warm.async.error]', error?.message || error);
+    });
 
     res.json({ success: true, resolved });
   } catch (error) {

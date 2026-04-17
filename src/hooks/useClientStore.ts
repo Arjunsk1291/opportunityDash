@@ -78,8 +78,8 @@ export const useClientStore = () => {
       headers: writeHeaders(),
       body: JSON.stringify(payload),
     });
-    if (!response.ok) throw new Error('Failed to save client');
-    const saved = await response.json();
+    const saved = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(saved?.error || 'Failed to save client');
     setClients((prev) => {
       const idx = prev.findIndex((client) => client.id === saved.id);
       if (idx === -1) return [saved, ...prev];
@@ -121,8 +121,10 @@ export const useClientStore = () => {
       headers: writeHeaders(),
       body: JSON.stringify({ clients: payload }),
     });
-    if (!response.ok) throw new Error('Failed to import clients');
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result?.error || 'Failed to import clients');
     await fetchClients();
+    return result;
   };
 
   const stats = useMemo(() => {
