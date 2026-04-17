@@ -4476,16 +4476,14 @@ app.get('/api/notifications/status', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can view notification status' });
     }
 
-    const config = await getSystemConfig();
-    const alertedTracked = await SyncedOpportunity.countDocuments({ telecastAlerted: true });
-    const alertedKeysTracked = await SyncedOpportunity.distinct('telecastAlertedKey', { telecastAlerted: true, telecastAlertedKey: { $ne: '' } });
-    const alertedPreviewRows = await SyncedOpportunity.find(
-      { telecastAlerted: true, telecastAlertedRefNo: { $ne: '' } },
-      { telecastAlertedRefNo: 1, telecastAlertedAt: 1 }
-    ).sort({ telecastAlertedAt: -1 }).limit(50).lean();
-    const alertedRefNosPreview = alertedPreviewRows
-      .map((row) => normalizeRefNo(row?.telecastAlertedRefNo || ''))
-      .filter(Boolean);
+    const config = await getSystemConfigForSync();
+    const alertedKeys = Array.isArray(config.telecastAlertedKeys)
+      ? config.telecastAlertedKeys.map((key) => String(key || '').trim()).filter(Boolean)
+      : [];
+    const alertedRefs = Array.isArray(config.telecastAlertedRefNos)
+      ? config.telecastAlertedRefNos.map((ref) => normalizeRefNo(ref)).filter(Boolean)
+      : [];
+    const alertedRefNosPreview = alertedRefs.slice(-50);
 
     res.json({
       success: true,
@@ -4497,8 +4495,8 @@ app.get('/api/notifications/status', verifyToken, async (req, res) => {
       alertWindowDays: TELECAST_RECENT_WINDOW_DAYS,
       alertSeededAt: config.telecastAlertSeededAt || null,
       alertSeededCount: Number(config.telecastAlertSeededCount || 0),
-      alertedKeysTracked: alertedKeysTracked.length,
-      alertedRefNosTracked: alertedTracked,
+      alertedKeysTracked: alertedKeys.length,
+      alertedRefNosTracked: alertedRefs.length,
       alertedRefNosPreview,
       telecastEligibleRowsPreview: Array.isArray(config.telecastLastEligibleRowsPreview) ? config.telecastLastEligibleRowsPreview : [],
       weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
