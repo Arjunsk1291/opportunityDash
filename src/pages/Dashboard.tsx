@@ -44,7 +44,7 @@ type OpportunityGroup = {
 
 const normalizeText = (value: string | null | undefined) => String(value || '').trim();
 const normalizeRefNo = (value: string | null | undefined) => normalizeText(value).toUpperCase();
-const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_EOI$/i, '');
+const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_(EOI|\d+)$/i, '');
 const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(normalizeRefNo(value));
 const isHoldStatus = (status: string) => status === 'HOLD / CLOSED' || status === 'HOLD/CLOSED';
 
@@ -56,14 +56,8 @@ const getJourneyType = (opp: Opportunity | null) => {
   return 'tender';
 };
 
-const getBusinessKey = (opp: Opportunity, index: number) => {
-  const ref = getBaseRefNo(opp.opportunityRefNo);
-  const tenderName = normalizeText(opp.tenderName).toLowerCase();
-  const clientName = normalizeText(opp.clientName).toLowerCase();
-  if (ref) return `ref::${ref}`;
-  if (clientName && tenderName) return `client::${clientName}::${tenderName}`;
-  return `fallback::${opp.id || index}`;
-};
+const getTenderNameKey = (value: string | null | undefined) => normalizeText(value).toLowerCase();
+const getClientNameKey = (value: string | null | undefined) => normalizeText(value).toLowerCase();
 
 const pickPrimaryOpportunity = (items: Opportunity[]) => {
   if (!items.length) return null;
@@ -78,6 +72,79 @@ const pickPrimaryOpportunity = (items: Opportunity[]) => {
     return 0;
   };
   return [...items].sort((a, b) => rank(b) - rank(a))[0];
+};
+
+const buildTenderFamilyGroups = (rows: Opportunity[]): OpportunityGroup[] => {
+  const baseGroups = new Map<string, Opportunity[]>();
+
+  rows.forEach((opp, index) => {
+    const baseRef = getBaseRefNo(opp.opportunityRefNo);
+    const tenderName = getTenderNameKey(opp.tenderName);
+    const clientName = getClientNameKey(opp.clientName);
+
+    let baseKey = '';
+    if (baseRef) baseKey = `ref::${baseRef}`;
+    else if (tenderName && clientName) baseKey = `client::${clientName}::${tenderName}`;
+    else baseKey = `fallback::${opp.id || index}`;
+
+    const bucket = baseGroups.get(baseKey) || [];
+    bucket.push(opp);
+    baseGroups.set(baseKey, bucket);
+  });
+
+  const baseEntries = Array.from(baseGroups.entries()).map(([key, items], idx) => ({ key, items, idx }));
+  const parent = baseEntries.map((_, idx) => idx);
+
+  const find = (idx: number): number => {
+    if (parent[idx] !== idx) parent[idx] = find(parent[idx]);
+    return parent[idx];
+  };
+  const unite = (left: number, right: number) => {
+    const rootLeft = find(left);
+    const rootRight = find(right);
+    if (rootLeft !== rootRight) parent[rootRight] = rootLeft;
+  };
+
+  // Rule 1: Merge families when tender name matches and refs+clients differ.
+  const familiesByTenderName = new Map<string, Array<{ idx: number; refs: Set<string>; clients: Set<string> }>>();
+  baseEntries.forEach((entry) => {
+    const tenderNames = new Set(entry.items.map((item) => getTenderNameKey(item.tenderName)).filter(Boolean));
+    const refs = new Set(entry.items.map((item) => getBaseRefNo(item.opportunityRefNo)).filter(Boolean));
+    const clients = new Set(entry.items.map((item) => getClientNameKey(item.clientName)).filter(Boolean));
+    tenderNames.forEach((name) => {
+      if (!familiesByTenderName.has(name)) familiesByTenderName.set(name, []);
+      familiesByTenderName.get(name)!.push({ idx: entry.idx, refs, clients });
+    });
+  });
+
+  familiesByTenderName.forEach((families) => {
+    if (families.length < 2) return;
+    for (let i = 0; i < families.length; i += 1) {
+      for (let j = i + 1; j < families.length; j += 1) {
+        const left = families[i];
+        const right = families[j];
+        const refCount = new Set([...left.refs, ...right.refs]).size;
+        const clientCount = new Set([...left.clients, ...right.clients]).size;
+        if (refCount >= 2 && clientCount >= 2) {
+          unite(left.idx, right.idx);
+        }
+      }
+    }
+  });
+
+  const mergedByRoot = new Map<number, Opportunity[]>();
+  baseEntries.forEach((entry) => {
+    const root = find(entry.idx);
+    const bucket = mergedByRoot.get(root) || [];
+    bucket.push(...entry.items);
+    mergedByRoot.set(root, bucket);
+  });
+
+  return Array.from(mergedByRoot.entries()).map(([root, items]) => ({
+    key: `family::${root}`,
+    primary: pickPrimaryOpportunity(items),
+    items,
+  }));
 };
 
 const formatCompactNumber = (value: number) => new Intl.NumberFormat('en-US', {
@@ -97,19 +164,7 @@ const Dashboard = () => {
   const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
 
   const groupedOpportunities = useMemo(() => {
-    const groups = new Map<string, Opportunity[]>();
-    filteredData.forEach((opp, index) => {
-      const key = getBusinessKey(opp, index);
-      const bucket = groups.get(key) || [];
-      bucket.push(opp);
-      groups.set(key, bucket);
-    });
-
-    return Array.from(groups.entries()).map(([key, items]) => ({
-      key,
-      primary: pickPrimaryOpportunity(items),
-      items,
-    })) as OpportunityGroup[];
+    return buildTenderFamilyGroups(filteredData);
   }, [filteredData]);
 
   const groupedBuckets = useMemo(() => {
