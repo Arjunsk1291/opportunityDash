@@ -861,7 +861,12 @@ const FORM_EDITABLE_FIELDS = [
 
 const parseOpportunityValue = (rawValue) => {
   if (rawValue === null || rawValue === undefined || rawValue === '') return null;
-  const parsed = Number(rawValue);
+  const normalized = String(rawValue)
+    .replace(/,/g, '')
+    .replace(/[^0-9.\-]/g, '')
+    .trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : NaN;
 };
 

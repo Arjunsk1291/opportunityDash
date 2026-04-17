@@ -359,13 +359,19 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       setConfirmOpen(false);
       setEditorOpen(false);
       setPreviewDiffs([]);
-      const refreshStartedAt = performance.now();
-      await refreshData({ background: true, force: true });
-      const refreshMs = Math.round(performance.now() - refreshStartedAt);
-      const conflictsStartedAt = performance.now();
-      await loadConflicts();
-      const conflictsMs = Math.round(performance.now() - conflictsStartedAt);
-      logManualFlow(flowId, 'post-save-refresh-complete', { refreshMs, conflictsMs });
+      // Do not block the user on expensive re-fetches. Kick these off in background.
+      void (async () => {
+        const refreshStartedAt = performance.now();
+        await refreshData({ background: true, force: true });
+        const refreshMs = Math.round(performance.now() - refreshStartedAt);
+        const conflictsStartedAt = performance.now();
+        await loadConflicts();
+        const conflictsMs = Math.round(performance.now() - conflictsStartedAt);
+        logManualFlow(flowId, 'post-save-refresh-complete', { refreshMs, conflictsMs });
+      })().catch((error) => {
+        console.error('[opportunities.post-save.refresh.error]', error);
+        logManualFlow(flowId, 'post-save-refresh-failed', { message: (error as Error)?.message || 'unknown_error' });
+      });
     } catch (error) {
       console.error('[opportunities.manual-entry.save.error]', error);
       logManualFlow(flowId, 'save-failed', { message: (error as Error)?.message || 'unknown_error' });
