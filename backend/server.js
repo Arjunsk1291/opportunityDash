@@ -1823,6 +1823,17 @@ const getExistingTelecastStateFromSyncedOpportunities = async () => {
       telecastAlertedAt: 1,
       telecastAlertSource: 1,
       opportunityRefNo: 1,
+      leadEmail: 1,
+      leadEmailSource: 1,
+      leadEmailAssignedAt: 1,
+      leadEmailAssignedBy: 1,
+      deadlineAlerted: 1,
+      deadlineAlertedAt: 1,
+      deadlineAlertedDateKey: 1,
+      postBidDetailType: 1,
+      postBidDetailOther: 1,
+      postBidDetailUpdatedBy: 1,
+      postBidDetailUpdatedAt: 1,
     }
   ).lean();
   const fetchMs = Date.now() - startedAt;
@@ -1832,6 +1843,7 @@ const getExistingTelecastStateFromSyncedOpportunities = async () => {
   const refSet = new Set();
   const keyAlertedAt = new Map();
   const keyState = new Map();
+  const metaByRef = new Map();
   let rowsWithStoredKey = 0;
   let rowsWithRef = 0;
   let fallbackKeyBuilds = 0;
@@ -1846,6 +1858,22 @@ const getExistingTelecastStateFromSyncedOpportunities = async () => {
     const telecastAlerted = Boolean(row?.telecastAlerted);
     const alertedAt = row?.telecastAlertedAt || null;
     const telecastAlertSource = String(row?.telecastAlertSource || '').trim();
+
+    if (ref) {
+      metaByRef.set(ref, {
+        leadEmail: row?.leadEmail || '',
+        leadEmailSource: row?.leadEmailSource || '',
+        leadEmailAssignedAt: row?.leadEmailAssignedAt || null,
+        leadEmailAssignedBy: row?.leadEmailAssignedBy || '',
+        deadlineAlerted: row?.deadlineAlerted || false,
+        deadlineAlertedAt: row?.deadlineAlertedAt || null,
+        deadlineAlertedDateKey: row?.deadlineAlertedDateKey || '',
+        postBidDetailType: row?.postBidDetailType || '',
+        postBidDetailOther: row?.postBidDetailOther || '',
+        postBidDetailUpdatedBy: row?.postBidDetailUpdatedBy || '',
+        postBidDetailUpdatedAt: row?.postBidDetailUpdatedAt || null,
+      });
+    }
 
     if (key) {
       keyState.set(key, {
@@ -1862,6 +1890,7 @@ const getExistingTelecastStateFromSyncedOpportunities = async () => {
 
   return {
     keyState,
+    metaByRef,
     alertedKeySet,
     refSet,
     keyAlertedAt,
@@ -2131,34 +2160,10 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   }
   markStage('prepareAndDispatchTelecast');
 
-  const existingOpportunityMetaPromise = SyncedOpportunity.find(
-    {},
-    {
-      opportunityRefNo: 1,
-      leadEmail: 1,
-      leadEmailSource: 1,
-      leadEmailAssignedAt: 1,
-      leadEmailAssignedBy: 1,
-      deadlineAlerted: 1,
-      deadlineAlertedAt: 1,
-      deadlineAlertedDateKey: 1,
-      postBidDetailType: 1,
-      postBidDetailOther: 1,
-      postBidDetailUpdatedBy: 1,
-      postBidDetailUpdatedAt: 1,
-    }
-  ).lean();
   const manualUpdatesByRefPromise = loadManualUpdateSnapshots();
-  const [existingOpportunityMeta, manualUpdatesByRef] = await Promise.all([
-    existingOpportunityMetaPromise,
-    manualUpdatesByRefPromise,
-  ]);
+  const [manualUpdatesByRef] = await Promise.all([manualUpdatesByRefPromise]);
   markStage('loadExistingOpportunityMetaAndManualSnapshots');
-  const metaByRef = new Map(
-    existingOpportunityMeta
-      .map((row) => [normalizeRefNo(row?.opportunityRefNo || ''), row])
-      .filter(([ref]) => Boolean(ref))
-  );
+  const metaByRef = existingTelecastState?.metaByRef || new Map();
   const manualAlignmentByRef = new Map();
   const pendingConflictOps = [];
 
@@ -5136,17 +5141,27 @@ app.post('/api/opportunities/:id/post-bid-details', verifyToken, async (req, res
 });
 
 app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
+  const endpointStartedAt = Date.now();
   try {
     if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
+    const beforeSyncAt = Date.now();
 
     const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
+    const endpointTiming = {
+      totalMs: Date.now() - endpointStartedAt,
+      preSyncMs: beforeSyncAt - endpointStartedAt,
+      syncRunMs: Date.now() - beforeSyncAt,
+    };
     res.json({
       success: true,
       count: syncResult.insertedCount,
       syncedCount: syncResult.insertedCount,
       newRowsCount: syncResult.newRowsCount,
       newRowSignatures: syncResult.newRowSignatures,
-      syncTiming: syncResult.syncTiming || null,
+      syncTiming: {
+        ...(syncResult.syncTiming || {}),
+        endpoint: endpointTiming,
+      },
     });
   } catch (error) {
     res.status(500).json(toApiError(error, 'GRAPH_SYNC_FAILED'));

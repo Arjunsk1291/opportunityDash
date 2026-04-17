@@ -1021,6 +1021,7 @@ export default function Admin() {
             totalMs: Number(timing?.totalMs || 0),
             lockWaitMs: Number((timing as { lockWaitMs?: number })?.lockWaitMs || 0),
             totalWithLockWaitMs: Number((timing as { totalWithLockWaitMs?: number })?.totalWithLockWaitMs || 0),
+            endpoint: (timing as { endpoint?: Record<string, number> })?.endpoint || {},
             stageMs: timing?.stageMs || {},
             stageDetails: timing?.stageDetails || {},
           }));
