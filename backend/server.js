@@ -1823,7 +1823,6 @@ const getExistingTelecastStateFromSyncedOpportunities = async () => {
       telecastAlertedAt: 1,
       telecastAlertSource: 1,
       opportunityRefNo: 1,
-      rawGraphData: 1,
     }
   ).lean();
   const fetchMs = Date.now() - startedAt;
@@ -1840,10 +1839,10 @@ const getExistingTelecastStateFromSyncedOpportunities = async () => {
   rows.forEach((row) => {
     const storedKey = String(row?.telecastAlertedKey || '').trim();
     if (storedKey) rowsWithStoredKey += 1;
-    const key = storedKey || buildNotificationKey(row);
-    if (!storedKey && key) fallbackKeyBuilds += 1;
     const ref = normalizeRefNo(String(row?.telecastAlertedRefNo || '').trim() || getTenderRefNo(row));
     if (ref) rowsWithRef += 1;
+    const key = storedKey || (ref ? `REF::${ref}` : '');
+    if (!storedKey && key) fallbackKeyBuilds += 1;
     const telecastAlerted = Boolean(row?.telecastAlerted);
     const alertedAt = row?.telecastAlertedAt || null;
     const telecastAlertSource = String(row?.telecastAlertSource || '').trim();
@@ -2010,17 +2009,24 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const opportunities = await transformTendersToOpportunities(tenders);
   markStage('transformTendersToOpportunities');
 
-  const systemConfigStartedAt = Date.now();
-  const systemConfigPromise = getSystemConfig();
-  const telecastStateStartedAt = Date.now();
-  const telecastStatePromise = getExistingTelecastStateFromSyncedOpportunities();
-  const [systemConfig, existingTelecastState] = await Promise.all([
-    systemConfigPromise,
-    telecastStatePromise,
-  ]);
+  let getSystemConfigMs = 0;
+  let getExistingTelecastStateMs = 0;
+  const systemConfigPromise = (async () => {
+    const startedAt = Date.now();
+    const value = await getSystemConfig();
+    getSystemConfigMs = Date.now() - startedAt;
+    return value;
+  })();
+  const telecastStatePromise = (async () => {
+    const startedAt = Date.now();
+    const value = await getExistingTelecastStateFromSyncedOpportunities();
+    getExistingTelecastStateMs = Date.now() - startedAt;
+    return value;
+  })();
+  const [systemConfig, existingTelecastState] = await Promise.all([systemConfigPromise, telecastStatePromise]);
   stageDetails.loadSystemConfigAndTelecastState = {
-    getSystemConfigMs: Date.now() - systemConfigStartedAt,
-    getExistingTelecastStateMs: Date.now() - telecastStateStartedAt,
+    getSystemConfigMs,
+    getExistingTelecastStateMs,
     telecastStateDetails: existingTelecastState?.timing || null,
   };
   markStage('loadSystemConfigAndTelecastState');
@@ -2157,10 +2163,12 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const pendingConflictOps = [];
 
   const opportunitiesForInsert = opportunities.map((opportunity) => {
-    const key = buildNotificationKey(opportunity);
-    const ref = getTenderRefNo(opportunity);
-    const metaSnapshot = ref ? metaByRef.get(normalizeRefNo(ref)) : null;
-    const manualSnapshot = ref ? manualUpdatesByRef.get(normalizeRefKey(ref)) : null;
+    const initialRef = getTenderRefNo(opportunity);
+    const metaSnapshot = initialRef ? metaByRef.get(normalizeRefNo(initialRef)) : null;
+    const manualSnapshot = initialRef ? manualUpdatesByRef.get(normalizeRefKey(initialRef)) : null;
+    const { opportunity: mergedOpportunity, staleFields } = applyManualOverridesToOpportunity(opportunity, manualSnapshot);
+    const ref = getTenderRefNo(mergedOpportunity) || initialRef;
+    const key = buildNotificationKey(mergedOpportunity) || (ref ? `REF::${ref}` : '');
     const previousState = key ? existingTelecastState.keyState.get(key) : null;
     const isDispatchedNow = Boolean(key && telecastDispatch.dispatchedKeys.includes(key));
     const isAlerted = seededAlertBaseline || isDispatchedNow || Boolean(previousState?.telecastAlerted) || Boolean(key && alertedKeySet.has(key));
@@ -2174,7 +2182,6 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
       else telecastAlertSource = previousState?.telecastAlertSource || 'history_preserved';
     }
 
-    const { opportunity: mergedOpportunity, staleFields } = applyManualOverridesToOpportunity(opportunity, manualSnapshot);
     if (manualSnapshot && staleFields.length) {
       const nextFields = staleFields.reduce((acc, fieldKey) => {
         acc[fieldKey] = mergedOpportunity?.[fieldKey] ?? opportunity?.[fieldKey] ?? '';
@@ -2326,15 +2333,32 @@ let syncInFlightPromise = null;
 const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   if (syncInFlightPromise) {
     console.log('[sync.lock.waiting]', JSON.stringify({ source, timestamp: new Date().toISOString() }));
-    return syncInFlightPromise;
+    const waitStartedAt = Date.now();
+    const result = await syncInFlightPromise;
+    const lockWaitMs = Date.now() - waitStartedAt;
+    return {
+      ...result,
+      syncTiming: {
+        ...(result?.syncTiming || {}),
+        lockWaitMs,
+        totalWithLockWaitMs: Number(result?.syncTiming?.totalMs || 0) + lockWaitMs,
+      },
+    };
   }
 
   syncInFlightPromise = runSyncFromConfiguredGraph({ source })
     .finally(() => {
       syncInFlightPromise = null;
     });
-
-  return syncInFlightPromise;
+  const result = await syncInFlightPromise;
+  return {
+    ...result,
+    syncTiming: {
+      ...(result?.syncTiming || {}),
+      lockWaitMs: 0,
+      totalWithLockWaitMs: Number(result?.syncTiming?.totalMs || 0),
+    },
+  };
 };
 
 let graphAutoSyncTimer = null;
