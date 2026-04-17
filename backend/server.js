@@ -943,19 +943,6 @@ const parseDateValue = (value) => {
   const raw = String(value).replace(/\u00A0/g, ' ').replace(/[–—]/g, '-').trim();
   if (!raw) return null;
 
-  const hasExplicitYear = /\b(19|20)\d{2}\b/.test(raw) || /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(raw);
-  if (!hasExplicitYear) {
-    const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (iso) {
-      const parsedIso = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
-      return Number.isNaN(parsedIso.getTime()) ? null : parsedIso;
-    }
-    return null;
-  }
-
-  const parsed = new Date(raw);
-  if (!Number.isNaN(parsed.getTime())) return parsed;
-
   const dmyMatch = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (dmyMatch) {
     const day = Number(dmyMatch[1]);
@@ -971,16 +958,21 @@ const parseDateValue = (value) => {
     ) {
       return asDmy;
     }
-
-    const asMdy = new Date(Date.UTC(year, day - 1, month));
-    if (
-      asMdy.getUTCFullYear() === year
-      && asMdy.getUTCMonth() === day - 1
-      && asMdy.getUTCDate() === month
-    ) {
-      return asMdy;
-    }
+    return null;
   }
+
+  const hasExplicitYear = /\b(19|20)\d{2}\b/.test(raw) || /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(raw);
+  if (!hasExplicitYear) {
+    const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (iso) {
+      const parsedIso = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
+      return Number.isNaN(parsedIso.getTime()) ? null : parsedIso;
+    }
+    return null;
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) return parsed;
 
   return null;
 };
