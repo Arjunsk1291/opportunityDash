@@ -1037,9 +1037,11 @@ export default function Admin() {
         }
         setProgress(82, 'Refreshing stats');
         setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Graph Excel (${result.newRowsCount || 0} new rows)` });
-        await loadCollectionStats();
+        await Promise.all([
+          loadCollectionStats(),
+          loadNotificationStatus(),
+        ]);
         setProgress(92, 'Refreshing notification status');
-        await loadNotificationStatus();
         toast.success(`Synced ${result.count} tenders from Graph Excel (${result.newRowsCount || 0} new rows)`);
         setTimeout(() => setMessage(null), 3000);
       });

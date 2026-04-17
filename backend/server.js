@@ -2241,12 +2241,16 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   await SyncedOpportunity.deleteMany({});
   const deleteMs = Date.now() - deleteStartedAt;
   const insertStartedAt = Date.now();
-  const inserted = await SyncedOpportunity.insertMany(opportunitiesForInsert);
+  const insertResult = await SyncedOpportunity.collection.insertMany(opportunitiesForInsert, {
+    ordered: false,
+    bypassDocumentValidation: true,
+  });
+  const insertedCount = Number(insertResult?.insertedCount || opportunitiesForInsert.length || 0);
   const insertMs = Date.now() - insertStartedAt;
   stageDetails.replaceSyncedOpportunityCollection = {
     deleteManyMs: deleteMs,
     insertManyMs: insertMs,
-    insertedCount: inserted.length,
+    insertedCount,
     inputCount: opportunitiesForInsert.length,
   };
   markStage('replaceSyncedOpportunityCollection');
@@ -2275,7 +2279,11 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
 
   // Ensure subsequent /api/opportunities responses reflect newly synced rows immediately.
   invalidateOpportunitiesCache(`graph_sync:${source}`);
-  await warmOpportunitiesCache(`graph_sync:${source}`);
+  // Warm cache asynchronously so sync response is not blocked by list payload rebuild.
+  warmOpportunitiesCache(`graph_sync:${source}`)
+    .catch((error) => {
+      console.error('[api.opportunities.cache.warm.async.error]', error?.message || error);
+    });
   stageDetails.warmOpportunitiesCache = opportunitiesListCache.meta || null;
   markStage('warmOpportunitiesCache');
   const syncTotalMs = Date.now() - syncStartedAt;
@@ -2304,7 +2312,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   }));
 
   return {
-    insertedCount: inserted.length,
+    insertedCount,
     newRowsCount: newRowSignatures.length,
     newRowSignatures: newRowSignatures.slice(0, 50),
     eligibleRows: uniqueCurrentSignatures.length,
@@ -5900,17 +5908,50 @@ app.post('/api/bd-engagements/clear', verifyToken, async (req, res) => {
 
 app.get('/api/opportunities/stats', verifyToken, async (req, res) => {
   try {
-    const opportunities = (await SyncedOpportunity.find().lean()).map((opp) => applyOpportunityDateFields(applyOpportunityStatusFields(opp)));
-    const totalTenders = opportunities.length;
-    const totalValue = opportunities.reduce((sum, opp) => sum + (opp.opportunityValue || 0), 0);
-    const lastSync = opportunities[0]?.syncedAt || null;
-    const statusDistribution = opportunities.reduce((acc, opp) => {
-      const key = opp.avenirStatus || 'UNKNOWN';
-      acc[key] = (acc[key] || 0) + 1;
+    const [summaryRows, statusRows] = await Promise.all([
+      SyncedOpportunity.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalTenders: { $sum: 1 },
+            totalValue: { $sum: { $ifNull: ['$opportunityValue', 0] } },
+            lastSync: { $max: '$syncedAt' },
+          },
+        },
+      ]),
+      SyncedOpportunity.aggregate([
+        {
+          $group: {
+            _id: {
+              $cond: [
+                {
+                  $or: [
+                    { $eq: ['$avenirStatus', null] },
+                    { $eq: ['$avenirStatus', ''] },
+                  ],
+                },
+                'UNKNOWN',
+                '$avenirStatus',
+              ],
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    const summary = summaryRows[0] || {};
+    const statusDistribution = statusRows.reduce((acc, row) => {
+      acc[String(row?._id || 'UNKNOWN')] = Number(row?.count || 0);
       return acc;
     }, {});
 
-    res.json({ totalTenders, totalValue, lastSync, statusDistribution });
+    res.json({
+      totalTenders: Number(summary?.totalTenders || 0),
+      totalValue: Number(summary?.totalValue || 0),
+      lastSync: summary?.lastSync || null,
+      statusDistribution,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
