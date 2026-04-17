@@ -3952,8 +3952,19 @@ const getSystemConfigForSync = async () => {
   return config;
 };
 
+const getSystemConfigForActionPermissions = async () => {
+  if (DISABLE_MONGODB) return getSystemConfig();
+  const actionProjection = {
+    actionRoleAccess: 1,
+    actionEmailAccess: 1,
+  };
+  let config = await SystemConfig.findOne({}, actionProjection);
+  if (!config) config = await SystemConfig.create({});
+  return config;
+};
+
 const getActionPermissions = async () => {
-  const config = await getSystemConfig();
+  const config = await getSystemConfigForActionPermissions();
   const permissions = sanitizeActionRoleAccess(config.actionRoleAccess || {});
   const emailPermissions = sanitizeActionEmailAccess(config.actionEmailAccess || {});
   if (!config.actionRoleAccess || Object.keys(config.actionRoleAccess).length === 0) {
@@ -5344,8 +5355,13 @@ app.get('/api/opportunities/value-conflicts', verifyToken, async (req, res) => {
 });
 
 app.post('/api/opportunities/manual-entry/preview', verifyToken, async (req, res) => {
+  const startedAt = Date.now();
+  const stageMs = {};
+  const mark = (name, ms) => { stageMs[name] = ms; };
   try {
+    const permissionStartedAt = Date.now();
     if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
+    mark('permissionMs', Date.now() - permissionStartedAt);
     if (!isDatabaseReady()) {
       return respondDatabaseUnavailable(res);
     }
@@ -5362,10 +5378,12 @@ app.post('/api/opportunities/manual-entry/preview', verifyToken, async (req, res
       return res.status(400).json({ error: `Missing required fields: ${missing.map((field) => FIELD_LABELS[field] || field).join(', ')}` });
     }
 
+    const fetchStartedAt = Date.now();
     const [existingOpp, previousManual] = await Promise.all([
       SyncedOpportunity.findOne({ opportunityRefNo: payload.opportunityRefNo }).lean(),
       OpportunityManualUpdate.findOne({ refKey }).lean(),
     ]);
+    mark('fetchExistingMs', Date.now() - fetchStartedAt);
 
     if (mode === 'new' && existingOpp) return res.status(409).json({ error: 'A row with this Avenir Ref already exists. Use Update.' });
     if (mode === 'update' && !existingOpp) return res.status(404).json({ error: 'No existing row found. Use New.' });
@@ -5391,6 +5409,10 @@ app.post('/api/opportunities/manual-entry/preview', verifyToken, async (req, res
       overwrites,
       allChanges: fieldDiffs,
       existingFound: Boolean(existingOpp),
+      timing: {
+        totalMs: Date.now() - startedAt,
+        stageMs,
+      },
     });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to preview entry update' });
@@ -5398,8 +5420,13 @@ app.post('/api/opportunities/manual-entry/preview', verifyToken, async (req, res
 });
 
 app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) => {
+  const startedAt = Date.now();
+  const stageMs = {};
+  const mark = (name, ms) => { stageMs[name] = ms; };
   try {
+    const permissionStartedAt = Date.now();
     if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
+    mark('permissionMs', Date.now() - permissionStartedAt);
     if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
 
     const mode = String(req.body?.mode || 'update').trim().toLowerCase();
@@ -5415,10 +5442,12 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
       return res.status(400).json({ error: `Missing required fields: ${missing.map((field) => FIELD_LABELS[field] || field).join(', ')}` });
     }
 
+    const fetchStartedAt = Date.now();
     const [existingOpp, previousManual] = await Promise.all([
       SyncedOpportunity.findOne({ opportunityRefNo: payload.opportunityRefNo }).lean(),
       OpportunityManualUpdate.findOne({ refKey }).lean(),
     ]);
+    mark('fetchExistingMs', Date.now() - fetchStartedAt);
     if (mode === 'new' && existingOpp) return res.status(409).json({ error: 'A row with this Avenir Ref already exists. Use Update.' });
     if (mode === 'update' && !existingOpp) return res.status(404).json({ error: 'No existing row found. Use New.' });
 
@@ -5440,6 +5469,7 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
 
     const expiresAt = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000));
     const actor = buildAuditActor(req);
+    const probationStartedAt = Date.now();
     await OpportunityProbation.create({
       opportunityRefNo: payload.opportunityRefNo,
       refKey,
@@ -5451,6 +5481,7 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
       previousSyncedOpportunity: existingOpp || null,
       previousManualSnapshot: previousManual || null,
     });
+    mark('probationMs', Date.now() - probationStartedAt);
 
     const syncedPatch = {};
     FORM_EDITABLE_FIELDS.forEach((fieldKey) => {
@@ -5458,6 +5489,7 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
       syncedPatch[fieldKey] = payload[fieldKey];
     });
 
+    const upsertStartedAt = Date.now();
     if (mode === 'new') {
       await SyncedOpportunity.create({
         opportunityRefNo: payload.opportunityRefNo,
@@ -5467,6 +5499,7 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
     } else {
       await SyncedOpportunity.updateOne({ opportunityRefNo: payload.opportunityRefNo }, { $set: syncedPatch });
     }
+    mark('writeSyncedOpportunityMs', Date.now() - upsertStartedAt);
 
     const manualSet = {
       opportunityRefNo: payload.opportunityRefNo,
@@ -5476,8 +5509,11 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
     MANUAL_UPDATE_FIELD_KEYS.forEach((fieldKey) => {
       manualSet[fieldKey] = payload[fieldKey];
     });
+    const manualUpdateStartedAt = Date.now();
     await OpportunityManualUpdate.updateOne({ refKey }, { $set: manualSet }, { upsert: true });
+    mark('writeManualSnapshotMs', Date.now() - manualUpdateStartedAt);
 
+    const changelogStartedAt = Date.now();
     await OpportunityChangeLog.create({
       opportunityRefNo: payload.opportunityRefNo,
       refKey,
@@ -5492,13 +5528,23 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
         note: row.hasExistingValue ? 'overwrite' : 'new_value',
       })),
     });
+    mark('writeChangeLogMs', Date.now() - changelogStartedAt);
 
     invalidateOpportunitiesCache(`manual_entry_save:${mode}`);
     warmOpportunitiesCache(`manual_entry_save:${mode}`).catch((error) => {
       console.error('[api.opportunities.cache.warm.async.error]', error?.message || error);
     });
 
-    res.json({ success: true, mode, changedFields: diffs.length, overwriteCount });
+    res.json({
+      success: true,
+      mode,
+      changedFields: diffs.length,
+      overwriteCount,
+      timing: {
+        totalMs: Date.now() - startedAt,
+        stageMs,
+      },
+    });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to save manual entry' });
   }

@@ -353,6 +353,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         requestMs,
         changedFields: Number(data?.changedFields || 0),
         overwriteCount: Number(data?.overwriteCount || 0),
+        backendTiming: data?.timing || null,
       });
       toast.success(editorMode === 'new' ? 'New row added.' : 'Row updated.');
       setConfirmOpen(false);
@@ -410,6 +411,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         requiresConfirmation: overwrites.length > 0,
         overwriteCount: overwrites.length,
         allChanges: Array.isArray(data?.allChanges) ? data.allChanges.length : 0,
+        backendTiming: data?.timing || null,
       });
       if (overwrites.length > 0) {
         setPreviewDiffs(overwrites);
