@@ -220,6 +220,11 @@ const BDEngagements = () => {
   const [bulkAccessEmails, setBulkAccessEmails] = useState<string[]>([]);
   const [bulkText, setBulkText] = useState('');
   const [uploadReport, setUploadReport] = useState<{ title: string; lines: string[] } | null>(null);
+  const [uploadPreviewOpen, setUploadPreviewOpen] = useState(false);
+  const [uploadPreviewRows, setUploadPreviewRows] = useState<BDEngagement[]>([]);
+  const [uploadPreviewWarnings, setUploadPreviewWarnings] = useState<string[]>([]);
+  const [uploadPreviewProcessedCount, setUploadPreviewProcessedCount] = useState(0);
+  const [uploadPreviewImporting, setUploadPreviewImporting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<BDEngagement | null>(null);
   const [clearDbOpen, setClearDbOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<BDEngagement | null>(null);
@@ -548,22 +553,45 @@ const BDEngagements = () => {
       }
 
       const normalizedRows = parsedRows.map(normalizeEngagementDates);
-      logDateDiagnostics('bulk_excel.before_upload', normalizedRows);
-      const createdRows = await createBulkEngagements(normalizedRows);
-      setRows((current) => [...createdRows, ...current]);
-      toast.success(`Uploaded ${parsedRows.length} engagement${parsedRows.length === 1 ? '' : 's'}.`);
-      setUploadReport({
-        title: 'Bulk Upload Report',
-        lines: [
-          `Processed ${rowsMatrix.length - startRow} row(s).`,
-          `Imported ${parsedRows.length} row(s).`,
-          warnings.length ? `Skipped ${warnings.length} row(s) due to missing required fields.` : 'No rows skipped.',
-          ...warnings,
-        ],
-      });
+      setUploadPreviewRows(normalizedRows);
+      setUploadPreviewWarnings(warnings);
+      setUploadPreviewProcessedCount(rowsMatrix.length - startRow);
+      setUploadPreviewOpen(true);
     } catch (error) {
       console.error('Bulk upload failed:', error);
       toast.error((error as Error).message || 'Failed to upload bulk file.');
+    }
+  };
+
+  const confirmBulkUploadPreview = async () => {
+    if (!uploadPreviewRows.length) {
+      setUploadPreviewOpen(false);
+      return;
+    }
+    try {
+      setUploadPreviewImporting(true);
+      logDateDiagnostics('bulk_excel.before_upload', uploadPreviewRows);
+      const createdRows = await createBulkEngagements(uploadPreviewRows);
+      setRows((current) => [...createdRows, ...current]);
+      toast.success(`Uploaded ${uploadPreviewRows.length} engagement${uploadPreviewRows.length === 1 ? '' : 's'}.`);
+      setUploadReport({
+        title: 'Bulk Upload Report',
+        lines: [
+          `Processed ${uploadPreviewProcessedCount} row(s).`,
+          `Imported ${uploadPreviewRows.length} row(s).`,
+          uploadPreviewWarnings.length ? `Skipped ${uploadPreviewWarnings.length} row(s) due to missing required fields.` : 'No rows skipped.',
+          ...uploadPreviewWarnings,
+        ],
+      });
+      setUploadPreviewOpen(false);
+      setUploadPreviewRows([]);
+      setUploadPreviewWarnings([]);
+      setUploadPreviewProcessedCount(0);
+    } catch (error) {
+      console.error('Bulk upload confirm failed:', error);
+      toast.error((error as Error).message || 'Failed to import preview rows.');
+    } finally {
+      setUploadPreviewImporting(false);
     }
   };
 
@@ -1561,6 +1589,75 @@ const BDEngagements = () => {
               ))}
             </ul>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={uploadPreviewOpen}
+        onOpenChange={(open) => {
+          setUploadPreviewOpen(open);
+          if (!open && !uploadPreviewImporting) {
+            setUploadPreviewRows([]);
+            setUploadPreviewWarnings([]);
+            setUploadPreviewProcessedCount(0);
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Bulk Upload Preview</DialogTitle>
+            <DialogDescription>
+              Review parsed rows before importing. Showing first 10 of {uploadPreviewRows.length}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[50vh] overflow-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Ref.</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Client Name</TableHead>
+                  <TableHead>Meeting Type</TableHead>
+                  <TableHead>Meeting location</TableHead>
+                  <TableHead>Status Q/N</TableHead>
+                  <TableHead>Next Steps</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {uploadPreviewRows.slice(0, 10).map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="font-medium">{row.ref}</TableCell>
+                    <TableCell>{formatPrettyDate(row.date)}</TableCell>
+                    <TableCell>{row.clientName || '—'}</TableCell>
+                    <TableCell>{row.meetingType || '—'}</TableCell>
+                    <TableCell>{row.location || '—'}</TableCell>
+                    <TableCell>{row.status || '—'}</TableCell>
+                    <TableCell className="max-w-[260px] whitespace-pre-wrap break-words text-justify align-top">{row.nextSteps || '—'}</TableCell>
+                  </TableRow>
+                ))}
+                {!uploadPreviewRows.length && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">No parsed rows to preview.</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          {uploadPreviewWarnings.length > 0 && (
+            <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+              <p className="mb-2 font-medium text-foreground">Warnings ({uploadPreviewWarnings.length})</p>
+              <ul className="list-disc pl-5">
+                {uploadPreviewWarnings.slice(0, 20).map((line, index) => <li key={`${line}-${index}`}>{line}</li>)}
+              </ul>
+              {uploadPreviewWarnings.length > 20 && <p className="mt-2">+ {uploadPreviewWarnings.length - 20} more warning(s)</p>}
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setUploadPreviewOpen(false)} disabled={uploadPreviewImporting}>Cancel</Button>
+            <Button type="button" onClick={confirmBulkUploadPreview} disabled={!uploadPreviewRows.length || uploadPreviewImporting}>
+              {uploadPreviewImporting ? 'Importing...' : `Import ${uploadPreviewRows.length} Row${uploadPreviewRows.length === 1 ? '' : 's'}`}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
