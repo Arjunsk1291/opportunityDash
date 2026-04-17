@@ -137,7 +137,7 @@ const formatPrettyDate = (value: string) => {
   const parsed = parseBDEngagementDate(value);
   if (!parsed) return value;
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+  return parsed.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
 const buildFormFromRow = (row: BDEngagement): FormState => ({
@@ -497,23 +497,14 @@ const BDEngagements = () => {
         return raw;
       };
 
-      const lastSeen: Record<number, string> = {};
       const startRow = headerRowIndex + 1;
       rowsMatrix.slice(startRow).forEach((row, rowOffset) => {
         const rowIndex = startRow + rowOffset + 1;
-        const filledRow = row.map((cell, idx) => {
-          const value = String(cell ?? '').trim();
-          if (value) {
-            lastSeen[idx] = value;
-            return value;
-          }
-          return lastSeen[idx] || '';
-        });
 
         const getCell = (key: string) => {
           const idx = columnIndex[key];
           if (idx === undefined) return '';
-          return String(filledRow[idx] ?? '').trim();
+          return String(row[idx] ?? '').trim();
         };
 
         const ref = getCell('ref');
