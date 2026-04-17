@@ -2243,7 +2243,6 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const insertStartedAt = Date.now();
   const insertResult = await SyncedOpportunity.collection.insertMany(opportunitiesForInsert, {
     ordered: false,
-    bypassDocumentValidation: true,
   });
   const insertedCount = Number(insertResult?.insertedCount || opportunitiesForInsert.length || 0);
   const insertMs = Date.now() - insertStartedAt;
