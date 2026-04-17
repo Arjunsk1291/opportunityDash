@@ -286,8 +286,8 @@ const BDEngagements = () => {
         nextSteps,
         lastContact,
       ] = parts;
-      if (!ref || !date || !clientName || !meetingType) {
-        throw new Error(`Line ${index + 1} missing required fields (ref, date, client, meetingType).`);
+      if (!ref || !date || !clientName) {
+        throw new Error(`Line ${index + 1} missing required fields (ref, date, clientName).`);
       }
       const reportSubmitted = ['yes', 'true', '1'].includes(String(reportSubmittedRaw || '').toLowerCase());
       const leadGenerated = ['yes', 'true', '1'].includes(String(leadGeneratedRaw || '').toLowerCase());
@@ -296,7 +296,7 @@ const BDEngagements = () => {
         ref: ref.trim(),
         date: date.trim(),
         clientName: clientName.trim(),
-        meetingType: meetingType.trim(),
+        meetingType: (meetingType || MEETING_TYPES[0]).trim(),
         status: (status || 'Open').trim() || 'Open',
         location: (location || '').trim(),
         discussionPoints: (discussionPoints || '').trim(),
@@ -517,8 +517,8 @@ const BDEngagements = () => {
         const clientName = getCell('clientName');
         const meetingType = getCell('meetingType');
         if (!ref && !clientName && !meetingType && !date) return;
-        if (!ref || !date || !clientName || !meetingType) {
-          warnings.push(`Row ${rowIndex}: missing required fields (Ref, Date, Client Name, Meeting Type).`);
+        if (!ref || !date || !clientName) {
+          warnings.push(`Row ${rowIndex}: missing required fields (Ref, Date, Client Name).`);
           return;
         }
 
@@ -530,7 +530,7 @@ const BDEngagements = () => {
           ref,
           date,
           clientName,
-          meetingType,
+          meetingType: meetingType || MEETING_TYPES[0],
           status: getCell('status') || 'Open',
           location: getCell('location'),
           discussionPoints: getCell('discussionPoints'),

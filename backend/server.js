@@ -6016,12 +6016,12 @@ app.post('/api/bd-engagements/bulk', verifyToken, async (req, res) => {
         ref: String(row.ref || '').trim(),
         date: String(row.date || '').trim(),
         clientName: String(row.clientName || '').trim(),
-        meetingType: String(row.meetingType || '').trim(),
+        meetingType: String(row.meetingType || 'Client Visit').trim(),
       }))
-      .filter((row) => row.ref && row.date && row.clientName && row.meetingType);
+      .filter((row) => row.ref && row.date && row.clientName);
 
     if (!preparedRows.length) {
-      return res.status(400).json({ error: 'No valid BD engagement rows found (ref/date/clientName/meetingType required)' });
+      return res.status(400).json({ error: 'No valid BD engagement rows found (ref/date/clientName required)' });
     }
 
     const insertResult = await BDEngagement.insertMany(preparedRows, { ordered: false });
