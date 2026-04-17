@@ -2013,7 +2013,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   let getExistingTelecastStateMs = 0;
   const systemConfigPromise = (async () => {
     const startedAt = Date.now();
-    const value = await getSystemConfig();
+    const value = await getSystemConfigForSync();
     getSystemConfigMs = Date.now() - startedAt;
     return value;
   })();
@@ -3907,6 +3907,35 @@ const getSystemConfig = async () => {
     };
   }
   let config = await SystemConfig.findOne();
+  if (!config) config = await SystemConfig.create({});
+  return config;
+};
+
+const getSystemConfigForSync = async () => {
+  if (DISABLE_MONGODB) return getSystemConfig();
+  const syncProjection = {
+    notificationRowSignatures: 1,
+    notificationLastCheckedAt: 1,
+    notificationLastNewRowsCount: 1,
+    notificationLastNewRows: 1,
+    notificationLastNewRowsPreview: 1,
+    telecastLastEligibleRowsPreview: 1,
+    telecastAlertedKeys: 1,
+    telecastAlertedRefNos: 1,
+    telecastAlertSeededAt: 1,
+    telecastAlertSeededCount: 1,
+    telecastKeywordHelp: 1,
+    telecastWeeklyStats: 1,
+    telecastGraphRefreshTokenEnc: 1,
+    telecastTemplateSubject: 1,
+    telecastTemplateBody: 1,
+    telecastTemplateStyle: 1,
+    telecastSendDelayMinutes: 1,
+    telecastGroupRecipients: 1,
+    updatedBy: 1,
+  };
+
+  let config = await SystemConfig.findOne({}, syncProjection);
   if (!config) config = await SystemConfig.create({});
   return config;
 };
