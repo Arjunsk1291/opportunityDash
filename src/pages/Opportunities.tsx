@@ -4,7 +4,7 @@ import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
 import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -210,6 +210,15 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const [conflictsLoading, setConflictsLoading] = useState(false);
   const [resolvingConflictId, setResolvingConflictId] = useState<string | null>(null);
 
+  const logManualFlow = (flowId: string, stage: string, details: Record<string, unknown> = {}) => {
+    console.log('[opportunities.manual-flow]', {
+      flowId,
+      stage,
+      timestamp: new Date().toISOString(),
+      ...details,
+    });
+  };
+
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
   const canEdit = canPerformAction('manual_opportunity_updates_write');
   const formOptions = useMemo(() => {
@@ -268,6 +277,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   };
 
   const openEditor = (mode: EditMode) => {
+    const flowId = `manual-${mode}-${Date.now()}`;
+    logManualFlow(flowId, 'editor-opened', { mode });
     setEditorMode(mode);
     setEditorOpen(true);
     setSearch('');
@@ -315,30 +326,51 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
     navigate({ pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true });
   }, [location.pathname, location.search, navigate, opportunities]);
 
-  const saveEntry = async (confirmed: boolean) => {
+  const saveEntry = async (confirmed: boolean, flowIdOverride?: string) => {
     if (!token || !canEdit) {
       toast.error('You do not have permission to save manual entries.');
       return;
     }
+    const flowId = flowIdOverride || `manual-save-${Date.now()}`;
     setSaving(true);
+    const saveStartedAt = performance.now();
+    logManualFlow(flowId, 'save-start', {
+      mode: editorMode,
+      confirmed,
+      ref: form.opportunityRefNo,
+    });
     try {
+      const requestStartedAt = performance.now();
       const response = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, mode: editorMode, confirmed }),
       });
+      const requestMs = Math.round(performance.now() - requestStartedAt);
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || 'Failed to save');
+      logManualFlow(flowId, 'save-success', {
+        requestMs,
+        changedFields: Number(data?.changedFields || 0),
+        overwriteCount: Number(data?.overwriteCount || 0),
+      });
       toast.success(editorMode === 'new' ? 'New row added.' : 'Row updated.');
       setConfirmOpen(false);
       setEditorOpen(false);
       setPreviewDiffs([]);
+      const refreshStartedAt = performance.now();
       await refreshData({ background: true, force: true });
+      const refreshMs = Math.round(performance.now() - refreshStartedAt);
+      const conflictsStartedAt = performance.now();
       await loadConflicts();
+      const conflictsMs = Math.round(performance.now() - conflictsStartedAt);
+      logManualFlow(flowId, 'post-save-refresh-complete', { refreshMs, conflictsMs });
     } catch (error) {
       console.error('[opportunities.manual-entry.save.error]', error);
+      logManualFlow(flowId, 'save-failed', { message: (error as Error)?.message || 'unknown_error' });
       toast.error((error as Error).message || 'Failed to save');
     } finally {
+      logManualFlow(flowId, 'save-finished', { totalMs: Math.round(performance.now() - saveStartedAt) });
       setSaving(false);
     }
   };
@@ -354,26 +386,45 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       return;
     }
 
+    const flowId = `manual-preview-${Date.now()}`;
     setPreviewing(true);
+    const previewStartedAt = performance.now();
+    logManualFlow(flowId, 'preview-start', {
+      mode: editorMode,
+      ref: form.opportunityRefNo,
+      requiredMissingCount: 0,
+    });
     try {
+      const requestStartedAt = performance.now();
       const response = await fetch(`${API_URL}/opportunities/manual-entry/preview`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, mode: editorMode }),
       });
+      const requestMs = Math.round(performance.now() - requestStartedAt);
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || 'Failed to preview changes');
       const overwrites = Array.isArray(data?.overwrites) ? data.overwrites : [];
+      logManualFlow(flowId, 'preview-success', {
+        requestMs,
+        requiresConfirmation: overwrites.length > 0,
+        overwriteCount: overwrites.length,
+        allChanges: Array.isArray(data?.allChanges) ? data.allChanges.length : 0,
+      });
       if (overwrites.length > 0) {
         setPreviewDiffs(overwrites);
+        setEditorOpen(false);
         setConfirmOpen(true);
+        logManualFlow(flowId, 'confirmation-opened', { overwriteCount: overwrites.length });
         return;
       }
-      await saveEntry(true);
+      await saveEntry(true, flowId);
     } catch (error) {
       console.error('[opportunities.manual-entry.preview.error]', error);
+      logManualFlow(flowId, 'preview-failed', { message: (error as Error)?.message || 'unknown_error' });
       toast.error((error as Error).message || 'Failed to preview changes');
     } finally {
+      logManualFlow(flowId, 'preview-finished', { totalMs: Math.round(performance.now() - previewStartedAt) });
       setPreviewing(false);
     }
   };
@@ -458,6 +509,11 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         <DialogContent className="max-w-5xl">
           <DialogHeader>
             <DialogTitle>{editorMode === 'new' ? 'New Opportunity Row' : 'Update Opportunity Row'}</DialogTitle>
+            <DialogDescription>
+              {editorMode === 'new'
+                ? 'Create a new opportunity row and save it to MongoDB with immediate dashboard refresh.'
+                : 'Preview field-level changes before updating the existing opportunity row.'}
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 md:grid-cols-[1fr_1.2fr]">
             <div className="space-y-3">
@@ -581,6 +637,9 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>Confirm Overwrite (Old vs New)</DialogTitle>
+            <DialogDescription>
+              Review changed fields before final save. Confirming will persist values and refresh dashboard data.
+            </DialogDescription>
           </DialogHeader>
           <div className="max-h-[55vh] overflow-y-auto rounded-md border">
             {previewDiffs.map((row) => (
@@ -592,7 +651,17 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
             ))}
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setConfirmOpen(false)} disabled={saving}>Cancel</Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setConfirmOpen(false);
+                setEditorOpen(true);
+              }}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
             <Button type="button" onClick={() => saveEntry(true)} disabled={saving}>{saving ? 'Saving...' : 'Confirm Save'}</Button>
           </div>
         </DialogContent>
@@ -602,6 +671,9 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         <DialogContent className="max-w-5xl">
           <DialogHeader>
             <DialogTitle>Sheet Sync Conflicts</DialogTitle>
+            <DialogDescription>
+              Resolve pending sync conflicts by choosing whether to keep current value or apply sheet value.
+            </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">For each changed non-empty sheet field, choose to keep existing or use sheet.</p>
           <div className="max-h-[60vh] overflow-y-auto rounded-md border">
