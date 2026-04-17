@@ -77,6 +77,16 @@ const emptyForm: FormState = {
 const parseBDEngagementDate = (value: string) => {
   const raw = String(value || '').trim();
   if (!raw) return null;
+  if (/^\d+(\.\d+)?$/.test(raw)) {
+    const serial = Number(raw);
+    if (Number.isFinite(serial) && serial > 20000 && serial < 80000) {
+      const wholeDays = Math.floor(serial);
+      const utcDays = wholeDays - 25569;
+      const utcValue = utcDays * 86400;
+      const dateInfo = new Date(utcValue * 1000);
+      if (!Number.isNaN(dateInfo.getTime())) return dateInfo;
+    }
+  }
   const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (iso) {
     const dt = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
@@ -90,6 +100,25 @@ const parseBDEngagementDate = (value: string) => {
   }
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const toIsoDate = (value: string) => {
+  const parsed = parseBDEngagementDate(value);
+  if (!parsed) return '';
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, '0');
+  const d = String(parsed.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const normalizeEngagementDates = (row: BDEngagement) => {
+  const normalizedDate = toIsoDate(row.date);
+  const normalizedLastContact = toIsoDate(row.lastContact || row.date);
+  return {
+    ...row,
+    date: normalizedDate || String(row.date || '').trim(),
+    lastContact: normalizedLastContact || normalizedDate || String(row.lastContact || row.date || '').trim(),
+  };
 };
 
 const sortByDateDesc = (left: string, right: string) => {
@@ -205,6 +234,20 @@ const BDEngagements = () => {
     setDrilldown({ title, rows: drilldownRows });
   };
 
+  const logDateDiagnostics = (source: string, inputRows: BDEngagement[]) => {
+    const invalidDateRows = inputRows.filter((row) => !toIsoDate(row.date));
+    const invalidLastContactRows = inputRows.filter((row) => !toIsoDate(row.lastContact));
+    console.log('[bd.dates.diagnostics]', {
+      source,
+      totalRows: inputRows.length,
+      invalidDateCount: invalidDateRows.length,
+      invalidLastContactCount: invalidLastContactRows.length,
+      invalidDateRefs: invalidDateRows.slice(0, 20).map((row) => row.ref),
+      invalidLastContactRefs: invalidLastContactRows.slice(0, 20).map((row) => row.ref),
+      timestamp: new Date().toISOString(),
+    });
+  };
+
   const persistBulkAccess = (emails: string[]) => {
     setBulkAccessEmails(emails);
     if (typeof window !== 'undefined') {
@@ -302,7 +345,9 @@ const BDEngagements = () => {
   const handleBulkAdd = async () => {
     try {
       const newRows = parseBulkRows(bulkText);
-      const createdRows = await createBulkEngagements(newRows);
+      const normalizedRows = newRows.map(normalizeEngagementDates);
+      logDateDiagnostics('bulk_text.before_upload', normalizedRows);
+      const createdRows = await createBulkEngagements(normalizedRows);
       setRows((current) => [...createdRows, ...current]);
       setBulkText('');
       setBulkDialogOpen(false);
@@ -511,7 +556,9 @@ const BDEngagements = () => {
         throw new Error('No valid engagement rows found. Check the template headers and required fields.');
       }
 
-      const createdRows = await createBulkEngagements(parsedRows);
+      const normalizedRows = parsedRows.map(normalizeEngagementDates);
+      logDateDiagnostics('bulk_excel.before_upload', normalizedRows);
+      const createdRows = await createBulkEngagements(normalizedRows);
       setRows((current) => [...createdRows, ...current]);
       toast.success(`Uploaded ${parsedRows.length} engagement${parsedRows.length === 1 ? '' : 's'}.`);
       setUploadReport({
@@ -538,7 +585,8 @@ const BDEngagements = () => {
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data?.error || 'Failed to load BD engagements');
-        const initialRows = Array.isArray(data) ? data : [];
+        const initialRows = (Array.isArray(data) ? data : []).map(normalizeEngagementDates);
+        logDateDiagnostics('load_from_db', initialRows);
         setRows(initialRows);
         setSelectedClient(initialRows[0]?.clientName || '');
       } catch (error) {
@@ -598,8 +646,14 @@ const BDEngagements = () => {
     sorted.sort((left, right) => {
       const direction = sortOrder === 'asc' ? 1 : -1;
       if (sortField === 'client') return left.clientName.localeCompare(right.clientName) * direction;
-      if (sortField === 'lastContact') return left.lastContact.localeCompare(right.lastContact) * direction;
-      return left.date.localeCompare(right.date) * direction;
+      if (sortField === 'lastContact') {
+        const leftTs = parseBDEngagementDate(left.lastContact)?.getTime() || 0;
+        const rightTs = parseBDEngagementDate(right.lastContact)?.getTime() || 0;
+        return (leftTs - rightTs) * direction;
+      }
+      const leftTs = parseBDEngagementDate(left.date)?.getTime() || 0;
+      const rightTs = parseBDEngagementDate(right.date)?.getTime() || 0;
+      return (leftTs - rightTs) * direction;
     });
 
     return sorted;
@@ -616,7 +670,9 @@ const BDEngagements = () => {
 
   const monthlyData = useMemo(() => {
     const grouped = rows.reduce<Record<string, number>>((acc, row) => {
-      const key = row.date.slice(0, 7);
+      const normalizedDate = toIsoDate(row.date);
+      if (!normalizedDate) return acc;
+      const key = normalizedDate.slice(0, 7);
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {});
@@ -762,7 +818,7 @@ const BDEngagements = () => {
 
   const saveRow = async () => {
     if (!form.ref.trim() || !form.date || !form.clientName.trim() || !form.meetingType.trim()) return;
-    const nextRow = buildRowFromForm(form, editingRow || undefined);
+    const nextRow = normalizeEngagementDates(buildRowFromForm(form, editingRow || undefined));
     if (!token) {
       toast.error('Missing auth token');
       return;
