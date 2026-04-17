@@ -245,7 +245,7 @@ const CopyButton = ({ value, label }: { value: string; label: string }) => {
 };
 
 const Clients = () => {
-  const { clients, stats, addClient, importClients, updateClient, normalizeCompanyName, isLoading, error } = useClientStore();
+  const { clients, stats, addClient, importClients, updateClient, normalizeCompanyName, isLoading, error, refreshClients } = useClientStore();
   const { canPerformAction } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -259,6 +259,7 @@ const Clients = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isSavingClient, setIsSavingClient] = useState(false);
+  const [lastImportSummary, setLastImportSummary] = useState<{ attempted: number; created: number; updated: number; at: string } | null>(null);
   const [filters, setFilters] = useState<{ domains: string[]; countries: string[] }>({ domains: [], countries: [] });
 
   const [newClient, setNewClient] = useState<ClientInput>({
@@ -376,13 +377,21 @@ const Clients = () => {
     }
     setIsImporting(true);
     try {
+      console.log('[clients.import] start', {
+        fileName: file.name,
+        sizeBytes: file.size,
+        type: file.type,
+        timestamp: new Date().toISOString(),
+      });
       const text = await file.text();
       const rows = parseCsv(text);
+      console.log('[clients.import] csv-parsed', { rows: rows.length });
       if (rows.length < 2) {
         toast.error('No rows found in the CSV file');
         return;
       }
       const inputs = mapCsvRows(rows).filter((row) => row.companyName.trim());
+      console.log('[clients.import] mapped-inputs', { totalMapped: inputs.length });
       if (!inputs.length) {
         toast.error('CSV headers are missing or no valid client rows found');
         return;
@@ -390,6 +399,9 @@ const Clients = () => {
       const result = await importClients(inputs);
       const created = Number((result as { created?: number })?.created || 0);
       const updated = Number((result as { updated?: number })?.updated || 0);
+      const summary = { attempted: inputs.length, created, updated, at: new Date().toISOString() };
+      setLastImportSummary(summary);
+      console.log('[clients.import] completed', summary);
       toast.success(`Imported ${inputs.length} rows (created ${created}, updated ${updated})`);
       setIsImportOpen(false);
     } catch (err) {
@@ -511,9 +523,35 @@ const Clients = () => {
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
-                <Button variant="secondary" onClick={handleDownloadTemplate} className="w-fit">
-                  Download CSV Template
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="secondary" onClick={handleDownloadTemplate} className="w-fit">
+                    Download CSV Template
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-fit"
+                    disabled={isImporting}
+                    onClick={async () => {
+                      try {
+                        console.log('[clients.import] verify-refresh.start', { timestamp: new Date().toISOString() });
+                        await refreshClients();
+                        console.log('[clients.import] verify-refresh.done', { clientsCount: clients.length, timestamp: new Date().toISOString() });
+                        toast.success('Client list refreshed from server');
+                      } catch (error) {
+                        console.error('[clients.import] verify-refresh.error', error);
+                        toast.error((error as Error).message || 'Failed to refresh clients');
+                      }
+                    }}
+                  >
+                    Verify Upload (Refresh)
+                  </Button>
+                </div>
+                {lastImportSummary ? (
+                  <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                    Last import: attempted {lastImportSummary.attempted}, created {lastImportSummary.created}, updated {lastImportSummary.updated}
+                    {' '}at {new Date(lastImportSummary.at).toLocaleString()}
+                  </div>
+                ) : null}
                 <div
                   className="border border-dashed border-border/50 rounded-lg p-6 text-center bg-muted/30"
                   onDragOver={(event) => event.preventDefault()}

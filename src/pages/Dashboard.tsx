@@ -175,6 +175,7 @@ const Dashboard = () => {
     }, 0);
 
     const activeSubmittedGroups = [...openOtherGroups, ...submittedGroups];
+    const submittedOnlyValue = sumValue(submittedGroups);
 
     return {
       received: {
@@ -186,6 +187,7 @@ const Dashboard = () => {
         groups: activeSubmittedGroups,
         rows: groupRows(activeSubmittedGroups),
         ...countJourneyTypes(activeSubmittedGroups),
+        submittedOnlyValue,
       },
       regretted: { groups: regrettedGroups, rows: groupRows(regrettedGroups) },
       hold: { groups: holdGroups, rows: groupRows(holdGroups) },
@@ -303,10 +305,13 @@ const Dashboard = () => {
     {
       label: 'Submitted',
       value: groupedBuckets.submitted.groups.length,
+      displayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.submitted.submittedOnlyValue || 0))}`,
+      valuePrefix: currency === 'AED' ? 'aed' : 'text',
       meta: [
         { label: 'Tender', value: groupedBuckets.submitted.tender, tone: 'bg-blue-500' },
         { label: 'EOI', value: groupedBuckets.submitted.eoi, tone: 'bg-amber-500' },
       ],
+      chip: 'Submitted value only',
       tone: 'text-sky-600',
       glow: 'analytics-kpi-glow-sky',
       icon: Send,

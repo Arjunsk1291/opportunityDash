@@ -5319,10 +5319,26 @@ app.get('/api/opportunities/value-conflicts', verifyToken, async (req, res) => {
       return respondDatabaseUnavailable(res);
     }
 
-    const [conflicts, opportunities] = await Promise.all([
-      OpportunityFieldConflict.find({ status: 'pending' }).sort({ detectedAt: -1 }).lean(),
-      SyncedOpportunity.find({}, { opportunityRefNo: 1, tenderName: 1 }).lean(),
-    ]);
+    const conflicts = await OpportunityFieldConflict.find({ status: 'pending' }).sort({ detectedAt: -1 }).lean();
+    const refKeys = [...new Set(
+      conflicts
+        .map((row) => normalizeRefKey(row?.refKey || row?.opportunityRefNo || ''))
+        .filter(Boolean)
+    )];
+    const refNos = [...new Set(
+      conflicts
+        .map((row) => String(row?.opportunityRefNo || '').trim())
+        .filter(Boolean)
+    )];
+    const opportunities = refNos.length
+      ? await SyncedOpportunity.find({ opportunityRefNo: { $in: refNos } }, { opportunityRefNo: 1, tenderName: 1 }).lean()
+      : [];
+    console.log('[api.value-conflicts.load]', JSON.stringify({
+      pendingConflicts: conflicts.length,
+      distinctRefs: refKeys.length,
+      matchedOpportunities: opportunities.length,
+      timestamp: new Date().toISOString(),
+    }));
 
     const oppByRefKey = new Map(
       opportunities
@@ -5866,6 +5882,11 @@ app.post('/api/clients/import', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'clients_import')) return;
     const inputs = Array.isArray(req.body?.clients) ? req.body.clients : [];
+    console.log('[api.clients.import.start]', JSON.stringify({
+      requestedRows: inputs.length,
+      actor: req.user?.email || '',
+      timestamp: new Date().toISOString(),
+    }));
     let createdCount = 0;
     let updatedCount = 0;
 
@@ -5903,7 +5924,15 @@ app.post('/api/clients/import', verifyToken, async (req, res) => {
       }
     }
 
-    res.json({ success: true, created: createdCount, updated: updatedCount, imported: createdCount + updatedCount });
+    const imported = createdCount + updatedCount;
+    console.log('[api.clients.import.done]', JSON.stringify({
+      requestedRows: inputs.length,
+      created: createdCount,
+      updated: updatedCount,
+      imported,
+      timestamp: new Date().toISOString(),
+    }));
+    res.json({ success: true, created: createdCount, updated: updatedCount, imported });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -116,6 +116,11 @@ export const useClientStore = () => {
       companyName: normalizeCompanyName(input.companyName),
       contacts: input.contacts.filter((contact) => contactKey(contact)),
     }));
+    console.log('[clients.store.import] request', {
+      rows: payload.length,
+      firstCompany: payload[0]?.companyName || '',
+      timestamp: new Date().toISOString(),
+    });
     const response = await fetch(`${API_URL}/clients/import`, {
       method: 'POST',
       headers: writeHeaders(),
@@ -123,6 +128,12 @@ export const useClientStore = () => {
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result?.error || 'Failed to import clients');
+    console.log('[clients.store.import] response', {
+      created: Number(result?.created || 0),
+      updated: Number(result?.updated || 0),
+      imported: Number(result?.imported || 0),
+      timestamp: new Date().toISOString(),
+    });
     await fetchClients();
     return result;
   };
