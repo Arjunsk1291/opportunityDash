@@ -307,11 +307,7 @@ const Dashboard = () => {
       value: groupedBuckets.submitted.groups.length,
       secondaryDisplayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.submitted.submittedOnlyValue || 0))}`,
       secondaryValuePrefix: currency === 'AED' ? 'aed' : 'text',
-      meta: [
-        { label: 'Tender', value: groupedBuckets.submitted.tender, tone: 'bg-blue-500' },
-        { label: 'EOI', value: groupedBuckets.submitted.eoi, tone: 'bg-amber-500' },
-      ],
-      chip: 'Submitted value',
+      emphasizeValue: true,
       tone: 'text-sky-600',
       glow: 'analytics-kpi-glow-sky',
       icon: Send,
@@ -425,8 +421,8 @@ const Dashboard = () => {
           >
             <div className="relative z-10 flex items-start justify-between p-5">
               <div className="space-y-1.5">
-                <p className="dash-label">{card.label}</p>
-                <div className="mt-2 analytics-kpi-number text-slate-950 flex items-center gap-2">
+                <p className={card.emphasizeValue ? 'dash-label text-slate-600' : 'dash-label'}>{card.label}</p>
+                <div className={`mt-2 analytics-kpi-number flex items-center gap-2 ${card.emphasizeValue ? 'text-slate-950 text-5xl font-black tracking-tight leading-none' : 'text-slate-950'}`}>
                   {card.valuePrefix === 'aed' ? <img src={aedSymbol} alt="AED" className="h-7 w-7" /> : null}
                   <span>{card.displayValue || card.value}</span>
                 </div>
