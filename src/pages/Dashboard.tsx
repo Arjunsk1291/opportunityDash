@@ -305,13 +305,13 @@ const Dashboard = () => {
     {
       label: 'Submitted',
       value: groupedBuckets.submitted.groups.length,
-      displayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.submitted.submittedOnlyValue || 0))}`,
-      valuePrefix: currency === 'AED' ? 'aed' : 'text',
+      secondaryDisplayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.submitted.submittedOnlyValue || 0))}`,
+      secondaryValuePrefix: currency === 'AED' ? 'aed' : 'text',
       meta: [
         { label: 'Tender', value: groupedBuckets.submitted.tender, tone: 'bg-blue-500' },
         { label: 'EOI', value: groupedBuckets.submitted.eoi, tone: 'bg-amber-500' },
       ],
-      chip: 'Submitted value only',
+      chip: 'Submitted value',
       tone: 'text-sky-600',
       glow: 'analytics-kpi-glow-sky',
       icon: Send,
@@ -430,6 +430,12 @@ const Dashboard = () => {
                   {card.valuePrefix === 'aed' ? <img src={aedSymbol} alt="AED" className="h-7 w-7" /> : null}
                   <span>{card.displayValue || card.value}</span>
                 </div>
+                {card.secondaryDisplayValue ? (
+                  <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                    {card.secondaryValuePrefix === 'aed' ? <img src={aedSymbol} alt="AED" className="h-3.5 w-3.5 opacity-70" /> : null}
+                    <span>{card.secondaryDisplayValue}</span>
+                  </div>
+                ) : null}
                 {card.meta ? (
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
                     {card.meta.map((item) => (
