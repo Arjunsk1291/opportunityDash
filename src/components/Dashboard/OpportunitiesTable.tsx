@@ -26,8 +26,6 @@ interface OpportunitiesTableProps {
   scrollContainerClassName?: string;
   maxHeight?: string;
   responsiveMode?: 'default' | 'dashboard';
-  forcePostBidColumn?: boolean;
-  excelWrap?: boolean;
 }
 
 const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
@@ -77,8 +75,6 @@ export function OpportunitiesTable({
   scrollContainerClassName,
   maxHeight = 'max-h-96',
   responsiveMode = 'default',
-  forcePostBidColumn = false,
-  excelWrap = false,
 }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -105,9 +101,7 @@ export function OpportunitiesTable({
     submitter: '',
   });
 
-  const postBidColumnClass = forcePostBidColumn
-    ? ''
-    : responsiveMode === 'dashboard'
+  const postBidColumnClass = responsiveMode === 'dashboard'
     ? 'hidden min-[1750px]:table-cell'
     : 'hidden 2xl:table-cell';
   const densityStyle = TABLE_DENSITY_STYLES[1];
@@ -547,9 +541,9 @@ export function OpportunitiesTable({
                     onClick={() => onSelectOpportunity?.(tender)}
                   >
                     <TableCell className={`${cellPaddingClass} max-w-[120px] truncate font-mono text-[10px] sm:text-[11px] font-bold text-blue-600 dark:text-blue-400`}>{tender.opportunityRefNo || '—'}</TableCell>
-                    <TableCell className={`${cellPaddingClass} ${excelWrap ? 'max-w-[280px] sm:max-w-[360px]' : 'max-w-[180px] sm:max-w-[250px]'} min-w-0`}>
+                    <TableCell className={`${cellPaddingClass} max-w-[180px] sm:max-w-[250px] min-w-0`}>
                       <div className="min-w-0 space-y-1">
-                        <div className={excelWrap ? 'whitespace-normal break-words text-justify leading-5' : 'truncate'} title={tender.tenderName || ''}>
+                        <div className="truncate" title={tender.tenderName || ''}>
                           {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
                         </div>
                         {getAdnocRftNo(tender) ? (
@@ -592,11 +586,11 @@ export function OpportunitiesTable({
                             <div className="space-y-3">
                               <div>
                                 <p className="text-xs font-medium text-muted-foreground">Remarks/Reason</p>
-                                <p className="text-sm whitespace-pre-wrap break-words text-justify">{tender.remarksReason || '—'}</p>
+                                <p className="text-sm">{tender.remarksReason || '—'}</p>
                               </div>
                               <div>
                                 <p className="text-xs font-medium text-muted-foreground">Tender Status -</p>
-                                <p className="text-sm whitespace-pre-wrap break-words text-justify">{tender.tenderStatusRemark || '—'}</p>
+                                <p className="text-sm">{tender.tenderStatusRemark || '—'}</p>
                               </div>
                             </div>
                           </PopoverContent>

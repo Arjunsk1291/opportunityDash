@@ -113,17 +113,6 @@ const parseFlexibleTimestamp = (value: string | null | undefined) => {
     const [year, month] = raw.split('-').map(Number);
     return Date.UTC(year, month - 1, 1);
   }
-  const dmyMatch = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
-  if (dmyMatch) {
-    const day = Number(dmyMatch[1]);
-    const month = Number(dmyMatch[2]);
-    const year = Number(dmyMatch[3]);
-    const parsed = new Date(Date.UTC(year, month - 1, day));
-    const isValid = parsed.getUTCFullYear() === year
-      && parsed.getUTCMonth() === month - 1
-      && parsed.getUTCDate() === day;
-    return isValid ? parsed.getTime() : 0;
-  }
   const parsed = Date.parse(raw);
   return Number.isNaN(parsed) ? 0 : parsed;
 };
@@ -1627,13 +1616,7 @@ const Analytics = () => {
           <DialogHeader>
             <DialogTitle>{drilldown?.title || 'Drilldown'}</DialogTitle>
           </DialogHeader>
-          <OpportunitiesTable
-            data={drilldown?.rows || []}
-            maxHeight="max-h-[65vh]"
-            onSelectOpportunity={setSelectedOpportunity}
-            forcePostBidColumn
-            excelWrap
-          />
+          <OpportunitiesTable data={drilldown?.rows || []} maxHeight="max-h-[65vh]" onSelectOpportunity={setSelectedOpportunity} />
         </DialogContent>
       </Dialog>
 
