@@ -63,6 +63,7 @@ export function OpportunityDetailDialog({
             <DetailRow label="Avenir Ref" value={opportunity.opportunityRefNo || '—'} />
             <DetailRow label="Tender Name" value={opportunity.tenderName || '—'} />
             <DetailRow label="Tender Type" value={opportunity.opportunityClassification || '—'} />
+            <DetailRow label="End Use" value={opportunity.endUse || '—'} />
             <DetailRow label="Client" value={opportunity.clientName || '—'} />
             <DetailRow label="Group" value={opportunity.groupClassification || '—'} />
             <DetailRow 

@@ -7,6 +7,7 @@ export interface Opportunity {
   adnocRftNo?: string;
   tenderNo: string;
   tenderName: string;
+  endUse?: string;
   clientName: string;
   clientType: string;
   clientLead: string;

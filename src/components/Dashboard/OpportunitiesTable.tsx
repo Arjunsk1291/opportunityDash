@@ -252,6 +252,7 @@ export function OpportunitiesTable({
       tender.tenderName,
       tender.opportunityClassification,
       tender.clientName,
+      tender.endUse,
       tender.groupClassification,
       getRfpReceivedDisplay(tender),
       tender.internalLead,
@@ -522,6 +523,7 @@ export function OpportunitiesTable({
                 <TableHead className={`${cellPaddingClass} font-bold`}>Tender Name</TableHead>
                 <TableHead className={`hidden md:table-cell ${cellPaddingClass} font-bold`}>Tender Type</TableHead>
                 <TableHead className={`${cellPaddingClass} font-bold`}>Client</TableHead>
+                <TableHead className={`hidden lg:table-cell ${cellPaddingClass} font-bold`}>End Use</TableHead>
                 <TableHead className={`hidden lg:table-cell ${cellPaddingClass} font-bold`}>Group</TableHead>
                 <TableHead className={`hidden lg:table-cell ${cellPaddingClass} font-bold`}>
                   <button
@@ -584,6 +586,7 @@ export function OpportunitiesTable({
                       <Badge className={`max-w-[8rem] truncate text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>
                     </TableCell>
                     <TableCell className={`${cellPaddingClass} max-w-[100px] sm:max-w-[140px] truncate font-semibold text-foreground`}>{tender.clientName || '—'}</TableCell>
+                    <TableCell className={`hidden lg:table-cell ${cellPaddingClass} max-w-[150px] truncate`}>{tender.endUse || '—'}</TableCell>
                     <TableCell className={`hidden lg:table-cell ${cellPaddingClass}`}>
                       <Badge className={`max-w-[6rem] truncate text-xs font-mono ${getGroupBadge(tender.groupClassification)}`}>{tender.groupClassification || '—'}</Badge>
                     </TableCell>
