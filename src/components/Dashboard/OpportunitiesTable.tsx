@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import styles from './OpportunitiesTable.module.css';
-import { getDisplayStatus, getStatusBadgeClass } from '@/lib/opportunityStatus';
+import { CANONICAL_STATUS_ORDER, getDisplayStatus, getStatusBadgeClass, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -28,7 +28,7 @@ interface OpportunitiesTableProps {
   responsiveMode?: 'default' | 'dashboard';
 }
 
-const AVENIR_STATUS_OPTIONS = ['ALL', 'AWARDED', 'WORKING', 'TO START', 'HOLD / CLOSED', 'REGRETTED', 'SUBMITTED', 'ONGOING', 'LOST'];
+const AVENIR_STATUS_OPTIONS = ['ALL', ...CANONICAL_STATUS_ORDER];
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
 const TABLE_DENSITY_STYLES = [
@@ -211,7 +211,7 @@ export function OpportunitiesTable({
   );
 
   const getMergedStatus = (tender: Opportunity) => {
-    return getDisplayStatus(tender);
+    return normalizeCanonicalStatus(getDisplayStatus(tender));
   };
 
   const buildSearchableText = (tender: Opportunity) => {
@@ -259,7 +259,7 @@ export function OpportunitiesTable({
       const mergedStatus = getMergedStatus(tender);
 
       const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);
-      const matchesStatus = statusFilter === 'ALL' || mergedStatus === statusFilter;
+      const matchesStatus = statusFilter === 'ALL' || mergedStatus === normalizeCanonicalStatus(statusFilter);
 
       return matchesSearch && matchesStatus;
     })

@@ -22,25 +22,13 @@ import { Separator } from "@/components/ui/separator";
 import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths, subQuarters, subYears } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Opportunity, GROUP_CLASSIFICATIONS } from "@/data/opportunityData";
+import { CANONICAL_STATUS_ORDER } from "@/lib/opportunityStatus";
 
 type DatePreset = "all" | "thisMonth" | "lastMonth" | "thisQuarter" | "lastQuarter" | "thisYear" | "lastYear" | "custom";
 
 type DateField = "dateTenderReceived" | "tenderPlannedSubmissionDate" | "tenderSubmittedDate" | "lastContactDate";
 
-// Map old stage values to new uppercase values from Google Sheets
-const STAGE_MAPPING: Record<string, string> = {
-  'WORKING': 'WORKING',
-  'SUBMITTED': 'SUBMITTED',
-  'AWARDED': 'AWARDED',
-  'LOST': 'LOST',
-  'REGRETTED': 'REGRETTED',
-  'TO START': 'TO START',
-  'ONGOING': 'ONGOING',
-  'HOLD / CLOSED': 'HOLD / CLOSED',
-};
-
-// All possible statuses from Google Sheets
-const STAGE_ORDER = ['WORKING', 'SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'TO START', 'ONGOING', 'HOLD / CLOSED'];
+const STAGE_ORDER = [...CANONICAL_STATUS_ORDER];
 
 const getDateRangeFromPreset = (preset: DatePreset): { from: Date | undefined; to: Date | undefined } => {
   const now = new Date();

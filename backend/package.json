@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "status:backfill:awarded:dry-run": "node scripts/backfillAwardedStatus2024_2025.js",
+    "status:backfill:awarded:apply": "node scripts/backfillAwardedStatus2024_2025.js --apply"
   },
   "dependencies": {
     "compression": "^1.8.1",

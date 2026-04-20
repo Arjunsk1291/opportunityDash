@@ -30,7 +30,7 @@ import {
 } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
-import { getDisplayStatus } from '@/lib/opportunityStatus';
+import { getDisplayStatus, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 import { isSubmissionWithinDays } from '@/lib/submissionDate';
 import aedSymbol from '@/assets/aed-symbol.png';
 
@@ -46,7 +46,7 @@ const normalizeText = (value: string | null | undefined) => String(value || '').
 const normalizeRefNo = (value: string | null | undefined) => normalizeText(value).toUpperCase();
 const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_EOI$/i, '');
 const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(normalizeRefNo(value));
-const isHoldStatus = (status: string) => status === 'HOLD / CLOSED' || status === 'HOLD/CLOSED';
+const isHoldStatus = (status: string) => normalizeCanonicalStatus(status) === 'HOLD / CLOSED';
 
 const getJourneyType = (opp: Opportunity | null) => {
   if (!opp) return 'tender';
@@ -68,7 +68,7 @@ const getBusinessKey = (opp: Opportunity, index: number) => {
 const pickPrimaryOpportunity = (items: Opportunity[]) => {
   if (!items.length) return null;
   const rank = (opp: Opportunity) => {
-    const status = normalizeText(getDisplayStatus(opp)).toUpperCase();
+    const status = normalizeCanonicalStatus(getDisplayStatus(opp));
     if (status === 'AWARDED') return 6;
     if (status === 'LOST' || status === 'REGRETTED') return 5;
     if (status === 'SUBMITTED') return 4;
@@ -130,7 +130,7 @@ const Dashboard = () => {
         submissionNearGroups.push(group);
       }
 
-      const status = normalizeText(getDisplayStatus(primary)).toUpperCase();
+      const status = normalizeCanonicalStatus(getDisplayStatus(primary));
 
       if (status === 'AWARDED') {
         wonGroups.push(group);

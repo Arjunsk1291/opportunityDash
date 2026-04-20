@@ -621,6 +621,9 @@ export async function syncTendersFromGraph(config) {
     const derivedStatuses = deriveOpportunityStatusFields({
       rawAvenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
       rawTenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
+      dateTenderReceived: rfpDate,
+      tenderPlannedSubmissionDate: plannedSubmissionDate,
+      tenderSubmittedDate,
     });
     const remarksReason = getValue(colIndices.remarksReason);
     const comments = getValue(colIndices.comments);
@@ -631,6 +634,19 @@ export async function syncTendersFromGraph(config) {
       tenderStatusRemark,
       year,
       status: derivedStatuses?.canonicalStage || '',
+    });
+    const guardedStatuses = deriveOpportunityStatusFields({
+      ...derivedStatuses,
+      fallbackAvenirStatus: derivedStatuses?.avenirStatus,
+      fallbackTenderResult: derivedStatuses?.tenderResult,
+      fallbackCanonicalStage: derivedStatuses?.canonicalStage,
+      dateTenderReceived: rfpDate,
+      tenderPlannedSubmissionDate: plannedSubmissionDate,
+      tenderSubmittedDate,
+      awardedDate: awardedDate || '',
+      remarksReason,
+      comments,
+      tenderStatusRemark,
     });
 
     const tender = {
@@ -649,7 +665,7 @@ export async function syncTendersFromGraph(config) {
       dateTenderReceived: rfpDate || null,
       tenderPlannedSubmissionDate: plannedSubmissionDate || null,
       tenderSubmittedDate: tenderSubmittedDate || null,
-      ...derivedStatuses,
+      ...guardedStatuses,
       groupClassification: getValue(colIndices.groupClassification),
       remarksReason,
       comments,
