@@ -44,6 +44,7 @@ const systemConfigSchema = new mongoose.Schema(
     deadlineAlertTemplateStyle: { type: String, default: 'sunset_alert' },
     deadlineAlertClients: { type: [String], default: [] },
     issueReportTemplateStyle: { type: String, default: 'avenir_blue' },
+    showConvertedEoiRowsDefault: { type: Boolean, default: false },
     telecastGroupRecipients: {
       type: Object,
       default: {

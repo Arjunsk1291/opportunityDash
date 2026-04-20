@@ -137,6 +137,33 @@ export function OpportunitiesTable({
     };
   }, [token]);
 
+  useEffect(() => {
+    if (!token) return;
+
+    let mounted = true;
+    const loadEoiDuplicateConfig = async () => {
+      try {
+        const response = await fetch(API_URL + '/eoi-duplicates/config', {
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+        });
+        const payload = await response.json();
+        if (!response.ok) return;
+        if (!mounted) return;
+        setShowConvertedEoiRows(Boolean(payload?.showConvertedEoiRowsDefault));
+      } catch (error) {
+        console.error('❌ Failed to load EOI duplicate config:', error);
+      }
+    };
+
+    loadEoiDuplicateConfig();
+    return () => {
+      mounted = false;
+    };
+  }, [token]);
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {

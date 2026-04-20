@@ -4260,6 +4260,41 @@ app.get('/api/reporting/config', verifyToken, async (req, res) => {
   }
 });
 
+app.get('/api/eoi-duplicates/config', verifyToken, async (_req, res) => {
+  try {
+    const config = await getSystemConfig();
+    res.json({
+      success: true,
+      showConvertedEoiRowsDefault: Boolean(config?.showConvertedEoiRowsDefault),
+      updatedBy: config?.updatedBy || '',
+      updatedAt: config?.updatedAt || null,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/eoi-duplicates/config', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'telecast_config_write')) return;
+
+    const showConvertedEoiRowsDefault = Boolean(req.body?.showConvertedEoiRowsDefault);
+    const config = await getSystemConfig();
+    config.showConvertedEoiRowsDefault = showConvertedEoiRowsDefault;
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    res.json({
+      success: true,
+      showConvertedEoiRowsDefault: Boolean(config.showConvertedEoiRowsDefault),
+      updatedBy: config.updatedBy || '',
+      updatedAt: config.updatedAt || null,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/reporting/config', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'telecast_config_write')) return;

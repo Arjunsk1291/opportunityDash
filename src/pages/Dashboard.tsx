@@ -47,6 +47,11 @@ const normalizeRefNo = (value: string | null | undefined) => normalizeText(value
 const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_EOI$/i, '');
 const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(normalizeRefNo(value));
 const isHoldStatus = (status: string) => normalizeCanonicalStatus(status) === 'HOLD / CLOSED';
+const isEoiRow = (opp: Opportunity | null) => {
+  if (!opp) return false;
+  const type = normalizeText(opp.opportunityClassification).toUpperCase();
+  return type.includes('EOI') || isEoiRefNo(opp.opportunityRefNo);
+};
 
 const getJourneyType = (opp: Opportunity | null) => {
   if (!opp) return 'tender';
@@ -196,6 +201,42 @@ const Dashboard = () => {
       submission: { groups: submissionNearGroups, rows: groupRows(submissionNearGroups) },
     };
   }, [groupedOpportunities]);
+
+  const eoiLifecycle = useMemo(() => {
+    const normalized = filteredData.map((opp, index) => ({
+      opp,
+      key: getBusinessKey(opp, index),
+      baseRef: normalizeText(getBaseRefNo(opp.opportunityRefNo)).toLowerCase(),
+      tenderName: normalizeText(opp.tenderName).toLowerCase(),
+      isEoi: isEoiRow(opp),
+    }));
+
+    const rawEoiRows = normalized.filter((row) => row.isEoi).length;
+    const convertedTenderRows = normalized.filter((row) => {
+      if (row.isEoi) return false;
+      return normalized.some((candidate) => (
+        candidate.isEoi
+        && candidate.key === row.key
+        && candidate.baseRef === row.baseRef
+        && candidate.tenderName === row.tenderName
+      ));
+    }).length;
+    const suppressedRows = normalized.filter((row) => {
+      if (!row.isEoi) return false;
+      return normalized.some((candidate) => (
+        !candidate.isEoi
+        && candidate.key === row.key
+        && candidate.baseRef === row.baseRef
+        && candidate.tenderName === row.tenderName
+      ));
+    }).length;
+
+    return {
+      rawEoiRows,
+      convertedTenderRows,
+      suppressedRows,
+    };
+  }, [filteredData]);
 
   const handleKPIClick = (kpiType: DashboardKpiType) => {
     setFilters((prevFilters) => {
@@ -450,6 +491,24 @@ const Dashboard = () => {
             </div>
           </button>
         ))}
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="analytics-card p-5">
+          <p className="dash-label">EOI Lifecycle</p>
+          <p className="mt-2 text-3xl font-black text-slate-900">{eoiLifecycle.rawEoiRows}</p>
+          <p className="mt-1 text-xs text-slate-500">Raw EOI rows in current filtered scope</p>
+        </div>
+        <div className="analytics-card p-5">
+          <p className="dash-label">Converted Tender Rows</p>
+          <p className="mt-2 text-3xl font-black text-sky-700">{eoiLifecycle.convertedTenderRows}</p>
+          <p className="mt-1 text-xs text-slate-500">Tender rows matched to an EOI lifecycle</p>
+        </div>
+        <div className="analytics-card p-5">
+          <p className="dash-label">Duplicate-Suppressed EOIs</p>
+          <p className="mt-2 text-3xl font-black text-amber-700">{eoiLifecycle.suppressedRows}</p>
+          <p className="mt-1 text-xs text-slate-500">EOI rows eligible to hide when converted tender exists</p>
+        </div>
       </section>
 
       {/* Opportunities Table */}

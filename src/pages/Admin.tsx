@@ -368,6 +368,8 @@ export default function Admin() {
   const [telecastGroupRecipients, setTelecastGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string[]>>({ GES: [], GDS: [], GTS: [] });
   const [telecastRefNosToUnalert, setTelecastRefNosToUnalert] = useState('');
   const [telecastBulkUpdating, setTelecastBulkUpdating] = useState(false);
+  const [showConvertedEoiRowsDefault, setShowConvertedEoiRowsDefault] = useState(false);
+  const [eoiDuplicateConfigSaving, setEoiDuplicateConfigSaving] = useState(false);
   const [availableClients, setAvailableClients] = useState<string[]>([]);
   const [newAuthorizedUser, setNewAuthorizedUser] = useState<{ email: string; displayName: string; role: UserRole; assignedGroup: string; status: 'approved' | 'pending' }>({
     email: '',
@@ -458,6 +460,7 @@ export default function Admin() {
       loadGraphAuthStatus();
       loadTelecastAuthStatus();
       loadTelecastConfig();
+      loadEoiDuplicateConfig();
       loadReportingConfig();
       loadExportTemplateConfig();
       loadNotificationStatus();
@@ -470,6 +473,7 @@ export default function Admin() {
     if (activeTab === 'telecast') {
       loadClients();
       loadDeadlineStatus();
+      loadEoiDuplicateConfig();
     }
   }, [activeTab, canAccessPanel]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1196,6 +1200,23 @@ export default function Admin() {
     }
   };
 
+  const loadEoiDuplicateConfig = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(API_URL + '/eoi-duplicates/config', {
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setShowConvertedEoiRowsDefault(Boolean(data.showConvertedEoiRowsDefault));
+    } catch (error) {
+      console.error('Failed to load EOI duplicate config:', error);
+    }
+  };
+
   const loadClients = async () => {
     try {
       const response = await fetch(API_URL + '/clients', {
@@ -1829,6 +1850,29 @@ export default function Admin() {
       toast.error((error as Error).message);
     } finally {
       setConfigSaving(false);
+    }
+  };
+
+  const saveEoiDuplicateConfig = async () => {
+    if (!token) return;
+    setEoiDuplicateConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/eoi-duplicates/config', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ showConvertedEoiRowsDefault }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to save EOI duplicate config');
+      toast.success('EOI duplicate visibility default updated');
+      await loadEoiDuplicateConfig();
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to save EOI duplicate config');
+    } finally {
+      setEoiDuplicateConfigSaving(false);
     }
   };
 
@@ -3678,6 +3722,32 @@ export default function Admin() {
                     <p className="text-muted-foreground break-words">{notificationSyncStatus.alertedRefNosPreview?.join(', ')}</p>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>EOI Duplicate Visibility Control</CardTitle>
+                <CardDescription>
+                  Controls default behavior for converted EOI duplicate rows. This setting is reversible and only changes default visibility.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded border p-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Show converted EOI duplicates by default</p>
+                    <p className="text-xs text-muted-foreground">
+                      When disabled, EOI rows that already have converted tender rows are hidden by default in table view.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={showConvertedEoiRowsDefault}
+                    onCheckedChange={(checked) => setShowConvertedEoiRowsDefault(Boolean(checked))}
+                  />
+                </div>
+                <Button onClick={saveEoiDuplicateConfig} disabled={eoiDuplicateConfigSaving || configSaving}>
+                  {eoiDuplicateConfigSaving ? 'Saving...' : 'Save EOI Duplicate Visibility'}
+                </Button>
               </CardContent>
             </Card>
 
