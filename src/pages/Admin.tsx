@@ -341,6 +341,12 @@ export default function Admin() {
   const [approvalTemplateSubject, setApprovalTemplateSubject] = useState('Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}');
   const [approvalTemplateBody, setApprovalTemplateBody] = useState('A tender has been approved by the Tender Manager and is ready for SVP review.');
   const [approvalTemplateStyle, setApprovalTemplateStyle] = useState(DEFAULT_TELECAST_TEMPLATE_STYLE.key);
+  const [awardAlertEnabled, setAwardAlertEnabled] = useState(false);
+  const [awardTemplateSubject, setAwardTemplateSubject] = useState('Awarded: {{TENDER_NO}} - {{TENDER_NAME}}');
+  const [awardTemplateBody, setAwardTemplateBody] = useState('Tender {{TENDER_NAME}} has transitioned to AWARDED for {{CLIENT}}.');
+  const [awardTemplateStyle, setAwardTemplateStyle] = useState('emerald_signal');
+  const [awardRoleRecipients, setAwardRoleRecipients] = useState<string[]>(['Master', 'Admin']);
+  const [awardGroupRecipients, setAwardGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string[]>>({ GES: [], GDS: [], GTS: [] });
   const [approvalTemplateSending, setApprovalTemplateSending] = useState(false);
   const [deadlineAlertEnabled, setDeadlineAlertEnabled] = useState(false);
   const [deadlineTemplateSubject, setDeadlineTemplateSubject] = useState('Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}');
@@ -539,6 +545,11 @@ export default function Admin() {
     [approvalTemplateStyle, telecastTemplateStyles],
   );
 
+  const selectedAwardTemplateStyle = useMemo(
+    () => telecastTemplateStyles.find((style) => style.key === awardTemplateStyle) || DEFAULT_TELECAST_TEMPLATE_STYLE,
+    [awardTemplateStyle, telecastTemplateStyles],
+  );
+
   const selectedDeadlineTemplateStyle = useMemo(
     () => telecastTemplateStyles.find((style) => style.key === deadlineTemplateStyle) || DEFAULT_TELECAST_TEMPLATE_STYLE,
     [deadlineTemplateStyle, telecastTemplateStyles],
@@ -562,6 +573,16 @@ export default function Admin() {
   const approvalPreviewBody = useMemo(
     () => renderTemplatePreview(approvalTemplateBody, SAMPLE_TELECAST_VALUES),
     [approvalTemplateBody],
+  );
+
+  const awardPreviewSubject = useMemo(
+    () => renderTemplatePreview(awardTemplateSubject, SAMPLE_TELECAST_VALUES),
+    [awardTemplateSubject],
+  );
+
+  const awardPreviewBody = useMemo(
+    () => renderTemplatePreview(awardTemplateBody, SAMPLE_TELECAST_VALUES),
+    [awardTemplateBody],
   );
 
   const deadlinePreviewSubject = useMemo(
@@ -1180,6 +1201,16 @@ export default function Admin() {
       setApprovalTemplateSubject(data.approvalTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}');
       setApprovalTemplateBody(data.approvalTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.');
       setApprovalTemplateStyle(data.approvalTemplateStyle || DEFAULT_TELECAST_TEMPLATE_STYLE.key);
+      setAwardAlertEnabled(Boolean(data.awardAlertEnabled));
+      setAwardTemplateSubject(data.awardTemplateSubject || 'Awarded: {{TENDER_NO}} - {{TENDER_NAME}}');
+      setAwardTemplateBody(data.awardTemplateBody || 'Tender {{TENDER_NAME}} has transitioned to AWARDED for {{CLIENT}}.');
+      setAwardTemplateStyle(data.awardTemplateStyle || 'emerald_signal');
+      setAwardRoleRecipients(Array.isArray(data.awardRoleRecipients) && data.awardRoleRecipients.length ? data.awardRoleRecipients : ['Master', 'Admin']);
+      setAwardGroupRecipients({
+        GES: normalizeRecipientList(data.awardGroupRecipients?.GES),
+        GDS: normalizeRecipientList(data.awardGroupRecipients?.GDS),
+        GTS: normalizeRecipientList(data.awardGroupRecipients?.GTS),
+      });
       setDeadlineAlertEnabled(Boolean(data.deadlineAlertEnabled));
       setDeadlineTemplateSubject(data.deadlineTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}');
       setDeadlineTemplateBody(data.deadlineTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.');
@@ -1829,6 +1860,16 @@ export default function Admin() {
           approvalTemplateSubject,
           approvalTemplateBody,
           approvalTemplateStyle,
+          awardAlertEnabled,
+          awardTemplateSubject,
+          awardTemplateBody,
+          awardTemplateStyle,
+          awardRoleRecipients,
+          awardGroupRecipients: {
+            GES: normalizeRecipientList(awardGroupRecipients.GES),
+            GDS: normalizeRecipientList(awardGroupRecipients.GDS),
+            GTS: normalizeRecipientList(awardGroupRecipients.GTS),
+          },
           deadlineAlertEnabled,
           deadlineTemplateSubject,
           deadlineTemplateBody,
@@ -4115,6 +4156,102 @@ export default function Admin() {
                     {approvalTemplateSending ? 'Sending...' : 'Send Approval Template Preview'}
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Award Event Telecast</CardTitle>
+                <CardDescription>Sends exactly one alert when a tender transitions to AWARDED.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl border p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Enable Award Alert</p>
+                    <p className="text-xs text-muted-foreground">Triggers only on status transition to AWARDED and is deduplicated per award event.</p>
+                  </div>
+                  <Switch checked={awardAlertEnabled} onCheckedChange={setAwardAlertEnabled} disabled={configSaving} />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Role Recipients</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {ROLE_OPTIONS.map((role) => {
+                      const checked = awardRoleRecipients.includes(role);
+                      return (
+                        <label key={role} className="inline-flex items-center gap-2 text-sm border rounded-lg px-3 py-2">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(next) => {
+                              setAwardRoleRecipients((prev) => {
+                                if (next) return Array.from(new Set([...prev, role]));
+                                return prev.filter((item) => item !== role);
+                              });
+                            }}
+                            disabled={configSaving}
+                          />
+                          {role}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {(['GES', 'GDS', 'GTS'] as const).map((group) => (
+                    <RecipientBlockSelector
+                      key={group}
+                      group={group}
+                      selectedEmails={awardGroupRecipients[group]}
+                      onSelectionChange={(emails) => setAwardGroupRecipients((prev) => ({ ...prev, [group]: emails }))}
+                      allUsers={telecastRecipientUsers}
+                      disabled={configSaving}
+                    />
+                  ))}
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Subject Template</p>
+                  <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" value={awardTemplateSubject} onChange={(e) => setAwardTemplateSubject(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Body Template</p>
+                  <Textarea rows={5} className="text-xs sm:text-sm md:text-base" value={awardTemplateBody} onChange={(e) => setAwardTemplateBody(e.target.value)} />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Message Style</p>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    {telecastTemplateStyles.map((style) => (
+                      <button
+                        key={style.key}
+                        type="button"
+                        onClick={() => setAwardTemplateStyle(style.key)}
+                        className={`rounded-xl border text-left transition-all overflow-hidden ${awardTemplateStyle === style.key ? 'border-primary ring-2 ring-primary/20 shadow-sm' : 'border-border hover:border-primary/40'}`}
+                      >
+                        <div className="h-20 px-4 py-3 text-white" style={{ background: style.colors.headerGradient }}>
+                          <p className="text-[11px] uppercase tracking-[0.2em] opacity-80">Award Event</p>
+                          <p className="mt-2 text-base font-semibold">{style.label}</p>
+                        </div>
+                        <div className="p-4 space-y-2" style={{ backgroundColor: style.colors.pageBg }}>
+                          <p className="text-xs text-muted-foreground">{style.description}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border overflow-hidden" style={{ borderColor: selectedAwardTemplateStyle.colors.cardBorder, backgroundColor: selectedAwardTemplateStyle.colors.pageBg }}>
+                  <div className="px-5 py-4 text-white" style={{ background: selectedAwardTemplateStyle.colors.headerGradient }}>
+                    <p className="text-[11px] uppercase tracking-[0.18em] opacity-80">Avenir Award Telecast</p>
+                    <p className="mt-2 text-lg font-semibold">🏆 {awardPreviewSubject}</p>
+                  </div>
+                  <div className="p-5 text-sm text-slate-600 whitespace-pre-line">{awardPreviewBody}</div>
+                </div>
+
+                <Button onClick={saveTelecastConfig} disabled={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
+                  Save Award Alert
+                </Button>
               </CardContent>
             </Card>
 

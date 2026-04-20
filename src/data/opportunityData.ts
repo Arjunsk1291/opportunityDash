@@ -18,6 +18,9 @@ export interface Opportunity {
   domainSubGroup: string;
   internalLead: string;
   opportunityValue: number;
+  frameworkTotalValue?: number | null;
+  callOffActualValue?: number | null;
+  variationDeltaValue?: number | null;
   opportunityValue_imputed: boolean;
   opportunityValue_imputation_reason: string;
   probability: number;
@@ -106,6 +109,15 @@ const normalizeTenderName = (value: string | null | undefined) => String(value |
 const normalizeRefNo = (value: string | null | undefined) => String(value || '').trim().toUpperCase();
 const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_EOI$/i, '');
 const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(normalizeRefNo(value));
+const getEffectiveOpportunityValue = (opp: Opportunity) => {
+  const legacyBase = Number(opp.opportunityValue || 0);
+  const frameworkTotal = Number(opp.frameworkTotalValue);
+  const callOffActual = Number(opp.callOffActualValue);
+  const variationDelta = Number(opp.variationDeltaValue || 0);
+  if (Number.isFinite(callOffActual)) return callOffActual;
+  if (Number.isFinite(frameworkTotal)) return frameworkTotal + (Number.isFinite(variationDelta) ? variationDelta : 0);
+  return legacyBase + (Number.isFinite(variationDelta) ? variationDelta : 0);
+};
 
 const getOpportunityTimestamp = (opp: Opportunity) => {
   const dateCandidates = [opp.tenderSubmittedDate, opp.dateTenderReceived, opp.tenderPlannedSubmissionDate];
@@ -158,7 +170,7 @@ const classifyActiveTenderType = (opp: Opportunity) => {
 };
 
 const getDedupPriority = (opp: Opportunity) => {
-  const value = Number(opp.opportunityValue || 0);
+  const value = getEffectiveOpportunityValue(opp);
   const hasMeaningfulValue = value > 0 ? 1 : 0;
   const isTenderType = String(opp.opportunityClassification || '').trim().toUpperCase() === 'TENDER' ? 1 : 0;
   const isConvertedTender = isEoiRefNo(opp.opportunityRefNo) ? 0 : 1;
@@ -208,7 +220,7 @@ export const getQuotedValueDedupedOpportunities = (data: Opportunity[]) => (
 );
 
 export const sumQuotedValueWithDedup = (data: Opportunity[]) => (
-  getQuotedValueDedupedOpportunitiesInternal(data).reduce((sum, opp) => sum + Number(opp.opportunityValue || 0), 0)
+  getQuotedValueDedupedOpportunitiesInternal(data).reduce((sum, opp) => sum + getEffectiveOpportunityValue(opp), 0)
 );
 
 export function calculateSummaryStats(data: Opportunity[]) {
@@ -225,27 +237,27 @@ export function calculateSummaryStats(data: Opportunity[]) {
   const awardedOpps = data.filter(o => normalizeCanonicalStatus(o.canonicalStage) === 'AWARDED');
   const totalActiveValue = sumQuotedValueWithDedup(data);
   const awardedCount = awardedOpps.length;
-  const awardedValue = awardedOpps.reduce((sum, o) => sum + Number(o.opportunityValue || 0), 0);
+  const awardedValue = awardedOpps.reduce((sum, o) => sum + getEffectiveOpportunityValue(o), 0);
 
   const lostOpps = data.filter(o => normalizeCanonicalStatus(o.tenderResult) === 'LOST');
   const lostCount = lostOpps.length;
-  const lostValue = lostOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+  const lostValue = lostOpps.reduce((sum, o) => sum + getEffectiveOpportunityValue(o), 0);
 
   const regrettedOpps = data.filter(o => normalizeCanonicalStatus(o.canonicalStage) === 'REGRETTED');
   const regrettedCount = regrettedOpps.length;
-  const regrettedValue = regrettedOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+  const regrettedValue = regrettedOpps.reduce((sum, o) => sum + getEffectiveOpportunityValue(o), 0);
 
   const workingOpps = data.filter(o => normalizeCanonicalStatus(o.canonicalStage) === 'WORKING');
   const workingCount = workingOpps.length;
-  const workingValue = workingOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+  const workingValue = workingOpps.reduce((sum, o) => sum + getEffectiveOpportunityValue(o), 0);
 
   const toStartOpps = data.filter(o => normalizeCanonicalStatus(o.canonicalStage) === 'TO START');
   const toStartCount = toStartOpps.length;
-  const toStartValue = toStartOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+  const toStartValue = toStartOpps.reduce((sum, o) => sum + getEffectiveOpportunityValue(o), 0);
 
   const ongoingOpps = data.filter(o => normalizeCanonicalStatus(o.tenderResult) === 'ONGOING');
   const ongoingCount = ongoingOpps.length;
-  const ongoingValue = ongoingOpps.reduce((sum, o) => sum + o.opportunityValue, 0);
+  const ongoingValue = ongoingOpps.reduce((sum, o) => sum + getEffectiveOpportunityValue(o), 0);
 
   const submissionNearOpps = data.filter((o) => isSubmissionWithinDays(o, 10));
   const submissionNearCount = submissionNearOpps.length;
@@ -292,7 +304,7 @@ export function calculateFunnelData(data: Opportunity[]) {
     
     if (stageCounts[stage]) {
       stageCounts[stage].count++;
-      stageCounts[stage].value += opp.opportunityValue;
+      stageCounts[stage].value += getEffectiveOpportunityValue(opp);
     }
   });
   
@@ -325,7 +337,7 @@ export function getLeaderboardData(data: Opportunity[]) {
     }
     
     leadStats[o.internalLead].count++;
-    leadStats[o.internalLead].value += o.opportunityValue;
+    leadStats[o.internalLead].value += getEffectiveOpportunityValue(o);
     
     if (normalizeCanonicalStatus(o.canonicalStage) === 'AWARDED') leadStats[o.internalLead].won++;
     // ✅ UPDATED: Count LOST from tenderResult, not canonicalStage
@@ -354,7 +366,7 @@ export function getClientData(data: Opportunity[]) {
     }
     clientStats[name].count++;
     if (normalizeCanonicalStatus(o.canonicalStage) === 'AWARDED') {
-      clientStats[name].value += Number(o.opportunityValue || 0);
+      clientStats[name].value += getEffectiveOpportunityValue(o);
     }
   });
   

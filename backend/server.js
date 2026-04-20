@@ -29,6 +29,7 @@ import { initializeBootSync } from './services/bootSyncService.js';
 import SystemConfig from './models/SystemConfig.js';
 import { encryptSecret } from './services/cryptoService.js';
 import { applyOpportunityStatusFields, getEffectiveMergedStatus } from './services/opportunityStatusService.js';
+import { getEffectiveOpportunityValue, toFiniteNumber } from './services/opportunityValueService.js';
 import {
   applyManualOverridesToOpportunity,
   buildManualOpportunityPatch,
@@ -395,7 +396,7 @@ const getClientDataForReport = (data = []) => {
     if (!name) return;
     const current = grouped.get(name) || { name, count: 0, value: 0 };
     current.count += 1;
-    current.value += Number(item?.opportunityValue || 0);
+    current.value += getEffectiveOpportunityValue(item);
     grouped.set(name, current);
   });
 
@@ -419,7 +420,7 @@ const getPortfolioSnapshotData = (data = [], limit = 12) => {
       receivedDate: item?.dateTenderReceived || item?.createdAt || '',
       status: getMergedReportStatus(item) || 'UNSPECIFIED',
       lead: item?.internalLead || '—',
-      value: Number(item?.opportunityValue || 0),
+      value: getEffectiveOpportunityValue(item),
     }));
 
   if (!Number.isFinite(limit) || limit <= 0) return rows;
@@ -1539,6 +1540,80 @@ const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' })
   return { success: true, recipients: recipientEmails.length };
 };
 
+const isAwardedStatus = (value = '') => String(value || '').trim().toUpperCase() === 'AWARDED';
+
+const buildAwardEventKey = (opportunity = {}) => {
+  const refNo = getTenderRefNo(opportunity);
+  const awardedDate = String(opportunity?.awardedDate || '').trim();
+  if (!refNo) return '';
+  return `${refNo}::${awardedDate || 'NO_AWARD_DATE'}`;
+};
+
+const hasTransitionedToAwarded = ({ previous = {}, next = {} }) => {
+  const wasAwarded = isAwardedStatus(previous?.canonicalStage) || isAwardedStatus(previous?.tenderResult);
+  const isNowAwarded = isAwardedStatus(next?.canonicalStage) || isAwardedStatus(next?.tenderResult);
+  return !wasAwarded && isNowAwarded;
+};
+
+const sendAwardAlertForOpportunity = async ({ opportunity, systemConfig }) => {
+  if (!systemConfig?.awardAlertEnabled) {
+    return { success: true, skipped: 'disabled' };
+  }
+
+  const graphRefreshTokenEnc = systemConfig.telecastGraphRefreshTokenEnc || systemConfig.graphRefreshTokenEnc || systemConfig.mailRefreshTokenEnc || '';
+  if (!graphRefreshTokenEnc) {
+    return { success: true, skipped: 'mail_not_configured' };
+  }
+
+  const roleRecipients = Array.isArray(systemConfig.awardAlertRoleRecipients)
+    ? systemConfig.awardAlertRoleRecipients.map((role) => String(role || '').trim()).filter(Boolean)
+    : ['Master', 'Admin'];
+  const roleUsers = await AuthorizedUser.find({
+    role: { $in: roleRecipients },
+    status: 'approved',
+  }).lean();
+  const roleEmails = normalizeEmailList(roleUsers.map((user) => user.email));
+
+  const group = getGroupFromOpportunity(opportunity);
+  const groupEmails = normalizeEmailList(systemConfig?.awardGroupRecipients?.[group] || []);
+  const recipientEmails = normalizeEmailList([...roleEmails, ...groupEmails]);
+  if (!recipientEmails.length) {
+    return { success: true, skipped: 'no_recipients' };
+  }
+
+  const values = getTemplateValues(opportunity);
+  const subjectTemplate = systemConfig.awardAlertTemplateSubject || 'Awarded: {{TENDER_NO}} - {{TENDER_NAME}}';
+  const bodyTemplate = systemConfig.awardAlertTemplateBody || 'Tender {{TENDER_NAME}} has transitioned to AWARDED for {{CLIENT}}.';
+  const style = getTelecastTemplateStyle(systemConfig.awardAlertTemplateStyle || 'emerald_signal');
+  const subject = renderTemplate(subjectTemplate, values);
+  const renderedBody = renderTemplate(bodyTemplate, values);
+  const html = buildTelecastEmailHtml({ values, renderedBody, styleKey: style.key });
+  const { accessToken } = await getAccessTokenWithConfig({ graphRefreshTokenEnc });
+
+  const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: {
+        subject,
+        body: { contentType: 'HTML', content: html },
+        toRecipients: recipientEmails.map((email) => ({ emailAddress: { address: email } })),
+      },
+      saveToSentItems: true,
+    }),
+  });
+
+  if (!graphResponse.ok) {
+    const payload = await graphResponse.json().catch(() => ({}));
+    throw new Error(payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`);
+  }
+
+  return { success: true, recipients: recipientEmails.length };
+};
+
 const getDateKeyLocal = (value) => {
   if (!value) return '';
   const d = value instanceof Date ? value : parseDateValue(value);
@@ -1836,6 +1911,13 @@ const getExistingTelecastStateFromSyncedOpportunities = async () => {
       postBidDetailOther: 1,
       postBidDetailUpdatedBy: 1,
       postBidDetailUpdatedAt: 1,
+      canonicalStage: 1,
+      tenderResult: 1,
+      awardedDate: 1,
+      awardEventNotified: 1,
+      awardEventNotifiedAt: 1,
+      awardEventKey: 1,
+      awardEventSource: 1,
     }
   ).lean();
   const fetchMs = Date.now() - startedAt;
@@ -1874,6 +1956,13 @@ const getExistingTelecastStateFromSyncedOpportunities = async () => {
         postBidDetailOther: row?.postBidDetailOther || '',
         postBidDetailUpdatedBy: row?.postBidDetailUpdatedBy || '',
         postBidDetailUpdatedAt: row?.postBidDetailUpdatedAt || null,
+        canonicalStage: row?.canonicalStage || '',
+        tenderResult: row?.tenderResult || '',
+        awardedDate: row?.awardedDate || null,
+        awardEventNotified: Boolean(row?.awardEventNotified),
+        awardEventNotifiedAt: row?.awardEventNotifiedAt || null,
+        awardEventKey: row?.awardEventKey || '',
+        awardEventSource: row?.awardEventSource || '',
       });
     }
 
@@ -2084,7 +2173,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     group: getGroupFromOpportunity(row),
     type: row?.opportunityClassification || '',
     dateTenderReceived: row?.dateTenderReceived || '',
-    value: row?.opportunityValue ?? null,
+    value: getEffectiveOpportunityValue(row),
   }));
   const now = new Date();
   const alertedKeySet = new Set([
@@ -2127,7 +2216,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     group: getGroupFromOpportunity(row),
     type: row?.opportunityClassification || '',
     dateTenderReceived: row?.dateTenderReceived || '',
-    value: row?.opportunityValue ?? null,
+    value: getEffectiveOpportunityValue(row),
   }));
   systemConfig.telecastLastEligibleRowsPreview = telecastEligiblePreview;
   const rowsToSend = recentRows.filter((row) => {
@@ -2169,6 +2258,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   const manualAlignmentByRef = new Map();
   const pendingConflictOps = [];
   const zeroValueConflictRefs = new Set();
+  const awardEventsToSend = [];
 
   const opportunitiesForInsert = opportunities.map((opportunity) => {
     const initialRef = getTenderRefNo(opportunity);
@@ -2176,6 +2266,8 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     const manualSnapshot = initialRef ? manualUpdatesByRef.get(normalizeRefKey(initialRef)) : null;
     const { opportunity: mergedOpportunity, staleFields } = applyManualOverridesToOpportunity(opportunity, manualSnapshot);
     const ref = getTenderRefNo(mergedOpportunity) || initialRef;
+    const normalizedRef = normalizeRefNo(ref);
+    const previousMeta = normalizedRef ? metaByRef.get(normalizedRef) : null;
     const key = buildNotificationKey(mergedOpportunity) || (ref ? `REF::${ref}` : '');
     const previousState = key ? existingTelecastState.keyState.get(key) : null;
     const isDispatchedNow = Boolean(key && telecastDispatch.dispatchedKeys.includes(key));
@@ -2236,6 +2328,28 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
       });
     }
 
+    const transitionedToAwarded = hasTransitionedToAwarded({
+      previous: {
+        canonicalStage: previousMeta?.canonicalStage || '',
+        tenderResult: previousMeta?.tenderResult || '',
+      },
+      next: {
+        canonicalStage: mergedOpportunity?.canonicalStage || '',
+        tenderResult: mergedOpportunity?.tenderResult || '',
+      },
+    });
+    const awardEventKey = buildAwardEventKey(mergedOpportunity);
+    const alreadyAwardNotified = Boolean(previousMeta?.awardEventNotified)
+      && String(previousMeta?.awardEventKey || '') === awardEventKey;
+    const shouldNotifyAwardEvent = transitionedToAwarded && Boolean(awardEventKey) && !alreadyAwardNotified;
+    if (shouldNotifyAwardEvent) {
+      awardEventsToSend.push({
+        refNo: ref || '',
+        awardEventKey,
+        opportunity: mergedOpportunity,
+      });
+    }
+
     return {
       ...mergedOpportunity,
       leadEmail: metaSnapshot?.leadEmail || mergedOpportunity?.leadEmail || '',
@@ -2249,14 +2363,49 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
       postBidDetailOther: metaSnapshot?.postBidDetailOther || mergedOpportunity?.postBidDetailOther || '',
       postBidDetailUpdatedBy: metaSnapshot?.postBidDetailUpdatedBy || mergedOpportunity?.postBidDetailUpdatedBy || '',
       postBidDetailUpdatedAt: metaSnapshot?.postBidDetailUpdatedAt || mergedOpportunity?.postBidDetailUpdatedAt || null,
+      frameworkTotalValue: toFiniteNumber(mergedOpportunity?.frameworkTotalValue),
+      callOffActualValue: toFiniteNumber(mergedOpportunity?.callOffActualValue),
+      variationDeltaValue: toFiniteNumber(mergedOpportunity?.variationDeltaValue) || 0,
       telecastAlerted: isAlerted,
       telecastAlertedAt,
       telecastAlertedKey: key || '',
       telecastAlertedRefNo: ref || '',
       telecastAlertSource,
+      awardEventNotified: shouldNotifyAwardEvent ? true : Boolean(previousMeta?.awardEventNotified),
+      awardEventNotifiedAt: shouldNotifyAwardEvent ? now : (previousMeta?.awardEventNotifiedAt || null),
+      awardEventKey: shouldNotifyAwardEvent ? awardEventKey : (previousMeta?.awardEventKey || ''),
+      awardEventSource: shouldNotifyAwardEvent ? 'award_transition_sync' : (previousMeta?.awardEventSource || ''),
     };
   });
   markStage('buildMergedRowsForInsert');
+
+  let awardEventDispatch = {
+    attempted: 0,
+    sent: 0,
+    skipped: 0,
+    failed: 0,
+  };
+  if (awardEventsToSend.length) {
+    for (const event of awardEventsToSend) {
+      awardEventDispatch.attempted += 1;
+      try {
+        const result = await sendAwardAlertForOpportunity({
+          opportunity: event.opportunity,
+          systemConfig,
+        });
+        if (result?.success && !result?.skipped) {
+          awardEventDispatch.sent += 1;
+        } else {
+          awardEventDispatch.skipped += 1;
+        }
+      } catch (awardError) {
+        awardEventDispatch.failed += 1;
+        console.error('[award-alert.dispatch.error]', awardError?.message || awardError);
+      }
+    }
+  }
+  stageDetails.awardEventDispatch = awardEventDispatch;
+  markStage('awardEventDispatch');
 
   const deleteStartedAt = Date.now();
   await SyncedOpportunity.deleteMany({});
@@ -3973,6 +4122,12 @@ const getSystemConfigForSync = async () => {
     telecastTemplateStyle: 1,
     telecastSendDelayMinutes: 1,
     telecastGroupRecipients: 1,
+    awardAlertEnabled: 1,
+    awardAlertTemplateSubject: 1,
+    awardAlertTemplateBody: 1,
+    awardAlertTemplateStyle: 1,
+    awardAlertRoleRecipients: 1,
+    awardGroupRecipients: 1,
     updatedBy: 1,
   };
 
@@ -4142,6 +4297,16 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
       approvalTemplateSubject: config.approvalAlertTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}',
       approvalTemplateBody: config.approvalAlertTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.',
       approvalTemplateStyle: getTelecastTemplateStyle(config.approvalAlertTemplateStyle).key,
+      awardAlertEnabled: Boolean(config.awardAlertEnabled),
+      awardTemplateSubject: config.awardAlertTemplateSubject || 'Awarded: {{TENDER_NO}} - {{TENDER_NAME}}',
+      awardTemplateBody: config.awardAlertTemplateBody || 'Tender {{TENDER_NAME}} has transitioned to AWARDED for {{CLIENT}}.',
+      awardTemplateStyle: getTelecastTemplateStyle(config.awardAlertTemplateStyle || 'emerald_signal').key,
+      awardRoleRecipients: Array.isArray(config.awardAlertRoleRecipients) ? config.awardAlertRoleRecipients : ['Master', 'Admin'],
+      awardGroupRecipients: {
+        GES: normalizeEmailList(config?.awardGroupRecipients?.GES || []),
+        GDS: normalizeEmailList(config?.awardGroupRecipients?.GDS || []),
+        GTS: normalizeEmailList(config?.awardGroupRecipients?.GTS || []),
+      },
       deadlineAlertEnabled: Boolean(config.deadlineAlertEnabled),
       deadlineTemplateSubject: config.deadlineAlertTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}',
       deadlineTemplateBody: config.deadlineAlertTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.',
@@ -4176,6 +4341,13 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     const approvalTemplateSubject = String(req.body?.approvalTemplateSubject || '').trim();
     const approvalTemplateBody = String(req.body?.approvalTemplateBody || '').trim();
     const approvalTemplateStyle = getTelecastTemplateStyle(req.body?.approvalTemplateStyle);
+    const awardAlertEnabled = Boolean(req.body?.awardAlertEnabled);
+    const awardTemplateSubject = String(req.body?.awardTemplateSubject || '').trim();
+    const awardTemplateBody = String(req.body?.awardTemplateBody || '').trim();
+    const awardTemplateStyle = getTelecastTemplateStyle(req.body?.awardTemplateStyle || 'emerald_signal');
+    const awardRoleRecipients = Array.isArray(req.body?.awardRoleRecipients)
+      ? req.body.awardRoleRecipients.map((role) => String(role || '').trim()).filter(Boolean)
+      : ['Master', 'Admin'];
     const deadlineAlertEnabled = Boolean(req.body?.deadlineAlertEnabled);
     const deadlineTemplateSubject = String(req.body?.deadlineTemplateSubject || '').trim();
     const deadlineTemplateBody = String(req.body?.deadlineTemplateBody || '').trim();
@@ -4190,6 +4362,12 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
       GDS: normalizeEmailList(groupRecipientsInput.GDS || []),
       GTS: normalizeEmailList(groupRecipientsInput.GTS || []),
     };
+    const awardGroupRecipientsInput = req.body?.awardGroupRecipients || {};
+    const awardGroupRecipients = {
+      GES: normalizeEmailList(awardGroupRecipientsInput.GES || []),
+      GDS: normalizeEmailList(awardGroupRecipientsInput.GDS || []),
+      GTS: normalizeEmailList(awardGroupRecipientsInput.GTS || []),
+    };
 
     const config = await getSystemConfig();
     config.telecastTemplateSubject = templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
@@ -4199,6 +4377,12 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     config.approvalAlertTemplateSubject = approvalTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}';
     config.approvalAlertTemplateBody = approvalTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.';
     config.approvalAlertTemplateStyle = approvalTemplateStyle.key;
+    config.awardAlertEnabled = awardAlertEnabled;
+    config.awardAlertTemplateSubject = awardTemplateSubject || 'Awarded: {{TENDER_NO}} - {{TENDER_NAME}}';
+    config.awardAlertTemplateBody = awardTemplateBody || 'Tender {{TENDER_NAME}} has transitioned to AWARDED for {{CLIENT}}.';
+    config.awardAlertTemplateStyle = awardTemplateStyle.key;
+    config.awardAlertRoleRecipients = awardRoleRecipients.length ? awardRoleRecipients : ['Master', 'Admin'];
+    config.awardGroupRecipients = awardGroupRecipients;
     config.deadlineAlertEnabled = deadlineAlertEnabled;
     config.deadlineAlertTemplateSubject = deadlineTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}';
     config.deadlineAlertTemplateBody = deadlineTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.';
@@ -4219,6 +4403,12 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
       approvalTemplateSubject: config.approvalAlertTemplateSubject,
       approvalTemplateBody: config.approvalAlertTemplateBody,
       approvalTemplateStyle: config.approvalAlertTemplateStyle,
+      awardAlertEnabled: config.awardAlertEnabled,
+      awardTemplateSubject: config.awardAlertTemplateSubject,
+      awardTemplateBody: config.awardAlertTemplateBody,
+      awardTemplateStyle: config.awardAlertTemplateStyle,
+      awardRoleRecipients: config.awardAlertRoleRecipients || ['Master', 'Admin'],
+      awardGroupRecipients: config.awardGroupRecipients || { GES: [], GDS: [], GTS: [] },
       deadlineAlertEnabled: config.deadlineAlertEnabled,
       deadlineTemplateSubject: config.deadlineAlertTemplateSubject,
       deadlineTemplateBody: config.deadlineAlertTemplateBody,
@@ -6108,17 +6298,8 @@ app.post('/api/bd-engagements/clear', verifyToken, async (req, res) => {
 
 app.get('/api/opportunities/stats', verifyToken, async (req, res) => {
   try {
-    const [summaryRows, statusRows] = await Promise.all([
-      SyncedOpportunity.aggregate([
-        {
-          $group: {
-            _id: null,
-            totalTenders: { $sum: 1 },
-            totalValue: { $sum: { $ifNull: ['$opportunityValue', 0] } },
-            lastSync: { $max: '$syncedAt' },
-          },
-        },
-      ]),
+    const [rows, statusRows] = await Promise.all([
+      SyncedOpportunity.find({}, { opportunityValue: 1, frameworkTotalValue: 1, callOffActualValue: 1, variationDeltaValue: 1, syncedAt: 1 }).lean(),
       SyncedOpportunity.aggregate([
         {
           $group: {
@@ -6139,8 +6320,13 @@ app.get('/api/opportunities/stats', verifyToken, async (req, res) => {
         },
       ]),
     ]);
-
-    const summary = summaryRows[0] || {};
+    const summary = rows.reduce((acc, row) => {
+      acc.totalTenders += 1;
+      acc.totalValue += getEffectiveOpportunityValue(row);
+      const syncTime = row?.syncedAt ? new Date(row.syncedAt) : null;
+      if (syncTime && (!acc.lastSync || syncTime > acc.lastSync)) acc.lastSync = syncTime;
+      return acc;
+    }, { totalTenders: 0, totalValue: 0, lastSync: null });
     const statusDistribution = statusRows.reduce((acc, row) => {
       acc[String(row?._id || 'UNKNOWN')] = Number(row?.count || 0);
       return acc;
