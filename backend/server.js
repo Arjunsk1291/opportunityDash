@@ -1155,6 +1155,11 @@ const getGroupFromOpportunity = (opportunity) => {
 
 const getSubmissionDate = (opportunity) => (
   opportunity?.tenderSubmittedDate
+  || opportunity?.rawTenderSubmittedDate
+  || opportunity?.rawGraphData?.tenderSubmittedRaw
+  || opportunity?.rawGraphData?.rowSnapshot?.['TENDER SUBMITTED DATE']
+  || opportunity?.rawGraphData?.rowSnapshot?.['TENDER  SUBMITTED']
+  || opportunity?.rawGraphData?.rowSnapshot?.['SUBMITTED DATE']
   || opportunity?.tenderPlannedSubmissionDate
   || opportunity?.rawGraphData?.rowSnapshot?.['SUBMISSION DATE']
   || ''
