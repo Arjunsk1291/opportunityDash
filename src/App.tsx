@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ApprovalProvider } from "@/contexts/ApprovalContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
+import KpiDiagnostics from "./pages/KpiDiagnostics";
 import Opportunities from "./pages/Opportunities";
 import TenderUpdates from "./pages/TenderUpdates";
 import VendorDirectory from "./pages/VendorDirectory";
@@ -80,6 +81,7 @@ function AppRoutes() {
             }
           >
             <Route index element={<PageAccessRoute pageKey="dashboard"><Dashboard /></PageAccessRoute>} />
+            <Route path="kpi-diagnostics" element={<PageAccessRoute pageKey="dashboard"><KpiDiagnostics /></PageAccessRoute>} />
             <Route path="opportunities" element={<PageAccessRoute pageKey="opportunities"><Opportunities /></PageAccessRoute>} />
             <Route path="tender-updates" element={<PageAccessRoute pageKey="tender_updates"><TenderUpdates /></PageAccessRoute>} />
             <Route path="vendors" element={<PageAccessRoute pageKey="vendor_directory"><VendorDirectory /></PageAccessRoute>} />

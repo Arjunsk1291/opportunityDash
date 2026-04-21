@@ -42,6 +42,49 @@ type OpportunityGroup = {
   items: Opportunity[];
 };
 
+type DuplicateOmissionReason = 'duplicate_ref' | 'duplicate_tender_name';
+
+type DuplicateOmission = {
+  omitted: Opportunity;
+  kept: Opportunity;
+  reason: DuplicateOmissionReason;
+};
+
+type KpiDiagnosticEntry = {
+  id: string;
+  refNo: string;
+  tenderName: string;
+  clientName: string;
+  journeyType: 'tender' | 'eoi';
+  status: string;
+  reason: string;
+  replacement?: {
+    id: string;
+    refNo: string;
+    tenderName: string;
+    status: string;
+  };
+};
+
+type KpiDiagnosticsReport = {
+  reportId: string;
+  generatedAt: string;
+  kpiType: DashboardKpiType;
+  appliedFilters: {
+    statuses: string[];
+    showAtRisk: boolean;
+    excludeLostOutcomes: boolean;
+  };
+  counts: {
+    sourceRows: number;
+    preKpiScopedRows: number;
+    includedRows: number;
+    omittedRows: number;
+  };
+  included: KpiDiagnosticEntry[];
+  omitted: KpiDiagnosticEntry[];
+};
+
 const normalizeText = (value: string | null | undefined) => String(value || '').trim();
 const normalizeRefNo = (value: string | null | undefined) => normalizeText(value).toUpperCase();
 const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_EOI$/i, '');
@@ -71,6 +114,7 @@ const getBusinessKey = (opp: Opportunity, index: number) => {
 };
 
 const dedupeReceivedOpportunities = (rows: Opportunity[]) => {
+  const duplicateOmissions: DuplicateOmission[] = [];
   const chosenByRef = new Map<string, { opp: Opportunity; index: number }>();
   const noRefRows: Array<{ opp: Opportunity; index: number }> = [];
 
@@ -88,8 +132,19 @@ const dedupeReceivedOpportunities = (rows: Opportunity[]) => {
     const existingStatus = normalizeCanonicalStatus(getDisplayStatus(existing.opp));
     const candidateStatus = normalizeCanonicalStatus(getDisplayStatus(opp));
     if (existingStatus !== 'AWARDED' && candidateStatus === 'AWARDED') {
+      duplicateOmissions.push({
+        omitted: existing.opp,
+        kept: opp,
+        reason: 'duplicate_ref',
+      });
       chosenByRef.set(ref, { opp, index });
+      return;
     }
+    duplicateOmissions.push({
+      omitted: opp,
+      kept: existing.opp,
+      reason: 'duplicate_ref',
+    });
   });
 
   const byName = new Map<string, { opp: Opportunity; index: number }>();
@@ -109,8 +164,19 @@ const dedupeReceivedOpportunities = (rows: Opportunity[]) => {
       const existingStatus = normalizeCanonicalStatus(getDisplayStatus(existing.opp));
       const candidateStatus = normalizeCanonicalStatus(getDisplayStatus(entry.opp));
       if (existingStatus !== 'AWARDED' && candidateStatus === 'AWARDED') {
+        duplicateOmissions.push({
+          omitted: existing.opp,
+          kept: entry.opp,
+          reason: 'duplicate_tender_name',
+        });
         byName.set(nameKey, entry);
+        return;
       }
+      duplicateOmissions.push({
+        omitted: entry.opp,
+        kept: existing.opp,
+        reason: 'duplicate_tender_name',
+      });
     });
 
   const deduped = Array.from(byName.values())
@@ -120,8 +186,79 @@ const dedupeReceivedOpportunities = (rows: Opportunity[]) => {
   const totalTenders = deduped.filter((opp) => getJourneyType(opp) === 'tender').length;
   const totalEoi = deduped.filter((opp) => getJourneyType(opp) === 'eoi').length;
 
-  return { deduped, totalTenders, totalEoi };
+  return { deduped, totalTenders, totalEoi, duplicateOmissions };
 };
+
+const withKpiOverrides = (kpiType: DashboardKpiType, baseFilters: FilterState): FilterState => {
+  switch (kpiType) {
+    case 'received':
+      return { ...baseFilters, statuses: [], showAtRisk: false, excludeLostOutcomes: false };
+    case 'submitted':
+      return { ...baseFilters, statuses: ['SUBMITTED'], showAtRisk: false, excludeLostOutcomes: false };
+    case 'won':
+    case 'value':
+      return { ...baseFilters, statuses: ['AWARDED'], showAtRisk: false, excludeLostOutcomes: false };
+    case 'lost':
+      return { ...baseFilters, statuses: ['LOST'], showAtRisk: false, excludeLostOutcomes: false };
+    case 'regretted':
+      return { ...baseFilters, statuses: ['REGRETTED'], showAtRisk: false, excludeLostOutcomes: false };
+    case 'hold':
+      return { ...baseFilters, statuses: ['HOLD / CLOSED'], showAtRisk: false, excludeLostOutcomes: false };
+    case 'submission':
+      return { ...baseFilters, statuses: [], showAtRisk: true, excludeLostOutcomes: false };
+    default:
+      return baseFilters;
+  }
+};
+
+const getKpiScopeFilters = (kpiType: DashboardKpiType, baseFilters: FilterState): FilterState => {
+  const next = withKpiOverrides(kpiType, baseFilters);
+  return {
+    ...next,
+    statuses: [],
+    showAtRisk: false,
+  };
+};
+
+const includesForKpi = (kpiType: DashboardKpiType, opp: Opportunity) => {
+  const journeyType = getJourneyType(opp);
+  const status = normalizeCanonicalStatus(getDisplayStatus(opp));
+  if (kpiType === 'received') return { included: true, reason: 'included in received deduped scope' };
+  if (kpiType === 'submission') {
+    if (journeyType !== 'tender') return { included: false, reason: 'excluded: EOI rows are not counted in status KPIs' };
+    if (!isSubmissionWithinDays(opp, 10)) return { included: false, reason: 'excluded: submission date is not within 10 days' };
+    return { included: true, reason: 'included: tender submission is within 10 days' };
+  }
+
+  if (journeyType !== 'tender') return { included: false, reason: 'excluded: EOI rows are not counted in status KPIs' };
+
+  const statusByKpi: Record<Exclude<DashboardKpiType, 'received' | 'submission' | 'value'>, string> = {
+    submitted: 'SUBMITTED',
+    regretted: 'REGRETTED',
+    hold: 'HOLD / CLOSED',
+    won: 'AWARDED',
+    lost: 'LOST',
+  };
+  const targetStatus = kpiType === 'value' ? 'AWARDED' : statusByKpi[kpiType as Exclude<DashboardKpiType, 'received' | 'submission' | 'value'>];
+  if (status !== targetStatus) return { included: false, reason: `excluded: status is ${status || 'UNKNOWN'}, expected ${targetStatus}` };
+  return { included: true, reason: `included: status matched ${targetStatus}` };
+};
+
+const toDiagnosticEntry = (opp: Opportunity, reason: string, replacement?: Opportunity): KpiDiagnosticEntry => ({
+  id: String(opp.id || `${opp.opportunityRefNo}-${opp.tenderName}`),
+  refNo: normalizeText(opp.opportunityRefNo),
+  tenderName: normalizeText(opp.tenderName),
+  clientName: normalizeText(opp.clientName),
+  journeyType: getJourneyType(opp),
+  status: normalizeCanonicalStatus(getDisplayStatus(opp)),
+  reason,
+  replacement: replacement ? {
+    id: String(replacement.id || `${replacement.opportunityRefNo}-${replacement.tenderName}`),
+    refNo: normalizeText(replacement.opportunityRefNo),
+    tenderName: normalizeText(replacement.tenderName),
+    status: normalizeCanonicalStatus(getDisplayStatus(replacement)),
+  } : undefined,
+});
 
 const pickPrimaryOpportunity = (items: Opportunity[]) => {
   if (!items.length) return null;
@@ -295,56 +432,64 @@ const Dashboard = () => {
     };
   }, [filteredData]);
 
-  const handleKPIClick = (kpiType: DashboardKpiType) => {
-    setFilters((prevFilters) => {
-      switch (kpiType) {
-        case 'received':
-          return {
-            ...prevFilters,
-            statuses: [],
-            excludeLostOutcomes: false,
-          };
-        case 'submitted':
-          return {
-            ...prevFilters,
-            statuses: ['SUBMITTED'],
-            excludeLostOutcomes: false,
-          };
-        case 'won':
-        case 'value':
-          return {
-            ...prevFilters,
-            statuses: ['AWARDED'],
-            excludeLostOutcomes: false,
-          };
-        case 'lost':
-          return {
-            ...prevFilters,
-            statuses: ['LOST'],
-            excludeLostOutcomes: false,
-          };
-        case 'regretted':
-          return {
-            ...prevFilters,
-            statuses: ['REGRETTED'],
-            excludeLostOutcomes: false,
-          };
-        case 'hold':
-          return {
-            ...prevFilters,
-            statuses: ['HOLD / CLOSED'],
-            excludeLostOutcomes: false,
-          };
-        case 'submission':
-          return {
-            ...prevFilters,
-            showAtRisk: true,
-            excludeLostOutcomes: false,
-          };
-        default:
-          return prevFilters;
-      }
+  const openKpiDiagnosticsWindow = (kpiType: DashboardKpiType, nextFilters: FilterState) => {
+    const scopeFilters = getKpiScopeFilters(kpiType, nextFilters);
+    const preKpiScopedRows = applyFilters(opportunities, scopeFilters);
+    const dedupeTrace = dedupeReceivedOpportunities(preKpiScopedRows);
+
+    const includedRows: KpiDiagnosticEntry[] = [];
+    const omittedRows: KpiDiagnosticEntry[] = [];
+
+    dedupeTrace.deduped.forEach((opp) => {
+      const verdict = includesForKpi(kpiType, opp);
+      if (verdict.included) includedRows.push(toDiagnosticEntry(opp, verdict.reason));
+      else omittedRows.push(toDiagnosticEntry(opp, verdict.reason));
     });
+
+    dedupeTrace.duplicateOmissions.forEach(({ omitted, kept, reason }) => {
+      omittedRows.push(toDiagnosticEntry(
+        omitted,
+        reason === 'duplicate_ref'
+          ? 'excluded: duplicate Avenir Ref (kept AWARDED row if available, otherwise first)'
+          : 'excluded: duplicate tender name (kept AWARDED row if available, otherwise first)',
+        kept,
+      ));
+    });
+
+    const scopedIds = new Set(preKpiScopedRows.map((row) => String(row.id)));
+    opportunities.forEach((opp) => {
+      if (scopedIds.has(String(opp.id))) return;
+      omittedRows.push(toDiagnosticEntry(opp, 'excluded by active filters before KPI rule evaluation'));
+    });
+
+    const reportId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const report: KpiDiagnosticsReport = {
+      reportId,
+      generatedAt: new Date().toISOString(),
+      kpiType,
+      appliedFilters: {
+        statuses: nextFilters.statuses,
+        showAtRisk: nextFilters.showAtRisk,
+        excludeLostOutcomes: nextFilters.excludeLostOutcomes,
+      },
+      counts: {
+        sourceRows: opportunities.length,
+        preKpiScopedRows: preKpiScopedRows.length,
+        includedRows: includedRows.length,
+        omittedRows: omittedRows.length,
+      },
+      included: includedRows,
+      omitted: omittedRows,
+    };
+
+    sessionStorage.setItem(`kpi-diagnostics:${reportId}`, JSON.stringify(report));
+    window.open(`/kpi-diagnostics?report=${encodeURIComponent(reportId)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleKPIClick = (kpiType: DashboardKpiType) => {
+    const nextFilters = withKpiOverrides(kpiType, filters);
+    setFilters(nextFilters);
+    openKpiDiagnosticsWindow(kpiType, nextFilters);
   };
 
   const handleFunnelClick = (stage: string) => {
