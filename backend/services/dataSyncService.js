@@ -156,7 +156,6 @@ const DEFAULT_MAPPING = {
   tenderType: ['Tender Type ', 'Type'],
   client: ['Client'],
   tenderName: ['Tender name', 'DESCRIPTION'],
-  endUse: ['END USE', 'END USER', 'END-USE'],
   year: ['Year ', 'Year'],
   dateReceived: ['date tender recd', 'DATE RECEIVED', 'DATE TENDER RECD'],
   lead: ['Assigned Person'],
@@ -535,7 +534,6 @@ export async function syncTendersFromGraph(config) {
     tenderType: findColumn(headers, mapping.tenderType),
     client: findColumn(headers, mapping.client),
     tenderName: findColumn(headers, mapping.tenderName),
-    endUse: findColumn(headers, mapping.endUse),
     year: findColumn(headers, mapping.year),
     dateReceived: findColumn(headers, mapping.dateReceived),
     lead: findColumn(headers, mapping.lead),
@@ -654,7 +652,6 @@ export async function syncTendersFromGraph(config) {
     const tender = {
       opportunityRefNo: getValue(colIndices.tenderNo),
       tenderName: getValue(colIndices.tenderName),
-      endUse: getValue(colIndices.endUse),
       clientName: getValue(colIndices.client),
       opportunityClassification: getValue(colIndices.tenderType),
       internalLead: getValue(colIndices.lead),

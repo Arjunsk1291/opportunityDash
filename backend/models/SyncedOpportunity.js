@@ -20,7 +20,6 @@ const syncedOpportunitySchema = new mongoose.Schema(
     dateTenderReceived: String,
     groupClassification: String,
     opportunityClassification: String,
-    endUse: { type: String, default: '' },
     qualificationStatus: String,
     tenderPlannedSubmissionDate: String,
     tenderSubmittedDate: String,

@@ -29,17 +29,6 @@ function computeSubmissionNear(opp: Partial<Opportunity>): boolean {
   );
 }
 
-function getEffectiveOpportunityValue(opp: OpportunityApiRecord): number {
-  const legacyBase = Number(opp.opportunityValue || 0);
-  const frameworkTotal = Number(opp.frameworkTotalValue);
-  const callOffActual = Number(opp.callOffActualValue);
-  const variationDelta = Number(opp.variationDeltaValue || 0);
-
-  if (Number.isFinite(callOffActual)) return callOffActual;
-  if (Number.isFinite(frameworkTotal)) return frameworkTotal + (Number.isFinite(variationDelta) ? variationDelta : 0);
-  return legacyBase + (Number.isFinite(variationDelta) ? variationDelta : 0);
-}
-
 interface DataContextType {
   opportunities: Opportunity[];
   isLoading: boolean;
@@ -144,7 +133,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const mapStart = performance.now();
         const dataWithIds = validData.map((opp) => ({
           ...opp,
-          opportunityValue: getEffectiveOpportunityValue(opp),
           id: opp.id || opp._id || opp.opportunityRefNo,
           isAtRisk: computeSubmissionNear(opp),
         }));

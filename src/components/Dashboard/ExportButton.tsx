@@ -161,7 +161,6 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       { id: 'tenderName', label: 'Tender Name', getValue: (opp) => opp.tenderName },
       { id: 'tenderType', label: 'Tender Type', getValue: (opp) => opp.opportunityClassification || '' },
       { id: 'client', label: 'Client', getValue: (opp) => opp.clientName },
-      { id: 'endUse', label: 'End Use', getValue: (opp) => opp.endUse || '' },
       { id: 'status', label: 'Status', getValue: (opp) => getDisplayStatus(opp) },
       { id: 'group', label: 'Group', getValue: (opp) => opp.groupClassification },
       { id: 'lead', label: 'Lead', getValue: (opp) => opp.internalLead || 'Unassigned' },
