@@ -387,19 +387,6 @@ const Dashboard = () => {
 
   const kpiCards = [
     {
-      label: 'Recieved',
-      value: receivedDedupe.deduped.length,
-      meta: [
-        { label: 'Tender', value: receivedDedupe.totalTenders, tone: 'bg-blue-500' },
-        { label: 'EOI', value: receivedDedupe.totalEoi, tone: 'bg-amber-500' },
-      ],
-      tone: 'text-sky-600',
-      glow: 'analytics-kpi-glow-sky',
-      icon: Target,
-      type: 'received' as const,
-      composite: true,
-    },
-    {
       label: 'Submitted',
       value: groupedBuckets.submitted.groups.length,
       secondaryDisplayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.submitted.submittedOnlyValue || 0))}`,
@@ -463,6 +450,23 @@ const Dashboard = () => {
     },
   ];
 
+  const receivedCards = [
+    {
+      label: 'Total Tender',
+      value: receivedDedupe.totalTenders,
+      tone: 'text-sky-600',
+      glow: 'analytics-kpi-glow-sky',
+      icon: Target,
+    },
+    {
+      label: 'Total EOI',
+      value: receivedDedupe.totalEoi,
+      tone: 'text-amber-600',
+      glow: 'analytics-kpi-glow-amber',
+      icon: Target,
+    },
+  ];
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Sync Status Bar */}
@@ -507,12 +511,40 @@ const Dashboard = () => {
       */}
       {/* <KPICards stats={stats} onKPIClick={handleKPIClick} /> */}
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="space-y-4">
+        <div className="rounded-2xl border-2 border-sky-300/80 bg-sky-50/30 p-3 shadow-[0_0_24px_rgba(56,189,248,0.18)]">
+          <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">Recieved</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {receivedCards.map((card, index) => (
+              <button
+                key={card.label}
+                type="button"
+                className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5`}
+                style={{ animationDelay: `${index * 0.07}s` }}
+                onClick={() => handleKPIClick('received')}
+              >
+                <div className="relative z-10 flex items-start justify-between p-5">
+                  <div className="space-y-1.5">
+                    <p className="dash-label">{card.label}</p>
+                    <div className="mt-2 analytics-kpi-number flex items-center gap-2 text-slate-950">
+                      <span>{card.value}</span>
+                    </div>
+                  </div>
+                  <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
+                    <card.icon className="h-5 w-5" />
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpiCards.map((card, index) => (
           <button
             key={card.label}
             type="button"
-            className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5 ${card.composite ? 'sm:col-span-2 xl:col-span-2' : ''}`}
+            className="analytics-card analytics-kpi-card w-full text-left transition-transform hover:-translate-y-0.5"
             style={{ animationDelay: `${index * 0.07}s` }}
             onClick={() => handleKPIClick(card.type)}
           >
@@ -529,17 +561,7 @@ const Dashboard = () => {
                     <span>{card.secondaryDisplayValue}</span>
                   </div>
                 ) : null}
-                {card.composite && card.meta ? (
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    {card.meta.map((item) => (
-                      <div key={item.label} className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">
-                        <p className="text-[11px] text-slate-500">{`Total ${item.label}`}</p>
-                        <p className="mt-1 text-2xl font-black text-slate-900">{item.value}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                {!card.composite && card.meta ? (
+                {card.meta ? (
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
                     {card.meta.map((item) => (
                       <span key={item.label} className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5">
@@ -557,6 +579,7 @@ const Dashboard = () => {
             </div>
           </button>
         ))}
+        </div>
       </section>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
