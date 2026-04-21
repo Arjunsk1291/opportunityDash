@@ -154,9 +154,11 @@ const Dashboard = () => {
   const clientData = useMemo(() => getClientData(filteredData), [filteredData]);
   const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
 
+  const dedupedKpiData = useMemo(() => dedupeReceivedOpportunities(filteredData), [filteredData]);
+
   const groupedOpportunities = useMemo(() => {
     const groups = new Map<string, Opportunity[]>();
-    filteredData.forEach((opp, index) => {
+    dedupedKpiData.deduped.forEach((opp, index) => {
       const key = getBusinessKey(opp, index);
       const bucket = groups.get(key) || [];
       bucket.push(opp);
@@ -168,7 +170,7 @@ const Dashboard = () => {
       primary: pickPrimaryOpportunity(items),
       items,
     })) as OpportunityGroup[];
-  }, [filteredData]);
+  }, [dedupedKpiData]);
 
   const groupedBuckets = useMemo(() => {
     const openOtherGroups: OpportunityGroup[] = [];
@@ -178,9 +180,10 @@ const Dashboard = () => {
     const holdGroups: OpportunityGroup[] = [];
     const lostGroups: OpportunityGroup[] = [];
     const receivedGroups: OpportunityGroup[] = [...groupedOpportunities];
+    const tenderOnlyGroups: OpportunityGroup[] = groupedOpportunities.filter((group) => getJourneyType(group.primary) === 'tender');
     const submissionNearGroups: OpportunityGroup[] = [];
 
-    groupedOpportunities.forEach((group) => {
+    tenderOnlyGroups.forEach((group) => {
       const primary = group.primary;
       if (!primary) return;
 
@@ -232,7 +235,6 @@ const Dashboard = () => {
       return sum + Number(primary?.opportunityValue || 0);
     }, 0);
 
-    const activeSubmittedGroups = [...openOtherGroups, ...submittedGroups];
     const submittedOnlyValue = sumValue(submittedGroups);
 
     return {
@@ -242,9 +244,9 @@ const Dashboard = () => {
         ...countJourneyTypes(receivedGroups),
       },
       submitted: {
-        groups: activeSubmittedGroups,
-        rows: groupRows(activeSubmittedGroups),
-        ...countJourneyTypes(activeSubmittedGroups),
+        groups: submittedGroups,
+        rows: groupRows(submittedGroups),
+        ...countJourneyTypes(submittedGroups),
         submittedOnlyValue,
       },
       regretted: { groups: regrettedGroups, rows: groupRows(regrettedGroups) },
@@ -255,7 +257,7 @@ const Dashboard = () => {
     };
   }, [groupedOpportunities]);
 
-  const receivedDedupe = useMemo(() => dedupeReceivedOpportunities(filteredData), [filteredData]);
+  const receivedDedupe = dedupedKpiData;
 
   const eoiLifecycle = useMemo(() => {
     const normalized = filteredData.map((opp, index) => ({
@@ -305,7 +307,7 @@ const Dashboard = () => {
         case 'submitted':
           return {
             ...prevFilters,
-            statuses: ['WORKING', 'TO START', 'ONGOING', 'SUBMITTED'],
+            statuses: ['SUBMITTED'],
             excludeLostOutcomes: false,
           };
         case 'won':
