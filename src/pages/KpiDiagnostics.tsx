@@ -39,7 +39,8 @@ type KpiDiagnosticsReport = {
 const readReport = (id: string | null): KpiDiagnosticsReport | null => {
   if (!id) return null;
   try {
-    const raw = sessionStorage.getItem(`kpi-diagnostics:${id}`);
+    const raw = localStorage.getItem(`kpi-diagnostics:${id}`)
+      ?? sessionStorage.getItem(`kpi-diagnostics:${id}`);
     if (!raw) return null;
     return JSON.parse(raw) as KpiDiagnosticsReport;
   } catch {

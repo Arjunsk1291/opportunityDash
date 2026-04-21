@@ -482,7 +482,7 @@ const Dashboard = () => {
       omitted: omittedRows,
     };
 
-    sessionStorage.setItem(`kpi-diagnostics:${reportId}`, JSON.stringify(report));
+    localStorage.setItem(`kpi-diagnostics:${reportId}`, JSON.stringify(report));
     window.open(`/kpi-diagnostics?report=${encodeURIComponent(reportId)}`, '_blank', 'noopener,noreferrer');
   };
 

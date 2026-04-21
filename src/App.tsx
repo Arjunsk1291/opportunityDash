@@ -60,6 +60,7 @@ function AppRoutes() {
     <BrowserRouter>
       <RoutePerfLogger />
       <Routes>
+        <Route path="/kpi-diagnostics" element={<KpiDiagnostics />} />
         <Route
           path="/auth/callback"
           element={<Navigate to={isPending && isAuthenticated ? "/pending" : "/"} replace />}
@@ -81,7 +82,6 @@ function AppRoutes() {
             }
           >
             <Route index element={<PageAccessRoute pageKey="dashboard"><Dashboard /></PageAccessRoute>} />
-            <Route path="kpi-diagnostics" element={<PageAccessRoute pageKey="dashboard"><KpiDiagnostics /></PageAccessRoute>} />
             <Route path="opportunities" element={<PageAccessRoute pageKey="opportunities"><Opportunities /></PageAccessRoute>} />
             <Route path="tender-updates" element={<PageAccessRoute pageKey="tender_updates"><TenderUpdates /></PageAccessRoute>} />
             <Route path="vendors" element={<PageAccessRoute pageKey="vendor_directory"><VendorDirectory /></PageAccessRoute>} />
