@@ -70,6 +70,59 @@ const getBusinessKey = (opp: Opportunity, index: number) => {
   return `fallback::${opp.id || index}`;
 };
 
+const dedupeReceivedOpportunities = (rows: Opportunity[]) => {
+  const chosenByRef = new Map<string, { opp: Opportunity; index: number }>();
+  const noRefRows: Array<{ opp: Opportunity; index: number }> = [];
+
+  rows.forEach((opp, index) => {
+    const ref = normalizeRefNo(opp.opportunityRefNo);
+    if (!ref) {
+      noRefRows.push({ opp, index });
+      return;
+    }
+    const existing = chosenByRef.get(ref);
+    if (!existing) {
+      chosenByRef.set(ref, { opp, index });
+      return;
+    }
+    const existingStatus = normalizeCanonicalStatus(getDisplayStatus(existing.opp));
+    const candidateStatus = normalizeCanonicalStatus(getDisplayStatus(opp));
+    if (existingStatus !== 'AWARDED' && candidateStatus === 'AWARDED') {
+      chosenByRef.set(ref, { opp, index });
+    }
+  });
+
+  const byName = new Map<string, { opp: Opportunity; index: number }>();
+  Array.from(chosenByRef.values())
+    .concat(noRefRows)
+    .forEach((entry) => {
+      const nameKey = normalizeText(entry.opp.tenderName).toLowerCase();
+      if (!nameKey) {
+        byName.set(`__unnamed__${entry.index}`, entry);
+        return;
+      }
+      const existing = byName.get(nameKey);
+      if (!existing) {
+        byName.set(nameKey, entry);
+        return;
+      }
+      const existingStatus = normalizeCanonicalStatus(getDisplayStatus(existing.opp));
+      const candidateStatus = normalizeCanonicalStatus(getDisplayStatus(entry.opp));
+      if (existingStatus !== 'AWARDED' && candidateStatus === 'AWARDED') {
+        byName.set(nameKey, entry);
+      }
+    });
+
+  const deduped = Array.from(byName.values())
+    .sort((a, b) => a.index - b.index)
+    .map((entry) => entry.opp);
+
+  const totalTenders = deduped.filter((opp) => getJourneyType(opp) === 'tender').length;
+  const totalEoi = deduped.filter((opp) => getJourneyType(opp) === 'eoi').length;
+
+  return { deduped, totalTenders, totalEoi };
+};
+
 const pickPrimaryOpportunity = (items: Opportunity[]) => {
   if (!items.length) return null;
   const rank = (opp: Opportunity) => {
@@ -202,6 +255,8 @@ const Dashboard = () => {
     };
   }, [groupedOpportunities]);
 
+  const receivedDedupe = useMemo(() => dedupeReceivedOpportunities(filteredData), [filteredData]);
+
   const eoiLifecycle = useMemo(() => {
     const normalized = filteredData.map((opp, index) => ({
       opp,
@@ -333,15 +388,16 @@ const Dashboard = () => {
   const kpiCards = [
     {
       label: 'Recieved',
-      value: groupedBuckets.received.groups.length,
+      value: receivedDedupe.deduped.length,
       meta: [
-        { label: 'Tender', value: groupedBuckets.received.tender, tone: 'bg-blue-500' },
-        { label: 'EOI', value: groupedBuckets.received.eoi, tone: 'bg-amber-500' },
+        { label: 'Tender', value: receivedDedupe.totalTenders, tone: 'bg-blue-500' },
+        { label: 'EOI', value: receivedDedupe.totalEoi, tone: 'bg-amber-500' },
       ],
       tone: 'text-sky-600',
       glow: 'analytics-kpi-glow-sky',
       icon: Target,
       type: 'received' as const,
+      composite: true,
     },
     {
       label: 'Submitted',
@@ -456,7 +512,7 @@ const Dashboard = () => {
           <button
             key={card.label}
             type="button"
-            className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5`}
+            className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5 ${card.composite ? 'sm:col-span-2 xl:col-span-2' : ''}`}
             style={{ animationDelay: `${index * 0.07}s` }}
             onClick={() => handleKPIClick(card.type)}
           >
@@ -473,7 +529,17 @@ const Dashboard = () => {
                     <span>{card.secondaryDisplayValue}</span>
                   </div>
                 ) : null}
-                {card.meta ? (
+                {card.composite && card.meta ? (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {card.meta.map((item) => (
+                      <div key={item.label} className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">
+                        <p className="text-[11px] text-slate-500">{`Total ${item.label}`}</p>
+                        <p className="mt-1 text-2xl font-black text-slate-900">{item.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {!card.composite && card.meta ? (
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
                     {card.meta.map((item) => (
                       <span key={item.label} className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5">
