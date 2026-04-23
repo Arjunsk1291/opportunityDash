@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { FunnelChart } from '@/components/Dashboard/FunnelChart';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AtRiskWidget } from '@/components/Dashboard/AtRiskWidget';
@@ -10,6 +10,8 @@ import { ExportButton } from '@/components/Dashboard/ExportButton';
 import { ReportButton } from '@/components/Dashboard/ReportButton';
 import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   AlertCircle,
   Loader2,
@@ -105,6 +107,22 @@ type KpiDiagnosticsReport = {
   };
   included: KpiDiagnosticEntry[];
   omitted: KpiDiagnosticEntry[];
+};
+
+type AwardedValueAuditRow = {
+  projectKey: string;
+  counted: {
+    id: string;
+    refNo: string;
+    clientName: string;
+    value: number;
+  } | null;
+  notCounted: Array<{
+    id: string;
+    refNo: string;
+    clientName: string;
+    value: number;
+  }>;
 };
 
 const normalizeText = (value: string | null | undefined) => String(value || '').trim();
@@ -333,6 +351,9 @@ const Dashboard = () => {
   const { formatCurrency, currency, convertValue } = useCurrency();
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
+  const [awardAuditOpen, setAwardAuditOpen] = useState(false);
+  const [awardAuditRows, setAwardAuditRows] = useState<AwardedValueAuditRow[]>([]);
+  const wonClickRef = useRef<{ count: number; timer: number | null }>({ count: 0, timer: null });
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
   const funnelData = useMemo(() => calculateFunnelData(filteredData), [filteredData]);
@@ -429,6 +450,62 @@ const Dashboard = () => {
     });
     return trace;
   }, [groupedOpportunities]);
+
+  const computeAwardedNotAccountedRows = useMemo(() => {
+    const rows: AwardedValueAuditRow[] = [];
+    groupedOpportunities.groups.forEach((group) => {
+      if (group.status !== 'AWARDED') return;
+      const awardedTenderRows = group.items
+        .filter((opp) => getJourneyType(opp) === 'tender')
+        .filter((opp) => normalizeCanonicalStatus(getDisplayStatus(opp)) === 'AWARDED')
+        .map((opp) => ({
+          id: String(opp.id || `${opp.opportunityRefNo}-${opp.tenderName}`),
+          refNo: normalizeText(opp.opportunityRefNo),
+          clientName: normalizeText(opp.clientName),
+          value: Number(opp.opportunityValue || 0),
+        }))
+        .filter((row) => Number.isFinite(row.value) && row.value > 0);
+
+      if (awardedTenderRows.length <= 1) return;
+
+      const maxValue = Math.max(...awardedTenderRows.map((row) => row.value));
+      const counted = awardedTenderRows.find((row) => row.value === maxValue) || null;
+      const notCounted = counted
+        ? awardedTenderRows.filter((row) => row.id !== counted.id)
+        : awardedTenderRows;
+      if (!notCounted.length) return;
+
+      rows.push({
+        projectKey: group.key,
+        counted,
+        notCounted,
+      });
+    });
+
+    rows.sort((a, b) => b.notCounted.length - a.notCounted.length || a.projectKey.localeCompare(b.projectKey));
+    return rows;
+  }, [groupedOpportunities.groups]);
+
+  const handleWonCardClick = () => {
+    const ref = wonClickRef.current;
+    ref.count += 1;
+    if (ref.timer) window.clearTimeout(ref.timer);
+    ref.timer = window.setTimeout(() => {
+      ref.count = 0;
+      ref.timer = null;
+    }, 700);
+
+    if (ref.count >= 3) {
+      ref.count = 0;
+      if (ref.timer) window.clearTimeout(ref.timer);
+      ref.timer = null;
+      setAwardAuditRows(computeAwardedNotAccountedRows);
+      setAwardAuditOpen(true);
+      return;
+    }
+
+    handleKPIClick('won');
+  };
 
   const openKpiDiagnosticsWindow = (kpiType: DashboardKpiType, nextFilters: FilterState) => {
     const scopeFilters = getKpiScopeFilters(kpiType, nextFilters);
@@ -744,7 +821,13 @@ const Dashboard = () => {
             type="button"
             className="analytics-card analytics-kpi-card w-full text-left transition-transform hover:-translate-y-0.5"
             style={{ animationDelay: `${index * 0.07}s` }}
-            onClick={() => handleKPIClick(card.type)}
+            onClick={() => {
+              if (card.type === 'won') {
+                handleWonCardClick();
+                return;
+              }
+              handleKPIClick(card.type);
+            }}
           >
             <div className="relative z-10 flex items-start justify-between p-5">
               <div className="space-y-1.5">
@@ -779,6 +862,60 @@ const Dashboard = () => {
         ))}
         </div>
       </section>
+
+      <Dialog open={awardAuditOpen} onOpenChange={setAwardAuditOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Awarded Values Not Accounted For</DialogTitle>
+            <DialogDescription>
+              Triple-click on Won opens this audit. Won Value currently counts one awarded row per project (highest value). This lists the awarded rows that were excluded.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-xs text-muted-foreground">
+              Projects with excluded awarded rows: {awardAuditRows.length}
+            </div>
+            <div className="overflow-x-auto rounded-md border">
+              <Table className="text-xs">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Project Key</TableHead>
+                    <TableHead>Counted Award</TableHead>
+                    <TableHead>Excluded Awarded Rows</TableHead>
+                    <TableHead className="text-right">Excluded Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {awardAuditRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground">
+                        No excluded awarded values found (each awarded project has 0-1 awarded row with value).
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                  {awardAuditRows.map((row) => {
+                    const excludedTotal = row.notCounted.reduce((sum, item) => sum + Number(item.value || 0), 0);
+                    const countedText = row.counted
+                      ? `${row.counted.refNo || '—'} | ${row.counted.clientName || '—'} | ${formatCurrency(row.counted.value)}`
+                      : '—';
+                    const excludedText = row.notCounted
+                      .map((item) => `${item.refNo || '—'} | ${item.clientName || '—'} | ${formatCurrency(item.value)}`)
+                      .join(' || ');
+                    return (
+                      <TableRow key={`award-audit-${row.projectKey}`}>
+                        <TableCell className="font-mono">{row.projectKey}</TableCell>
+                        <TableCell>{countedText}</TableCell>
+                        <TableCell>{excludedText}</TableCell>
+                        <TableCell className="text-right font-mono">{excludedTotal > 0 ? formatCurrency(excludedTotal) : '—'}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Opportunities Table */}
       <OpportunitiesTable
