@@ -13,7 +13,7 @@ const authorizedUserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'MASTER', 'PROPOSAL_HEAD'],
+    enum: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser', 'MASTER', 'PROPOSAL_HEAD'],
     required: true,
   },
   assignedGroup: {
@@ -39,6 +39,14 @@ const authorizedUserSchema = new mongoose.Schema({
     default: null,
   },
   approvedAt: {
+    type: Date,
+    default: null,
+  },
+  passwordHash: {
+    type: String,
+    default: '',
+  },
+  tempAccessExpiresAt: {
     type: Date,
     default: null,
   },

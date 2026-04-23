@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "rea
 import { Layout } from "@/components/Layout";
 import { DataProvider } from "@/contexts/DataContext";
 import { CurrencyProvider } from "@/contexts/CurrencyContext";
-import { AuthProvider } from "@/contexts/AuthContext";
 import { ApprovalProvider } from "@/contexts/ApprovalContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
@@ -128,18 +127,16 @@ function RoutePerfLogger() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <CurrencyProvider>
-        <DataProvider>
-          <ApprovalProvider>
-            <TooltipProvider>
-              <Toaster />
-              <AppRoutes />
-            </TooltipProvider>
-          </ApprovalProvider>
-        </DataProvider>
-      </CurrencyProvider>
-    </AuthProvider>
+    <CurrencyProvider>
+      <DataProvider>
+        <ApprovalProvider>
+          <TooltipProvider>
+            <Toaster />
+            <AppRoutes />
+          </TooltipProvider>
+        </ApprovalProvider>
+      </DataProvider>
+    </CurrencyProvider>
   </QueryClientProvider>
 );
 

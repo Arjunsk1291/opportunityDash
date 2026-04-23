@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import helmet from 'helmet';
 import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
@@ -2668,6 +2669,36 @@ const createSessionToken = (user = {}) => jwt.sign(
   }
 );
 
+const PASSWORD_HASH_PREFIX = 'scrypt-v1';
+const hashPassword = async (password) => {
+  const salt = crypto.randomBytes(16);
+  const derived = await new Promise((resolve, reject) => {
+    crypto.scrypt(String(password || ''), salt, 64, { N: 16384, r: 8, p: 1 }, (err, key) => {
+      if (err) reject(err);
+      else resolve(key);
+    });
+  });
+  return `${PASSWORD_HASH_PREFIX}:${salt.toString('hex')}:${Buffer.from(derived).toString('hex')}`;
+};
+
+const verifyPassword = async (password, storedHash) => {
+  try {
+    const [prefix, saltHex, keyHex] = String(storedHash || '').split(':');
+    if (prefix !== PASSWORD_HASH_PREFIX || !saltHex || !keyHex) return false;
+    const salt = Buffer.from(saltHex, 'hex');
+    const expected = Buffer.from(keyHex, 'hex');
+    const derived = await new Promise((resolve, reject) => {
+      crypto.scrypt(String(password || ''), salt, expected.length, { N: 16384, r: 8, p: 1 }, (err, key) => {
+        if (err) reject(err);
+        else resolve(key);
+      });
+    });
+    return crypto.timingSafeEqual(expected, Buffer.from(derived));
+  } catch {
+    return false;
+  }
+};
+
 const parseSessionToken = (token = '') => {
   try {
     if (!token || !token.includes('.')) return null;
@@ -2858,6 +2889,32 @@ const verifyToken = async (req, res, next) => {
       return res.status(403).json({ error: 'User access pending approval' });
     }
 
+    if (String(user.role || '') === 'TempUser') {
+      if (user.tempAccessExpiresAt && new Date(user.tempAccessExpiresAt).getTime() <= Date.now()) {
+        return res.status(403).json({ error: 'Temp access expired' });
+      }
+
+      // Temp users are view-only: block all non-GET requests.
+      if (String(req.method || '').toUpperCase() !== 'GET') {
+        return res.status(403).json({ error: 'Temp users have read-only access' });
+      }
+
+      const path = String(req.path || '');
+      const allowlist = [
+        '/api/opportunities',
+        '/api/opportunities/post-bid-config',
+        '/api/eoi-duplicates/config',
+        '/api/approvals',
+        '/api/auth/user',
+        '/api/navigation/permissions',
+        '/api/action-permissions',
+      ];
+      const allowed = allowlist.some((prefix) => path === prefix || path.startsWith(prefix + '/'));
+      if (!allowed) {
+        return res.status(403).json({ error: 'Temp user access restricted' });
+      }
+    }
+
     req.user = {
       email: user.email,
       displayName: user.displayName || user.email,
@@ -3004,6 +3061,57 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
   }
 });
 
+app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) {
+      return respondDatabaseUnavailable(res);
+    }
+
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    if (DISABLE_MONGODB) {
+      return res.status(403).json({ error: 'Password login not available in local auth mode' });
+    }
+
+    const user = await AuthorizedUser.findOne({ email });
+    if (!user) return res.status(403).json({ error: 'Invalid credentials' });
+    if (String(user.role || '') !== 'TempUser') {
+      return res.status(403).json({ error: 'Password login is restricted to TempUser accounts' });
+    }
+    if (user.status !== 'approved') {
+      return res.status(403).json({ error: 'User access pending approval' });
+    }
+    if (!user.passwordHash) {
+      return res.status(403).json({ error: 'Password login not configured for this user' });
+    }
+    if (user.tempAccessExpiresAt && new Date(user.tempAccessExpiresAt).getTime() <= Date.now()) {
+      return res.status(403).json({ error: 'Temp access expired' });
+    }
+
+    const ok = await verifyPassword(password, user.passwordHash);
+    if (!ok) return res.status(403).json({ error: 'Invalid credentials' });
+
+    return res.json({
+      success: true,
+      user: {
+        email: user.email,
+        displayName: user.displayName || user.email,
+        role: user.role,
+        status: user.status,
+        assignedGroup: user.assignedGroup,
+      },
+      sessionToken: createSessionToken(user),
+      message: 'Login successful',
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/auth/login', authRateLimiter, verifyToken, async (req, res) => {
   try {
     if (DISABLE_MONGODB) {
@@ -3069,13 +3177,25 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
     const role = String(req.body?.role || 'Basic');
     const assignedGroupRaw = req.body?.assignedGroup ? String(req.body?.assignedGroup).toUpperCase().trim() : null;
     const status = String(req.body?.status || 'approved');
+    const password = String(req.body?.password || '');
+    const tempAccessExpiresAtRaw = req.body?.tempAccessExpiresAt ? String(req.body.tempAccessExpiresAt) : '';
 
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
-    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'];
+    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'];
     if (!validRoles.includes(role)) return res.status(400).json({ error: 'Invalid role' });
     if (role === 'Master') {
       return res.status(403).json({ error: 'Assigning Master is not allowed' });
+    }
+
+    let tempAccessExpiresAt = null;
+    if (role === 'TempUser') {
+      if (!password) return res.status(400).json({ error: 'Password is required for TempUser accounts' });
+      if (!tempAccessExpiresAtRaw) return res.status(400).json({ error: 'tempAccessExpiresAt is required for TempUser accounts' });
+      const parsed = new Date(tempAccessExpiresAtRaw);
+      if (Number.isNaN(parsed.getTime())) return res.status(400).json({ error: 'tempAccessExpiresAt must be a valid date' });
+      if (parsed.getTime() <= Date.now()) return res.status(400).json({ error: 'tempAccessExpiresAt must be in the future' });
+      tempAccessExpiresAt = parsed;
     }
 
     if (role === 'SVP' && !assignedGroupRaw) {
@@ -3102,6 +3222,16 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
       approvedBy: req.user.email,
       approvedAt: new Date(),
     };
+    if (role === 'TempUser') {
+      nextPayload.passwordHash = await hashPassword(password);
+      nextPayload.tempAccessExpiresAt = tempAccessExpiresAt;
+      nextPayload.assignedGroup = null;
+      nextPayload.status = 'approved';
+    } else {
+      nextPayload.passwordHash = '';
+      nextPayload.tempAccessExpiresAt = null;
+    }
+
     const user = DISABLE_MONGODB
       ? upsertLocalAuthorizedUser(email, nextPayload)
       : await AuthorizedUser.findOneAndUpdate(
@@ -3197,9 +3327,13 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Email and newRole are required' });
     }
 
-    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'MASTER', 'PROPOSAL_HEAD'];
+    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser', 'MASTER', 'PROPOSAL_HEAD'];
     if (!validRoles.includes(newRole)) {
       return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    if (newRole === 'TempUser') {
+      return res.status(400).json({ error: 'Use Add/Update Authorized User to configure TempUser accounts (password + expiry required).' });
     }
 
     if (newRole === 'SVP' && !assignedGroup) {

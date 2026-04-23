@@ -4,6 +4,7 @@ import App from "./App.tsx";
 import { initMsal } from "./auth/msalClient";
 import { AuthProvider } from "./auth/AuthProvider";
 import { RequireAuth } from "./auth/RequireAuth";
+import { AuthProvider as SessionAuthProvider } from "@/contexts/AuthContext";
 import "./index.css";
 
 async function bootstrap() {
@@ -24,9 +25,11 @@ async function bootstrap() {
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <AuthProvider>
-        <RequireAuth>
-          <App />
-        </RequireAuth>
+        <SessionAuthProvider>
+          <RequireAuth>
+            <App />
+          </RequireAuth>
+        </SessionAuthProvider>
       </AuthProvider>
     </React.StrictMode>
   );

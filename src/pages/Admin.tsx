@@ -28,7 +28,7 @@ import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, works
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
-const ROLE_OPTIONS: UserRole[] = ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'];
+const ROLE_OPTIONS: UserRole[] = ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'];
 const GROUP_OPTIONS = ['GES', 'GDS', 'GTS'] as const;
 
 const DEFAULT_SERVICE_ACCOUNT = (import.meta.env.VITE_DEFAULT_SERVICE_ACCOUNT || import.meta.env.VITE_DEFAULT_MASTER_USERNAME || 'tender-notify@avenirengineering.com').toLowerCase();
@@ -50,13 +50,14 @@ function parseApiErrorPayload(payload: unknown, fallback: string): string {
 interface AuthorizedUser {
   _id: string;
   email: string;
-  role: 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'BDTeam' | 'Basic' | 'MASTER' | 'PROPOSAL_HEAD';
+  role: 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'BDTeam' | 'Basic' | 'TempUser' | 'MASTER' | 'PROPOSAL_HEAD';
   assignedGroup?: string | null;
   status: 'pending' | 'approved' | 'rejected';
   lastLogin?: Date;
   createdAt: Date;
   approvedBy?: string;
   approvedAt?: Date;
+  tempAccessExpiresAt?: string | null;
 }
 
 interface LeadEmailSuggestion {
@@ -377,12 +378,22 @@ export default function Admin() {
   const [showConvertedEoiRowsDefault, setShowConvertedEoiRowsDefault] = useState(false);
   const [eoiDuplicateConfigSaving, setEoiDuplicateConfigSaving] = useState(false);
   const [availableClients, setAvailableClients] = useState<string[]>([]);
-  const [newAuthorizedUser, setNewAuthorizedUser] = useState<{ email: string; displayName: string; role: UserRole; assignedGroup: string; status: 'approved' | 'pending' }>({
+  const [newAuthorizedUser, setNewAuthorizedUser] = useState<{
+    email: string;
+    displayName: string;
+    role: UserRole;
+    assignedGroup: string;
+    status: 'approved' | 'pending';
+    password: string;
+    tempAccessExpiresAt: string;
+  }>({
     email: '',
     displayName: '',
     role: 'Basic',
     assignedGroup: 'GES',
     status: 'approved',
+    password: '',
+    tempAccessExpiresAt: '',
   });
   const [leadEmailSuggestions, setLeadEmailSuggestions] = useState<LeadEmailSuggestion[]>([]);
   const [leadEmailLoading, setLeadEmailLoading] = useState(false);
@@ -1823,6 +1834,16 @@ export default function Admin() {
       toast.error('Email is required');
       return;
     }
+    if (newAuthorizedUser.role === 'TempUser') {
+      if (!newAuthorizedUser.password) {
+        toast.error('Temp password is required for TempUser');
+        return;
+      }
+      if (!newAuthorizedUser.tempAccessExpiresAt) {
+        toast.error('Expiry time is required for TempUser');
+        return;
+      }
+    }
     try {
       const response = await fetch(API_URL + '/users/add', {
         method: 'POST',
@@ -1830,12 +1851,17 @@ export default function Admin() {
           Authorization: 'Bearer ' + token,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newAuthorizedUser),
+        body: JSON.stringify({
+          ...newAuthorizedUser,
+          tempAccessExpiresAt: newAuthorizedUser.tempAccessExpiresAt
+            ? new Date(newAuthorizedUser.tempAccessExpiresAt).toISOString()
+            : '',
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to add user');
       toast.success('Authorized user added/updated');
-      setNewAuthorizedUser({ email: '', displayName: '', role: 'Basic', assignedGroup: 'GES', status: 'approved' });
+      setNewAuthorizedUser({ email: '', displayName: '', role: 'Basic', assignedGroup: 'GES', status: 'approved', password: '', tempAccessExpiresAt: '' });
       await loadUsers();
     } catch (error) {
       toast.error((error as Error).message);
@@ -2722,6 +2748,7 @@ export default function Admin() {
                     <SelectItem value="SVP">SVP</SelectItem>
                     <SelectItem value="BDTeam">BD Team</SelectItem>
                     <SelectItem value="Basic">Basic</SelectItem>
+                    <SelectItem value="TempUser">Temp User</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -2735,6 +2762,30 @@ export default function Admin() {
                   </SelectContent>
                 </Select>
               </div>
+              {newAuthorizedUser.role === 'TempUser' && (
+                <>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Temp Password</p>
+                    <Input
+                      type="password"
+                      value={newAuthorizedUser.password}
+                      onChange={(e) => setNewAuthorizedUser((prev) => ({ ...prev, password: e.target.value }))}
+                      placeholder="Set a temp password"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Expires At</p>
+                    <Input
+                      type="datetime-local"
+                      value={newAuthorizedUser.tempAccessExpiresAt}
+                      onChange={(e) => setNewAuthorizedUser((prev) => ({ ...prev, tempAccessExpiresAt: e.target.value }))}
+                    />
+                  </div>
+                  <div className="md:col-span-2 text-xs text-muted-foreground">
+                    Temp users are view-only and restricted to the Dashboard. Password login works only for TempUser and expires at the selected time.
+                  </div>
+                </>
+              )}
               {newAuthorizedUser.role === 'SVP' && (
                 <div className="space-y-1 md:col-span-2">
                   <p className="text-sm font-medium">SVP Group</p>
@@ -2802,6 +2853,7 @@ export default function Admin() {
                       <TableHead>Email</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Temp Expiry</TableHead>
                       <TableHead>Last Login</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -2879,6 +2931,11 @@ export default function Admin() {
                               </Badge>
                             )}
                           </div>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {u.role === 'TempUser'
+                            ? (u.tempAccessExpiresAt ? new Date(u.tempAccessExpiresAt).toLocaleString() : '—')
+                            : '—'}
                         </TableCell>
                         <TableCell className="text-sm">
                           {u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : '—'}

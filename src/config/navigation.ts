@@ -38,7 +38,7 @@ export const PAGE_GROUPS: Array<{ label: string; pages: PageKey[] }> = [
 ];
 
 export const DEFAULT_PAGE_ROLE_ACCESS: Record<PageKey, string[]> = {
-  dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'],
   opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],

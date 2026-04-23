@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useCallback, ReactNode, use
 import { DEFAULT_PAGE_ROLE_ACCESS, PageKey } from '@/config/navigation';
 import { ActionKey, DEFAULT_ACTION_ROLE_ACCESS } from '@/config/actionPermissions';
 
-export type UserRole = 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'BDTeam' | 'Basic';
+export type UserRole = 'Master' | 'Admin' | 'ProposalHead' | 'SVP' | 'BDTeam' | 'Basic' | 'TempUser';
 export type UserStatus = 'approved' | 'pending' | 'rejected';
 
 export interface User {
@@ -30,6 +30,7 @@ interface AuthContextType {
   getAllUsers: () => User[];
   updateUserRole: (userId: string, newRole: UserRole, assignedGroup?: string) => Promise<void>;
   refreshCurrentUser: () => Promise<void>;
+  loginWithPassword: (email: string, password: string) => Promise<void>;
   pagePermissions: Record<PageKey, UserRole[]>;
   pageExcludePermissions: Record<PageKey, UserRole[]>;
   pageEmailPermissions: Record<PageKey, string[]>;
@@ -201,6 +202,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         Authorization: 'Bearer ' + nextToken,
       },
     });
+  }, []);
+
+  const loginWithPassword = useCallback(async (email: string, password: string) => {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const response = await fetch(API_URL + '/auth/login-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: normalizedEmail, password }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.error || 'Password login failed');
+    }
+    const nextUser: User = {
+      email: data.user.email,
+      displayName: data.user.displayName || data.user.email,
+      role: data.user.role,
+      status: data.user.status,
+      assignedGroup: data.user.assignedGroup || null,
+    };
+    setUser(nextUser);
+    setToken(data.sessionToken || null);
+    setAuthError(null);
+    setIsPending(nextUser.status === 'pending');
   }, []);
 
   useEffect(() => {
@@ -430,6 +455,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         getAllUsers,
         updateUserRole,
         refreshCurrentUser,
+        loginWithPassword,
         pagePermissions,
         pageExcludePermissions,
         pageEmailPermissions,
