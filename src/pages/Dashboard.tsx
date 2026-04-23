@@ -74,6 +74,20 @@ type KpiDiagnosticEntry = {
   };
 };
 
+type DuplicateTraceEntry = {
+  id: string;
+  refNo: string;
+  tenderName: string;
+  clientName: string;
+  status: string;
+  reason: string;
+};
+
+type DuplicateTraceByKeptId = Record<string, {
+  kept: DuplicateTraceEntry;
+  omitted: DuplicateTraceEntry[];
+}>;
+
 type KpiDiagnosticsReport = {
   reportId: string;
   generatedAt: string;
@@ -349,6 +363,8 @@ const Dashboard = () => {
       const primary = group.primary;
       return sum + Number(primary?.opportunityValue || 0);
     }, 0);
+    const submittedTenderCount = submittedGroups.filter((group) => group.hasTender).length;
+    const submittedEoiCount = submittedGroups.filter((group) => group.hasEoi).length;
     const winRatio = resolvedGroups.length ? (wonGroups.length / resolvedGroups.length) : 0;
 
     return {
@@ -362,6 +378,8 @@ const Dashboard = () => {
         groups: submittedGroups,
         rows: groupRows(submittedGroups),
         submittedOnlyValue,
+        tender: submittedTenderCount,
+        eoi: submittedEoiCount,
       },
       regretted: { groups: regrettedGroups, rows: groupRows(regrettedGroups) },
       hold: { groups: holdGroups, rows: groupRows(holdGroups) },
@@ -380,6 +398,37 @@ const Dashboard = () => {
     totalTenders: groupedBuckets.received.tender,
     totalEoi: groupedBuckets.received.eoi,
   };
+
+  const duplicateTraceByKeptId = useMemo<DuplicateTraceByKeptId>(() => {
+    const trace: DuplicateTraceByKeptId = {};
+    groupedOpportunities.duplicateOmissions.forEach(({ kept, omitted, reason }) => {
+      const keptId = String(kept.id || `${kept.opportunityRefNo}-${kept.tenderName}`);
+      if (!trace[keptId]) {
+        trace[keptId] = {
+          kept: {
+            id: keptId,
+            refNo: normalizeText(kept.opportunityRefNo),
+            tenderName: normalizeText(kept.tenderName),
+            clientName: normalizeText(kept.clientName),
+            status: normalizeCanonicalStatus(getDisplayStatus(kept)),
+            reason: 'primary row kept for canonical project',
+          },
+          omitted: [],
+        };
+      }
+      trace[keptId].omitted.push({
+        id: String(omitted.id || `${omitted.opportunityRefNo}-${omitted.tenderName}`),
+        refNo: normalizeText(omitted.opportunityRefNo),
+        tenderName: normalizeText(omitted.tenderName),
+        clientName: normalizeText(omitted.clientName),
+        status: normalizeCanonicalStatus(getDisplayStatus(omitted)),
+        reason: reason === 'duplicate_project_grouping'
+          ? 'merged under canonical project key (base ref + clean tender name)'
+          : 'merged under canonical project key',
+      });
+    });
+    return trace;
+  }, [groupedOpportunities]);
 
   const eoiLifecycle = useMemo(() => {
     const normalized = filteredData.map((opp, index) => ({
@@ -525,6 +574,10 @@ const Dashboard = () => {
       value: groupedBuckets.submitted.groups.length,
       secondaryDisplayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.submitted.submittedOnlyValue || 0))}`,
       secondaryValuePrefix: currency === 'AED' ? 'aed' : 'text',
+      meta: [
+        { label: 'Tender', value: groupedBuckets.submitted.tender, tone: 'bg-sky-500' },
+        { label: 'EOI', value: groupedBuckets.submitted.eoi, tone: 'bg-amber-500' },
+      ],
       emphasizeValue: true,
       tone: 'text-sky-600',
       glow: 'analytics-kpi-glow-sky',
@@ -744,7 +797,12 @@ const Dashboard = () => {
       </section>
 
       {/* Opportunities Table */}
-      <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} responsiveMode="dashboard" />
+      <OpportunitiesTable
+        data={filteredData}
+        onSelectOpportunity={setSelectedOpp}
+        responsiveMode="dashboard"
+        duplicateTraceByKeptId={duplicateTraceByKeptId}
+      />
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">

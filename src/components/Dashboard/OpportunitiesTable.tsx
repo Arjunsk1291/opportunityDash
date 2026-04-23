@@ -26,6 +26,24 @@ interface OpportunitiesTableProps {
   scrollContainerClassName?: string;
   maxHeight?: string;
   responsiveMode?: 'default' | 'dashboard';
+  duplicateTraceByKeptId?: Record<string, {
+    kept: {
+      id: string;
+      refNo: string;
+      tenderName: string;
+      clientName: string;
+      status: string;
+      reason: string;
+    };
+    omitted: Array<{
+      id: string;
+      refNo: string;
+      tenderName: string;
+      clientName: string;
+      status: string;
+      reason: string;
+    }>;
+  }>;
 }
 
 const AVENIR_STATUS_OPTIONS = ['ALL', ...CANONICAL_STATUS_ORDER];
@@ -75,6 +93,7 @@ export function OpportunitiesTable({
   scrollContainerClassName,
   maxHeight = 'max-h-96',
   responsiveMode = 'default',
+  duplicateTraceByKeptId = {},
 }: OpportunitiesTableProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -90,6 +109,24 @@ export function OpportunitiesTable({
   const [isBulkOpen, setIsBulkOpen] = useState(false);
   const [bulkMode, setBulkMode] = useState<'approve' | 'revert'>('approve');
   const [bulkAction, setBulkAction] = useState<'proposal_head' | 'svp'>(isSVP && !isMaster ? 'svp' : 'proposal_head');
+  const [selectedDuplicateTrace, setSelectedDuplicateTrace] = useState<{
+    kept: {
+      id: string;
+      refNo: string;
+      tenderName: string;
+      clientName: string;
+      status: string;
+      reason: string;
+    };
+    omitted: Array<{
+      id: string;
+      refNo: string;
+      tenderName: string;
+      clientName: string;
+      status: string;
+      reason: string;
+    }>;
+  } | null>(null);
   const [postBidCanEdit, setPostBidCanEdit] = useState(false);
   const [postBidSavingId, setPostBidSavingId] = useState<string | null>(null);
   const [bulkFilters, setBulkFilters] = useState({
@@ -278,6 +315,8 @@ export function OpportunitiesTable({
     return 0;
   };
 
+  const getRowKey = (tender: Opportunity) => String(tender.id || `${tender.opportunityRefNo}-${tender.tenderName}`);
+
   const filteredData = data
     .filter((tender) => {
       const searchLower = search.toLowerCase();
@@ -392,6 +431,9 @@ export function OpportunitiesTable({
   const canBulkApprove = canBulkProposalHead || canBulkSVP;
   const canBulkRevert = canPerformAction('approvals_bulk_revert');
   const canSingleRevert = canPerformAction('approvals_revert');
+  const dedupeHighlightedCount = useMemo(() => {
+    return visibleData.filter((tender) => Boolean(duplicateTraceByKeptId[getRowKey(tender)])).length;
+  }, [duplicateTraceByKeptId, visibleData]);
 
   useEffect(() => {
     if (!isBulkOpen) setBulkMode('approve');
@@ -561,13 +603,30 @@ export function OpportunitiesTable({
               {visibleData.map((tender) => {
                 const approvalStatus = getApprovalStatus(tender.opportunityRefNo);
                 const approvalState = getApprovalState(tender.opportunityRefNo);
+                const rowTrace = duplicateTraceByKeptId[getRowKey(tender)];
+                const isDedupeKeptRow = Boolean(rowTrace);
                 return (
                   <TableRow
                     key={tender.id}
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => onSelectOpportunity?.(tender)}
+                    className={`cursor-pointer hover:bg-muted/50 ${isDedupeKeptRow ? styles.dedupeKeptRow : ''}`}
+                    onClick={() => {
+                      if (rowTrace) {
+                        setSelectedDuplicateTrace(rowTrace);
+                        return;
+                      }
+                      onSelectOpportunity?.(tender);
+                    }}
                   >
-                    <TableCell className={`${cellPaddingClass} max-w-[120px] truncate font-mono text-[10px] sm:text-[11px] font-bold text-blue-600 dark:text-blue-400`}>{tender.opportunityRefNo || '—'}</TableCell>
+                    <TableCell className={`${cellPaddingClass} max-w-[120px] truncate font-mono text-[10px] sm:text-[11px] font-bold text-blue-600 dark:text-blue-400`}>
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate">{tender.opportunityRefNo || '—'}</span>
+                        {isDedupeKeptRow ? (
+                          <Badge className="border border-fuchsia-400 bg-fuchsia-100 text-[10px] text-fuchsia-800">
+                            dedupe
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </TableCell>
                     <TableCell className={`${cellPaddingClass} max-w-[180px] sm:max-w-[250px] min-w-0`}>
                       <div className="min-w-0 space-y-1">
                         <div className="truncate" title={tender.tenderName || ''}>
@@ -657,8 +716,57 @@ export function OpportunitiesTable({
         <div className="p-2 sm:p-3 text-xs sm:text-sm text-muted-foreground border-t bg-background">
           Showing by {sortBy === 'ref' ? `Avenir Ref (${refSortOrder.toUpperCase()})` : `RFP Received (${rfpSortOrder.toUpperCase()})`}: {visibleData.length} of {data.length} tenders
           {!showConvertedEoiRows && visibleData.length !== filteredData.length ? ` (${filteredData.length - visibleData.length} converted EOI row${filteredData.length - visibleData.length === 1 ? '' : 's'} hidden)` : ''}
+          {dedupeHighlightedCount > 0 ? ` (${dedupeHighlightedCount} dedupe-kept row${dedupeHighlightedCount === 1 ? '' : 's'} highlighted)` : ''}
           {' '} (scroll to view all)
         </div>
+        <Dialog open={Boolean(selectedDuplicateTrace)} onOpenChange={(open) => { if (!open) setSelectedDuplicateTrace(null); }}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>Duplicate Merge Diagnostics</DialogTitle>
+              <DialogDescription>
+                This kept row is the canonical project representative. Rows below were omitted as duplicates and merged into it.
+              </DialogDescription>
+            </DialogHeader>
+            {selectedDuplicateTrace ? (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Kept Row</p>
+                  <p className="text-sm font-medium text-emerald-900">
+                    {selectedDuplicateTrace.kept.refNo || '—'} | {selectedDuplicateTrace.kept.tenderName || '—'} | {selectedDuplicateTrace.kept.clientName || '—'} | {selectedDuplicateTrace.kept.status || '—'}
+                  </p>
+                  <p className="text-xs text-emerald-800 mt-1">Reason: {selectedDuplicateTrace.kept.reason}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200">
+                  <Table className="text-xs">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Omitted Ref</TableHead>
+                        <TableHead>Tender Name</TableHead>
+                        <TableHead>Client</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Omission Reason</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedDuplicateTrace.omitted.map((row) => (
+                        <TableRow key={row.id}>
+                          <TableCell className="font-mono">{row.refNo || '—'}</TableCell>
+                          <TableCell>{row.tenderName || '—'}</TableCell>
+                          <TableCell>{row.clientName || '—'}</TableCell>
+                          <TableCell>{row.status || '—'}</TableCell>
+                          <TableCell>{row.reason}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Omitted rows in this merge: {selectedDuplicateTrace.omitted.length}. Click other highlighted rows in the table to inspect their duplicate trace.
+                </div>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
         <Dialog open={isBulkOpen} onOpenChange={setIsBulkOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
