@@ -674,64 +674,66 @@ const Dashboard = () => {
       {/* <KPICards stats={stats} onKPIClick={handleKPIClick} /> */}
 
       <section className="space-y-4">
-        <div className="rounded-2xl border-2 border-sky-300/80 bg-sky-50/30 p-3 shadow-[0_0_24px_rgba(56,189,248,0.18)]">
-          <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">Recieved</p>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {receivedCards.map((card, index) => (
-              <button
-                key={card.label}
-                type="button"
-                className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5`}
-                style={{ animationDelay: `${index * 0.07}s` }}
-                onClick={() => handleKPIClick('received')}
-              >
-                <div className="relative z-10 flex items-start justify-between p-5">
-                  <div className="space-y-1.5">
-                    <p className="dash-label">{card.label}</p>
-                    <div className="mt-2 analytics-kpi-number flex items-center gap-2 text-slate-950">
-                      <span>{card.value}</span>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="rounded-2xl border-2 border-sky-300/80 bg-sky-50/30 p-3 shadow-[0_0_24px_rgba(56,189,248,0.18)]">
+            <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">Recieved</p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {receivedCards.map((card, index) => (
+                <button
+                  key={card.label}
+                  type="button"
+                  className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5`}
+                  style={{ animationDelay: `${index * 0.07}s` }}
+                  onClick={() => handleKPIClick('received')}
+                >
+                  <div className="relative z-10 flex items-start justify-between p-5">
+                    <div className="space-y-1.5">
+                      <p className="dash-label">{card.label}</p>
+                      <div className="mt-2 analytics-kpi-number flex items-center gap-2 text-slate-950">
+                        <span>{card.value}</span>
+                      </div>
+                    </div>
+                    <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
+                      <card.icon className="h-5 w-5" />
                     </div>
                   </div>
-                  <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
-                    <card.icon className="h-5 w-5" />
-                  </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="rounded-2xl border-2 border-emerald-300/80 bg-emerald-50/30 p-3 shadow-[0_0_24px_rgba(16,185,129,0.18)]">
-          <div className="flex items-center justify-between px-2 pb-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Total Submitted</p>
-            <p className="text-sm font-bold text-emerald-800">{groupedBuckets.submitted.groups.length}</p>
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {submittedCards.map((card, index) => (
-              <button
-                key={card.label}
-                type="button"
-                className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5`}
-                style={{ animationDelay: `${index * 0.07}s` }}
-                onClick={() => handleKPIClick('submitted')}
-              >
-                <div className="relative z-10 flex items-start justify-between p-5">
-                  <div className="space-y-1.5">
-                    <p className="dash-label">{card.label}</p>
-                    <div className="mt-2 analytics-kpi-number flex items-center gap-2 text-slate-950">
-                      <span>{card.value}</span>
+          <div className="rounded-2xl border-2 border-emerald-300/80 bg-emerald-50/30 p-3 shadow-[0_0_24px_rgba(16,185,129,0.18)]">
+            <div className="flex items-center justify-between px-2 pb-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Total Submitted</p>
+              <p className="text-sm font-bold text-emerald-800">{groupedBuckets.submitted.groups.length}</p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {submittedCards.map((card, index) => (
+                <button
+                  key={card.label}
+                  type="button"
+                  className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5`}
+                  style={{ animationDelay: `${index * 0.07}s` }}
+                  onClick={() => handleKPIClick('submitted')}
+                >
+                  <div className="relative z-10 flex items-start justify-between p-5">
+                    <div className="space-y-1.5">
+                      <p className="dash-label">{card.label}</p>
+                      <div className="mt-2 analytics-kpi-number flex items-center gap-2 text-slate-950">
+                        <span>{card.value}</span>
+                      </div>
+                    </div>
+                    <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
+                      <card.icon className="h-5 w-5" />
                     </div>
                   </div>
-                  <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
-                    <card.icon className="h-5 w-5" />
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-          <div className="mt-2 px-2 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
-            {currency === 'AED' ? <img src={aedSymbol} alt="AED" className="h-3.5 w-3.5 opacity-80" /> : null}
-            <span>{`${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.submitted.submittedOnlyValue || 0))}`}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 px-2 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+              {currency === 'AED' ? <img src={aedSymbol} alt="AED" className="h-3.5 w-3.5 opacity-80" /> : null}
+              <span>{`${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.submitted.submittedOnlyValue || 0))}`}</span>
+            </div>
           </div>
         </div>
 
