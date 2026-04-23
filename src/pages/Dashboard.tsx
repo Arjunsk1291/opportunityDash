@@ -34,20 +34,28 @@ import { getDisplayStatus, normalizeCanonicalStatus } from '@/lib/opportunitySta
 import { isSubmissionWithinDays } from '@/lib/submissionDate';
 import aedSymbol from '@/assets/aed-symbol.png';
 
-type DashboardKpiType = 'received' | 'submitted' | 'regretted' | 'hold' | 'won' | 'value' | 'lost' | 'submission';
+type DashboardKpiType = 'received' | 'submitted' | 'regretted' | 'hold' | 'won' | 'value' | 'lost' | 'submission' | 'winRatio';
 
-type OpportunityGroup = {
-  key: string;
-  primary: Opportunity | null;
-  items: Opportunity[];
-};
+type ProjectStatus = 'AWARDED' | 'LOST' | 'SUBMITTED' | 'REGRETTED' | 'HOLD / CLOSED' | 'OTHER';
 
-type DuplicateOmissionReason = 'duplicate_ref' | 'duplicate_tender_name';
+type DuplicateOmissionReason = 'duplicate_project_grouping';
 
 type DuplicateOmission = {
   omitted: Opportunity;
   kept: Opportunity;
   reason: DuplicateOmissionReason;
+};
+
+type ProjectGroup = {
+  key: string;
+  items: Opportunity[];
+  primary: Opportunity | null;
+  status: ProjectStatus;
+  hasTender: boolean;
+  hasEoi: boolean;
+  hasSubmissionNear: boolean;
+  hasSubmittedSignal: boolean;
+  awardedValue: number;
 };
 
 type KpiDiagnosticEntry = {
@@ -87,7 +95,13 @@ type KpiDiagnosticsReport = {
 
 const normalizeText = (value: string | null | undefined) => String(value || '').trim();
 const normalizeRefNo = (value: string | null | undefined) => normalizeText(value).toUpperCase();
-const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_EOI$/i, '');
+const normalizeTenderName = (value: string | null | undefined) => normalizeText(value).replace(/\s+/g, ' ').toLowerCase();
+const getBaseRefNo = (value: string | null | undefined) => {
+  const normalized = normalizeRefNo(value);
+  if (!normalized) return '';
+  const [base = ''] = normalized.split(/[_\s]+/, 1);
+  return base;
+};
 const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(normalizeRefNo(value));
 const isHoldStatus = (status: string) => normalizeCanonicalStatus(status) === 'HOLD / CLOSED';
 const isEoiRow = (opp: Opportunity | null) => {
@@ -104,89 +118,112 @@ const getJourneyType = (opp: Opportunity | null) => {
   return 'tender';
 };
 
-const getBusinessKey = (opp: Opportunity, index: number) => {
-  const ref = getBaseRefNo(opp.opportunityRefNo);
-  const tenderName = normalizeText(opp.tenderName).toLowerCase();
-  const clientName = normalizeText(opp.clientName).toLowerCase();
-  if (ref) return `ref::${ref}`;
-  if (clientName && tenderName) return `client::${clientName}::${tenderName}`;
-  return `fallback::${opp.id || index}`;
+const resolveProjectStatus = (rows: Opportunity[]) => {
+  const statuses = rows.map((opp) => normalizeCanonicalStatus(getDisplayStatus(opp)));
+  if (statuses.includes('AWARDED')) return 'AWARDED' as const;
+  if (statuses.includes('LOST')) return 'LOST' as const;
+  if (statuses.includes('SUBMITTED')) return 'SUBMITTED' as const;
+  if (statuses.includes('REGRETTED')) return 'REGRETTED' as const;
+  if (statuses.some((status) => isHoldStatus(status))) return 'HOLD / CLOSED' as const;
+  return 'OTHER' as const;
 };
 
-const dedupeReceivedOpportunities = (rows: Opportunity[]) => {
-  const duplicateOmissions: DuplicateOmission[] = [];
-  const chosenByRef = new Map<string, { opp: Opportunity; index: number }>();
-  const noRefRows: Array<{ opp: Opportunity; index: number }> = [];
+const pickPrimaryOpportunity = (items: Opportunity[], projectStatus: ProjectStatus) => {
+  if (!items.length) return null;
+  const byProjectStatus = items.find((opp) => normalizeCanonicalStatus(getDisplayStatus(opp)) === projectStatus);
+  if (byProjectStatus) return byProjectStatus;
+  const rank = (opp: Opportunity) => {
+    const status = normalizeCanonicalStatus(getDisplayStatus(opp));
+    if (status === 'AWARDED') return 6;
+    if (status === 'LOST') return 5;
+    if (status === 'SUBMITTED') return 4;
+    if (status === 'REGRETTED') return 3;
+    if (isHoldStatus(status)) return 2;
+    return 1;
+  };
+  return [...items].sort((a, b) => rank(b) - rank(a))[0];
+};
 
-  rows.forEach((opp, index) => {
-    const ref = normalizeRefNo(opp.opportunityRefNo);
-    if (!ref) {
-      noRefRows.push({ opp, index });
-      return;
+const buildProjectGroups = (rows: Opportunity[]) => {
+  const enriched = rows.map((opp, index) => ({
+    opp,
+    index,
+    baseRef: getBaseRefNo(opp.opportunityRefNo),
+    cleanTenderName: normalizeTenderName(opp.tenderName),
+  }));
+  const baseRefsByName = new Map<string, Set<string>>();
+  enriched.forEach((entry) => {
+    if (!entry.cleanTenderName || !entry.baseRef) return;
+    if (!baseRefsByName.has(entry.cleanTenderName)) {
+      baseRefsByName.set(entry.cleanTenderName, new Set<string>());
     }
-    const existing = chosenByRef.get(ref);
-    if (!existing) {
-      chosenByRef.set(ref, { opp, index });
-      return;
-    }
-    const existingStatus = normalizeCanonicalStatus(getDisplayStatus(existing.opp));
-    const candidateStatus = normalizeCanonicalStatus(getDisplayStatus(opp));
-    if (existingStatus !== 'AWARDED' && candidateStatus === 'AWARDED') {
-      duplicateOmissions.push({
-        omitted: existing.opp,
-        kept: opp,
-        reason: 'duplicate_ref',
-      });
-      chosenByRef.set(ref, { opp, index });
-      return;
-    }
-    duplicateOmissions.push({
-      omitted: opp,
-      kept: existing.opp,
-      reason: 'duplicate_ref',
-    });
+    baseRefsByName.get(entry.cleanTenderName)?.add(entry.baseRef);
   });
 
-  const byName = new Map<string, { opp: Opportunity; index: number }>();
-  Array.from(chosenByRef.values())
-    .concat(noRefRows)
-    .forEach((entry) => {
-      const nameKey = normalizeText(entry.opp.tenderName).toLowerCase();
-      if (!nameKey) {
-        byName.set(`__unnamed__${entry.index}`, entry);
-        return;
-      }
-      const existing = byName.get(nameKey);
-      if (!existing) {
-        byName.set(nameKey, entry);
-        return;
-      }
-      const existingStatus = normalizeCanonicalStatus(getDisplayStatus(existing.opp));
-      const candidateStatus = normalizeCanonicalStatus(getDisplayStatus(entry.opp));
-      if (existingStatus !== 'AWARDED' && candidateStatus === 'AWARDED') {
+  const groups = new Map<string, Array<{ opp: Opportunity; index: number }>>();
+  enriched.forEach((entry) => {
+    const refCountForName = entry.cleanTenderName ? (baseRefsByName.get(entry.cleanTenderName)?.size || 0) : 0;
+    const key = entry.baseRef
+      ? (entry.cleanTenderName && refCountForName > 1
+        ? `name::${entry.cleanTenderName}`
+        : `ref::${entry.baseRef}`)
+      : (entry.cleanTenderName
+        ? `name::${entry.cleanTenderName}`
+        : `fallback::${entry.opp.id || entry.index}`);
+    const bucket = groups.get(key) || [];
+    bucket.push({ opp: entry.opp, index: entry.index });
+    groups.set(key, bucket);
+  });
+
+  const duplicateOmissions: DuplicateOmission[] = [];
+  const projectGroups = Array.from(groups.entries()).map(([key, entries]) => {
+    const sorted = [...entries].sort((a, b) => a.index - b.index);
+    const items = sorted.map((entry) => entry.opp);
+    const status = resolveProjectStatus(items);
+    const primary = pickPrimaryOpportunity(items, status);
+
+    if (primary) {
+      items.forEach((opp) => {
+        if (opp === primary) return;
         duplicateOmissions.push({
-          omitted: existing.opp,
-          kept: entry.opp,
-          reason: 'duplicate_tender_name',
+          omitted: opp,
+          kept: primary,
+          reason: 'duplicate_project_grouping',
         });
-        byName.set(nameKey, entry);
-        return;
-      }
-      duplicateOmissions.push({
-        omitted: entry.opp,
-        kept: existing.opp,
-        reason: 'duplicate_tender_name',
       });
-    });
+    }
 
-  const deduped = Array.from(byName.values())
-    .sort((a, b) => a.index - b.index)
-    .map((entry) => entry.opp);
+    const tenderItems = items.filter((opp) => getJourneyType(opp) === 'tender');
+    const awardedRows = tenderItems.filter((opp) => normalizeCanonicalStatus(getDisplayStatus(opp)) === 'AWARDED');
+    const awardedValue = awardedRows.length
+      ? Math.max(...awardedRows.map((opp) => Number(opp.opportunityValue || 0)))
+      : 0;
 
-  const totalTenders = deduped.filter((opp) => getJourneyType(opp) === 'tender').length;
-  const totalEoi = deduped.filter((opp) => getJourneyType(opp) === 'eoi').length;
+    return {
+      key,
+      items,
+      primary,
+      status,
+      hasTender: items.some((opp) => getJourneyType(opp) === 'tender'),
+      hasEoi: items.some((opp) => getJourneyType(opp) === 'eoi'),
+      hasSubmissionNear: tenderItems.some((opp) => isSubmissionWithinDays(opp, 10)),
+      hasSubmittedSignal: tenderItems.some((opp) => {
+        const rowStatus = normalizeCanonicalStatus(getDisplayStatus(opp));
+        return rowStatus === 'SUBMITTED' || rowStatus === 'AWARDED' || rowStatus === 'LOST';
+      }),
+      awardedValue,
+    } as ProjectGroup;
+  });
 
-  return { deduped, totalTenders, totalEoi, duplicateOmissions };
+  const totalTenders = projectGroups.filter((group) => group.hasTender).length;
+  const totalEoi = projectGroups.filter((group) => group.hasEoi).length;
+
+  return {
+    groups: projectGroups,
+    totalTenders,
+    totalEoi,
+    duplicateOmissions,
+  };
 };
 
 const withKpiOverrides = (kpiType: DashboardKpiType, baseFilters: FilterState): FilterState => {
@@ -194,7 +231,7 @@ const withKpiOverrides = (kpiType: DashboardKpiType, baseFilters: FilterState): 
     case 'received':
       return { ...baseFilters, statuses: [], showAtRisk: false, excludeLostOutcomes: false };
     case 'submitted':
-      return { ...baseFilters, statuses: ['SUBMITTED'], showAtRisk: false, excludeLostOutcomes: false };
+      return { ...baseFilters, statuses: ['SUBMITTED', 'AWARDED', 'LOST'], showAtRisk: false, excludeLostOutcomes: false };
     case 'won':
     case 'value':
       return { ...baseFilters, statuses: ['AWARDED'], showAtRisk: false, excludeLostOutcomes: false };
@@ -206,6 +243,8 @@ const withKpiOverrides = (kpiType: DashboardKpiType, baseFilters: FilterState): 
       return { ...baseFilters, statuses: ['HOLD / CLOSED'], showAtRisk: false, excludeLostOutcomes: false };
     case 'submission':
       return { ...baseFilters, statuses: [], showAtRisk: true, excludeLostOutcomes: false };
+    case 'winRatio':
+      return { ...baseFilters, statuses: ['AWARDED', 'LOST'], showAtRisk: false, excludeLostOutcomes: false };
     default:
       return baseFilters;
   }
@@ -220,28 +259,38 @@ const getKpiScopeFilters = (kpiType: DashboardKpiType, baseFilters: FilterState)
   };
 };
 
-const includesForKpi = (kpiType: DashboardKpiType, opp: Opportunity) => {
-  const journeyType = getJourneyType(opp);
-  const status = normalizeCanonicalStatus(getDisplayStatus(opp));
-  if (kpiType === 'received') return { included: true, reason: 'included in received deduped scope' };
+const includesForKpi = (kpiType: DashboardKpiType, group: ProjectGroup) => {
+  if (kpiType === 'received') {
+    return { included: true, reason: 'included: unique project in received scope' };
+  }
+  if (kpiType === 'submitted') {
+    return group.hasSubmittedSignal
+      ? { included: true, reason: 'included: project has submitted/awarded/lost tender signal' }
+      : { included: false, reason: 'excluded: no submitted/awarded/lost tender signal in project' };
+  }
   if (kpiType === 'submission') {
-    if (journeyType !== 'tender') return { included: false, reason: 'excluded: EOI rows are not counted in status KPIs' };
-    if (!isSubmissionWithinDays(opp, 10)) return { included: false, reason: 'excluded: submission date is not within 10 days' };
-    return { included: true, reason: 'included: tender submission is within 10 days' };
+    return group.hasSubmissionNear
+      ? { included: true, reason: 'included: project has tender submission within 10 days' }
+      : { included: false, reason: 'excluded: no tender submission within 10 days for project' };
+  }
+  if (kpiType === 'winRatio') {
+    const isResolved = group.status === 'AWARDED' || group.status === 'LOST';
+    return isResolved
+      ? { included: true, reason: 'included: project has resolved result (awarded/lost)' }
+      : { included: false, reason: 'excluded: project not resolved to awarded/lost' };
   }
 
-  if (journeyType !== 'tender') return { included: false, reason: 'excluded: EOI rows are not counted in status KPIs' };
-
-  const statusByKpi: Record<Exclude<DashboardKpiType, 'received' | 'submission' | 'value'>, string> = {
-    submitted: 'SUBMITTED',
+  const statusByKpi: Record<Exclude<DashboardKpiType, 'received' | 'submission' | 'submitted' | 'value' | 'winRatio'>, ProjectStatus> = {
     regretted: 'REGRETTED',
     hold: 'HOLD / CLOSED',
     won: 'AWARDED',
     lost: 'LOST',
   };
-  const targetStatus = kpiType === 'value' ? 'AWARDED' : statusByKpi[kpiType as Exclude<DashboardKpiType, 'received' | 'submission' | 'value'>];
-  if (status !== targetStatus) return { included: false, reason: `excluded: status is ${status || 'UNKNOWN'}, expected ${targetStatus}` };
-  return { included: true, reason: `included: status matched ${targetStatus}` };
+  const targetStatus = kpiType === 'value' ? 'AWARDED' : statusByKpi[kpiType as Exclude<DashboardKpiType, 'received' | 'submission' | 'submitted' | 'value' | 'winRatio'>];
+  if (group.status !== targetStatus) {
+    return { included: false, reason: `excluded: project status is ${group.status}, expected ${targetStatus}` };
+  }
+  return { included: true, reason: `included: project status matched ${targetStatus}` };
 };
 
 const toDiagnosticEntry = (opp: Opportunity, reason: string, replacement?: Opportunity): KpiDiagnosticEntry => ({
@@ -260,21 +309,6 @@ const toDiagnosticEntry = (opp: Opportunity, reason: string, replacement?: Oppor
   } : undefined,
 });
 
-const pickPrimaryOpportunity = (items: Opportunity[]) => {
-  if (!items.length) return null;
-  const rank = (opp: Opportunity) => {
-    const status = normalizeCanonicalStatus(getDisplayStatus(opp));
-    if (status === 'AWARDED') return 6;
-    if (status === 'LOST' || status === 'REGRETTED') return 5;
-    if (status === 'SUBMITTED') return 4;
-    if (status === 'ONGOING') return 3;
-    if (status === 'WORKING') return 2;
-    if (status === 'TO START') return 1;
-    return 0;
-  };
-  return [...items].sort((a, b) => rank(b) - rank(a))[0];
-};
-
 const formatCompactNumber = (value: number) => new Intl.NumberFormat('en-US', {
   notation: 'compact',
   maximumFractionDigits: value >= 1000 ? 1 : 0,
@@ -291,115 +325,66 @@ const Dashboard = () => {
   const clientData = useMemo(() => getClientData(filteredData), [filteredData]);
   const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
 
-  const dedupedKpiData = useMemo(() => dedupeReceivedOpportunities(filteredData), [filteredData]);
-
-  const groupedOpportunities = useMemo(() => {
-    const groups = new Map<string, Opportunity[]>();
-    dedupedKpiData.deduped.forEach((opp, index) => {
-      const key = getBusinessKey(opp, index);
-      const bucket = groups.get(key) || [];
-      bucket.push(opp);
-      groups.set(key, bucket);
-    });
-
-    return Array.from(groups.entries()).map(([key, items]) => ({
-      key,
-      primary: pickPrimaryOpportunity(items),
-      items,
-    })) as OpportunityGroup[];
-  }, [dedupedKpiData]);
+  const groupedOpportunities = useMemo(() => buildProjectGroups(filteredData), [filteredData]);
 
   const groupedBuckets = useMemo(() => {
-    const openOtherGroups: OpportunityGroup[] = [];
-    const submittedGroups: OpportunityGroup[] = [];
-    const regrettedGroups: OpportunityGroup[] = [];
-    const wonGroups: OpportunityGroup[] = [];
-    const holdGroups: OpportunityGroup[] = [];
-    const lostGroups: OpportunityGroup[] = [];
-    const receivedGroups: OpportunityGroup[] = [...groupedOpportunities];
-    const tenderOnlyGroups: OpportunityGroup[] = groupedOpportunities.filter((group) => getJourneyType(group.primary) === 'tender');
-    const submissionNearGroups: OpportunityGroup[] = [];
+    const receivedGroups: ProjectGroup[] = [...groupedOpportunities.groups];
+    const submittedGroups: ProjectGroup[] = receivedGroups.filter((group) => group.hasSubmittedSignal);
+    const regrettedGroups: ProjectGroup[] = receivedGroups.filter((group) => group.status === 'REGRETTED');
+    const wonGroups: ProjectGroup[] = receivedGroups.filter((group) => group.status === 'AWARDED');
+    const holdGroups: ProjectGroup[] = receivedGroups.filter((group) => group.status === 'HOLD / CLOSED');
+    const lostGroups: ProjectGroup[] = receivedGroups.filter((group) => group.status === 'LOST');
+    const submissionNearGroups: ProjectGroup[] = receivedGroups.filter((group) => group.hasSubmissionNear);
+    const resolvedGroups: ProjectGroup[] = receivedGroups.filter((group) => group.status === 'AWARDED' || group.status === 'LOST');
 
-    tenderOnlyGroups.forEach((group) => {
-      const primary = group.primary;
-      if (!primary) return;
-
-      if (group.items.some((item) => isSubmissionWithinDays(item, 10))) {
-        submissionNearGroups.push(group);
-      }
-
-      const status = normalizeCanonicalStatus(getDisplayStatus(primary));
-
-      if (status === 'AWARDED') {
-        wonGroups.push(group);
-        return;
-      }
-      if (status === 'REGRETTED') {
-        regrettedGroups.push(group);
-        return;
-      }
-      if (isHoldStatus(status)) {
-        holdGroups.push(group);
-        return;
-      }
-      if (status === 'LOST') {
-        lostGroups.push(group);
-        return;
-      }
-      if (status === 'SUBMITTED') {
-        submittedGroups.push(group);
-        return;
-      }
-
-      openOtherGroups.push(group);
-    });
-
-    const groupRows = (groups: OpportunityGroup[]) => groups
+    const groupRows = (groups: ProjectGroup[]) => groups
       .map((group) => group.primary)
       .filter(Boolean) as Opportunity[];
 
-    const countJourneyTypes = (groups: OpportunityGroup[]) => {
-      const counts = { tender: 0, eoi: 0 };
-      groups.forEach((group) => {
-        const type = getJourneyType(group.primary);
-        counts[type] += 1;
-      });
-      return counts;
-    };
+    const sumAwardedValue = (groups: ProjectGroup[]) => groups.reduce((sum, group) => {
+      return sum + Number(group.awardedValue || 0);
+    }, 0);
 
-    const sumValue = (groups: OpportunityGroup[]) => groups.reduce((sum, group) => {
+    const submittedOnlyValue = submittedGroups.reduce((sum, group) => {
       const primary = group.primary;
       return sum + Number(primary?.opportunityValue || 0);
     }, 0);
-
-    const submittedOnlyValue = sumValue(submittedGroups);
+    const winRatio = resolvedGroups.length ? (wonGroups.length / resolvedGroups.length) : 0;
 
     return {
       received: {
         groups: receivedGroups,
         rows: groupRows(receivedGroups),
-        ...countJourneyTypes(receivedGroups),
+        tender: groupedOpportunities.totalTenders,
+        eoi: groupedOpportunities.totalEoi,
       },
       submitted: {
         groups: submittedGroups,
         rows: groupRows(submittedGroups),
-        ...countJourneyTypes(submittedGroups),
         submittedOnlyValue,
       },
       regretted: { groups: regrettedGroups, rows: groupRows(regrettedGroups) },
       hold: { groups: holdGroups, rows: groupRows(holdGroups) },
-      won: { groups: wonGroups, rows: groupRows(wonGroups), value: sumValue(wonGroups) },
+      won: { groups: wonGroups, rows: groupRows(wonGroups), value: sumAwardedValue(wonGroups) },
       lost: { groups: lostGroups, rows: groupRows(lostGroups) },
       submission: { groups: submissionNearGroups, rows: groupRows(submissionNearGroups) },
+      winRatio: {
+        resolvedCount: resolvedGroups.length,
+        wonCount: wonGroups.length,
+        ratio: winRatio,
+      },
     };
   }, [groupedOpportunities]);
 
-  const receivedDedupe = dedupedKpiData;
+  const receivedDedupe = {
+    totalTenders: groupedBuckets.received.tender,
+    totalEoi: groupedBuckets.received.eoi,
+  };
 
   const eoiLifecycle = useMemo(() => {
     const normalized = filteredData.map((opp, index) => ({
       opp,
-      key: getBusinessKey(opp, index),
+      key: getBaseRefNo(opp.opportunityRefNo) || normalizeTenderName(opp.tenderName) || `fallback-${index}`,
       baseRef: normalizeText(getBaseRefNo(opp.opportunityRefNo)).toLowerCase(),
       tenderName: normalizeText(opp.tenderName).toLowerCase(),
       isEoi: isEoiRow(opp),
@@ -435,23 +420,25 @@ const Dashboard = () => {
   const openKpiDiagnosticsWindow = (kpiType: DashboardKpiType, nextFilters: FilterState) => {
     const scopeFilters = getKpiScopeFilters(kpiType, nextFilters);
     const preKpiScopedRows = applyFilters(opportunities, scopeFilters);
-    const dedupeTrace = dedupeReceivedOpportunities(preKpiScopedRows);
+    const grouped = buildProjectGroups(preKpiScopedRows);
 
     const includedRows: KpiDiagnosticEntry[] = [];
     const omittedRows: KpiDiagnosticEntry[] = [];
 
-    dedupeTrace.deduped.forEach((opp) => {
-      const verdict = includesForKpi(kpiType, opp);
-      if (verdict.included) includedRows.push(toDiagnosticEntry(opp, verdict.reason));
-      else omittedRows.push(toDiagnosticEntry(opp, verdict.reason));
+    grouped.groups.forEach((group) => {
+      const row = group.primary || group.items[0];
+      if (!row) return;
+      const verdict = includesForKpi(kpiType, group);
+      if (verdict.included) includedRows.push(toDiagnosticEntry(row, verdict.reason));
+      else omittedRows.push(toDiagnosticEntry(row, verdict.reason));
     });
 
-    dedupeTrace.duplicateOmissions.forEach(({ omitted, kept, reason }) => {
+    grouped.duplicateOmissions.forEach(({ omitted, kept, reason }) => {
       omittedRows.push(toDiagnosticEntry(
         omitted,
-        reason === 'duplicate_ref'
-          ? 'excluded: duplicate Avenir Ref (kept AWARDED row if available, otherwise first)'
-          : 'excluded: duplicate tender name (kept AWARDED row if available, otherwise first)',
+        reason === 'duplicate_project_grouping'
+          ? 'excluded: merged into canonical project key (base ref/tender-name grouping)'
+          : 'excluded: merged into canonical project key',
         kept,
       ));
     });
@@ -534,7 +521,7 @@ const Dashboard = () => {
 
   const kpiCards = [
     {
-      label: 'Submitted',
+      label: 'Total Submitted',
       value: groupedBuckets.submitted.groups.length,
       secondaryDisplayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.submitted.submittedOnlyValue || 0))}`,
       secondaryValuePrefix: currency === 'AED' ? 'aed' : 'text',
@@ -594,6 +581,15 @@ const Dashboard = () => {
       glow: 'analytics-kpi-glow-amber',
       icon: TimerReset,
       type: 'submission' as const,
+    },
+    {
+      label: 'Win Ratio',
+      value: `${Math.round(groupedBuckets.winRatio.ratio * 100)}%`,
+      chip: `Won ${groupedBuckets.winRatio.wonCount} / Resolved ${groupedBuckets.winRatio.resolvedCount}`,
+      tone: 'text-emerald-700',
+      glow: 'analytics-kpi-glow-emerald',
+      icon: Target,
+      type: 'winRatio' as const,
     },
   ];
 
