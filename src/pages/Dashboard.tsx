@@ -430,42 +430,6 @@ const Dashboard = () => {
     return trace;
   }, [groupedOpportunities]);
 
-  const eoiLifecycle = useMemo(() => {
-    const normalized = filteredData.map((opp, index) => ({
-      opp,
-      key: getBaseRefNo(opp.opportunityRefNo) || normalizeTenderName(opp.tenderName) || `fallback-${index}`,
-      baseRef: normalizeText(getBaseRefNo(opp.opportunityRefNo)).toLowerCase(),
-      tenderName: normalizeText(opp.tenderName).toLowerCase(),
-      isEoi: isEoiRow(opp),
-    }));
-
-    const rawEoiRows = normalized.filter((row) => row.isEoi).length;
-    const convertedTenderRows = normalized.filter((row) => {
-      if (row.isEoi) return false;
-      return normalized.some((candidate) => (
-        candidate.isEoi
-        && candidate.key === row.key
-        && candidate.baseRef === row.baseRef
-        && candidate.tenderName === row.tenderName
-      ));
-    }).length;
-    const suppressedRows = normalized.filter((row) => {
-      if (!row.isEoi) return false;
-      return normalized.some((candidate) => (
-        !candidate.isEoi
-        && candidate.key === row.key
-        && candidate.baseRef === row.baseRef
-        && candidate.tenderName === row.tenderName
-      ));
-    }).length;
-
-    return {
-      rawEoiRows,
-      convertedTenderRows,
-      suppressedRows,
-    };
-  }, [filteredData]);
-
   const openKpiDiagnosticsWindow = (kpiType: DashboardKpiType, nextFilters: FilterState) => {
     const scopeFilters = getKpiScopeFilters(kpiType, nextFilters);
     const preKpiScopedRows = applyFilters(opportunities, scopeFilters);
@@ -570,21 +534,6 @@ const Dashboard = () => {
 
   const kpiCards = [
     {
-      label: 'Total Submitted',
-      value: groupedBuckets.submitted.groups.length,
-      secondaryDisplayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.submitted.submittedOnlyValue || 0))}`,
-      secondaryValuePrefix: currency === 'AED' ? 'aed' : 'text',
-      meta: [
-        { label: 'Tender', value: groupedBuckets.submitted.tender, tone: 'bg-sky-500' },
-        { label: 'EOI', value: groupedBuckets.submitted.eoi, tone: 'bg-amber-500' },
-      ],
-      emphasizeValue: true,
-      tone: 'text-sky-600',
-      glow: 'analytics-kpi-glow-sky',
-      icon: Send,
-      type: 'submitted' as const,
-    },
-    {
       label: 'Regretted',
       value: groupedBuckets.regretted.groups.length,
       tone: 'text-slate-700',
@@ -663,6 +612,23 @@ const Dashboard = () => {
     },
   ];
 
+  const submittedCards = [
+    {
+      label: 'Total Tender',
+      value: groupedBuckets.submitted.tender,
+      tone: 'text-sky-600',
+      glow: 'analytics-kpi-glow-sky',
+      icon: Send,
+    },
+    {
+      label: 'Total EOI',
+      value: groupedBuckets.submitted.eoi,
+      tone: 'text-amber-600',
+      glow: 'analytics-kpi-glow-amber',
+      icon: Send,
+    },
+  ];
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Sync Status Bar */}
@@ -735,6 +701,40 @@ const Dashboard = () => {
           </div>
         </div>
 
+        <div className="rounded-2xl border-2 border-emerald-300/80 bg-emerald-50/30 p-3 shadow-[0_0_24px_rgba(16,185,129,0.18)]">
+          <div className="flex items-center justify-between px-2 pb-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Total Submitted</p>
+            <p className="text-sm font-bold text-emerald-800">{groupedBuckets.submitted.groups.length}</p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {submittedCards.map((card, index) => (
+              <button
+                key={card.label}
+                type="button"
+                className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5`}
+                style={{ animationDelay: `${index * 0.07}s` }}
+                onClick={() => handleKPIClick('submitted')}
+              >
+                <div className="relative z-10 flex items-start justify-between p-5">
+                  <div className="space-y-1.5">
+                    <p className="dash-label">{card.label}</p>
+                    <div className="mt-2 analytics-kpi-number flex items-center gap-2 text-slate-950">
+                      <span>{card.value}</span>
+                    </div>
+                  </div>
+                  <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
+                    <card.icon className="h-5 w-5" />
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 px-2 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+            {currency === 'AED' ? <img src={aedSymbol} alt="AED" className="h-3.5 w-3.5 opacity-80" /> : null}
+            <span>{`${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.submitted.submittedOnlyValue || 0))}`}</span>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpiCards.map((card, index) => (
           <button
@@ -775,24 +775,6 @@ const Dashboard = () => {
             </div>
           </button>
         ))}
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="analytics-card p-5">
-          <p className="dash-label">EOI Lifecycle</p>
-          <p className="mt-2 text-3xl font-black text-slate-900">{eoiLifecycle.rawEoiRows}</p>
-          <p className="mt-1 text-xs text-slate-500">Raw EOI rows in current filtered scope</p>
-        </div>
-        <div className="analytics-card p-5">
-          <p className="dash-label">Converted Tender Rows</p>
-          <p className="mt-2 text-3xl font-black text-sky-700">{eoiLifecycle.convertedTenderRows}</p>
-          <p className="mt-1 text-xs text-slate-500">Tender rows matched to an EOI lifecycle</p>
-        </div>
-        <div className="analytics-card p-5">
-          <p className="dash-label">Duplicate-Suppressed EOIs</p>
-          <p className="mt-2 text-3xl font-black text-amber-700">{eoiLifecycle.suppressedRows}</p>
-          <p className="mt-1 text-xs text-slate-500">EOI rows eligible to hide when converted tender exists</p>
         </div>
       </section>
 
