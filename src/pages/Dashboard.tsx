@@ -504,7 +504,9 @@ const Dashboard = () => {
       return;
     }
 
-    handleKPIClick('won');
+    // Won single-click should filter without opening the diagnostics new tab.
+    const nextFilters = withKpiOverrides('won', filters);
+    setFilters(nextFilters);
   };
 
   const openKpiDiagnosticsWindow = (kpiType: DashboardKpiType, nextFilters: FilterState) => {
