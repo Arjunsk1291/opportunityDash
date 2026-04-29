@@ -278,6 +278,56 @@ export function OpportunitiesTable({
     </div>
   );
 
+  const renderSheetCellValue = (tender: Opportunity, headerLabel: string) => {
+    const header = normalizeHeader(headerLabel);
+    const rawValue = getDisplayColumnValue(tender, headerLabel);
+
+    if (header === normalizeHeader('AVENIR STATUS')) {
+      const mergedStatus = getMergedStatus(tender) || rawValue;
+      return (
+        <Badge className={`max-w-[10rem] truncate ${getStatusBadgeClass(mergedStatus, tender)}`}>
+          {mergedStatus || '—'}
+        </Badge>
+      );
+    }
+
+    if (header === normalizeHeader('GDS/GES')) {
+      const group = tender.groupClassification || rawValue;
+      return (
+        <Badge className={`max-w-[6rem] truncate text-xs font-mono ${getGroupBadge(group)}`}>
+          {group || '—'}
+        </Badge>
+      );
+    }
+
+    if (header === normalizeHeader('TENDER TYPE')) {
+      const type = tender.opportunityClassification || rawValue;
+      return (
+        <Badge className={`max-w-[8rem] truncate text-xs ${getTenderTypeBadge(type)}`}>
+          {type || '—'}
+        </Badge>
+      );
+    }
+
+    if (header === normalizeHeader('TENDER NO') || header === normalizeHeader('ADNOC RFT NO')) {
+      return <span className="font-mono text-[10px] sm:text-[11px]">{rawValue || '—'}</span>;
+    }
+
+    if (
+      header === normalizeHeader('TENDER VALUE')
+      || header === normalizeHeader('SUB-CONTRACT VALUE')
+      || header === normalizeHeader('FINAL AWARDED PRICE')
+    ) {
+      const numeric = Number(String(rawValue || '').replace(/,/g, '').trim());
+      if (Number.isFinite(numeric) && numeric !== 0) {
+        return <span className="font-mono">{formatCurrency(numeric)}</span>;
+      }
+      return <span className="font-mono">{rawValue || '—'}</span>;
+    }
+
+    return rawValue || '—';
+  };
+
   useEffect(() => {
     if (!token) return;
 
@@ -787,7 +837,7 @@ export function OpportunitiesTable({
                     {isSheetPreset ? (
                       ALL_COLUMN_HEADERS.map((header) => (
                         <TableCell key={header} className={`${cellPaddingClass} max-w-[220px] truncate`}>
-                          {getDisplayColumnValue(tender, header) || '—'}
+                          {renderSheetCellValue(tender, header)}
                         </TableCell>
                       ))
                     ) : (
