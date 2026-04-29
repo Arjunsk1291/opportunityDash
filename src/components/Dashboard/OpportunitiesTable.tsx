@@ -282,35 +282,71 @@ export function OpportunitiesTable({
     const header = normalizeHeader(headerLabel);
     const rawValue = getDisplayColumnValue(tender, headerLabel);
 
+    const getEditKeyForHeader = () => {
+      switch (header) {
+        case 'TENDER NO':
+        case 'REF NO':
+          return 'opportunityRefNo';
+        case 'TENDER NAME':
+          return 'tenderName';
+        case 'CLIENT':
+          return 'clientName';
+        case 'ADNOC RFT NO':
+          return 'adnocRftNo';
+        case 'GDS/GES':
+          return 'groupClassification';
+        case 'ASSIGNED PERSON':
+        case 'LEAD':
+          return 'internalLead';
+        case 'TENDER TYPE':
+          return 'opportunityClassification';
+        case 'DATE TENDER RECD':
+          return 'dateTenderReceived';
+        case 'TENDER DUE DATE':
+          return 'tenderPlannedSubmissionDate';
+        case 'AVENIR STATUS':
+          return 'avenirStatus';
+        case 'TENDER VALUE':
+          return 'opportunityValue';
+        default:
+          return null;
+      }
+    };
+
+    const editKey = getEditKeyForHeader();
+    const wrapIfEditable = (content: React.ReactNode) => (
+      editKey ? <EditableCell opp={tender} fieldKey={editKey}>{content}</EditableCell> : content
+    );
+
     if (header === normalizeHeader('AVENIR STATUS')) {
       const mergedStatus = getMergedStatus(tender) || rawValue;
-      return (
+      return wrapIfEditable((
         <Badge className={`max-w-[10rem] truncate ${getStatusBadgeClass(mergedStatus, tender)}`}>
           {mergedStatus || '—'}
         </Badge>
-      );
+      ));
     }
 
     if (header === normalizeHeader('GDS/GES')) {
       const group = tender.groupClassification || rawValue;
-      return (
+      return wrapIfEditable((
         <Badge className={`max-w-[6rem] truncate text-xs font-mono ${getGroupBadge(group)}`}>
           {group || '—'}
         </Badge>
-      );
+      ));
     }
 
     if (header === normalizeHeader('TENDER TYPE')) {
       const type = tender.opportunityClassification || rawValue;
-      return (
+      return wrapIfEditable((
         <Badge className={`max-w-[8rem] truncate text-xs ${getTenderTypeBadge(type)}`}>
           {type || '—'}
         </Badge>
-      );
+      ));
     }
 
     if (header === normalizeHeader('TENDER NO') || header === normalizeHeader('ADNOC RFT NO')) {
-      return <span className="font-mono text-[10px] sm:text-[11px]">{rawValue || '—'}</span>;
+      return wrapIfEditable(<span className="font-mono text-[10px] sm:text-[11px]">{rawValue || '—'}</span>);
     }
 
     if (
@@ -320,12 +356,12 @@ export function OpportunitiesTable({
     ) {
       const numeric = Number(String(rawValue || '').replace(/,/g, '').trim());
       if (Number.isFinite(numeric) && numeric !== 0) {
-        return <span className="font-mono">{formatCurrency(numeric)}</span>;
+        return wrapIfEditable(<span className="font-mono">{formatCurrency(numeric)}</span>);
       }
-      return <span className="font-mono">{rawValue || '—'}</span>;
+      return wrapIfEditable(<span className="font-mono">{rawValue || '—'}</span>);
     }
 
-    return rawValue || '—';
+    return wrapIfEditable(rawValue || '—');
   };
 
   useEffect(() => {
