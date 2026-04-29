@@ -66,6 +66,9 @@ const REQUEST_BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || '10mb';
 const SESSION_TOKEN_TTL = process.env.SESSION_TOKEN_TTL || '12h';
 const SESSION_JWT_SECRET = process.env.SESSION_JWT_SECRET || process.env.JWT_SECRET || `${randomUUID()}-${randomUUID()}`;
 const ALLOW_LEGACY_EMAIL_BEARER = String(process.env.ALLOW_LEGACY_EMAIL_BEARER || '').toLowerCase() === 'true';
+const SIMPLE_ROLE_AUTH_ENABLED = String(process.env.SIMPLE_ROLE_AUTH_ENABLED || 'true').toLowerCase() === 'true';
+const SIMPLE_ROLE_EMAIL_DOMAIN = String(process.env.SIMPLE_ROLE_EMAIL_DOMAIN || 'local.test').trim().toLowerCase();
+const SIMPLE_ROLE_ALLOWED = new Set(['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser']);
 console.log('Debug flags:', { MAIL_DEBUG: String(process.env.MAIL_DEBUG || '').toLowerCase() === 'true', NOTIFICATION_DEBUG: String(process.env.NOTIFICATION_DEBUG || '').toLowerCase() === 'true', GRAPH_TOKEN_DEBUG: String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true' });
 if (!process.env.SESSION_JWT_SECRET && !process.env.JWT_SECRET) {
   console.warn('⚠️ SESSION_JWT_SECRET is not set. Using an ephemeral in-memory secret for this process only.');
@@ -3058,6 +3061,79 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
       stack: error?.stack || null,
     }));
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/auth/simple-role-login', authRateLimiter, async (req, res) => {
+  try {
+    if (!SIMPLE_ROLE_AUTH_ENABLED) {
+      return res.status(403).json({ error: 'Simple role auth is disabled' });
+    }
+
+    if (!isDatabaseReady()) {
+      return respondDatabaseUnavailable(res);
+    }
+
+    const role = String(req.body?.role || '').trim();
+    if (!SIMPLE_ROLE_ALLOWED.has(role)) {
+      return res.status(400).json({ error: 'Invalid role for simple login' });
+    }
+
+    const rawEmail = String(req.body?.email || '').trim().toLowerCase();
+    const email = rawEmail || `${role.toLowerCase()}@${SIMPLE_ROLE_EMAIL_DOMAIN}`;
+    const displayName = `${role} (Simple Login)`;
+    const userPayload = {
+      email,
+      displayName,
+      role,
+      status: 'approved',
+      assignedGroup: role === 'SVP' ? 'DEFAULT' : null,
+      approvedBy: 'simple-role-login',
+      approvedAt: new Date(),
+    };
+
+    if (DISABLE_MONGODB) {
+      const localUser = upsertLocalAuthorizedUser(email, userPayload);
+      return res.json({
+        success: true,
+        user: {
+          email: localUser.email,
+          displayName: localUser.displayName || localUser.email,
+          role: localUser.role,
+          status: localUser.status,
+          assignedGroup: localUser.assignedGroup,
+        },
+        sessionToken: createSessionToken(localUser),
+        message: 'Simple role login successful',
+      });
+    }
+
+    const user = await AuthorizedUser.findOneAndUpdate(
+      { email },
+      {
+        $setOnInsert: {
+          email,
+          createdAt: new Date(),
+        },
+        $set: userPayload,
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    return res.json({
+      success: true,
+      user: {
+        email: user.email,
+        displayName: user.displayName || user.email,
+        role: user.role,
+        status: user.status,
+        assignedGroup: user.assignedGroup,
+      },
+      sessionToken: createSessionToken(user),
+      message: 'Simple role login successful',
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 

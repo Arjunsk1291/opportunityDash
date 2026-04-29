@@ -31,6 +31,7 @@ interface AuthContextType {
   updateUserRole: (userId: string, newRole: UserRole, assignedGroup?: string) => Promise<void>;
   refreshCurrentUser: () => Promise<void>;
   loginWithPassword: (email: string, password: string) => Promise<void>;
+  loginAsRole: (role: UserRole, emailOverride?: string) => Promise<void>;
   pagePermissions: Record<PageKey, UserRole[]>;
   pageExcludePermissions: Record<PageKey, UserRole[]>;
   pageEmailPermissions: Record<PageKey, string[]>;
@@ -131,6 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsPending(false);
     setAuthError(null);
     setIsLoading(false);
+    window.sessionStorage.removeItem('simpleAuthToken');
   }, []);
 
   const logout = useCallback(() => {
@@ -157,23 +159,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user?.email]);
 
-  const loginWithUsername = useCallback(async (username: string) => {
-    const normalizedUsername = username.trim().toLowerCase();
-    const response = await fetch(API_URL + '/auth/verify-token', {
+  const loginAsRole = useCallback(async (role: UserRole, emailOverride?: string) => {
+    const response = await fetch(API_URL + '/auth/simple-role-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: normalizedUsername }),
+      body: JSON.stringify({
+        role,
+        email: String(emailOverride || '').trim().toLowerCase() || undefined,
+      }),
     });
-
     const data = await response.json();
     if (!response.ok) {
-      console.error('Manual login verify-token failed', {
-        endpoint: API_URL + '/auth/verify-token',
-        status: response.status,
-        statusText: response.statusText,
-        username: normalizedUsername,
-      });
-      throw new Error(data.error || 'Login failed');
+      throw new Error(data?.error || 'Role login failed');
     }
 
     const nextUser: User = {
@@ -185,23 +182,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     setUser(nextUser);
-    const nextToken = data.sessionToken || normalizedUsername;
-    setToken(nextToken);
-    setAuthError(null);
-
-    if (nextUser.status === 'pending') {
-      setIsPending(true);
-      return;
+    setToken(data.sessionToken || null);
+    if (data.sessionToken) {
+      window.sessionStorage.setItem('simpleAuthToken', data.sessionToken);
     }
-
-    setIsPending(false);
-    await fetch(API_URL + '/auth/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + nextToken,
-      },
-    });
+    setAuthError(null);
+    setIsPending(nextUser.status === 'pending');
   }, []);
 
   const loginWithPassword = useCallback(async (email: string, password: string) => {
@@ -229,30 +215,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const handleMsalUser = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { username?: string | null };
-      const nextUsername = detail?.username ? String(detail.username).toLowerCase() : '';
-      if (!nextUsername) {
+    const restore = async () => {
+      const saved = window.sessionStorage.getItem('simpleAuthToken');
+      if (!saved) {
+        setIsLoading(false);
+        return;
+      }
+      setToken(saved);
+      try {
+        const response = await fetch(API_URL + '/auth/user', {
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + saved },
+        });
+        if (!response.ok) {
+          clearAuthState();
+          return;
+        }
+        const data = (await response.json()) as CurrentUserResponse;
+        setUser({
+          email: data.email,
+          displayName: data.displayName || data.email,
+          role: data.role,
+          status: data.status,
+          assignedGroup: data.assignedGroup || null,
+        });
+        setIsPending(data.status === 'pending');
+        setAuthError(null);
+      } catch {
         clearAuthState();
-        return;
+      } finally {
+        setIsLoading(false);
       }
-      if (nextUsername && nextUsername === user?.email?.toLowerCase()) {
-        setIsLoading(false);
-        return;
-      }
-      setIsLoading(true);
-      loginWithUsername(nextUsername).then(() => {
-        setIsLoading(false);
-      }).catch((error) => {
-        console.error('MSAL username sync failed:', error);
-        setAuthError('Auth service unavailable');
-        setIsLoading(false);
-      });
     };
-
-    window.addEventListener('msal:user', handleMsalUser as EventListener);
-    return () => window.removeEventListener('msal:user', handleMsalUser as EventListener);
-  }, [clearAuthState, loginWithUsername, user?.email]);
+    restore();
+  }, [clearAuthState]);
 
   useEffect(() => {
     if (!token || !user?.email) return;
@@ -456,6 +451,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateUserRole,
         refreshCurrentUser,
         loginWithPassword,
+        loginAsRole,
         pagePermissions,
         pageExcludePermissions,
         pageEmailPermissions,
