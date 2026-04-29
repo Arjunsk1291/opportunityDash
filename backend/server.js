@@ -3091,6 +3091,14 @@ app.post('/api/auth/simple-role-login', authRateLimiter, async (req, res) => {
       approvedBy: 'simple-role-login',
       approvedAt: new Date(),
     };
+    const userUpdatePayload = {
+      displayName,
+      role,
+      status: 'approved',
+      assignedGroup: role === 'SVP' ? 'GES' : null,
+      approvedBy: 'simple-role-login',
+      approvedAt: new Date(),
+    };
 
     if (DISABLE_MONGODB) {
       const localUser = upsertLocalAuthorizedUser(email, userPayload);
@@ -3115,7 +3123,7 @@ app.post('/api/auth/simple-role-login', authRateLimiter, async (req, res) => {
           email,
           createdAt: new Date(),
         },
-        $set: userPayload,
+        $set: userUpdatePayload,
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
