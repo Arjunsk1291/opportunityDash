@@ -496,6 +496,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         <OpportunitiesTable
           data={filteredData}
           onSelectOpportunity={setSelectedOpp}
+          columnPreset="sheet"
           onEditCell={(opp, fieldKey) => {
             if (!canEdit) return;
             setSelectedRow(opp);
