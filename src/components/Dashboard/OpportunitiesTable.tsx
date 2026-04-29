@@ -23,6 +23,7 @@ import { CANONICAL_STATUS_ORDER, getDisplayStatus, getStatusBadgeClass, normaliz
 interface OpportunitiesTableProps {
   data: Opportunity[];
   onSelectOpportunity?: (opp: Opportunity) => void;
+  onEditCell?: (opp: Opportunity, fieldKey: string) => void;
   scrollContainerClassName?: string;
   maxHeight?: string;
   responsiveMode?: 'default' | 'dashboard';
@@ -49,6 +50,49 @@ interface OpportunitiesTableProps {
 const AVENIR_STATUS_OPTIONS = ['ALL', ...CANONICAL_STATUS_ORDER];
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+const getSnapshotValue = (opp: Opportunity, headerLabel: string) => {
+  const snapshot = opp.rawGraphData?.rowSnapshot;
+  if (!snapshot || typeof snapshot !== 'object') return '';
+  const target = normalizeHeader(headerLabel);
+  for (const [key, rawValue] of Object.entries(snapshot)) {
+    if (normalizeHeader(key) !== target) continue;
+    return rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
+  }
+  return '';
+};
+const ALL_COLUMN_HEADERS = [
+  'Sr.no',
+  'Year',
+  'Tender no',
+  'Tender name',
+  'Client',
+  'END USER',
+  'ADNOC RFT NO',
+  'Tender Location (Execution)',
+  'GDS/GES',
+  'Assigned Person',
+  'Stage of project, Concept, FEED, DE',
+  'Tender Type',
+  'date tender recd',
+  'Tender Due  date',
+  'Tender  Submitted  date',
+  'AVENIR STATUS',
+  'REMARKS/REASON',
+  'TENDER RESULT',
+  'TENDER STATUS -',
+  'Currency, USD/AED',
+  'GM%',
+  'Tender value',
+  'Sub-contract value',
+  'GM Value',
+  'Go%',
+  'Get %',
+  'GO/Get %',
+  'go/get value',
+  'USD to AED',
+  'who was awarded the project',
+  'final awarded price',
+] as const;
 const TABLE_DENSITY_STYLES = [
   { cell: 'px-1 sm:px-1.5', text: 'text-[10px] sm:text-[11px]' },
   { cell: 'px-1.5 sm:px-2', text: 'text-[10px] sm:text-[11px]' },
@@ -90,6 +134,7 @@ const getPostBidBadgeClass = (detailType?: string) => {
 export function OpportunitiesTable({
   data,
   onSelectOpportunity,
+  onEditCell,
   scrollContainerClassName,
   maxHeight = 'max-h-96',
   responsiveMode = 'default',
@@ -98,6 +143,7 @@ export function OpportunitiesTable({
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [showConvertedEoiRows, setShowConvertedEoiRows] = useState(false);
+  const [showAllColumns, setShowAllColumns] = useState(false);
   const [sortBy, setSortBy] = useState<'ref' | 'rfp'>('ref');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
   const [refSortOrder, setRefSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -144,6 +190,36 @@ export function OpportunitiesTable({
   const densityStyle = TABLE_DENSITY_STYLES[1];
   const cellPaddingClass = densityStyle.cell;
   const tableTextClass = densityStyle.text;
+
+  const canCellEdit = Boolean(onEditCell) && canPerformAction('manual_opportunity_updates_write');
+  const EditableCell = ({
+    opp,
+    fieldKey,
+    children,
+  }: {
+    opp: Opportunity;
+    fieldKey: string;
+    children: React.ReactNode;
+  }) => (
+    <div className="group flex items-center justify-between gap-2">
+      <div className="min-w-0 flex-1 truncate">{children}</div>
+      {canCellEdit ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditCell?.(opp, fieldKey);
+          }}
+          title="Edit"
+        >
+          <span className="text-xs font-semibold">✎</span>
+        </Button>
+      ) : null}
+    </div>
+  );
 
   useEffect(() => {
     if (!token) return;
@@ -530,6 +606,21 @@ export function OpportunitiesTable({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAllColumns((prev) => !prev)}
+                >
+                  {showAllColumns ? 'Hide columns' : 'Show all columns'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {showAllColumns ? 'Hide raw sheet columns' : 'Show raw sheet columns (horizontal scroll)'}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
                   variant="outline"
                   size="icon"
                   className={isRefreshing ? 'animate-spin' : ''}
@@ -597,6 +688,13 @@ export function OpportunitiesTable({
                   )}
                 </TableHead>
                 <TableHead className={`${postBidColumnClass} ${cellPaddingClass} font-bold`}>Post bid details</TableHead>
+                {showAllColumns ? (
+                  ALL_COLUMN_HEADERS.map((header) => (
+                    <TableHead key={header} className={`${cellPaddingClass} font-bold`}>
+                      {header}
+                    </TableHead>
+                  ))
+                ) : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -618,41 +716,63 @@ export function OpportunitiesTable({
                     }}
                   >
                     <TableCell className={`${cellPaddingClass} max-w-[120px] truncate font-mono text-[10px] sm:text-[11px] font-bold text-blue-600 dark:text-blue-400`}>
-                      <div className="flex items-center gap-1.5">
-                        <span className="truncate">{tender.opportunityRefNo || '—'}</span>
-                        {isDedupeKeptRow ? (
-                          <Badge className="border border-fuchsia-400 bg-fuchsia-100 text-[10px] text-fuchsia-800">
-                            dedupe
-                          </Badge>
-                        ) : null}
-                      </div>
+                      <EditableCell opp={tender} fieldKey="opportunityRefNo">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate">{tender.opportunityRefNo || '—'}</span>
+                          {isDedupeKeptRow ? (
+                            <Badge className="border border-fuchsia-400 bg-fuchsia-100 text-[10px] text-fuchsia-800">
+                              dedupe
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </EditableCell>
                     </TableCell>
                     <TableCell className={`${cellPaddingClass} max-w-[180px] sm:max-w-[250px] min-w-0`}>
                       <div className="min-w-0 space-y-1">
-                        <div className="truncate" title={tender.tenderName || ''}>
-                          {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
-                        </div>
-                        {getAdnocRftNo(tender) ? (
-                          <div className="truncate font-mono text-[10px] sm:text-xs text-muted-foreground" title={getAdnocRftNo(tender)}>
-                            ADNOC Ref: {getAdnocRftNo(tender)}
+                        <EditableCell opp={tender} fieldKey="tenderName">
+                          <div className="truncate" title={tender.tenderName || ''}>
+                            {tender.tenderName || <span className="text-muted-foreground text-xs">—</span>}
                           </div>
+                        </EditableCell>
+                        {getAdnocRftNo(tender) ? (
+                          <EditableCell opp={tender} fieldKey="adnocRftNo">
+                            <div className="truncate font-mono text-[10px] sm:text-xs text-muted-foreground" title={getAdnocRftNo(tender)}>
+                              ADNOC Ref: {getAdnocRftNo(tender)}
+                            </div>
+                          </EditableCell>
                         ) : null}
                       </div>
                     </TableCell>
                     <TableCell className={`hidden md:table-cell ${cellPaddingClass}`}>
-                      <Badge className={`max-w-[8rem] truncate text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>
+                      <EditableCell opp={tender} fieldKey="opportunityClassification">
+                        <Badge className={`max-w-[8rem] truncate text-xs ${getTenderTypeBadge(tender.opportunityClassification)}`}>{tender.opportunityClassification || '—'}</Badge>
+                      </EditableCell>
                     </TableCell>
-                    <TableCell className={`${cellPaddingClass} max-w-[100px] sm:max-w-[140px] truncate font-semibold text-foreground`}>{tender.clientName || '—'}</TableCell>
+                    <TableCell className={`${cellPaddingClass} max-w-[100px] sm:max-w-[140px] truncate font-semibold text-foreground`}>
+                      <EditableCell opp={tender} fieldKey="clientName">{tender.clientName || '—'}</EditableCell>
+                    </TableCell>
                     <TableCell className={`hidden lg:table-cell ${cellPaddingClass}`}>
-                      <Badge className={`max-w-[6rem] truncate text-xs font-mono ${getGroupBadge(tender.groupClassification)}`}>{tender.groupClassification || '—'}</Badge>
+                      <EditableCell opp={tender} fieldKey="groupClassification">
+                        <Badge className={`max-w-[6rem] truncate text-xs font-mono ${getGroupBadge(tender.groupClassification)}`}>{tender.groupClassification || '—'}</Badge>
+                      </EditableCell>
                     </TableCell>
-                    <TableCell className={`hidden lg:table-cell ${cellPaddingClass} font-bold text-[10px] sm:text-[11px]`}>{getRfpReceivedDisplay(tender) || '—'}</TableCell>
-                    <TableCell className={`hidden xl:table-cell ${cellPaddingClass} font-bold text-[10px] sm:text-[11px]`}>{getSubmissionDisplay(tender) || '—'}</TableCell>
-                    <TableCell className={`hidden xl:table-cell ${cellPaddingClass}`}>{tender.internalLead || 'Unassigned'}</TableCell>
-                    <TableCell className={`${cellPaddingClass} text-right font-mono`}>{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</TableCell>
+                    <TableCell className={`hidden lg:table-cell ${cellPaddingClass} font-bold text-[10px] sm:text-[11px]`}>
+                      <EditableCell opp={tender} fieldKey="dateTenderReceived">{getRfpReceivedDisplay(tender) || '—'}</EditableCell>
+                    </TableCell>
+                    <TableCell className={`hidden xl:table-cell ${cellPaddingClass} font-bold text-[10px] sm:text-[11px]`}>
+                      <EditableCell opp={tender} fieldKey="tenderPlannedSubmissionDate">{getSubmissionDisplay(tender) || '—'}</EditableCell>
+                    </TableCell>
+                    <TableCell className={`hidden xl:table-cell ${cellPaddingClass}`}>
+                      <EditableCell opp={tender} fieldKey="internalLead">{tender.internalLead || 'Unassigned'}</EditableCell>
+                    </TableCell>
+                    <TableCell className={`${cellPaddingClass} text-right font-mono`}>
+                      <EditableCell opp={tender} fieldKey="opportunityValue">{tender.opportunityValue > 0 ? formatCurrency(tender.opportunityValue) : '—'}</EditableCell>
+                    </TableCell>
                     <TableCell className={cellPaddingClass}>
                       <div className="space-y-1">
-                        <Badge className={`max-w-[8rem] truncate ${getStatusBadgeClass(getMergedStatus(tender), tender)}`}>{getMergedStatus(tender) || '—'}</Badge>
+                        <EditableCell opp={tender} fieldKey="avenirStatus">
+                          <Badge className={`max-w-[8rem] truncate ${getStatusBadgeClass(getMergedStatus(tender), tender)}`}>{getMergedStatus(tender) || '—'}</Badge>
+                        </EditableCell>
                         {getMergedStatus(tender) === 'AWARDED' && tender.awardedDate ? (
                           <div className="truncate font-mono text-[10px] sm:text-xs text-muted-foreground" title={tender.awardedDate}>
                             Awarded Date: {tender.awardedDate}
@@ -707,6 +827,13 @@ export function OpportunitiesTable({
                         onSave={(detailType, otherText) => savePostBidDetails(tender, detailType, otherText)}
                       />
                     </TableCell>
+                    {showAllColumns ? (
+                      ALL_COLUMN_HEADERS.map((header) => (
+                        <TableCell key={header} className={`${cellPaddingClass} max-w-[180px] truncate`}>
+                          {getSnapshotValue(tender, header) || '—'}
+                        </TableCell>
+                      ))
+                    ) : null}
                   </TableRow>
                 );
               })}

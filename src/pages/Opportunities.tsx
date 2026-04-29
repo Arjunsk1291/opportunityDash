@@ -496,6 +496,14 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         <OpportunitiesTable
           data={filteredData}
           onSelectOpportunity={setSelectedOpp}
+          onEditCell={(opp, fieldKey) => {
+            if (!canEdit) return;
+            setSelectedRow(opp);
+            setFormFromOpportunity(opp);
+            setEditorMode('update');
+            setEditorOpen(true);
+            console.log('[opportunities.cell-edit]', { fieldKey, refNo: opp.opportunityRefNo });
+          }}
           scrollContainerClassName="relative h-full overflow-y-auto overflow-x-auto scrollbar-thin"
           maxHeight="h-full"
         />
