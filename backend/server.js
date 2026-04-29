@@ -3087,7 +3087,7 @@ app.post('/api/auth/simple-role-login', authRateLimiter, async (req, res) => {
       displayName,
       role,
       status: 'approved',
-      assignedGroup: role === 'SVP' ? 'DEFAULT' : null,
+      assignedGroup: role === 'SVP' ? 'GES' : null,
       approvedBy: 'simple-role-login',
       approvedAt: new Date(),
     };
