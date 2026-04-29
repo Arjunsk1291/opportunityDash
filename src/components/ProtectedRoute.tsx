@@ -23,7 +23,7 @@ export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRout
       <div className="mx-auto mt-16 w-full max-w-3xl space-y-4 rounded-2xl border border-slate-200 bg-white p-6">
         <h1 className="text-xl font-bold text-slate-900">Simple Role Login</h1>
         <p className="text-sm text-slate-600">
-          OAuth/MSAL is temporarily disabled. Click a role to sign in for diagnostics.
+          OAuth is disabled. Click a role to sign in for diagnostics.
         </p>
         <Input
           value={emailOverride}
