@@ -21,6 +21,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { PageKey } from "@/config/navigation";
+import { AuthProvider as SessionAuthProvider } from "@/contexts/AuthContext";
 
 const queryClient = new QueryClient();
 
@@ -127,16 +128,18 @@ function RoutePerfLogger() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <CurrencyProvider>
-      <DataProvider>
-        <ApprovalProvider>
-          <TooltipProvider>
-            <Toaster />
-            <AppRoutes />
-          </TooltipProvider>
-        </ApprovalProvider>
-      </DataProvider>
-    </CurrencyProvider>
+    <SessionAuthProvider>
+      <CurrencyProvider>
+        <DataProvider>
+          <ApprovalProvider>
+            <TooltipProvider>
+              <Toaster />
+              <AppRoutes />
+            </TooltipProvider>
+          </ApprovalProvider>
+        </DataProvider>
+      </CurrencyProvider>
+    </SessionAuthProvider>
   </QueryClientProvider>
 );
 
