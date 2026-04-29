@@ -18,6 +18,54 @@ const DetailRow = ({ label, value }: { label: string; value: string | React.Reac
   </div>
 );
 
+const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+
+const RAW_COLUMN_HEADERS = [
+  'Sr.no',
+  'Year',
+  'Tender no',
+  'Tender name',
+  'Client',
+  'END USER',
+  'ADNOC RFT NO',
+  'Tender Location (Execution)',
+  'GDS/GES',
+  'Assigned Person',
+  'Stage of project, Concept, FEED, DE',
+  'Tender Type',
+  'date tender recd',
+  'Tender Due  date',
+  'Tender  Submitted  date',
+  'AVENIR STATUS',
+  'REMARKS/REASON',
+  'TENDER RESULT',
+  'TENDER STATUS -',
+  'Currency, USD/AED',
+  'GM%',
+  'Tender value',
+  'Sub-contract value',
+  'GM Value',
+  'Go%',
+  'Get %',
+  'GO/Get %',
+  'go/get value',
+  'USD to AED',
+  'who was awarded the project',
+  'final awarded price',
+] as const;
+
+function getSnapshotValue(opportunity: Opportunity, headerLabel: string): string {
+  const snapshot = opportunity.rawGraphData?.rowSnapshot;
+  if (!snapshot || typeof snapshot !== 'object') return '';
+  const target = normalizeHeader(headerLabel);
+  for (const [key, rawValue] of Object.entries(snapshot)) {
+    if (normalizeHeader(key) !== target) continue;
+    const text = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
+    return text;
+  }
+  return '';
+}
+
 export function OpportunityDetailDialog({
   opportunity,
   open,
@@ -75,6 +123,15 @@ export function OpportunityDetailDialog({
             <DetailRow label="Awarded Date" value={opportunity.awardedDate || '—'} />
             <DetailRow label="Remarks" value={opportunity.remarksReason || '—'} />
             <DetailRow label="Result" value={getDisplayResult(opportunity) || '—'} />
+          </div>
+
+          <Separator className="my-6" />
+
+          <div className="space-y-1">
+            {RAW_COLUMN_HEADERS.map((header) => {
+              const value = getSnapshotValue(opportunity, header);
+              return <DetailRow key={header} label={header} value={value || '—'} />;
+            })}
           </div>
         </div>
       </DialogContent>
