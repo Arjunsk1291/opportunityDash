@@ -60,6 +60,60 @@ const getSnapshotValue = (opp: Opportunity, headerLabel: string) => {
   }
   return '';
 };
+
+const getSmartColumnValue = (opp: Opportunity, headerLabel: string) => {
+  const header = normalizeHeader(headerLabel);
+  switch (header) {
+    case 'YEAR':
+      return String(opp.rawSheetYear || opp.rawGraphData?.year || '').trim();
+    case 'TENDER NO':
+    case 'REF NO':
+      return String(opp.tenderNo || opp.opportunityRefNo || '').trim();
+    case 'TENDER NAME':
+      return String(opp.tenderName || '').trim();
+    case 'CLIENT':
+      return String(opp.clientName || '').trim();
+    case 'GDS/GES':
+      return String(opp.groupClassification || '').trim();
+    case 'ASSIGNED PERSON':
+    case 'LEAD':
+      return String(opp.internalLead || '').trim();
+    case 'TENDER TYPE':
+      return String(opp.opportunityClassification || '').trim();
+    case 'DATE TENDER RECD':
+    case 'RFP RECEIVED':
+      return String(opp.dateTenderReceived || opp.rawGraphData?.rfpReceivedDisplay || '').trim();
+    case 'TENDER DUE DATE':
+    case 'SUBMISSION':
+      return String(
+        opp.tenderPlannedSubmissionDate
+        || opp.rawGraphData?.plannedSubmissionDisplay
+        || '',
+      ).trim();
+    case 'TENDER SUBMITTED DATE':
+      return String(
+        opp.tenderSubmittedDate
+        || opp.rawGraphData?.tenderSubmittedDisplay
+        || '',
+      ).trim();
+    case 'AVENIR STATUS':
+      return String(opp.avenirStatus || opp.rawAvenirStatus || '').trim();
+    case 'REMARKS/REASON':
+      return String(opp.remarksReason || '').trim();
+    case 'TENDER RESULT':
+      return String(opp.tenderResult || opp.rawTenderResult || '').trim();
+    case 'TENDER STATUS -':
+      return String(opp.tenderStatusRemark || '').trim();
+    default:
+      return '';
+  }
+};
+
+const getDisplayColumnValue = (opp: Opportunity, headerLabel: string) => {
+  const primary = getSmartColumnValue(opp, headerLabel);
+  if (primary) return primary;
+  return getSnapshotValue(opp, headerLabel);
+};
 const ALL_COLUMN_HEADERS = [
   'Sr.no',
   'Year',
@@ -830,7 +884,7 @@ export function OpportunitiesTable({
                     {showAllColumns ? (
                       ALL_COLUMN_HEADERS.map((header) => (
                         <TableCell key={header} className={`${cellPaddingClass} max-w-[180px] truncate`}>
-                          {getSnapshotValue(tender, header) || '—'}
+                          {getDisplayColumnValue(tender, header) || '—'}
                         </TableCell>
                       ))
                     ) : null}

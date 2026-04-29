@@ -66,6 +66,60 @@ function getSnapshotValue(opportunity: Opportunity, headerLabel: string): string
   return '';
 }
 
+function getSmartValue(opportunity: Opportunity, headerLabel: string): string {
+  const header = normalizeHeader(headerLabel);
+  switch (header) {
+    case 'YEAR':
+      return String(opportunity.rawSheetYear || opportunity.rawGraphData?.year || '').trim();
+    case 'TENDER NO':
+    case 'REF NO':
+      return String(opportunity.tenderNo || opportunity.opportunityRefNo || '').trim();
+    case 'TENDER NAME':
+      return String(opportunity.tenderName || '').trim();
+    case 'CLIENT':
+      return String(opportunity.clientName || '').trim();
+    case 'GDS/GES':
+      return String(opportunity.groupClassification || '').trim();
+    case 'ASSIGNED PERSON':
+    case 'LEAD':
+      return String(opportunity.internalLead || '').trim();
+    case 'TENDER TYPE':
+      return String(opportunity.opportunityClassification || '').trim();
+    case 'DATE TENDER RECD':
+    case 'RFP RECEIVED':
+      return String(opportunity.dateTenderReceived || opportunity.rawGraphData?.rfpReceivedDisplay || '').trim();
+    case 'TENDER DUE DATE':
+    case 'SUBMISSION':
+      return String(
+        opportunity.tenderPlannedSubmissionDate
+        || opportunity.rawGraphData?.plannedSubmissionDisplay
+        || '',
+      ).trim();
+    case 'TENDER SUBMITTED DATE':
+      return String(
+        opportunity.tenderSubmittedDate
+        || opportunity.rawGraphData?.tenderSubmittedDisplay
+        || '',
+      ).trim();
+    case 'AVENIR STATUS':
+      return String(opportunity.avenirStatus || opportunity.rawAvenirStatus || '').trim();
+    case 'REMARKS/REASON':
+      return String(opportunity.remarksReason || '').trim();
+    case 'TENDER RESULT':
+      return String(opportunity.tenderResult || opportunity.rawTenderResult || '').trim();
+    case 'TENDER STATUS -':
+      return String(opportunity.tenderStatusRemark || '').trim();
+    default:
+      return '';
+  }
+}
+
+function getDisplayValue(opportunity: Opportunity, headerLabel: string): string {
+  const primary = getSmartValue(opportunity, headerLabel);
+  if (primary) return primary;
+  return getSnapshotValue(opportunity, headerLabel);
+}
+
 export function OpportunityDetailDialog({
   opportunity,
   open,
@@ -129,7 +183,7 @@ export function OpportunityDetailDialog({
 
           <div className="space-y-1">
             {RAW_COLUMN_HEADERS.map((header) => {
-              const value = getSnapshotValue(opportunity, header);
+              const value = getDisplayValue(opportunity, header);
               return <DetailRow key={header} label={header} value={value || '—'} />;
             })}
           </div>
