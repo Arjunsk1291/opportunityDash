@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
-import { getStatusBadgeClass } from '@/lib/opportunityStatus';
+import { getDisplayStatus, getStatusBadgeClass, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 import { DataGrid, GridToolbar, type GridColDef } from '@mui/x-data-grid';
 import styles from './ExcelOpportunitiesTable.module.css';
 
@@ -113,6 +113,8 @@ export function ExcelOpportunitiesTable({
 }) {
   const [zoomPct, setZoomPct] = useState(100);
   const zoomScale = Math.max(50, Math.min(160, zoomPct)) / 100;
+  const [pageSize, setPageSize] = useState<number | 'all'>('all');
+  const [page, setPage] = useState(0);
 
   const columns: GridColDef<Opportunity & { __rowIndex: number }>[] = useMemo(() => {
     const baseFontSizePx = Math.round(12 * zoomScale);
@@ -189,6 +191,24 @@ export function ExcelOpportunitiesTable({
           <div className={styles.zoomLabel}>Zoom {Math.round(zoomScale * 100)}%</div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Rows</span>
+            <select
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              value={pageSize === 'all' ? 'all' : String(pageSize)}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const next = raw === 'all' ? 'all' : Number(raw);
+                setPage(0);
+                setPageSize(next);
+              }}
+            >
+              <option value="all">All</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
           <Button type="button" variant="outline" size="sm" onClick={() => setZoomPct((v) => Math.max(50, v - 10))}>
             <Minus className="mr-2 h-4 w-4" /> Zoom out
           </Button>
@@ -211,11 +231,13 @@ export function ExcelOpportunitiesTable({
           columnHeaderHeight={headerHeight}
           disableRowSelectionOnClick
           onRowClick={(params) => onSelectOpportunity?.(params.row)}
-          pagination
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{
-            pagination: { paginationModel: { pageSize: 50, page: 0 } },
+          pagination={pageSize !== 'all'}
+          paginationModel={pageSize === 'all' ? undefined : { page, pageSize }}
+          onPaginationModelChange={(model) => {
+            setPage(model.page);
+            setPageSize(model.pageSize);
           }}
+          pageSizeOptions={[25, 50, 100]}
           slots={{ toolbar: GridToolbar }}
           slotProps={{
             toolbar: {
@@ -224,13 +246,16 @@ export function ExcelOpportunitiesTable({
               printOptions: { disableToolbarButton: true },
             },
           }}
+          hideFooter={pageSize === 'all'}
+          getRowClassName={(params) => {
+            const status = normalizeCanonicalStatus(getDisplayStatus(params.row));
+            if (!status) return '';
+            return `opp-row status-${status.replace(/\s+/g, '-').replace(/\//g, '-').toLowerCase()}`;
+          }}
           sx={{
             height: '100%',
             border: 0,
             backgroundColor: 'transparent',
-            '& .MuiDataGrid-main': {
-              borderRadius: 12,
-            },
             '& .MuiDataGrid-toolbarContainer': {
               padding: '8px 10px',
               borderBottom: '1px solid hsl(var(--border))',
@@ -281,6 +306,16 @@ export function ExcelOpportunitiesTable({
             '& .MuiTablePagination-root': {
               color: 'hsl(var(--foreground))',
             },
+
+            '& .opp-row.status-working': { backgroundColor: 'hsl(var(--warning) / 0.10)' },
+            '& .opp-row.status-submitted': { backgroundColor: 'hsl(var(--pending) / 0.10)' },
+            '& .opp-row.status-awarded': { backgroundColor: 'hsl(var(--success) / 0.10)' },
+            '& .opp-row.status-lost': { backgroundColor: 'hsl(var(--destructive) / 0.10)' },
+            '& .opp-row.status-regretted': { backgroundColor: 'hsl(var(--muted) / 0.55)' },
+            '& .opp-row.status-to-start': { backgroundColor: 'hsl(var(--info) / 0.08)' },
+            '& .opp-row.status-ongoing': { backgroundColor: 'hsl(var(--info) / 0.08)' },
+            '& .opp-row.status-hold---closed': { backgroundColor: 'hsl(var(--muted) / 0.55)' },
+            '& .opp-row:hover': { backgroundColor: 'hsl(var(--muted) / 0.65) !important' },
           }}
         />
       </div>
