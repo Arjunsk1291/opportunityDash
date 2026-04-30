@@ -22,6 +22,9 @@ import { Toaster } from "@/components/ui/sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { PageKey } from "@/config/navigation";
 import { AuthProvider as SessionAuthProvider } from "@/contexts/AuthContext";
+import { CssBaseline } from "@mui/material";
+import { StyledEngineProvider, ThemeProvider } from "@mui/material/styles";
+import { muiTheme } from "@/theme/muiTheme";
 
 const queryClient = new QueryClient();
 
@@ -128,18 +131,23 @@ function RoutePerfLogger() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <SessionAuthProvider>
-      <CurrencyProvider>
-        <DataProvider>
-          <ApprovalProvider>
-            <TooltipProvider>
-              <Toaster />
-              <AppRoutes />
-            </TooltipProvider>
-          </ApprovalProvider>
-        </DataProvider>
-      </CurrencyProvider>
-    </SessionAuthProvider>
+    <StyledEngineProvider injectFirst>
+      <ThemeProvider theme={muiTheme}>
+        <CssBaseline />
+        <SessionAuthProvider>
+          <CurrencyProvider>
+            <DataProvider>
+              <ApprovalProvider>
+                <TooltipProvider>
+                  <Toaster />
+                  <AppRoutes />
+                </TooltipProvider>
+              </ApprovalProvider>
+            </DataProvider>
+          </CurrencyProvider>
+        </SessionAuthProvider>
+      </ThemeProvider>
+    </StyledEngineProvider>
   </QueryClientProvider>
 );
 
