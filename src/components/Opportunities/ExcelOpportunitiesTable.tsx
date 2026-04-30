@@ -189,6 +189,8 @@ export function ExcelOpportunitiesTable({
           <div className="text-sm font-semibold">Excel view</div>
           <Separator orientation="vertical" className="h-5" />
           <div className={styles.zoomLabel}>Zoom {Math.round(zoomScale * 100)}%</div>
+          <Separator orientation="vertical" className="h-5" />
+          <div className={styles.zoomLabel}>{data.length} rows</div>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">
@@ -232,11 +234,15 @@ export function ExcelOpportunitiesTable({
           disableRowSelectionOnClick
           onRowClick={(params) => onSelectOpportunity?.(params.row)}
           pagination={pageSize !== 'all'}
-          paginationModel={pageSize === 'all' ? undefined : { page, pageSize }}
-          onPaginationModelChange={(model) => {
-            setPage(model.page);
-            setPageSize(model.pageSize);
-          }}
+          {...(pageSize === 'all'
+            ? {}
+            : {
+                paginationModel: { page, pageSize },
+                onPaginationModelChange: (model: { page: number; pageSize: number }) => {
+                  setPage(model.page);
+                  setPageSize(model.pageSize);
+                },
+              })}
           pageSizeOptions={[25, 50, 100]}
           slots={{ toolbar: GridToolbar }}
           slotProps={{
@@ -307,14 +313,14 @@ export function ExcelOpportunitiesTable({
               color: 'hsl(var(--foreground))',
             },
 
-            '& .opp-row.status-working': { backgroundColor: 'hsl(var(--warning) / 0.10)' },
-            '& .opp-row.status-submitted': { backgroundColor: 'hsl(var(--pending) / 0.10)' },
-            '& .opp-row.status-awarded': { backgroundColor: 'hsl(var(--success) / 0.10)' },
-            '& .opp-row.status-lost': { backgroundColor: 'hsl(var(--destructive) / 0.10)' },
-            '& .opp-row.status-regretted': { backgroundColor: 'hsl(var(--muted) / 0.55)' },
-            '& .opp-row.status-to-start': { backgroundColor: 'hsl(var(--info) / 0.08)' },
-            '& .opp-row.status-ongoing': { backgroundColor: 'hsl(var(--info) / 0.08)' },
-            '& .opp-row.status-hold---closed': { backgroundColor: 'hsl(var(--muted) / 0.55)' },
+            '& .opp-row.status-working': { backgroundColor: 'hsl(var(--warning) / 0.18)' },
+            '& .opp-row.status-submitted': { backgroundColor: 'hsl(var(--pending) / 0.18)' },
+            '& .opp-row.status-awarded': { backgroundColor: 'hsl(var(--success) / 0.18)' },
+            '& .opp-row.status-lost': { backgroundColor: 'hsl(var(--destructive) / 0.18)' },
+            '& .opp-row.status-regretted': { backgroundColor: 'hsl(var(--muted) / 0.75)' },
+            '& .opp-row.status-to-start': { backgroundColor: 'hsl(var(--info) / 0.16)' },
+            '& .opp-row.status-ongoing': { backgroundColor: 'hsl(var(--info) / 0.16)' },
+            '& .opp-row.status-hold---closed': { backgroundColor: 'hsl(var(--muted) / 0.75)' },
             '& .opp-row:hover': { backgroundColor: 'hsl(var(--muted) / 0.65) !important' },
           }}
         />
