@@ -6024,6 +6024,69 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
   }
 });
 
+app.post('/api/opportunities/manual-entry/delete', verifyToken, async (req, res) => {
+  const startedAt = Date.now();
+  try {
+    if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+
+    const confirmed = Boolean(req.body?.confirmed);
+    if (!confirmed) return res.status(409).json({ error: 'Confirmation required', confirmationRequired: true });
+
+    const opportunityRefNo = normalizeTextValue(req.body?.opportunityRefNo || '');
+    const refKey = normalizeRefKey(opportunityRefNo);
+    if (!refKey) return res.status(400).json({ error: 'Missing opportunityRefNo' });
+
+    const [existingOpp, previousManual] = await Promise.all([
+      SyncedOpportunity.findOne({ opportunityRefNo }).lean(),
+      OpportunityManualUpdate.findOne({ refKey }).lean(),
+    ]);
+    if (!existingOpp) return res.status(404).json({ error: 'No existing row found.' });
+
+    const actor = buildAuditActor(req);
+    await OpportunityProbation.create({
+      opportunityRefNo,
+      refKey,
+      action: 'delete',
+      source: 'manual_table',
+      ...actor,
+      changedAt: new Date(),
+      expiresAt: new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)),
+      previousSyncedOpportunity: existingOpp || null,
+      previousManualSnapshot: previousManual || null,
+    });
+
+    await Promise.all([
+      SyncedOpportunity.deleteOne({ opportunityRefNo }),
+      OpportunityManualUpdate.deleteOne({ refKey }),
+    ]);
+
+    await OpportunityChangeLog.create({
+      opportunityRefNo,
+      refKey,
+      action: 'manual_delete_row',
+      source: 'manual_table',
+      ...actor,
+      changedAt: new Date(),
+      fieldDiffs: [],
+    });
+
+    invalidateOpportunitiesCache('manual_entry_delete');
+    warmOpportunitiesCache('manual_entry_delete').catch((error) => {
+      console.error('[api.opportunities.cache.warm.async.error]', error?.message || error);
+    });
+
+    res.json({
+      success: true,
+      timing: {
+        totalMs: Date.now() - startedAt,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to delete manual entry' });
+  }
+});
+
 app.post('/api/opportunities/value-conflicts/resolve', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;

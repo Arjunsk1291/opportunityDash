@@ -497,6 +497,13 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         <ExcelOpportunitiesTable
           data={filteredData}
           onSelectOpportunity={setSelectedOpp}
+          editable
+          authToken={token}
+          canEdit={canEdit}
+          onSaved={async () => {
+            await refreshData({ background: true, force: true });
+            await loadConflicts();
+          }}
         />
       </div>
 
