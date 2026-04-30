@@ -5,7 +5,7 @@ import { Separator } from '@/components/ui/separator';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { getStatusBadgeClass } from '@/lib/opportunityStatus';
-import { DataGrid, type GridColDef } from '@mui/x-data-grid';
+import { DataGrid, GridToolbar, type GridColDef } from '@mui/x-data-grid';
 import styles from './ExcelOpportunitiesTable.module.css';
 
 type Column = {
@@ -152,9 +152,8 @@ export function ExcelOpportunitiesTable({
       field: `col:${normalizeHeader(col.header)}`,
       headerName: col.header,
       width: Math.round((col.widthPx || 180) * zoomScale),
-      sortable: false,
-      filterable: false,
-      disableColumnMenu: true,
+      sortable: true,
+      filterable: true,
       renderCell: (params) => renderValue(params.row, col.header),
       valueGetter: (_value, row) => getDisplayValue(row, col.header),
     }));
@@ -212,16 +211,49 @@ export function ExcelOpportunitiesTable({
           columnHeaderHeight={headerHeight}
           disableRowSelectionOnClick
           onRowClick={(params) => onSelectOpportunity?.(params.row)}
-          hideFooter
+          pagination
+          pageSizeOptions={[25, 50, 100]}
+          initialState={{
+            pagination: { paginationModel: { pageSize: 50, page: 0 } },
+          }}
+          slots={{ toolbar: GridToolbar }}
+          slotProps={{
+            toolbar: {
+              showQuickFilter: true,
+              quickFilterProps: { debounceMs: 300 },
+              printOptions: { disableToolbarButton: true },
+            },
+          }}
           sx={{
             height: '100%',
             border: 0,
             backgroundColor: 'transparent',
+            '& .MuiDataGrid-main': {
+              borderRadius: 12,
+            },
+            '& .MuiDataGrid-toolbarContainer': {
+              padding: '8px 10px',
+              borderBottom: '1px solid hsl(var(--border))',
+              backgroundColor: 'hsl(var(--background))',
+            },
+            '& .MuiDataGrid-toolbarContainer .MuiButtonBase-root': {
+              color: 'hsl(var(--foreground))',
+            },
+            '& .MuiDataGrid-toolbarContainer .MuiInputBase-root': {
+              color: 'hsl(var(--foreground))',
+              borderRadius: 10,
+              backgroundColor: 'hsl(var(--card))',
+              border: '1px solid hsl(var(--border))',
+              paddingInline: 8,
+            },
             '& .MuiDataGrid-columnHeaders': {
               backgroundColor: 'hsl(var(--card))',
               color: 'hsl(var(--foreground))',
               borderBottom: '1px solid hsl(var(--border))',
               fontWeight: 700,
+            },
+            '& .MuiDataGrid-columnSeparator': {
+              color: 'hsl(var(--border))',
             },
             '& .MuiDataGrid-cell': {
               borderBottom: '1px solid hsl(var(--border))',
@@ -232,8 +264,22 @@ export function ExcelOpportunitiesTable({
               backgroundColor: 'hsl(var(--muted) / 0.5)',
               cursor: 'pointer',
             },
+            '& .MuiDataGrid-row.Mui-selected': {
+              backgroundColor: 'hsl(var(--primary) / 0.06)',
+            },
+            '& .MuiDataGrid-row.Mui-selected:hover': {
+              backgroundColor: 'hsl(var(--primary) / 0.1)',
+            },
             '& .MuiDataGrid-virtualScroller': {
               backgroundColor: 'transparent',
+            },
+            '& .MuiDataGrid-footerContainer': {
+              borderTop: '1px solid hsl(var(--border))',
+              backgroundColor: 'hsl(var(--background))',
+              color: 'hsl(var(--foreground))',
+            },
+            '& .MuiTablePagination-root': {
+              color: 'hsl(var(--foreground))',
             },
           }}
         />
