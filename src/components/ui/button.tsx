@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import MuiButton from "@mui/material/Button";
 
 import { cn } from "@/lib/utils";
 
@@ -38,8 +39,23 @@ export interface ButtonProps
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button";
-    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+    if (asChild) {
+      const Comp = Slot;
+      return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+    }
+
+    return (
+      <MuiButton
+        ref={ref}
+        className={cn(buttonVariants({ variant, size, className }))}
+        disableElevation
+        disableRipple
+        color="inherit"
+        variant="text"
+        sx={{ minWidth: 0, padding: 0, lineHeight: "inherit" }}
+        {...props}
+      />
+    );
   },
 );
 Button.displayName = "Button";

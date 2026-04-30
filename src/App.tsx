@@ -25,6 +25,7 @@ import { AuthProvider as SessionAuthProvider } from "@/contexts/AuthContext";
 import { CssBaseline } from "@mui/material";
 import { StyledEngineProvider, ThemeProvider } from "@mui/material/styles";
 import { muiTheme } from "@/theme/muiTheme";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const queryClient = new QueryClient();
 
@@ -51,9 +52,11 @@ function AppRoutes() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading...</p>
+        <div className="w-full max-w-md px-6">
+          <Skeleton variant="rounded" height={48} className="w-40 mb-6" />
+          <Skeleton variant="rounded" height={20} className="w-3/4 mb-3" />
+          <Skeleton variant="rounded" height={20} className="w-2/3 mb-8" />
+          <Skeleton variant="rounded" height={160} className="w-full" />
         </div>
       </div>
     );
