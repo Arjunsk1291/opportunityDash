@@ -5,6 +5,7 @@ import { Separator } from '@/components/ui/separator';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { getStatusBadgeClass } from '@/lib/opportunityStatus';
+import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import styles from './ExcelOpportunitiesTable.module.css';
 
 type Column = {
@@ -113,36 +114,72 @@ export function ExcelOpportunitiesTable({
   const [zoomPct, setZoomPct] = useState(100);
   const zoomScale = Math.max(50, Math.min(160, zoomPct)) / 100;
 
-  const gridTemplateColumns = useMemo(() => {
-    const cols = ALL_COLUMN_HEADERS.map((col) => `${col.widthPx || 180}px`).join(' ');
-    return `72px ${cols}`;
-  }, []);
+  const columns: GridColDef<Opportunity & { __rowIndex: number }>[] = useMemo(() => {
+    const baseFontSizePx = Math.round(12 * zoomScale);
+    const monoFontSizePx = Math.max(10, Math.round(11 * zoomScale));
 
-  const renderCell = (opp: Opportunity, header: string) => {
-    const normalized = normalizeHeader(header);
-    const value = getDisplayValue(opp, header);
+    const renderValue = (opp: Opportunity, header: string) => {
+      const normalized = normalizeHeader(header);
+      const value = getDisplayValue(opp, header);
 
-    if (normalized === normalizeHeader('AVENIR STATUS')) {
-      const status = value || '';
-      return status ? (
-        <Badge className={`max-w-[10rem] truncate ${getStatusBadgeClass(status, opp)}`}>{status}</Badge>
-      ) : (
-        <span className={styles.muted}>—</span>
-      );
-    }
+      if (normalized === normalizeHeader('AVENIR STATUS')) {
+        const status = value || '';
+        return status ? (
+          <Badge className={`max-w-[10rem] truncate ${getStatusBadgeClass(status, opp)}`}>{status}</Badge>
+        ) : (
+          <span className={styles.muted}>—</span>
+        );
+      }
 
-    if (normalized === normalizeHeader('GDS/GES')) {
-      const group = value || '';
-      if (!group) return <span className={styles.muted}>—</span>;
-      return <span className="font-mono text-[11px]">{group}</span>;
-    }
+      if (normalized === normalizeHeader('GDS/GES')) {
+        const group = value || '';
+        if (!group) return <span className={styles.muted}>—</span>;
+        return <span style={{ fontFamily: 'JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: monoFontSizePx }}>{group}</span>;
+      }
 
-    if (normalized === normalizeHeader('Tender no') || normalized === normalizeHeader('ADNOC RFT NO')) {
-      return value ? <span className="font-mono text-[11px]">{value}</span> : <span className={styles.muted}>—</span>;
-    }
+      if (normalized === normalizeHeader('Tender no') || normalized === normalizeHeader('ADNOC RFT NO')) {
+        return value ? (
+          <span style={{ fontFamily: 'JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: monoFontSizePx }}>{value}</span>
+        ) : (
+          <span className={styles.muted}>—</span>
+        );
+      }
 
-    return value || <span className={styles.muted}>—</span>;
-  };
+      return value || <span className={styles.muted}>—</span>;
+    };
+
+    const headerCols: GridColDef<Opportunity & { __rowIndex: number }>[] = ALL_COLUMN_HEADERS.map((col) => ({
+      field: `col:${normalizeHeader(col.header)}`,
+      headerName: col.header,
+      width: Math.round((col.widthPx || 180) * zoomScale),
+      sortable: false,
+      filterable: false,
+      disableColumnMenu: true,
+      renderCell: (params) => renderValue(params.row, col.header),
+      valueGetter: (_value, row) => getDisplayValue(row, col.header),
+    }));
+
+    return [
+      {
+        field: '__rowIndex',
+        headerName: '#',
+        width: Math.round(72 * zoomScale),
+        sortable: false,
+        filterable: false,
+        disableColumnMenu: true,
+        renderCell: (params) => (
+          <span style={{ fontFamily: 'JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: baseFontSizePx }}>
+            {params.row.__rowIndex + 1}
+          </span>
+        ),
+      },
+      ...headerCols,
+    ];
+  }, [zoomScale]);
+
+  const rows = useMemo(() => data.map((opp, idx) => ({ ...opp, __rowIndex: idx })), [data]);
+  const rowHeight = Math.max(28, Math.round(34 * zoomScale));
+  const headerHeight = Math.max(34, Math.round(40 * zoomScale));
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
@@ -166,34 +203,41 @@ export function ExcelOpportunitiesTable({
       </div>
 
       <div className={`${styles.viewport} flex-1 min-h-0`}>
-        <div style={{ transform: `scale(${zoomScale})`, transformOrigin: 'top left', width: `${100 / zoomScale}%` }}>
-          <div className={styles.grid} style={{ gridTemplateColumns }}>
-            <div className={`${styles.cell} ${styles.cornerCell}`}>#</div>
-            {ALL_COLUMN_HEADERS.map((col) => (
-              <div key={col.header} className={`${styles.cell} ${styles.headerCell}`} title={col.header}>
-                {col.header}
-              </div>
-            ))}
-
-            {data.map((opp, idx) => (
-              <div
-                key={opp.id}
-                className={styles.row}
-                style={{ display: 'contents' }}
-                onClick={() => onSelectOpportunity?.(opp)}
-              >
-                <div className={`${styles.cell} ${styles.rowHeaderCell} font-mono`}>{idx + 1}</div>
-                {ALL_COLUMN_HEADERS.map((col) => (
-                  <div key={`${opp.id}:${col.header}`} className={styles.cell} title={String(getDisplayValue(opp, col.header) || '')}>
-                    {renderCell(opp, col.header)}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
+        <DataGrid
+          rows={rows}
+          columns={columns}
+          getRowId={(row) => row.id}
+          density="compact"
+          rowHeight={rowHeight}
+          columnHeaderHeight={headerHeight}
+          disableRowSelectionOnClick
+          onRowClick={(params) => onSelectOpportunity?.(params.row)}
+          hideFooter
+          sx={{
+            height: '100%',
+            border: 0,
+            backgroundColor: 'transparent',
+            '& .MuiDataGrid-columnHeaders': {
+              backgroundColor: 'hsl(var(--card))',
+              color: 'hsl(var(--foreground))',
+              borderBottom: '1px solid hsl(var(--border))',
+              fontWeight: 700,
+            },
+            '& .MuiDataGrid-cell': {
+              borderBottom: '1px solid hsl(var(--border))',
+              color: 'hsl(var(--foreground))',
+              outline: 'none',
+            },
+            '& .MuiDataGrid-row:hover': {
+              backgroundColor: 'hsl(var(--muted) / 0.5)',
+              cursor: 'pointer',
+            },
+            '& .MuiDataGrid-virtualScroller': {
+              backgroundColor: 'transparent',
+            },
+          }}
+        />
       </div>
     </div>
   );
 }
-

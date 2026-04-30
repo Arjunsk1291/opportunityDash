@@ -78,5 +78,5 @@
   border: 1px solid hsl(var(--border));
   border-radius: 12px;
   background: hsl(var(--background));
-  overflow: auto;
+  overflow: hidden;
 }
