@@ -4,6 +4,7 @@ import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
 import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
+import { ExcelOpportunitiesTable } from '@/components/Opportunities/ExcelOpportunitiesTable';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -493,20 +494,9 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       />
 
       <div className="flex-1 min-h-0">
-        <OpportunitiesTable
+        <ExcelOpportunitiesTable
           data={filteredData}
           onSelectOpportunity={setSelectedOpp}
-          columnPreset="sheet"
-          onEditCell={(opp, fieldKey) => {
-            if (!canEdit) return;
-            setSelectedRow(opp);
-            setFormFromOpportunity(opp);
-            setEditorMode('update');
-            setEditorOpen(true);
-            console.log('[opportunities.cell-edit]', { fieldKey, refNo: opp.opportunityRefNo });
-          }}
-          scrollContainerClassName="relative h-full overflow-y-auto overflow-x-auto scrollbar-thin"
-          maxHeight="h-full"
         />
       </div>
 
