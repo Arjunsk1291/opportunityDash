@@ -313,14 +313,14 @@ export function ExcelOpportunitiesTable({
               color: 'hsl(var(--foreground))',
             },
 
-            '& .opp-row.status-working': { backgroundColor: 'hsl(var(--warning) / 0.18)' },
-            '& .opp-row.status-submitted': { backgroundColor: 'hsl(var(--pending) / 0.18)' },
-            '& .opp-row.status-awarded': { backgroundColor: 'hsl(var(--success) / 0.18)' },
-            '& .opp-row.status-lost': { backgroundColor: 'hsl(var(--destructive) / 0.18)' },
-            '& .opp-row.status-regretted': { backgroundColor: 'hsl(var(--muted) / 0.75)' },
-            '& .opp-row.status-to-start': { backgroundColor: 'hsl(var(--info) / 0.16)' },
-            '& .opp-row.status-ongoing': { backgroundColor: 'hsl(var(--info) / 0.16)' },
-            '& .opp-row.status-hold---closed': { backgroundColor: 'hsl(var(--muted) / 0.75)' },
+            '& .opp-row.status-working': { backgroundColor: 'hsl(var(--warning) / 0.24)' },
+            '& .opp-row.status-submitted': { backgroundColor: 'hsl(var(--pending) / 0.24)' },
+            '& .opp-row.status-awarded': { backgroundColor: 'hsl(var(--success) / 0.24)' },
+            '& .opp-row.status-lost': { backgroundColor: 'hsl(var(--destructive) / 0.24)' },
+            '& .opp-row.status-regretted': { backgroundColor: 'hsl(var(--muted) / 0.88)' },
+            '& .opp-row.status-to-start': { backgroundColor: 'hsl(var(--info) / 0.22)' },
+            '& .opp-row.status-ongoing': { backgroundColor: 'hsl(var(--info) / 0.22)' },
+            '& .opp-row.status-hold---closed': { backgroundColor: 'hsl(var(--muted) / 0.88)' },
             '& .opp-row:hover': { backgroundColor: 'hsl(var(--muted) / 0.65) !important' },
           }}
         />
