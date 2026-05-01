@@ -5,6 +5,7 @@ import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/co
 import { ExportButton } from '@/components/Dashboard/ExportButton';
 import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
 import { SpreadsheetOpportunitiesTable } from '@/components/Opportunities/SpreadsheetOpportunitiesTable';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -210,6 +211,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const [conflicts, setConflicts] = useState<ConflictGroup[]>([]);
   const [conflictsLoading, setConflictsLoading] = useState(false);
   const [resolvingConflictId, setResolvingConflictId] = useState<string | null>(null);
+  const [spreadsheetCrashed, setSpreadsheetCrashed] = useState(false);
 
   const logManualFlow = (flowId: string, stage: string, details: Record<string, unknown> = {}) => {
     console.log('[opportunities.manual-flow]', {
@@ -494,10 +496,23 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       />
 
       <div className="flex-1 min-h-0">
-        <SpreadsheetOpportunitiesTable
-          data={filteredData}
-          onSelectOpportunity={setSelectedOpp}
-        />
+        {spreadsheetCrashed ? (
+          <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
+        ) : (
+          <ErrorBoundary
+            onError={(error) => {
+              console.error('[opportunities.spreadsheet.crash]', error);
+              setSpreadsheetCrashed(true);
+              toast.error('Spreadsheet view crashed. Falling back to standard table.');
+            }}
+            fallback={<OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />}
+          >
+            <SpreadsheetOpportunitiesTable
+              data={filteredData}
+              onSelectOpportunity={setSelectedOpp}
+            />
+          </ErrorBoundary>
+        )}
       </div>
 
       <OpportunityDetailDialog
