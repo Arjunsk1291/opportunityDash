@@ -7,6 +7,7 @@ import { ApprovalProvider } from "@/contexts/ApprovalContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import KpiDiagnostics from "./pages/KpiDiagnostics";
+import Login from "./pages/Login";
 import Opportunities from "./pages/Opportunities";
 import TenderUpdates from "./pages/TenderUpdates";
 import VendorDirectory from "./pages/VendorDirectory";
@@ -66,14 +67,16 @@ function AppRoutes() {
     <BrowserRouter>
       <RoutePerfLogger />
       <Routes>
+        <Route path="/login" element={<Login />} />
         <Route path="/kpi-diagnostics" element={<KpiDiagnostics />} />
         <Route
           path="/auth/callback"
           element={<Navigate to={isPending && isAuthenticated ? "/pending" : "/"} replace />}
         />
-        <Route path="/login" element={<Navigate to="/" replace />} />
 
-        {isPending && isAuthenticated ? (
+        {!isAuthenticated ? (
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        ) : isPending && isAuthenticated ? (
           <>
             <Route path="/pending" element={<PendingApproval />} />
             <Route path="*" element={<Navigate to="/pending" replace />} />
