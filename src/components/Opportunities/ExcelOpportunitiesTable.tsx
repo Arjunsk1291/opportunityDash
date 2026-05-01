@@ -526,28 +526,20 @@ export function ExcelOpportunitiesTable({
 
   useEffect(() => {
     // Log visible range on scroll (best-effort) for diagnostics.
-    // Note: when `autoHeight` is enabled (Rows = All), the grid does not scroll internally;
-    // the window scrolls instead. In that case we attach to `window`.
+    // Even with "Rows = All", we keep internal grid scrolling (virtualized) to avoid expanding the page to 900+ rows.
+    const el = containerRef.current?.querySelector?.('.MuiDataGrid-virtualScroller') as HTMLElement | null;
+    if (!el) return;
     let lastLoggedAt = 0;
     const handler = () => {
       const now = Date.now();
       if (now - lastLoggedAt < 500) return;
       lastLoggedAt = now;
-      logVisibleRange(showAllRows ? 'windowScroll' : 'gridScroll');
+      logVisibleRange('gridScroll');
     };
-
-    if (showAllRows) {
-      window.addEventListener('scroll', handler, { passive: true });
-      window.setTimeout(() => logVisibleRange('mounted'), 0);
-      return () => window.removeEventListener('scroll', handler);
-    }
-
-    const el = containerRef.current?.querySelector?.('.MuiDataGrid-virtualScroller') as HTMLElement | null;
-    if (!el) return;
     el.addEventListener('scroll', handler, { passive: true });
     window.setTimeout(() => logVisibleRange('mounted'), 0);
     return () => el.removeEventListener('scroll', handler);
-  }, [rows.length, rowHeight, showAllRows]);
+  }, [rows.length, rowHeight]);
 
   const logVisibleCount = (reason: string) => {
     const gridRowsCount = apiRef.current?.getRowsCount?.() ?? null;
@@ -566,29 +558,16 @@ export function ExcelOpportunitiesTable({
     const scroll = apiRef.current?.getScrollPosition?.() || { top: 0, left: 0 };
 
     // Best-effort: infer visible row range from scrollTop + viewport height.
-    // If `autoHeight` is enabled, rely on window scroll position relative to the grid container.
     const virtualScroller = containerRef.current?.querySelector?.('.MuiDataGrid-virtualScroller') as HTMLElement | null;
-    const container = containerRef.current;
-    const viewportHeight = showAllRows
-      ? window.innerHeight
-      : (virtualScroller?.clientHeight ?? container?.clientHeight ?? 0);
-
-    const effectiveScrollTop = (() => {
-      if (!showAllRows) return scroll.top || 0;
-      if (!container) return window.scrollY || 0;
-      const rect = container.getBoundingClientRect();
-      const topInDocument = (window.scrollY || 0) + rect.top;
-      return Math.max(0, (window.scrollY || 0) - topInDocument);
-    })();
-
+    const viewportHeight = virtualScroller?.clientHeight ?? containerRef.current?.clientHeight ?? 0;
     const rowH = rowHeight || 1;
-    const first = Math.max(0, Math.floor(effectiveScrollTop / rowH));
+    const first = Math.max(0, Math.floor((scroll.top || 0) / rowH));
     const visibleCount = viewportHeight ? Math.max(1, Math.ceil(viewportHeight / rowH)) : null;
     const last = visibleCount === null ? null : Math.min(gridRowsCount - 1, first + visibleCount - 1);
 
     console.log('[excel.table.visibleRange]', {
       reason,
-      scrollTop: effectiveScrollTop,
+      scrollTop: scroll.top || 0,
       viewportHeight,
       rowHeight: rowH,
       approxFirstRowIndex1Based: first + 1,
@@ -701,13 +680,12 @@ export function ExcelOpportunitiesTable({
         </div>
       </div>
 
-      <div ref={containerRef} className={showAllRows ? styles.viewport : `${styles.viewport} flex-1 min-h-0`}>
+      <div ref={containerRef} className={`${styles.viewport} flex-1 min-h-0`}>
         <DataGrid
           apiRef={apiRef}
           rows={rows}
           columns={columns}
           getRowId={(row) => String((row as EditableOpportunityRow).id || (row as EditableOpportunityRow).__tempId || '')}
-          autoHeight={showAllRows}
           density="compact"
           rowHeight={rowHeight}
           columnHeaderHeight={headerHeight}
@@ -760,7 +738,7 @@ export function ExcelOpportunitiesTable({
             return `opp-row status-${status.replace(/\s+/g, '-').replace(/\//g, '-').toLowerCase()}`;
           }}
           sx={{
-            height: showAllRows ? 'auto' : '100%',
+            height: '100%',
             border: 0,
             backgroundColor: 'transparent',
             '& .MuiDataGrid-toolbarContainer': {
