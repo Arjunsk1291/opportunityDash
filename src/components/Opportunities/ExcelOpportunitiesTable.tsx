@@ -526,18 +526,28 @@ export function ExcelOpportunitiesTable({
 
   useEffect(() => {
     // Log visible range on scroll (best-effort) for diagnostics.
-    const el = containerRef.current?.querySelector?.('.MuiDataGrid-virtualScroller') as HTMLElement | null;
-    if (!el) return;
+    // Note: when `autoHeight` is enabled (Rows = All), the grid does not scroll internally;
+    // the window scrolls instead. In that case we attach to `window`.
     let lastLoggedAt = 0;
     const handler = () => {
       const now = Date.now();
       if (now - lastLoggedAt < 500) return;
       lastLoggedAt = now;
-      logVisibleRange('scroll');
+      logVisibleRange(showAllRows ? 'windowScroll' : 'gridScroll');
     };
+
+    if (showAllRows) {
+      window.addEventListener('scroll', handler, { passive: true });
+      window.setTimeout(() => logVisibleRange('mounted'), 0);
+      return () => window.removeEventListener('scroll', handler);
+    }
+
+    const el = containerRef.current?.querySelector?.('.MuiDataGrid-virtualScroller') as HTMLElement | null;
+    if (!el) return;
     el.addEventListener('scroll', handler, { passive: true });
+    window.setTimeout(() => logVisibleRange('mounted'), 0);
     return () => el.removeEventListener('scroll', handler);
-  }, [rows.length, rowHeight]);
+  }, [rows.length, rowHeight, showAllRows]);
 
   const logVisibleCount = (reason: string) => {
     const gridRowsCount = apiRef.current?.getRowsCount?.() ?? null;
@@ -556,17 +566,29 @@ export function ExcelOpportunitiesTable({
     const scroll = apiRef.current?.getScrollPosition?.() || { top: 0, left: 0 };
 
     // Best-effort: infer visible row range from scrollTop + viewport height.
-    // This is approximate but good enough for diagnosing "where am I in the sheet?"
+    // If `autoHeight` is enabled, rely on window scroll position relative to the grid container.
     const virtualScroller = containerRef.current?.querySelector?.('.MuiDataGrid-virtualScroller') as HTMLElement | null;
-    const viewportHeight = virtualScroller?.clientHeight ?? containerRef.current?.clientHeight ?? 0;
+    const container = containerRef.current;
+    const viewportHeight = showAllRows
+      ? window.innerHeight
+      : (virtualScroller?.clientHeight ?? container?.clientHeight ?? 0);
+
+    const effectiveScrollTop = (() => {
+      if (!showAllRows) return scroll.top || 0;
+      if (!container) return window.scrollY || 0;
+      const rect = container.getBoundingClientRect();
+      const topInDocument = (window.scrollY || 0) + rect.top;
+      return Math.max(0, (window.scrollY || 0) - topInDocument);
+    })();
+
     const rowH = rowHeight || 1;
-    const first = Math.max(0, Math.floor((scroll.top || 0) / rowH));
+    const first = Math.max(0, Math.floor(effectiveScrollTop / rowH));
     const visibleCount = viewportHeight ? Math.max(1, Math.ceil(viewportHeight / rowH)) : null;
     const last = visibleCount === null ? null : Math.min(gridRowsCount - 1, first + visibleCount - 1);
 
     console.log('[excel.table.visibleRange]', {
       reason,
-      scrollTop: scroll.top || 0,
+      scrollTop: effectiveScrollTop,
       viewportHeight,
       rowHeight: rowH,
       approxFirstRowIndex1Based: first + 1,
