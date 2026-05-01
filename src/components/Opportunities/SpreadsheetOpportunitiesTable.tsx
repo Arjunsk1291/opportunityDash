@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import jspreadsheet from 'jspreadsheet-ce';
 import 'jspreadsheet-ce/dist/jspreadsheet.css';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { Minus, Plus, RotateCcw } from 'lucide-react';
+import { Minus, Plus, RotateCcw, Search, X } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
+import styles from './SpreadsheetOpportunitiesTable.module.css';
 
 type Column = {
   header: string;
@@ -117,9 +119,30 @@ export function SpreadsheetOpportunitiesTable({
   const instanceRef = useRef<any>(null);
   const [zoomPct, setZoomPct] = useState(100);
   const zoomScale = Math.max(50, Math.min(160, zoomPct)) / 100;
+  const [query, setQuery] = useState('');
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const filteredData = useMemo(() => {
+    if (!normalizedQuery) return data;
+    return data.filter((opp) => {
+      const parts: string[] = [];
+      parts.push(String(opp.opportunityRefNo || ''));
+      parts.push(String(opp.tenderNo || ''));
+      parts.push(String(opp.tenderName || ''));
+      parts.push(String(opp.clientName || ''));
+      parts.push(String(opp.groupClassification || ''));
+      parts.push(String(opp.internalLead || ''));
+      parts.push(String(opp.avenirStatus || ''));
+      const snapshot = opp.rawGraphData?.rowSnapshot;
+      if (snapshot && typeof snapshot === 'object') {
+        parts.push(Object.values(snapshot).map((v) => String(v ?? '')).join(' '));
+      }
+      return parts.join(' ').toLowerCase().includes(normalizedQuery);
+    });
+  }, [data, normalizedQuery]);
 
   const sheetData = useMemo(() => {
-    return data.map((opp, idx) => {
+    return filteredData.map((opp, idx) => {
       const row: string[] = [];
       row.push(String(idx + 1));
       for (const col of ALL_COLUMN_HEADERS.slice(1)) {
@@ -127,7 +150,7 @@ export function SpreadsheetOpportunitiesTable({
       }
       return row;
     });
-  }, [data]);
+  }, [filteredData]);
 
   useEffect(() => {
     if (!spreadsheetRef.current) return;
@@ -154,13 +177,14 @@ export function SpreadsheetOpportunitiesTable({
       allowInsertColumn: false,
       allowDeleteRow: false,
       allowDeleteColumn: false,
+      columnSorting: true,
       tableOverflow: true,
       tableWidth: '100%',
       tableHeight: '100%',
       defaultRowHeight: 28,
       onselection: (_instance: any, _x1: any, y1: number) => {
         const index = Number(y1);
-        const opp = data[index];
+        const opp = filteredData[index];
         if (opp) onSelectOpportunity?.(opp);
       },
     });
@@ -175,19 +199,41 @@ export function SpreadsheetOpportunitiesTable({
         instanceRef.current = null;
       }
     };
-  }, [data, onSelectOpportunity, sheetData, zoomScale]);
+  }, [filteredData, onSelectOpportunity, sheetData, zoomScale]);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-background px-3 py-2">
         <div className="flex items-center gap-2">
           <div className="text-sm font-semibold">Excel view</div>
           <Separator orientation="vertical" className="h-5" />
           <div className="text-xs text-muted-foreground">Zoom {Math.round(zoomScale * 100)}%</div>
           <Separator orientation="vertical" className="h-5" />
-          <div className="text-xs text-muted-foreground">{data.length} rows</div>
+          <div className="text-xs text-muted-foreground">
+            {filteredData.length} rows
+            {filteredData.length !== data.length ? ` (filtered from ${data.length})` : ''}
+          </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="relative w-[320px] max-w-[70vw]">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter rows..."
+              className="pl-8 pr-8"
+            />
+            {query ? (
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setQuery('')}
+                aria-label="Clear filter"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
           <Button type="button" variant="outline" size="sm" onClick={() => setZoomPct((v) => Math.max(50, v - 10))}>
             <Minus className="mr-2 h-4 w-4" /> Zoom out
           </Button>
@@ -200,10 +246,9 @@ export function SpreadsheetOpportunitiesTable({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-hidden rounded-xl border border-border bg-background">
-        <div ref={spreadsheetRef} className="h-full w-full" />
+      <div className={`flex-1 min-h-0 overflow-hidden rounded-xl border border-border bg-background ${styles.shell}`}>
+        <div ref={spreadsheetRef} className={`h-full w-full ${styles.sheet}`} />
       </div>
     </div>
   );
 }
-

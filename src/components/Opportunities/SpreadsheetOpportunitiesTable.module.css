@@ -1,0 +1,63 @@
+.shell :global(.jexcel_container) {
+  background: transparent;
+}
+
+.shell :global(.jexcel_content) {
+  background: transparent;
+}
+
+.shell :global(.jexcel) {
+  border: 0 !important;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+.shell :global(.jexcel thead tr th) {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: hsl(var(--card)) !important;
+  color: hsl(var(--foreground)) !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
+}
+
+.shell :global(.jexcel tbody tr td),
+.shell :global(.jexcel tbody tr th) {
+  border-color: hsl(var(--border)) !important;
+  color: hsl(var(--foreground)) !important;
+}
+
+.shell :global(.jexcel tbody tr:hover td),
+.shell :global(.jexcel tbody tr:hover th) {
+  background: hsl(var(--muted) / 0.4) !important;
+}
+
+.shell :global(.jexcel .highlight),
+.shell :global(.jexcel td.selected),
+.shell :global(.jexcel td.highlighted) {
+  background: hsl(var(--primary) / 0.12) !important;
+}
+
+.shell :global(.jexcel_corner) {
+  background: hsl(var(--card)) !important;
+  border-right: 1px solid hsl(var(--border)) !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
+}
+
+.shell :global(.jexcel > thead > tr > th:first-child),
+.shell :global(.jexcel > tbody > tr > th:first-child) {
+  position: sticky;
+  left: 0;
+  z-index: 9;
+  background: hsl(var(--card)) !important;
+}
+
+.shell :global(.jexcel > tbody > tr > td:first-child) {
+  position: sticky;
+  left: 0;
+  z-index: 8;
+  background: hsl(var(--background)) !important;
+  border-right: 1px solid hsl(var(--border)) !important;
+}
+
