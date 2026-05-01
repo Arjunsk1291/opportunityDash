@@ -496,6 +496,18 @@ export function ExcelOpportunitiesTable({
   const rowHeight = Math.max(28, Math.round(34 * zoomScale));
   const headerHeight = Math.max(34, Math.round(40 * zoomScale));
   const showAllRows = pageSize === 'all';
+  const enableSelection = Boolean(allowEdit && isEditing);
+
+  useEffect(() => {
+    if (!enableSelection && selection.length) setSelection([]);
+  }, [enableSelection, selection.length]);
+
+  useEffect(() => {
+    if (!enableSelection || selection.length === 0) return;
+    const validIds = new Set(rows.map((row) => String(row.id || row.__tempId || '')));
+    const filtered = selection.filter((id) => validIds.has(id));
+    if (filtered.length !== selection.length) setSelection(filtered);
+  }, [enableSelection, rows, selection]);
 
   useEffect(() => {
     console.log('[excel.table.diag]', {
@@ -621,9 +633,10 @@ export function ExcelOpportunitiesTable({
           rowHeight={rowHeight}
           columnHeaderHeight={headerHeight}
           disableRowSelectionOnClick
-          checkboxSelection={Boolean(allowEdit && isEditing)}
-          rowSelectionModel={selection}
-          onRowSelectionModelChange={(model) => setSelection(model.map(String))}
+          checkboxSelection={enableSelection}
+          rowSelectionModel={enableSelection ? selection : undefined}
+          onRowSelectionModelChange={enableSelection ? ((model) => setSelection(model.map(String))) : undefined}
+          keepNonExistentRowsSelected
           onRowClick={(params) => {
             if (allowEdit && isEditing) return;
             onSelectOpportunity?.(params.row);
