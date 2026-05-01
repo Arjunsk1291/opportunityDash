@@ -693,7 +693,7 @@ export function ExcelOpportunitiesTable({
           checkboxSelection={enableSelection}
           rowSelectionModel={enableSelection ? selection : undefined}
           onRowSelectionModelChange={enableSelection ? ((model) => setSelection(model.map(String))) : undefined}
-          keepNonExistentRowsSelected
+          keepNonExistentRowsSelected={enableSelection}
           onRowClick={(params) => {
             if (allowEdit && isEditing) return;
             onSelectOpportunity?.(params.row);
