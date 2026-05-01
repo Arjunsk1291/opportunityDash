@@ -5,7 +5,7 @@ import { Separator } from '@/components/ui/separator';
 import { Minus, Pencil, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { getDisplayStatus, getStatusBadgeClass, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
-import { DataGrid, GridToolbar, type GridColDef } from '@mui/x-data-grid';
+import { DataGrid, GridToolbar, useGridApiRef, type GridColDef } from '@mui/x-data-grid';
 import styles from './ExcelOpportunitiesTable.module.css';
 
 type Column = {
@@ -195,6 +195,7 @@ export function ExcelOpportunitiesTable({
   const [pageSize, setPageSize] = useState<number | 'all'>('all');
   const [page, setPage] = useState(0);
   const allowEdit = Boolean(editable && canEdit && authToken);
+  const apiRef = useGridApiRef();
   const [isEditing, setIsEditing] = useState(false);
   const [selection, setSelection] = useState<Array<string>>([]);
   const [saving, setSaving] = useState(false);
@@ -510,14 +511,29 @@ export function ExcelOpportunitiesTable({
   }, [enableSelection, rows, selection]);
 
   useEffect(() => {
+    const gridRowsCount = apiRef.current?.getRowsCount?.() ?? null;
     console.log('[excel.table.diag]', {
       rowsProp: data.length,
+      rowsRenderedProp: rows.length,
+      gridRowsCount,
       pageSize,
       showAllRows,
       isEditing,
       allowEdit,
     });
-  }, [allowEdit, data.length, isEditing, pageSize, showAllRows]);
+  }, [allowEdit, apiRef, data.length, isEditing, pageSize, rows.length, showAllRows]);
+
+  const logVisibleCount = (reason: string) => {
+    const gridRowsCount = apiRef.current?.getRowsCount?.() ?? null;
+    console.log('[excel.table.rows]', {
+      reason,
+      rowsProp: data.length,
+      rowsRenderedProp: rows.length,
+      gridRowsCount,
+      pageSize,
+      showAllRows,
+    });
+  };
 
   useEffect(() => {
     if (!allowEdit) return;
@@ -625,6 +641,7 @@ export function ExcelOpportunitiesTable({
 
       <div className={showAllRows ? styles.viewport : `${styles.viewport} flex-1 min-h-0`}>
         <DataGrid
+          apiRef={apiRef}
           rows={rows}
           columns={columns}
           getRowId={(row) => String((row as EditableOpportunityRow).id || (row as EditableOpportunityRow).__tempId || '')}
@@ -657,6 +674,12 @@ export function ExcelOpportunitiesTable({
                   setPageSize(model.pageSize);
                 },
               })}
+          onSortModelChange={() => {
+            window.setTimeout(() => logVisibleCount('sortModelChange'), 0);
+          }}
+          onFilterModelChange={() => {
+            window.setTimeout(() => logVisibleCount('filterModelChange'), 0);
+          }}
           pageSizeOptions={[25, 50, 100]}
           slots={{ toolbar: GridToolbar }}
           slotProps={{
