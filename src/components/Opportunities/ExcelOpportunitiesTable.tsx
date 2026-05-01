@@ -16,6 +16,7 @@ type Column = {
 type EditableOpportunityRow = Opportunity & {
   __rowIndex: number;
   __tempId?: string;
+  __gridId?: string;
 };
 
 const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
@@ -295,8 +296,8 @@ export function ExcelOpportunitiesTable({
     const confirmed = window.confirm(`Delete ${selection.length} row(s)? This removes them from MongoDB.`);
     if (!confirmed) return;
 
-    const rowsById = new Map(editRows.map((row) => [String(row.id || row.__tempId || ''), row]));
-    const selectedRows = selection.map((id) => rowsById.get(id)).filter(Boolean) as EditableOpportunityRow[];
+    const rowsByGridId = new Map(rows.map((row) => [String(row.__gridId || ''), row]));
+    const selectedRows = selection.map((id) => rowsByGridId.get(id)).filter(Boolean) as EditableOpportunityRow[];
 
     setSaving(true);
     try {
@@ -316,7 +317,10 @@ export function ExcelOpportunitiesTable({
         dirtyRowIds.current.delete(rowId);
       }
 
-      setEditRows((current) => current.filter((row) => !selection.includes(String(row.id || row.__tempId || ''))));
+      setEditRows((current) => current.filter((row) => {
+        const gridId = rows.find((candidate) => candidate.id === row.id && candidate.__rowIndex === row.__rowIndex)?.__gridId;
+        return gridId ? !selection.includes(String(gridId)) : true;
+      }));
       setSelection([]);
       await onSaved?.();
       setEditRows(dataRef.current.map((opp, idx) => ({ ...opp, __rowIndex: idx } as EditableOpportunityRow)));
@@ -493,8 +497,20 @@ export function ExcelOpportunitiesTable({
   }, [allowEdit, isEditing, zoomScale]);
 
   const rows = useMemo(() => {
-    if (allowEdit && isEditing) return editRows;
-    return data.map((opp, idx) => ({ ...opp, __rowIndex: idx } as EditableOpportunityRow));
+    const baseRows = (allowEdit && isEditing)
+      ? editRows
+      : data.map((opp, idx) => ({ ...opp, __rowIndex: idx } as EditableOpportunityRow));
+
+    // DataGrid requires globally-unique row ids. If upstream data has duplicates (e.g., same refNo reused),
+    // scrolling/virtualization can break and appear "stuck" around ~100 rows.
+    const seen = new Map<string, number>();
+    return baseRows.map((row) => {
+      const baseId = String(row.id || row.__tempId || '');
+      const count = (seen.get(baseId) || 0) + 1;
+      seen.set(baseId, count);
+      const suffix = count === 1 ? '' : `#${count}`;
+      return { ...row, __gridId: `${baseId}${suffix}` } as EditableOpportunityRow;
+    });
   }, [allowEdit, data, editRows, isEditing]);
   const rowHeight = Math.max(28, Math.round(34 * zoomScale));
   const headerHeight = Math.max(34, Math.round(40 * zoomScale));
@@ -507,17 +523,22 @@ export function ExcelOpportunitiesTable({
 
   useEffect(() => {
     if (!enableSelection || selection.length === 0) return;
-    const validIds = new Set(rows.map((row) => String(row.id || row.__tempId || '')));
+    const validIds = new Set(rows.map((row) => String(row.__gridId || row.id || row.__tempId || '')));
     const filtered = selection.filter((id) => validIds.has(id));
     if (filtered.length !== selection.length) setSelection(filtered);
   }, [enableSelection, rows, selection]);
 
   useEffect(() => {
     const gridRowsCount = apiRef.current?.getRowsCount?.() ?? null;
+    const baseIds = rows.map((r) => String(r.id || r.__tempId || ''));
+    const uniqueBaseIds = new Set(baseIds);
+    const duplicateBaseIdCount = baseIds.length - uniqueBaseIds.size;
     console.log('[excel.table.diag]', {
       rowsProp: data.length,
       rowsRenderedProp: rows.length,
       gridRowsCount,
+      uniqueBaseIds: uniqueBaseIds.size,
+      duplicateBaseIdCount,
       pageSize,
       showAllRows,
       isEditing,
@@ -722,7 +743,7 @@ export function ExcelOpportunitiesTable({
           apiRef={apiRef}
           rows={rows}
           columns={columns}
-          getRowId={(row) => String((row as EditableOpportunityRow).id || (row as EditableOpportunityRow).__tempId || '')}
+          getRowId={(row) => String((row as EditableOpportunityRow).__gridId || (row as EditableOpportunityRow).id || (row as EditableOpportunityRow).__tempId || '')}
           density="compact"
           rowHeight={rowHeight}
           columnHeaderHeight={headerHeight}
