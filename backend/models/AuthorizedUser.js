@@ -50,6 +50,27 @@ const authorizedUserSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  // Security/ISO 27001 compliance fields
+  failedLoginAttempts: {
+    type: Number,
+    default: 0,
+  },
+  accountLockedUntil: {
+    type: Date,
+    default: null,
+  },
+  lastFailedLoginAt: {
+    type: Date,
+    default: null,
+  },
+  passwordChangedAt: {
+    type: Date,
+    default: null,
+  },
+  requiresPasswordChange: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 authorizedUserSchema.pre('save', function enforceSvpGroup(next) {
