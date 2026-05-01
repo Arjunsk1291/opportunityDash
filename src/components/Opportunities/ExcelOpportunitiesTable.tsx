@@ -498,6 +498,16 @@ export function ExcelOpportunitiesTable({
   const showAllRows = pageSize === 'all';
 
   useEffect(() => {
+    console.log('[excel.table.diag]', {
+      rowsProp: data.length,
+      pageSize,
+      showAllRows,
+      isEditing,
+      allowEdit,
+    });
+  }, [allowEdit, data.length, isEditing, pageSize, showAllRows]);
+
+  useEffect(() => {
     if (!allowEdit) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (!isEditingRef.current) return;

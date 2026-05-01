@@ -121,13 +121,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const parseEnd = performance.now();
         console.log('✅ Loaded ' + data.length + ' opportunities from MongoDB');
         
-        // ✅ UPDATED: Filter out opportunities with empty opportunityRefNo
+        // ✅ Filter out opportunities with empty opportunityRefNo / hidden groups
         const filterStart = performance.now();
-        const validData = (data as OpportunityApiRecord[]).filter((opp) => (
-          opp.opportunityRefNo
-          && opp.opportunityRefNo.trim() !== ''
-          && !shouldHideOpportunity(opp)
-        ));
+        const rawRecords = (Array.isArray(data) ? data : []) as OpportunityApiRecord[];
+        const drops = { missingRefNo: 0, hiddenGroup: 0 };
+        const groupCounts = new Map<string, number>();
+
+        rawRecords.forEach((opp) => {
+          const group = String(opp?.groupClassification || '').trim().toUpperCase() || '∅';
+          groupCounts.set(group, (groupCounts.get(group) || 0) + 1);
+        });
+
+        const validData = rawRecords.filter((opp) => {
+          const refNo = String(opp?.opportunityRefNo || '').trim();
+          if (!refNo) {
+            drops.missingRefNo += 1;
+            return false;
+          }
+          if (shouldHideOpportunity(opp)) {
+            drops.hiddenGroup += 1;
+            return false;
+          }
+          return true;
+        });
         const filterEnd = performance.now();
         
         const mapStart = performance.now();
@@ -138,9 +154,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }));
         const mapEnd = performance.now();
         
-        // Log filtered count
-        if (validData.length < data.length) {
-          console.log(`⚠️  Filtered out ${data.length - validData.length} opportunities with empty refNo or hidden groups`);
+        // Diagnostics for "why am I only seeing N rows?"
+        if (validData.length < rawRecords.length) {
+          const topGroups = Array.from(groupCounts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 12)
+            .map(([group, count]) => ({ group, count }));
+          console.log('⚠️ Opportunities filtered before UI render', {
+            rowsRaw: rawRecords.length,
+            rowsKept: validData.length,
+            dropped: rawRecords.length - validData.length,
+            drops,
+            topGroups,
+          });
         }
         
         const stateStart = performance.now();
