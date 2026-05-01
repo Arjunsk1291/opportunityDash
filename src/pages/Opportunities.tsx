@@ -4,7 +4,7 @@ import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
 import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
-import { ExcelOpportunitiesTable } from '@/components/Opportunities/ExcelOpportunitiesTable';
+import { SpreadsheetOpportunitiesTable } from '@/components/Opportunities/SpreadsheetOpportunitiesTable';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -494,16 +494,9 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       />
 
       <div className="flex-1 min-h-0">
-        <ExcelOpportunitiesTable
+        <SpreadsheetOpportunitiesTable
           data={filteredData}
           onSelectOpportunity={setSelectedOpp}
-          editable
-          authToken={token}
-          canEdit={canEdit}
-          onSaved={async () => {
-            await refreshData({ background: true, force: true });
-            await loadConflicts();
-          }}
         />
       </div>
 
