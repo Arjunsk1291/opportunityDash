@@ -197,6 +197,7 @@ export function ExcelOpportunitiesTable({
   const allowEdit = Boolean(editable && canEdit && authToken);
   const apiRef = useGridApiRef();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [jumpToRow, setJumpToRow] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [selection, setSelection] = useState<Array<string>>([]);
   const [saving, setSaving] = useState(false);
@@ -538,6 +539,7 @@ export function ExcelOpportunitiesTable({
     };
     el.addEventListener('scroll', handler, { passive: true });
     window.setTimeout(() => logVisibleRange('mounted'), 0);
+    window.setTimeout(() => logVisibleRange('mounted+100ms'), 100);
     return () => el.removeEventListener('scroll', handler);
   }, [rows.length, rowHeight]);
 
@@ -564,6 +566,9 @@ export function ExcelOpportunitiesTable({
     const first = Math.max(0, Math.floor((scroll.top || 0) / rowH));
     const visibleCount = viewportHeight ? Math.max(1, Math.ceil(viewportHeight / rowH)) : null;
     const last = visibleCount === null ? null : Math.min(gridRowsCount - 1, first + visibleCount - 1);
+    const scrollHeight = virtualScroller?.scrollHeight ?? null;
+    const clientHeight = virtualScroller?.clientHeight ?? null;
+    const maxScrollTop = scrollHeight !== null && clientHeight !== null ? Math.max(0, scrollHeight - clientHeight) : null;
 
     console.log('[excel.table.visibleRange]', {
       reason,
@@ -573,6 +578,9 @@ export function ExcelOpportunitiesTable({
       approxFirstRowIndex1Based: first + 1,
       approxLastRowIndex1Based: last === null ? null : last + 1,
       gridRowsCount,
+      scrollHeight,
+      clientHeight,
+      maxScrollTop,
     });
   };
 
@@ -600,6 +608,35 @@ export function ExcelOpportunitiesTable({
           <div className={styles.zoomLabel}>{data.length} rows</div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Go to</span>
+            <input
+              className="h-9 w-[92px] rounded-md border border-input bg-background px-2 text-sm"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              placeholder="Row #"
+              value={jumpToRow}
+              onChange={(e) => setJumpToRow(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                const target = Math.max(1, Number.parseInt(jumpToRow, 10) || 1);
+                apiRef.current?.scrollToIndexes?.({ rowIndex: target - 1, colIndex: 0 });
+                window.setTimeout(() => logVisibleRange('jumpToRow:enter'), 50);
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const target = Math.max(1, Number.parseInt(jumpToRow, 10) || 1);
+                apiRef.current?.scrollToIndexes?.({ rowIndex: target - 1, colIndex: 0 });
+                window.setTimeout(() => logVisibleRange('jumpToRow:click'), 50);
+              }}
+            >
+              Jump
+            </Button>
+          </div>
           {allowEdit ? (
             <>
               {isEditing ? (
