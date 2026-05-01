@@ -196,6 +196,7 @@ export function ExcelOpportunitiesTable({
   const [page, setPage] = useState(0);
   const allowEdit = Boolean(editable && canEdit && authToken);
   const apiRef = useGridApiRef();
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [selection, setSelection] = useState<Array<string>>([]);
   const [saving, setSaving] = useState(false);
@@ -523,6 +524,21 @@ export function ExcelOpportunitiesTable({
     });
   }, [allowEdit, apiRef, data.length, isEditing, pageSize, rows.length, showAllRows]);
 
+  useEffect(() => {
+    // Log visible range on scroll (best-effort) for diagnostics.
+    const el = containerRef.current?.querySelector?.('.MuiDataGrid-virtualScroller') as HTMLElement | null;
+    if (!el) return;
+    let lastLoggedAt = 0;
+    const handler = () => {
+      const now = Date.now();
+      if (now - lastLoggedAt < 500) return;
+      lastLoggedAt = now;
+      logVisibleRange('scroll');
+    };
+    el.addEventListener('scroll', handler, { passive: true });
+    return () => el.removeEventListener('scroll', handler);
+  }, [rows.length, rowHeight]);
+
   const logVisibleCount = (reason: string) => {
     const gridRowsCount = apiRef.current?.getRowsCount?.() ?? null;
     console.log('[excel.table.rows]', {
@@ -532,6 +548,30 @@ export function ExcelOpportunitiesTable({
       gridRowsCount,
       pageSize,
       showAllRows,
+    });
+  };
+
+  const logVisibleRange = (reason: string) => {
+    const gridRowsCount = apiRef.current?.getRowsCount?.() ?? rows.length;
+    const scroll = apiRef.current?.getScrollPosition?.() || { top: 0, left: 0 };
+
+    // Best-effort: infer visible row range from scrollTop + viewport height.
+    // This is approximate but good enough for diagnosing "where am I in the sheet?"
+    const virtualScroller = containerRef.current?.querySelector?.('.MuiDataGrid-virtualScroller') as HTMLElement | null;
+    const viewportHeight = virtualScroller?.clientHeight ?? containerRef.current?.clientHeight ?? 0;
+    const rowH = rowHeight || 1;
+    const first = Math.max(0, Math.floor((scroll.top || 0) / rowH));
+    const visibleCount = viewportHeight ? Math.max(1, Math.ceil(viewportHeight / rowH)) : null;
+    const last = visibleCount === null ? null : Math.min(gridRowsCount - 1, first + visibleCount - 1);
+
+    console.log('[excel.table.visibleRange]', {
+      reason,
+      scrollTop: scroll.top || 0,
+      viewportHeight,
+      rowHeight: rowH,
+      approxFirstRowIndex1Based: first + 1,
+      approxLastRowIndex1Based: last === null ? null : last + 1,
+      gridRowsCount,
     });
   };
 
@@ -639,7 +679,7 @@ export function ExcelOpportunitiesTable({
         </div>
       </div>
 
-      <div className={showAllRows ? styles.viewport : `${styles.viewport} flex-1 min-h-0`}>
+      <div ref={containerRef} className={showAllRows ? styles.viewport : `${styles.viewport} flex-1 min-h-0`}>
         <DataGrid
           apiRef={apiRef}
           rows={rows}
@@ -676,9 +716,11 @@ export function ExcelOpportunitiesTable({
               })}
           onSortModelChange={() => {
             window.setTimeout(() => logVisibleCount('sortModelChange'), 0);
+            window.setTimeout(() => logVisibleRange('sortModelChange'), 0);
           }}
           onFilterModelChange={() => {
             window.setTimeout(() => logVisibleCount('filterModelChange'), 0);
+            window.setTimeout(() => logVisibleRange('filterModelChange'), 0);
           }}
           pageSizeOptions={[25, 50, 100]}
           slots={{ toolbar: GridToolbar }}
