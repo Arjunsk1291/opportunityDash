@@ -195,7 +195,7 @@ export function SpreadsheetOpportunitiesTable({
         const opp = filteredData[rowIndex];
         if (!opp) return;
         const status = normalizeCanonicalStatus(getDisplayStatus(opp));
-        const className = status ? `opp-row status-${status.replace(/\\s+/g, '-').replace(/\\//g, '-').toLowerCase()}` : 'opp-row';
+        const className = status ? `opp-row status-${status.replace(/\s+/g, '-').replace(/\//g, '-').toLowerCase()}` : 'opp-row';
         if (rowEl.className !== className) rowEl.className = className;
       },
     });

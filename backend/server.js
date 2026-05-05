@@ -4108,6 +4108,69 @@ app.get('/api/opportunities', async (req, res) => {
   }
 });
 
+app.get('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
+  try {
+    const config = await getSystemConfig();
+    const allowedEmails = Array.isArray(config.postBidAllowedEmails) ? config.postBidAllowedEmails : [];
+    const email = String(req.user?.email || '').trim().toLowerCase();
+    const canEdit = ['Master', 'Admin'].includes(req.user.role) || allowedEmails.map((e) => String(e || '').trim().toLowerCase()).includes(email);
+    res.json({ success: true, canEdit });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/eoi-duplicates/config', verifyToken, async (_req, res) => {
+  try {
+    const config = await getSystemConfig();
+    res.json({ success: true, showConvertedEoiRowsDefault: Boolean(config.showConvertedEoiRowsDefault) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/export-template/config', verifyToken, async (_req, res) => {
+  try {
+    const config = await getSystemConfig();
+    res.json({
+      success: true,
+      exportTemplateSheetName: config.exportTemplateSheetName,
+      exportTemplateTitle: config.exportTemplateTitle,
+      exportTemplateIntroText: config.exportTemplateIntroText,
+      exportTemplateShowLogo: config.exportTemplateShowLogo,
+      exportTemplateLogoDataUrl: config.exportTemplateLogoDataUrl,
+      exportTemplateLogoRow: config.exportTemplateLogoRow,
+      exportTemplateLogoColumn: config.exportTemplateLogoColumn,
+      exportTemplateLogoWidth: config.exportTemplateLogoWidth,
+      exportTemplateLogoHeight: config.exportTemplateLogoHeight,
+      exportTemplateTitleRow: config.exportTemplateTitleRow,
+      exportTemplateTitleColumn: config.exportTemplateTitleColumn,
+      exportTemplateTitleRowSpan: config.exportTemplateTitleRowSpan,
+      exportTemplateTitleColumnSpan: config.exportTemplateTitleColumnSpan,
+      exportTemplateTitleHorizontalAlign: config.exportTemplateTitleHorizontalAlign,
+      exportTemplateTitleVerticalAlign: config.exportTemplateTitleVerticalAlign,
+      exportTemplateIntroRow: config.exportTemplateIntroRow,
+      exportTemplateIntroColumn: config.exportTemplateIntroColumn,
+      exportTemplateIntroRowSpan: config.exportTemplateIntroRowSpan,
+      exportTemplateIntroColumnSpan: config.exportTemplateIntroColumnSpan,
+      exportTemplateIntroHorizontalAlign: config.exportTemplateIntroHorizontalAlign,
+      exportTemplateIntroVerticalAlign: config.exportTemplateIntroVerticalAlign,
+      exportTemplateHeaderRow: config.exportTemplateHeaderRow,
+      exportTemplateHeaderColumn: config.exportTemplateHeaderColumn,
+      exportTemplateHeaderHorizontalAlign: config.exportTemplateHeaderHorizontalAlign,
+      exportTemplateHeaderVerticalAlign: config.exportTemplateHeaderVerticalAlign,
+      exportTemplateHeaderBackgroundColor: config.exportTemplateHeaderBackgroundColor,
+      exportTemplateHeaderTextColor: config.exportTemplateHeaderTextColor,
+      exportTemplateTitleColor: config.exportTemplateTitleColor,
+      exportTemplateIntroColor: config.exportTemplateIntroColor,
+      exportTemplateColumnWidths: config.exportTemplateColumnWidths,
+      exportTemplateRowHeights: config.exportTemplateRowHeights,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'opportunities_sheet_upload')) return;
