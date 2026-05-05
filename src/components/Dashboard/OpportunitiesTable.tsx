@@ -249,6 +249,10 @@ export function OpportunitiesTable({
   const tableTextClass = densityStyle.text;
 
   const canCellEdit = Boolean(onEditCell) && canPerformAction('manual_opportunity_updates_write');
+  const getRowStatusClass = (tender: Opportunity) => {
+    const status = normalizeCanonicalStatus(getDisplayStatus(tender));
+    return status ? `status-${status.replace(/\s+/g, '-').replace(/\//g, '-').toLowerCase()}` : '';
+  };
   const EditableCell = ({
     opp,
     fieldKey,
@@ -376,6 +380,11 @@ export function OpportunitiesTable({
             'Content-Type': 'application/json',
           },
         });
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const text = await response.text();
+          throw new Error(`Non-JSON response (${response.status}). ${text.slice(0, 80)}`);
+        }
         const payload = await response.json();
         if (!response.ok) {
           throw new Error(payload?.error || 'Failed to load post-bid permissions');
@@ -405,6 +414,11 @@ export function OpportunitiesTable({
             'Content-Type': 'application/json',
           },
         });
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const text = await response.text();
+          throw new Error(`Non-JSON response (${response.status}). ${text.slice(0, 80)}`);
+        }
         const payload = await response.json();
         if (!response.ok) return;
         if (!mounted) return;
@@ -861,7 +875,7 @@ export function OpportunitiesTable({
                 return (
                   <TableRow
                     key={tender.id}
-                    className={`cursor-pointer hover:bg-muted/50 ${isDedupeKeptRow ? styles.dedupeKeptRow : ''}`}
+                    className={`cursor-pointer hover:bg-muted/50 ${styles.row} ${styles[getRowStatusClass(tender)] || ''} ${isDedupeKeptRow ? styles.dedupeKeptRow : ''}`}
                     onClick={() => {
                       if (rowTrace) {
                         setSelectedDuplicateTrace(rowTrace);

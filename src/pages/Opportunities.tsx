@@ -22,7 +22,7 @@ import { toast } from 'sonner';
 import { Check, ChevronDown, Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToMatrix } from '@/lib/excelWorkbook';
+import { getFirstWorksheet, loadWorkbookFromArrayBuffer } from '@/lib/excelWorkbook';
 
 interface OpportunitiesProps {
   statusFilter?: string;
@@ -328,16 +328,21 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       const lower = String(file.name || '').toLowerCase();
       if (!lower.endsWith('.xlsx')) throw new Error('Only .xlsx files are supported.');
 
+      const totalStart = performance.now();
       setSheetUploadLoading(true);
       setSheetUploadMeta(null);
 
+      console.time('[opportunities.sheetUpload] total');
       const buffer = await file.arrayBuffer();
+      console.time('[opportunities.sheetUpload] workbookLoad');
       const workbook = await loadWorkbookFromArrayBuffer(buffer);
+      console.timeEnd('[opportunities.sheetUpload] workbookLoad');
       const worksheet = getFirstWorksheet(workbook);
       if (!worksheet) throw new Error('No worksheet found in uploaded file.');
 
-      const rowsMatrix = worksheetToMatrix(worksheet, { maxRows: MAX_OPPORTUNITY_UPLOAD_ROWS, maxColumns: 80 });
-      if (!rowsMatrix.length) throw new Error('No data found in uploaded file.');
+      const maxColumns = 50;
+      const maxScanRows = Math.min(15, worksheet.rowCount);
+      const maxRows = Math.min(worksheet.rowCount, MAX_OPPORTUNITY_UPLOAD_ROWS);
 
       const normalizeHeader = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
       const headerCandidates: Record<keyof FormState, string[]> = {
@@ -354,8 +359,12 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         adnocRftNo: ['adnoc rft no', 'client ref', 'client ref.', 'adnoc rft'],
       };
 
-      const scoreHeaderRow = (row: unknown[]) => {
-        const normalized = row.map(normalizeHeader);
+      const scoreHeaderRow = (rowIndex: number) => {
+        const row = worksheet.getRow(rowIndex);
+        const normalized: string[] = [];
+        for (let col = 1; col <= maxColumns; col += 1) {
+          normalized.push(normalizeHeader(row.getCell(col).value));
+        }
         let score = 0;
         (Object.keys(headerCandidates) as Array<keyof FormState>).forEach((key) => {
           if (normalized.some((cell) => headerCandidates[key].includes(cell))) score += 1;
@@ -363,22 +372,27 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         return score;
       };
 
-      let headerRowIndex = 0;
+      console.time('[opportunities.sheetUpload] headerDetect');
+      let headerRowIndex = 1;
       let bestScore = -1;
-      rowsMatrix.slice(0, 15).forEach((row, index) => {
-        const score = scoreHeaderRow(row);
+      for (let rowIndex = 1; rowIndex <= maxScanRows; rowIndex += 1) {
+        const score = scoreHeaderRow(rowIndex);
         if (score > bestScore) {
           bestScore = score;
-          headerRowIndex = index;
+          headerRowIndex = rowIndex;
         }
-      });
+      }
+      console.timeEnd('[opportunities.sheetUpload] headerDetect');
 
-      const headerRow = rowsMatrix[headerRowIndex] || [];
-      const normalizedHeader = headerRow.map(normalizeHeader);
+      const headerRow = worksheet.getRow(headerRowIndex);
+      const normalizedHeader: string[] = [];
+      for (let col = 1; col <= maxColumns; col += 1) {
+        normalizedHeader.push(normalizeHeader(headerRow.getCell(col).value));
+      }
       const columnIndex: Partial<Record<keyof FormState, number>> = {};
       (Object.keys(headerCandidates) as Array<keyof FormState>).forEach((key) => {
         const idx = normalizedHeader.findIndex((cell) => headerCandidates[key].includes(cell));
-        if (idx >= 0) columnIndex[key] = idx;
+        if (idx >= 0) columnIndex[key] = idx + 1; // 1-based for exceljs
       });
 
       if (columnIndex.opportunityRefNo === undefined) throw new Error('Could not find a "Tender no / Ref no" column.');
@@ -386,18 +400,24 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       const getText = (row: unknown[], key: keyof FormState) => {
         const idx = columnIndex[key];
         if (idx === undefined) return '';
-        const raw = row[idx];
+        const raw = row[idx as number];
         if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw.toISOString().slice(0, 10);
         return String(raw ?? '').trim();
       };
 
+      console.time('[opportunities.sheetUpload] parseRows');
       const parsed: FormState[] = [];
-      const startRow = headerRowIndex + 1;
-      rowsMatrix.slice(startRow).forEach((row) => {
+      for (let rowIndex = headerRowIndex + 1; rowIndex <= maxRows; rowIndex += 1) {
+        const excelRow = worksheet.getRow(rowIndex);
+        const row: unknown[] = [];
+        for (let col = 1; col <= maxColumns; col += 1) {
+          row[col] = excelRow.getCell(col).value ?? '';
+        }
+
         const opportunityRefNo = getText(row, 'opportunityRefNo');
         const tenderName = getText(row, 'tenderName');
         const clientName = getText(row, 'clientName');
-        if (!opportunityRefNo && !tenderName && !clientName) return;
+        if (!opportunityRefNo && !tenderName && !clientName) continue;
 
         parsed.push({
           opportunityRefNo,
@@ -412,8 +432,10 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
           avenirStatus: getText(row, 'avenirStatus'),
           adnocRftNo: getText(row, 'adnocRftNo'),
         });
-      });
+      }
+      console.timeEnd('[opportunities.sheetUpload] parseRows');
 
+      console.time('[opportunities.sheetUpload] diff');
       const normalizeRef = (value: string) => String(value || '').trim().toLowerCase();
       const existingByRef = new Map(opportunities.map((opp) => [normalizeRef(String(opp.opportunityRefNo || opp.tenderNo || '')), opp]));
 
@@ -449,6 +471,17 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       setSheetUploadRows([...created, ...updated, ...unchanged]);
       setSheetUploadMeta({ created: created.length, updated: updated.length });
       setSheetUploadOpen(true);
+      console.timeEnd('[opportunities.sheetUpload] diff');
+      console.log('[opportunities.sheetUpload] done', {
+        file: file.name,
+        bytes: file.size,
+        parsedRows: parsed.length,
+        created: created.length,
+        updated: updated.length,
+        unchanged: unchanged.length,
+        totalMs: Math.round(performance.now() - totalStart),
+      });
+      console.timeEnd('[opportunities.sheetUpload] total');
     } catch (error) {
       console.error('[opportunities.sheet-upload.error]', error);
       toast.error((error as Error).message || 'Failed to parse uploaded sheet.');

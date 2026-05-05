@@ -197,6 +197,11 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
           },
         });
         if (!response.ok) return;
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const text = await response.text();
+          throw new Error(`Non-JSON response (${response.status}). ${text.slice(0, 80)}`);
+        }
         const result = await response.json();
         if (!cancelled) setExportTemplate(normalizeExportTemplate(result));
       } catch (error) {
