@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
+import compression from 'compression';
 import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import LeadEmailMapping from './models/LeadEmailMapping.js';
@@ -70,6 +71,8 @@ app.use(cors((req, callback) => {
   const allowed = isCorsOriginAllowed(origin, req);
   callback(null, { origin: allowed });
 }));
+
+app.use(compression());
 
 // Security headers (ISO/IEC 27001 compliance)
 app.use((req, res, next) => {

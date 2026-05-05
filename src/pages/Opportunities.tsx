@@ -515,7 +515,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       setSheetUploadOpen(false);
       setSheetUploadRows([]);
       setSheetUploadMeta(null);
-      await refreshData();
+      // Avoid forcing a foreground loading state; DataContext will still refresh data.
+      await refreshData({ background: true, force: true });
     } catch (error) {
       console.error('[opportunities.sheet-upload.commit.error]', error);
       toast.error((error as Error).message || 'Failed to save parsed rows.');
