@@ -193,7 +193,7 @@ function SearchableSelectField({ label, placeholder, value, options, onChange }:
 }
 
 const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
-  const { opportunities, refreshData } = useData();
+  const { opportunities, refreshData, upsertOpportunities } = useData();
   const { formatCurrency } = useCurrency();
   const { token, canPerformAction } = useAuth();
   const location = useLocation();
@@ -512,11 +512,16 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || 'Failed to save rows.');
       toast.success(`Saved. Created ${data?.created ?? 0}, updated ${data?.updated ?? 0}.`);
+      const touched = Array.isArray(data?.rows) ? data.rows : [];
+      if (touched.length) {
+        upsertOpportunities(touched);
+        console.log('[opportunities.sheetUpload] upserted', { rows: touched.length });
+      }
       setSheetUploadOpen(false);
       setSheetUploadRows([]);
       setSheetUploadMeta(null);
-      // Avoid forcing a foreground loading state; DataContext will still refresh data.
-      await refreshData({ background: true, force: true });
+      // Lightweight sync in background to ensure derived fields stay consistent.
+      void refreshData({ background: true }).catch(() => {});
     } catch (error) {
       console.error('[opportunities.sheet-upload.commit.error]', error);
       toast.error((error as Error).message || 'Failed to save parsed rows.');

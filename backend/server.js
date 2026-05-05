@@ -4183,6 +4183,7 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
     let created = 0;
     let updated = 0;
     const touchedIds = [];
+    const touchedRows = [];
 
     const normalizeRef = (value) => String(value || '').trim();
 
@@ -4222,6 +4223,7 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
         });
         created += 1;
         touchedIds.push(createdDoc._id.toString());
+        touchedRows.push(mapIdField(createdDoc.toObject()));
         continue;
       }
 
@@ -4230,9 +4232,10 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
       await existing.save();
       updated += 1;
       touchedIds.push(existing._id.toString());
+      touchedRows.push(mapIdField(existing.toObject()));
     }
 
-    res.json({ success: true, created, updated, touched: touchedIds.length });
+    res.json({ success: true, created, updated, touched: touchedIds.length, rows: touchedRows });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

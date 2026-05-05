@@ -34,6 +34,7 @@ interface DataContextType {
   isLoading: boolean;
   error: string | null;
   refreshData: (options?: { background?: boolean; force?: boolean }) => Promise<void>;
+  upsertOpportunities: (rows: Partial<Opportunity>[]) => void;
   lastSyncTime: Date | null;
   isLiveRefreshActive: boolean;
 }
@@ -51,6 +52,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const lastSuccessfulRefreshAtRef = useRef(0);
   const hasLoadedOnceRef = useRef(false);
   const cacheHydratedRef = useRef(false);
+
+  const upsertOpportunities = useCallback((rows: Partial<Opportunity>[]) => {
+    if (!rows.length) return;
+    setOpportunities((previous) => {
+      const byId = new Map(previous.map((opp) => [String(opp.id || opp.opportunityRefNo), opp]));
+      rows.forEach((row) => {
+        const id = String((row as { id?: unknown } | null)?.id || row.opportunityRefNo || '').trim();
+        if (!id) return;
+        const existing = byId.get(id);
+        byId.set(id, { ...(existing || {} as Opportunity), ...(row as Opportunity), id } as Opportunity);
+      });
+      const next = Array.from(byId.values());
+      try {
+        window.sessionStorage.setItem(OPPORTUNITIES_CACHE_KEY, JSON.stringify({
+          ts: Date.now(),
+          rows: next,
+        }));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    setLastSyncTime(new Date());
+  }, []);
 
   const refreshData = useCallback(async (options?: { background?: boolean; force?: boolean }) => {
     if (inFlightRefreshRef.current) {
@@ -300,6 +325,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         isLoading,
         error,
         refreshData,
+        upsertOpportunities,
         lastSyncTime,
         isLiveRefreshActive,
       }}
