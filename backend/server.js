@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
+import jwt from 'jsonwebtoken';
 import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import LeadEmailMapping from './models/LeadEmailMapping.js';
@@ -41,6 +42,9 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
 console.log('Debug flags:', { MAIL_DEBUG: String(process.env.MAIL_DEBUG || '').toLowerCase() === 'true', NOTIFICATION_DEBUG: String(process.env.NOTIFICATION_DEBUG || '').toLowerCase() === 'true', GRAPH_TOKEN_DEBUG: String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true' });
+
+const DISABLE_MONGODB = String(process.env.DISABLE_MONGODB || '').toLowerCase() === 'true';
+const JWT_SECRET = String(process.env.JWT_SECRET || process.env.SESSION_JWT_SECRET || '').trim();
 
 const DEFAULT_CORS_ORIGINS = [
   'http://localhost:5173',
@@ -121,6 +125,33 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+const isDatabaseReady = () => {
+  if (DISABLE_MONGODB) return true;
+  return mongoose.connection.readyState === 1;
+};
+
+const respondDatabaseUnavailable = (res) => {
+  return res.status(503).json({ error: 'Database unavailable. Please try again shortly.' });
+};
+
+const LOCAL_AUTH_USERS = new Map();
+const upsertLocalAuthorizedUser = (email, updates = {}) => {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const existing = LOCAL_AUTH_USERS.get(normalizedEmail) || { email: normalizedEmail };
+  const next = { ...existing, ...updates, email: normalizedEmail };
+  LOCAL_AUTH_USERS.set(normalizedEmail, next);
+  return next;
+};
+
+const createSessionToken = (user) => {
+  const secret = JWT_SECRET || 'dev-insecure-secret';
+  const payload = {
+    email: String(user?.email || '').trim().toLowerCase(),
+    role: String(user?.role || '').trim(),
+  };
+  return jwt.sign(payload, secret, { expiresIn: '12h' });
+};
 
 app.get('/healthz', (_req, res) => {
   res.status(200).json({ ok: true, service: 'backend', timestamp: new Date().toISOString() });
@@ -1826,7 +1857,18 @@ const scheduleDailyNotificationCheck = () => {
 const getUsernameFromRequest = (req) => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    return authHeader.substring(7).trim().toLowerCase();
+    const tokenOrUsername = authHeader.substring(7).trim();
+    const looksLikeJwt = tokenOrUsername.split('.').length === 3;
+    if (looksLikeJwt) {
+      try {
+        const decoded = jwt.verify(tokenOrUsername, JWT_SECRET || 'dev-insecure-secret');
+        const email = decoded && typeof decoded === 'object' ? decoded.email : null;
+        if (typeof email === 'string' && email.trim()) return email.trim().toLowerCase();
+      } catch (_error) {
+        // Fall through to treat as legacy username.
+      }
+    }
+    return tokenOrUsername.toLowerCase();
   }
 
   const headerUsername = req.headers['x-username'];
@@ -1959,6 +2001,7 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
         status: user.status,
         assignedGroup: user.assignedGroup,
       },
+      sessionToken: user.status === 'approved' ? createSessionToken(user) : null,
       message: user.status === 'pending' ? 'User pending approval. Master will review your request.' : 'Login successful',
     });
   } catch (error) {
