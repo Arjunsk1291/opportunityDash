@@ -29,6 +29,7 @@ interface OpportunitiesProps {
 }
 
 type EditMode = 'new' | 'update';
+type OpportunityViewMode = 'dashboard_table' | 'spreadsheet';
 type FormState = {
   opportunityRefNo: string;
   tenderName: string;
@@ -216,6 +217,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const [conflictsLoading, setConflictsLoading] = useState(false);
   const [resolvingConflictId, setResolvingConflictId] = useState<string | null>(null);
   const [spreadsheetCrashed, setSpreadsheetCrashed] = useState(false);
+  const [viewMode, setViewMode] = useState<OpportunityViewMode>('dashboard_table');
   const [sheetUploadOpen, setSheetUploadOpen] = useState(false);
   const [sheetUploadLoading, setSheetUploadLoading] = useState(false);
   const [sheetUploadSaving, setSheetUploadSaving] = useState(false);
@@ -676,6 +678,20 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
               </Button>
             </>
           ) : null}
+          <Button
+            type="button"
+            variant={viewMode === 'dashboard_table' ? 'default' : 'outline'}
+            onClick={() => setViewMode('dashboard_table')}
+          >
+            Table
+          </Button>
+          <Button
+            type="button"
+            variant={viewMode === 'spreadsheet' ? 'default' : 'outline'}
+            onClick={() => setViewMode('spreadsheet')}
+          >
+            Spreadsheet
+          </Button>
           {canEdit ? (
             <>
               <Button type="button" variant="outline" onClick={() => openEditor('new')}>New</Button>
@@ -699,21 +715,32 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       />
 
       <div className="flex-1 min-h-0">
-        {spreadsheetCrashed ? (
-          <OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
+        {viewMode === 'dashboard_table' || spreadsheetCrashed ? (
+          <OpportunitiesTable
+            data={filteredData}
+            onSelectOpportunity={setSelectedOpp}
+            columnPreset="sheet"
+            responsiveMode="default"
+            maxHeight="max-h-[calc(100vh-18rem)]"
+          />
         ) : (
           <ErrorBoundary
             onError={(error) => {
               console.error('[opportunities.spreadsheet.crash]', error);
               setSpreadsheetCrashed(true);
-              toast.error('Spreadsheet view crashed. Falling back to standard table.');
+              toast.error('Spreadsheet view crashed. Falling back to table view.');
             }}
-            fallback={<OpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />}
+            fallback={(
+              <OpportunitiesTable
+                data={filteredData}
+                onSelectOpportunity={setSelectedOpp}
+                columnPreset="sheet"
+                responsiveMode="default"
+                maxHeight="max-h-[calc(100vh-18rem)]"
+              />
+            )}
           >
-            <SpreadsheetOpportunitiesTable
-              data={filteredData}
-              onSelectOpportunity={setSelectedOpp}
-            />
+            <SpreadsheetOpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
           </ErrorBoundary>
         )}
       </div>
