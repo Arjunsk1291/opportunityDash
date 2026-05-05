@@ -45,11 +45,7 @@ export default function Login() {
     attemptCount: 0,
     lastAttemptTime: 0,
   });
-
-  // Redirect if already authenticated
-  if (isAuthenticated && !authLoading) {
-    return <Navigate to="/" replace />;
-  }
+  const shouldRedirect = isAuthenticated && !authLoading;
 
   const isRateLimited = useCallback(() => {
     const now = Date.now();
@@ -245,6 +241,10 @@ export default function Login() {
       }
     }
   };
+
+  if (shouldRedirect) {
+    return <Navigate to="/" replace />;
+  }
 
   if (authLoading) {
     return (
