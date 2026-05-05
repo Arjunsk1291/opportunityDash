@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Minus, Plus, RotateCcw, Search, X } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
-import { getDisplayStatus, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 import styles from './SpreadsheetOpportunitiesTable.module.css';
 
 type Column = {
@@ -183,18 +182,10 @@ export function SpreadsheetOpportunitiesTable({
       tableWidth: '100%',
       tableHeight: '100%',
       defaultRowHeight: 28,
-      // Keep selection purely in-grid; do not open popups on row click.
-      // (User asked to remove row click popup.)
-      onselection: () => {},
-      updateTable: (_instance: any, cell: HTMLElement, _col: number, rowIndex: number) => {
-        if (!cell) return;
-        const rowEl = cell.parentElement as HTMLTableRowElement | null;
-        if (!rowEl) return;
-        const opp = filteredData[rowIndex];
-        if (!opp) return;
-        const status = normalizeCanonicalStatus(getDisplayStatus(opp));
-        const className = status ? `opp-row status-${status.replace(/\\s+/g, '-').replace(/\\//g, '-').toLowerCase()}` : 'opp-row';
-        if (rowEl.className !== className) rowEl.className = className;
+      onselection: (_instance: any, _x1: any, y1: number) => {
+        const index = Number(y1);
+        const opp = filteredData[index];
+        if (opp) onSelectOpportunity?.(opp);
       },
     });
 

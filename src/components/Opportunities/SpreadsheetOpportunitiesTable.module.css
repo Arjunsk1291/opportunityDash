@@ -61,20 +61,3 @@
   border-right: 1px solid hsl(var(--border)) !important;
 }
 
-/* Match dashboard status row coloring (same tokens as ExcelOpportunitiesTable DataGrid sx). */
-.shell :global(.jexcel tbody tr.opp-row.status-working td),
-.shell :global(.jexcel tbody tr.opp-row.status-working th) { background: hsl(var(--warning) / 0.24) !important; }
-.shell :global(.jexcel tbody tr.opp-row.status-submitted td),
-.shell :global(.jexcel tbody tr.opp-row.status-submitted th) { background: hsl(var(--pending) / 0.24) !important; }
-.shell :global(.jexcel tbody tr.opp-row.status-awarded td),
-.shell :global(.jexcel tbody tr.opp-row.status-awarded th) { background: hsl(var(--success) / 0.24) !important; }
-.shell :global(.jexcel tbody tr.opp-row.status-lost td),
-.shell :global(.jexcel tbody tr.opp-row.status-lost th) { background: hsl(var(--destructive) / 0.24) !important; }
-.shell :global(.jexcel tbody tr.opp-row.status-regretted td),
-.shell :global(.jexcel tbody tr.opp-row.status-regretted th) { background: hsl(var(--muted) / 0.88) !important; }
-.shell :global(.jexcel tbody tr.opp-row.status-to-start td),
-.shell :global(.jexcel tbody tr.opp-row.status-to-start th) { background: hsl(var(--info) / 0.22) !important; }
-.shell :global(.jexcel tbody tr.opp-row.status-ongoing td),
-.shell :global(.jexcel tbody tr.opp-row.status-ongoing th) { background: hsl(var(--info) / 0.22) !important; }
-.shell :global(.jexcel tbody tr.opp-row.status-hold---closed td),
-.shell :global(.jexcel tbody tr.opp-row.status-hold---closed th) { background: hsl(var(--muted) / 0.88) !important; }
