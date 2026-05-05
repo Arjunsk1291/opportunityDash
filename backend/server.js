@@ -2966,6 +2966,7 @@ const PAGE_KEYS = [
 const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
 const ACTION_KEYS = [
   'opportunities_sync',
+  'opportunities_sheet_upload',
   'approvals_proposal_head',
   'approvals_svp',
   'approvals_bulk_revert',
@@ -3000,6 +3001,7 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
 };
 const DEFAULT_ACTION_ROLE_ACCESS = {
   opportunities_sync: ['Master', 'Admin'],
+  opportunities_sheet_upload: ['Master', 'Admin'],
   approvals_proposal_head: ['Master', 'ProposalHead'],
   approvals_svp: ['Master', 'SVP'],
   approvals_bulk_revert: ['Master', 'ProposalHead'],
@@ -4058,6 +4060,70 @@ app.get('/api/opportunities', async (req, res) => {
     const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
     const mapped = opportunities.map(opp => mapIdField(opp));
     res.json(mapped);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'opportunities_sheet_upload')) return;
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) return res.status(400).json({ error: 'No rows provided' });
+
+    let created = 0;
+    let updated = 0;
+    const touchedIds = [];
+
+    const normalizeRef = (value) => String(value || '').trim();
+
+    for (const input of rows) {
+      const opportunityRefNo = normalizeRef(input?.opportunityRefNo || input?.tenderNo || input?.refNo);
+      if (!opportunityRefNo) continue;
+
+      const payload = {
+        opportunityRefNo,
+        adnocRftNo: String(input?.adnocRftNo || '').trim(),
+        tenderName: String(input?.tenderName || '').trim(),
+        clientName: String(input?.clientName || '').trim(),
+        groupClassification: String(input?.groupClassification || '').trim(),
+        internalLead: String(input?.internalLead || '').trim(),
+        opportunityClassification: String(input?.opportunityClassification || '').trim(),
+        dateTenderReceived: String(input?.dateTenderReceived || '').trim(),
+        tenderPlannedSubmissionDate: String(input?.tenderPlannedSubmissionDate || '').trim(),
+        tenderSubmittedDate: String(input?.tenderSubmittedDate || '').trim(),
+        avenirStatus: String(input?.avenirStatus || '').trim(),
+        tenderResult: String(input?.tenderResult || '').trim(),
+        remarksReason: String(input?.remarksReason || '').trim(),
+        tenderStatusRemark: String(input?.tenderStatusRemark || '').trim(),
+        rawSheetYear: String(input?.rawSheetYear || input?.year || '').trim(),
+      };
+
+      const valueNumber = input?.opportunityValue;
+      if (valueNumber !== undefined && valueNumber !== null && String(valueNumber).trim() !== '') {
+        const parsed = Number(String(valueNumber).replace(/,/g, ''));
+        if (!Number.isNaN(parsed)) payload.opportunityValue = parsed;
+      }
+
+      const existing = await SyncedOpportunity.findOne({ opportunityRefNo });
+      if (!existing) {
+        const createdDoc = await SyncedOpportunity.create({
+          ...payload,
+          syncedAt: new Date(),
+        });
+        created += 1;
+        touchedIds.push(createdDoc._id.toString());
+        continue;
+      }
+
+      Object.assign(existing, payload);
+      existing.syncedAt = new Date();
+      await existing.save();
+      updated += 1;
+      touchedIds.push(existing._id.toString());
+    }
+
+    res.json({ success: true, created, updated, touched: touchedIds.length });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

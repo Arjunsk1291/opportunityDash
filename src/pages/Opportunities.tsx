@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { Check, ChevronDown, Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToMatrix } from '@/lib/excelWorkbook';
 
 interface OpportunitiesProps {
   statusFilter?: string;
@@ -106,6 +107,9 @@ const toDisplay = (value: unknown) => {
 };
 
 const STATUS_OPTIONS = ['WORKING', 'SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'TO START', 'ONGOING', 'HOLD / CLOSED'];
+
+const MAX_OPPORTUNITY_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_OPPORTUNITY_UPLOAD_ROWS = 5000;
 
 const parseDateValue = (value: string) => {
   const text = String(value || '').trim();
@@ -212,6 +216,11 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const [conflictsLoading, setConflictsLoading] = useState(false);
   const [resolvingConflictId, setResolvingConflictId] = useState<string | null>(null);
   const [spreadsheetCrashed, setSpreadsheetCrashed] = useState(false);
+  const [sheetUploadOpen, setSheetUploadOpen] = useState(false);
+  const [sheetUploadLoading, setSheetUploadLoading] = useState(false);
+  const [sheetUploadSaving, setSheetUploadSaving] = useState(false);
+  const [sheetUploadRows, setSheetUploadRows] = useState<FormState[]>([]);
+  const [sheetUploadMeta, setSheetUploadMeta] = useState<{ created: number; updated: number } | null>(null);
 
   const logManualFlow = (flowId: string, stage: string, details: Record<string, unknown> = {}) => {
     console.log('[opportunities.manual-flow]', {
@@ -307,6 +316,176 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       toast.error((error as Error).message || 'Failed to load conflicts');
     } finally {
       setConflictsLoading(false);
+    }
+  };
+
+  const handleSheetUpload = async (file: File) => {
+    try {
+      if (!file) return;
+      if (file.size > MAX_OPPORTUNITY_UPLOAD_BYTES) throw new Error('File too large. Maximum allowed size is 10MB.');
+      const lower = String(file.name || '').toLowerCase();
+      if (!lower.endsWith('.xlsx')) throw new Error('Only .xlsx files are supported.');
+
+      setSheetUploadLoading(true);
+      setSheetUploadMeta(null);
+
+      const buffer = await file.arrayBuffer();
+      const workbook = await loadWorkbookFromArrayBuffer(buffer);
+      const worksheet = getFirstWorksheet(workbook);
+      if (!worksheet) throw new Error('No worksheet found in uploaded file.');
+
+      const rowsMatrix = worksheetToMatrix(worksheet, { maxRows: MAX_OPPORTUNITY_UPLOAD_ROWS, maxColumns: 80 });
+      if (!rowsMatrix.length) throw new Error('No data found in uploaded file.');
+
+      const normalizeHeader = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const headerCandidates: Record<keyof FormState, string[]> = {
+        opportunityRefNo: ['tender no', 'ref no', 'ref no.', 'opportunity ref', 'avenir ref', 'avenir ref no'],
+        tenderName: ['tender name', 'tender'],
+        opportunityClassification: ['tender type', 'type'],
+        clientName: ['client', 'client name'],
+        groupClassification: ['gds/ges', 'group', 'vertical', 'group classification'],
+        dateTenderReceived: ['date tender recd', 'date tender received', 'rfp received', 'date received'],
+        tenderPlannedSubmissionDate: ['tender due date', 'tender due  date', 'submission', 'planned submission', 'submission date'],
+        internalLead: ['assigned person', 'lead', 'internal lead'],
+        opportunityValue: ['tender value', 'value', 'opportunity value'],
+        avenirStatus: ['avenir status', 'status'],
+        adnocRftNo: ['adnoc rft no', 'client ref', 'client ref.', 'adnoc rft'],
+      };
+
+      const scoreHeaderRow = (row: unknown[]) => {
+        const normalized = row.map(normalizeHeader);
+        let score = 0;
+        (Object.keys(headerCandidates) as Array<keyof FormState>).forEach((key) => {
+          if (normalized.some((cell) => headerCandidates[key].includes(cell))) score += 1;
+        });
+        return score;
+      };
+
+      let headerRowIndex = 0;
+      let bestScore = -1;
+      rowsMatrix.slice(0, 15).forEach((row, index) => {
+        const score = scoreHeaderRow(row);
+        if (score > bestScore) {
+          bestScore = score;
+          headerRowIndex = index;
+        }
+      });
+
+      const headerRow = rowsMatrix[headerRowIndex] || [];
+      const normalizedHeader = headerRow.map(normalizeHeader);
+      const columnIndex: Partial<Record<keyof FormState, number>> = {};
+      (Object.keys(headerCandidates) as Array<keyof FormState>).forEach((key) => {
+        const idx = normalizedHeader.findIndex((cell) => headerCandidates[key].includes(cell));
+        if (idx >= 0) columnIndex[key] = idx;
+      });
+
+      if (columnIndex.opportunityRefNo === undefined) throw new Error('Could not find a "Tender no / Ref no" column.');
+
+      const getText = (row: unknown[], key: keyof FormState) => {
+        const idx = columnIndex[key];
+        if (idx === undefined) return '';
+        const raw = row[idx];
+        if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw.toISOString().slice(0, 10);
+        return String(raw ?? '').trim();
+      };
+
+      const parsed: FormState[] = [];
+      const startRow = headerRowIndex + 1;
+      rowsMatrix.slice(startRow).forEach((row) => {
+        const opportunityRefNo = getText(row, 'opportunityRefNo');
+        const tenderName = getText(row, 'tenderName');
+        const clientName = getText(row, 'clientName');
+        if (!opportunityRefNo && !tenderName && !clientName) return;
+
+        parsed.push({
+          opportunityRefNo,
+          tenderName,
+          opportunityClassification: getText(row, 'opportunityClassification'),
+          clientName,
+          groupClassification: getText(row, 'groupClassification'),
+          dateTenderReceived: getText(row, 'dateTenderReceived'),
+          tenderPlannedSubmissionDate: getText(row, 'tenderPlannedSubmissionDate'),
+          internalLead: getText(row, 'internalLead'),
+          opportunityValue: getText(row, 'opportunityValue'),
+          avenirStatus: getText(row, 'avenirStatus'),
+          adnocRftNo: getText(row, 'adnocRftNo'),
+        });
+      });
+
+      const normalizeRef = (value: string) => String(value || '').trim().toLowerCase();
+      const existingByRef = new Map(opportunities.map((opp) => [normalizeRef(String(opp.opportunityRefNo || opp.tenderNo || '')), opp]));
+
+      const normalizeValue = (value: unknown) => String(value ?? '').trim();
+      const isSame = (a: unknown, b: unknown) => normalizeValue(a) === normalizeValue(b);
+      const isUpdated = (row: FormState, existing: Opportunity) => {
+        if (!existing) return false;
+        return !(
+          isSame(existing.opportunityRefNo, row.opportunityRefNo) &&
+          isSame(existing.tenderName, row.tenderName) &&
+          isSame(existing.clientName, row.clientName) &&
+          isSame(existing.groupClassification, row.groupClassification) &&
+          isSame(existing.internalLead, row.internalLead) &&
+          isSame(existing.opportunityClassification, row.opportunityClassification) &&
+          isSame(existing.dateTenderReceived, row.dateTenderReceived) &&
+          isSame(existing.tenderPlannedSubmissionDate, row.tenderPlannedSubmissionDate) &&
+          isSame(existing.avenirStatus, row.avenirStatus) &&
+          isSame(existing.adnocRftNo, row.adnocRftNo) &&
+          isSame(String(existing.opportunityValue ?? ''), row.opportunityValue)
+        );
+      };
+
+      const created: FormState[] = [];
+      const updated: FormState[] = [];
+      const unchanged: FormState[] = [];
+      parsed.forEach((row) => {
+        const existing = existingByRef.get(normalizeRef(row.opportunityRefNo));
+        if (!existing) return created.push(row);
+        if (isUpdated(row, existing)) return updated.push(row);
+        return unchanged.push(row);
+      });
+
+      setSheetUploadRows([...created, ...updated, ...unchanged]);
+      setSheetUploadMeta({ created: created.length, updated: updated.length });
+      setSheetUploadOpen(true);
+    } catch (error) {
+      console.error('[opportunities.sheet-upload.error]', error);
+      toast.error((error as Error).message || 'Failed to parse uploaded sheet.');
+    } finally {
+      setSheetUploadLoading(false);
+    }
+  };
+
+  const commitSheetUpload = async () => {
+    try {
+      if (!token) {
+        toast.error('Not authenticated.');
+        return;
+      }
+      if (!sheetUploadRows.length) {
+        toast.error('No parsed rows to save.');
+        return;
+      }
+      setSheetUploadSaving(true);
+      const response = await fetch(`${API_URL}/opportunities/sheet-upload/commit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ rows: sheetUploadRows }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || 'Failed to save rows.');
+      toast.success(`Saved. Created ${data?.created ?? 0}, updated ${data?.updated ?? 0}.`);
+      setSheetUploadOpen(false);
+      setSheetUploadRows([]);
+      setSheetUploadMeta(null);
+      await refreshData();
+    } catch (error) {
+      console.error('[opportunities.sheet-upload.commit.error]', error);
+      toast.error((error as Error).message || 'Failed to save parsed rows.');
+    } finally {
+      setSheetUploadSaving(false);
     }
   };
 
@@ -473,6 +652,30 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
           <p className="text-muted-foreground">{filteredData.length} tenders found</p>
         </div>
         <div className="flex items-center gap-2">
+          {canPerformAction?.('opportunities_sheet_upload') ? (
+            <>
+              <input
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                id="opportunities-sheet-upload"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleSheetUpload(file);
+                  e.currentTarget.value = '';
+                }}
+                disabled={sheetUploadLoading || sheetUploadSaving}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => document.getElementById('opportunities-sheet-upload')?.click()}
+                disabled={sheetUploadLoading || sheetUploadSaving}
+              >
+                {sheetUploadLoading ? 'Parsing…' : 'Upload Sheet'}
+              </Button>
+            </>
+          ) : null}
           {canEdit ? (
             <>
               <Button type="button" variant="outline" onClick={() => openEditor('new')}>New</Button>
@@ -521,6 +724,63 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         onOpenChange={(open) => { if (!open) setSelectedOpp(null); }}
         formatCurrency={formatCurrency}
       />
+
+      <Dialog
+        open={sheetUploadOpen}
+        onOpenChange={(open) => {
+          if (!sheetUploadSaving) setSheetUploadOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Sheet Upload Preview</DialogTitle>
+            <DialogDescription>
+              Parsed {sheetUploadRows.length} row(s).
+              {sheetUploadMeta ? ` New: ${sheetUploadMeta.created}, Updated: ${sheetUploadMeta.updated}.` : ''}
+              {' '}New/updated rows are shown first. Save writes to MongoDB.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[55vh] overflow-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-background">
+                <tr className="border-b">
+                  <th className="px-3 py-2 text-left">Ref</th>
+                  <th className="px-3 py-2 text-left">Tender</th>
+                  <th className="px-3 py-2 text-left">Client</th>
+                  <th className="px-3 py-2 text-left">Status</th>
+                  <th className="px-3 py-2 text-left">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sheetUploadRows.slice(0, 200).map((row) => (
+                  <tr key={`${row.opportunityRefNo}-${row.tenderName}`} className="border-b last:border-b-0">
+                    <td className="px-3 py-2 font-medium">{row.opportunityRefNo || '—'}</td>
+                    <td className="px-3 py-2">{row.tenderName || '—'}</td>
+                    <td className="px-3 py-2">{row.clientName || '—'}</td>
+                    <td className="px-3 py-2">{row.avenirStatus || '—'}</td>
+                    <td className="px-3 py-2">{row.opportunityValue || '—'}</td>
+                  </tr>
+                ))}
+                {sheetUploadRows.length > 200 ? (
+                  <tr>
+                    <td className="px-3 py-2 text-muted-foreground" colSpan={5}>
+                      Showing first 200 rows (parsed {sheetUploadRows.length}).
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setSheetUploadOpen(false)} disabled={sheetUploadSaving}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={commitSheetUpload} disabled={sheetUploadSaving || !sheetUploadRows.length}>
+              {sheetUploadSaving ? 'Saving…' : `Save ${sheetUploadRows.length} Row${sheetUploadRows.length === 1 ? '' : 's'}`}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={editorOpen}
