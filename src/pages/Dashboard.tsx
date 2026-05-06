@@ -347,6 +347,70 @@ const formatCompactNumber = (value: number) => new Intl.NumberFormat('en-US', {
   maximumFractionDigits: value >= 1000 ? 1 : 0,
 }).format(value || 0);
 
+const KPI_DIAGNOSTICS_STORAGE_PREFIX = 'kpi-diagnostics:';
+const MAX_DIAGNOSTICS_ROWS = 2500;
+
+const evictOldKpiDiagnostics = () => {
+  try {
+    const keys: Array<{ key: string; ts: number }> = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(KPI_DIAGNOSTICS_STORAGE_PREFIX)) continue;
+      const ts = Number(key.slice(KPI_DIAGNOSTICS_STORAGE_PREFIX.length).split('-')[0] || 0);
+      keys.push({ key, ts });
+    }
+    keys.sort((a, b) => a.ts - b.ts);
+    keys.slice(0, Math.max(0, keys.length - 6)).forEach(({ key }) => localStorage.removeItem(key));
+  } catch {
+    // ignore
+  }
+};
+
+const tryStoreKpiDiagnostics = (reportId: string, report: KpiDiagnosticsReport) => {
+  const storageKey = `${KPI_DIAGNOSTICS_STORAGE_PREFIX}${reportId}`;
+  const attemptStore = (target: Storage, payload: KpiDiagnosticsReport) => {
+    target.setItem(storageKey, JSON.stringify(payload));
+  };
+
+  const capReport = (payload: KpiDiagnosticsReport): KpiDiagnosticsReport => {
+    const included = payload.included.slice(0, MAX_DIAGNOSTICS_ROWS);
+    const omitted = payload.omitted.slice(0, MAX_DIAGNOSTICS_ROWS);
+    return {
+      ...payload,
+      included,
+      omitted,
+      counts: {
+        ...payload.counts,
+        includedRows: payload.counts.includedRows,
+        omittedRows: payload.counts.omittedRows,
+      },
+    };
+  };
+
+  evictOldKpiDiagnostics();
+  try {
+    attemptStore(localStorage, report);
+    return;
+  } catch {
+    // fall through
+  }
+
+  try {
+    attemptStore(sessionStorage, report);
+    return;
+  } catch {
+    // fall through
+  }
+
+  const capped = capReport(report);
+  (capped as any).truncated = true;
+  try {
+    attemptStore(sessionStorage, capped);
+  } catch {
+    // Nothing else we can do; avoid throwing in UI thread.
+  }
+};
+
 const Dashboard = () => {
   const { opportunities, isLoading, error, lastSyncTime, isLiveRefreshActive } = useData();
   const { formatCurrency, currency, convertValue } = useCurrency();
@@ -562,7 +626,7 @@ const Dashboard = () => {
       omitted: omittedRows,
     };
 
-    localStorage.setItem(`kpi-diagnostics:${reportId}`, JSON.stringify(report));
+    tryStoreKpiDiagnostics(reportId, report);
     window.open(`/kpi-diagnostics?report=${encodeURIComponent(reportId)}`, '_blank', 'noopener,noreferrer');
   };
 
@@ -618,7 +682,7 @@ const Dashboard = () => {
       omitted: omittedRows,
     };
 
-    localStorage.setItem(`kpi-diagnostics:${reportId}`, JSON.stringify(report));
+    tryStoreKpiDiagnostics(reportId, report);
     window.open(`/kpi-diagnostics?report=${encodeURIComponent(reportId)}&view=omitted`, '_blank', 'noopener,noreferrer');
   };
 

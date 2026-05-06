@@ -34,6 +34,7 @@ type KpiDiagnosticsReport = {
   };
   included: KpiDiagnosticEntry[];
   omitted: KpiDiagnosticEntry[];
+  truncated?: boolean;
 };
 
 const readReport = (id: string | null): KpiDiagnosticsReport | null => {
@@ -117,6 +118,11 @@ const KpiDiagnostics = () => {
       <div className="analytics-card p-5">
         <h1 className="text-lg font-semibold text-slate-900">KPI Diagnostics: {report.kpiType.toUpperCase()}</h1>
         <p className="mt-1 text-xs text-slate-500">Generated at {new Date(report.generatedAt).toLocaleString()}</p>
+        {report.truncated ? (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            Report truncated to fit browser storage limits. Narrow filters if you need the full omitted list.
+          </div>
+        ) : null}
         <div className="mt-4 grid grid-cols-1 gap-2 text-xs text-slate-700 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border border-slate-200 bg-white p-3">Source rows: <strong>{report.counts.sourceRows}</strong></div>
           <div className="rounded-lg border border-slate-200 bg-white p-3">Pre-KPI scope: <strong>{report.counts.preKpiScopedRows}</strong></div>
