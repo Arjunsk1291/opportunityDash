@@ -68,7 +68,9 @@ type KpiDiagnosticEntry = {
   clientName: string;
   journeyType: 'tender' | 'eoi';
   status: string;
+  reasonCode: string;
   reason: string;
+  reasonMeta?: Record<string, unknown>;
   replacement?: {
     id: string;
     refNo: string;
@@ -326,14 +328,22 @@ const includesForKpi = (kpiType: DashboardKpiType, group: ProjectGroup) => {
   return { included: true, reason: `included: project status matched ${targetStatus}` };
 };
 
-const toDiagnosticEntry = (opp: Opportunity, reason: string, replacement?: Opportunity): KpiDiagnosticEntry => ({
+const toDiagnosticEntry = (
+  opp: Opportunity,
+  reasonCode: string,
+  reason: string,
+  reasonMeta?: Record<string, unknown>,
+  replacement?: Opportunity,
+): KpiDiagnosticEntry => ({
   id: String(opp.id || `${opp.opportunityRefNo}-${opp.tenderName}`),
   refNo: normalizeText(opp.opportunityRefNo),
   tenderName: normalizeText(opp.tenderName),
   clientName: normalizeText(opp.clientName),
   journeyType: getJourneyType(opp),
   status: normalizeCanonicalStatus(getDisplayStatus(opp)),
+  reasonCode,
   reason,
+  reasonMeta,
   replacement: replacement ? {
     id: String(replacement.id || `${replacement.opportunityRefNo}-${replacement.tenderName}`),
     refNo: normalizeText(replacement.opportunityRefNo),
@@ -341,6 +351,129 @@ const toDiagnosticEntry = (opp: Opportunity, reason: string, replacement?: Oppor
     status: normalizeCanonicalStatus(getDisplayStatus(replacement)),
   } : undefined,
 });
+
+const explainFilterExclusion = (opp: Opportunity, filters: FilterState) => {
+  const search = String(filters.search || '').trim();
+  if (search) {
+    const searchLower = search.toLowerCase();
+    const rowSnapshot = opp.rawGraphData?.rowSnapshot && typeof opp.rawGraphData.rowSnapshot === 'object'
+      ? Object.values(opp.rawGraphData.rowSnapshot).map((value) => String(value ?? '')).join(' ').toLowerCase()
+      : '';
+    const searchableBlob = [
+      opp.opportunityRefNo,
+      opp.tenderName,
+      opp.opportunityClassification,
+      opp.clientName,
+      opp.groupClassification,
+      opp.awardedDate,
+      opp.dateTenderReceived,
+      opp.tenderPlannedSubmissionDate,
+      opp.tenderSubmittedDate,
+      opp.internalLead,
+      opp.opportunityValue,
+      opp.avenirStatus,
+      opp.tenderResult,
+      opp.remarksReason,
+      opp.comments,
+      rowSnapshot,
+    ].map((value) => String(value ?? '').toLowerCase()).join(' ');
+    if (!searchableBlob.includes(searchLower)) {
+      return { reasonCode: 'F.SEARCH', reason: 'excluded: search filter did not match row text', reasonMeta: { search } };
+    }
+  }
+
+  if (filters.statuses.length > 0) {
+    const matchesStatus = filters.statuses.some((status) => {
+      if (status === 'LOST') return opp.tenderResult === 'LOST';
+      if (status === 'ONGOING') return opp.tenderResult === 'ONGOING';
+      return opp.canonicalStage === status;
+    });
+    if (!matchesStatus) {
+      return {
+        reasonCode: 'F.STATUS',
+        reason: 'excluded: status filter mismatch',
+        reasonMeta: { statuses: filters.statuses, canonicalStage: opp.canonicalStage, tenderResult: opp.tenderResult },
+      };
+    }
+  }
+
+  if (filters.excludeLostOutcomes && opp.tenderResult === 'LOST') {
+    return { reasonCode: 'F.EXCLUDE_LOST', reason: 'excluded: exclude-lost-outcomes enabled', reasonMeta: { tenderResult: opp.tenderResult } };
+  }
+
+  if (filters.groups.length > 0 && !filters.groups.includes(opp.groupClassification)) {
+    return { reasonCode: 'F.GROUP', reason: 'excluded: group not in selected groups', reasonMeta: { groups: filters.groups, group: opp.groupClassification } };
+  }
+
+  if (filters.leads.length > 0) {
+    const normalizeKey = (value: string) => value.trim().toLowerCase();
+    const leadKey = normalizeKey(String(opp.internalLead || ''));
+    const selected = new Set(filters.leads.map((lead) => normalizeKey(lead)));
+    if (!selected.has(leadKey)) {
+      return { reasonCode: 'F.LEAD', reason: 'excluded: lead not in selected leads', reasonMeta: { leads: filters.leads, lead: opp.internalLead } };
+    }
+  }
+
+  if (filters.clients.length > 0) {
+    const normalizeKey = (value: string) => value.trim().toLowerCase();
+    const clientKey = normalizeKey(String(opp.clientName || ''));
+    const selected = new Set(filters.clients.map((client) => normalizeKey(client)));
+    if (!selected.has(clientKey)) {
+      return { reasonCode: 'F.CLIENT', reason: 'excluded: client not in selected clients', reasonMeta: { clients: filters.clients, client: opp.clientName } };
+    }
+  }
+
+  if (filters.clientTypes.length > 0 && !filters.clientTypes.includes(opp.clientType)) {
+    return { reasonCode: 'F.CLIENT_TYPE', reason: 'excluded: client type not selected', reasonMeta: { clientTypes: filters.clientTypes, clientType: opp.clientType } };
+  }
+
+  if (filters.qualificationStatuses.length > 0 && !filters.qualificationStatuses.includes(opp.qualificationStatus)) {
+    return { reasonCode: 'F.QUAL', reason: 'excluded: qualification status not selected', reasonMeta: { qualificationStatuses: filters.qualificationStatuses, qualificationStatus: opp.qualificationStatus } };
+  }
+
+  if (filters.partnerInvolvement === 'yes' && !opp.partnerInvolvement) {
+    return { reasonCode: 'F.PARTNER', reason: 'excluded: partner involvement required (yes)', reasonMeta: { partnerInvolvement: 'yes' } };
+  }
+  if (filters.partnerInvolvement === 'no' && opp.partnerInvolvement) {
+    return { reasonCode: 'F.PARTNER', reason: 'excluded: partner involvement required (no)', reasonMeta: { partnerInvolvement: 'no' } };
+  }
+
+  const getPriorityDateValue = () => (
+    opp.awardedDate
+    || opp.tenderSubmittedDate
+    || opp.tenderPlannedSubmissionDate
+    || opp.dateTenderReceived
+    || ''
+  );
+  const dateFieldValue = getPriorityDateValue();
+  if (filters.dateRange.from || filters.dateRange.to) {
+    if (!dateFieldValue) return { reasonCode: 'F.DATE', reason: 'excluded: date range active but row has no date', reasonMeta: { dateFieldValue: '' } };
+    const dateValue = new Date(dateFieldValue);
+    if (Number.isNaN(dateValue.getTime())) return { reasonCode: 'F.DATE', reason: 'excluded: invalid date value for date range', reasonMeta: { dateFieldValue } };
+    if (filters.dateRange.from && dateValue < filters.dateRange.from) {
+      return { reasonCode: 'F.DATE', reason: 'excluded: date before range start', reasonMeta: { dateFieldValue, from: filters.dateRange.from.toISOString() } };
+    }
+    if (filters.dateRange.to && dateValue > filters.dateRange.to) {
+      return { reasonCode: 'F.DATE', reason: 'excluded: date after range end', reasonMeta: { dateFieldValue, to: filters.dateRange.to.toISOString() } };
+    }
+  }
+
+  if (filters.valueRange.min !== undefined && opp.opportunityValue < filters.valueRange.min) {
+    return { reasonCode: 'F.VALUE_MIN', reason: 'excluded: opportunity value below minimum', reasonMeta: { min: filters.valueRange.min, value: opp.opportunityValue } };
+  }
+  if (filters.valueRange.max !== undefined && opp.opportunityValue > filters.valueRange.max) {
+    return { reasonCode: 'F.VALUE_MAX', reason: 'excluded: opportunity value above maximum', reasonMeta: { max: filters.valueRange.max, value: opp.opportunityValue } };
+  }
+
+  if (filters.showAtRisk && !opp.isAtRisk) {
+    return { reasonCode: 'F.AT_RISK', reason: 'excluded: at-risk filter enabled and row is not at risk', reasonMeta: { isAtRisk: opp.isAtRisk } };
+  }
+  if (filters.showMissDeadline && !opp.willMissDeadline) {
+    return { reasonCode: 'F.MISS_DEADLINE', reason: 'excluded: miss-deadline filter enabled and row does not miss deadline', reasonMeta: { willMissDeadline: opp.willMissDeadline } };
+  }
+
+  return { reasonCode: 'F.UNKNOWN', reason: 'excluded: did not satisfy active filters', reasonMeta: {} };
+};
 
 const formatCompactNumber = (value: number) => new Intl.NumberFormat('en-US', {
   notation: 'compact',
@@ -586,16 +719,18 @@ const Dashboard = () => {
       const row = group.primary || group.items[0];
       if (!row) return;
       const verdict = includesForKpi(kpiType, group);
-      if (verdict.included) includedRows.push(toDiagnosticEntry(row, verdict.reason));
-      else omittedRows.push(toDiagnosticEntry(row, verdict.reason));
+      if (verdict.included) includedRows.push(toDiagnosticEntry(row, 'K.INCLUDED', verdict.reason));
+      else omittedRows.push(toDiagnosticEntry(row, 'K.EXCLUDED', verdict.reason));
     });
 
     grouped.duplicateOmissions.forEach(({ omitted, kept, reason }) => {
       omittedRows.push(toDiagnosticEntry(
         omitted,
+        'K.DEDUPE_MERGED',
         reason === 'duplicate_project_grouping'
           ? 'excluded: merged into canonical project key (base ref/tender-name grouping)'
           : 'excluded: merged into canonical project key',
+        undefined,
         kept,
       ));
     });
@@ -603,7 +738,8 @@ const Dashboard = () => {
     const scopedIds = new Set(preKpiScopedRows.map((row) => String(row.id)));
     opportunities.forEach((opp) => {
       if (scopedIds.has(String(opp.id))) return;
-      omittedRows.push(toDiagnosticEntry(opp, 'excluded by active filters before KPI rule evaluation'));
+      const explained = explainFilterExclusion(opp, scopeFilters);
+      omittedRows.push(toDiagnosticEntry(opp, explained.reasonCode, explained.reason, explained.reasonMeta));
     });
 
     const reportId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -644,16 +780,18 @@ const Dashboard = () => {
       const row = group.primary || group.items[0];
       if (!row) return;
       const verdict = includesForKpi(kpiType, group);
-      if (verdict.included) includedRows.push(toDiagnosticEntry(row, verdict.reason));
-      else omittedRows.push(toDiagnosticEntry(row, verdict.reason));
+      if (verdict.included) includedRows.push(toDiagnosticEntry(row, 'K.INCLUDED', verdict.reason));
+      else omittedRows.push(toDiagnosticEntry(row, 'K.EXCLUDED', verdict.reason));
     });
 
     grouped.duplicateOmissions.forEach(({ omitted, kept, reason }) => {
       omittedRows.push(toDiagnosticEntry(
         omitted,
+        'K.DEDUPE_MERGED',
         reason === 'duplicate_project_grouping'
           ? 'excluded: merged into canonical project key (base ref/tender-name grouping)'
           : 'excluded: merged into canonical project key',
+        undefined,
         kept,
       ));
     });
@@ -662,7 +800,8 @@ const Dashboard = () => {
     opportunities.forEach((opp) => {
       if (scopedIds.has(String(opp.id))) return;
       if (kpiType === 'value' && normalizeCanonicalStatus(getDisplayStatus(opp)) !== 'AWARDED') return;
-      omittedRows.push(toDiagnosticEntry(opp, 'excluded by active filters before KPI rule evaluation'));
+      const explained = explainFilterExclusion(opp, scopeFilters);
+      omittedRows.push(toDiagnosticEntry(opp, explained.reasonCode, explained.reason, explained.reasonMeta));
     });
 
     const reportId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;

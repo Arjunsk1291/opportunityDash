@@ -8,7 +8,9 @@ type KpiDiagnosticEntry = {
   clientName: string;
   journeyType: 'tender' | 'eoi';
   status: string;
+  reasonCode?: string;
   reason: string;
+  reasonMeta?: Record<string, unknown>;
   replacement?: {
     id: string;
     refNo: string;
@@ -61,6 +63,7 @@ const DiagnosticsTable = ({ title, rows }: { title: string; rows: KpiDiagnosticE
             <th className="py-2 pr-3">Client</th>
             <th className="py-2 pr-3">Type</th>
             <th className="py-2 pr-3">Status</th>
+            <th className="py-2 pr-3">Code</th>
             <th className="py-2 pr-3">Reason</th>
             <th className="py-2 pr-3">Considered Instead</th>
           </tr>
@@ -73,6 +76,7 @@ const DiagnosticsTable = ({ title, rows }: { title: string; rows: KpiDiagnosticE
               <td className="py-2 pr-3">{row.clientName || '-'}</td>
               <td className="py-2 pr-3 uppercase">{row.journeyType}</td>
               <td className="py-2 pr-3">{row.status || '-'}</td>
+              <td className="py-2 pr-3 font-mono">{row.reasonCode || '-'}</td>
               <td className="py-2 pr-3">{row.reason}</td>
               <td className="py-2 pr-3">
                 {row.replacement
