@@ -8,6 +8,8 @@ type KpiDiagnosticEntry = {
   clientName: string;
   journeyType: 'tender' | 'eoi';
   status: string;
+  effectiveValue?: number;
+  rawValue?: number;
   reasonCode?: string;
   reason: string;
   reasonMeta?: Record<string, unknown>;
@@ -16,6 +18,8 @@ type KpiDiagnosticEntry = {
     refNo: string;
     tenderName: string;
     status: string;
+    effectiveValue?: number;
+    rawValue?: number;
   };
 };
 
@@ -55,7 +59,7 @@ const DiagnosticsTable = ({ title, rows }: { title: string; rows: KpiDiagnosticE
   <div className="analytics-card p-4 sm:p-5">
     <h2 className="text-sm font-semibold text-slate-800">{title} ({rows.length})</h2>
     <div className="mt-3 overflow-x-auto">
-      <table className="w-full min-w-[1180px] text-left text-xs">
+      <table className="w-full min-w-[1280px] text-left text-xs">
         <thead>
           <tr className="border-b border-slate-200 text-slate-500">
             <th className="py-2 pr-3">Ref</th>
@@ -63,6 +67,7 @@ const DiagnosticsTable = ({ title, rows }: { title: string; rows: KpiDiagnosticE
             <th className="py-2 pr-3">Client</th>
             <th className="py-2 pr-3">Type</th>
             <th className="py-2 pr-3">Status</th>
+            <th className="py-2 pr-3">Value</th>
             <th className="py-2 pr-3">Code</th>
             <th className="py-2 pr-3">Reason</th>
             <th className="py-2 pr-3">Meta</th>
@@ -77,6 +82,11 @@ const DiagnosticsTable = ({ title, rows }: { title: string; rows: KpiDiagnosticE
               <td className="py-2 pr-3">{row.clientName || '-'}</td>
               <td className="py-2 pr-3 uppercase">{row.journeyType}</td>
               <td className="py-2 pr-3">{row.status || '-'}</td>
+              <td className="py-2 pr-3 font-mono">
+                {Number.isFinite(Number(row.effectiveValue))
+                  ? Number(row.effectiveValue).toLocaleString('en-GB')
+                  : (Number.isFinite(Number(row.rawValue)) ? Number(row.rawValue).toLocaleString('en-GB') : '-')}
+              </td>
               <td className="py-2 pr-3 font-mono">{row.reasonCode || '-'}</td>
               <td className="py-2 pr-3">{row.reason}</td>
               <td className="py-2 pr-3 font-mono text-[10px] text-slate-600">
@@ -84,7 +94,7 @@ const DiagnosticsTable = ({ title, rows }: { title: string; rows: KpiDiagnosticE
               </td>
               <td className="py-2 pr-3">
                 {row.replacement
-                  ? `${row.replacement.refNo || '-'} | ${row.replacement.tenderName || '-'} | ${row.replacement.status || '-'}`
+                  ? `${row.replacement.refNo || '-'} | ${row.replacement.tenderName || '-'} | ${row.replacement.status || '-'} | ${Number.isFinite(Number(row.replacement.effectiveValue)) ? Number(row.replacement.effectiveValue).toLocaleString('en-GB') : (Number.isFinite(Number(row.replacement.rawValue)) ? Number(row.replacement.rawValue).toLocaleString('en-GB') : '-')}`
                   : '-'}
               </td>
             </tr>

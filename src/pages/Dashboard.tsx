@@ -68,6 +68,8 @@ type KpiDiagnosticEntry = {
   clientName: string;
   journeyType: 'tender' | 'eoi';
   status: string;
+  effectiveValue: number;
+  rawValue: number;
   reasonCode: string;
   reason: string;
   reasonMeta?: Record<string, unknown>;
@@ -76,6 +78,8 @@ type KpiDiagnosticEntry = {
     refNo: string;
     tenderName: string;
     status: string;
+    effectiveValue: number;
+    rawValue: number;
   };
 };
 
@@ -143,6 +147,16 @@ const isEoiRow = (opp: Opportunity | null) => {
   if (!opp) return false;
   const type = normalizeText(opp.opportunityClassification).toUpperCase();
   return type.includes('EOI') || isEoiRefNo(opp.opportunityRefNo);
+};
+
+const getEffectiveOpportunityValueForDiagnostics = (opp: Partial<Opportunity>) => {
+  const legacyBase = Number(opp.opportunityValue || 0);
+  const frameworkTotal = Number(opp.frameworkTotalValue);
+  const callOffActual = Number(opp.callOffActualValue);
+  const variationDelta = Number(opp.variationDeltaValue || 0);
+  if (Number.isFinite(callOffActual)) return callOffActual;
+  if (Number.isFinite(frameworkTotal)) return frameworkTotal + (Number.isFinite(variationDelta) ? variationDelta : 0);
+  return legacyBase + (Number.isFinite(variationDelta) ? variationDelta : 0);
 };
 
 const getJourneyType = (opp: Opportunity | null) => {
@@ -341,6 +355,8 @@ const toDiagnosticEntry = (
   clientName: normalizeText(opp.clientName),
   journeyType: getJourneyType(opp),
   status: normalizeCanonicalStatus(getDisplayStatus(opp)),
+  effectiveValue: getEffectiveOpportunityValueForDiagnostics(opp),
+  rawValue: Number(opp.opportunityValue || 0),
   reasonCode,
   reason,
   reasonMeta,
@@ -349,6 +365,8 @@ const toDiagnosticEntry = (
     refNo: normalizeText(replacement.opportunityRefNo),
     tenderName: normalizeText(replacement.tenderName),
     status: normalizeCanonicalStatus(getDisplayStatus(replacement)),
+    effectiveValue: getEffectiveOpportunityValueForDiagnostics(replacement),
+    rawValue: Number(replacement.opportunityValue || 0),
   } : undefined,
 });
 
