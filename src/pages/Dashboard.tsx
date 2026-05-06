@@ -384,23 +384,19 @@ const explainFilterExclusion = (opp: Opportunity, filters: FilterState) => {
 
   if (filters.statuses.length > 0) {
     const displayStatus = normalizeCanonicalStatus(getDisplayStatus(opp));
-    const matchesStatus = filters.statuses.some((status) => {
-      if (status === 'LOST') return opp.tenderResult === 'LOST';
-      if (status === 'ONGOING') return opp.tenderResult === 'ONGOING';
-      return opp.canonicalStage === status;
-    });
+    const matchesStatus = filters.statuses.some((status) => displayStatus === normalizeCanonicalStatus(status));
     if (!matchesStatus) {
       return {
         reasonCode: 'F.STATUS',
         reason: 'excluded: status filter mismatch',
         reasonMeta: {
           statuses: filters.statuses,
-          canonicalStage: opp.canonicalStage,
-          tenderResult: opp.tenderResult,
+          displayStatus,
+          canonicalStage: (opp as any).canonicalStage,
+          tenderResult: (opp as any).tenderResult,
           avenirStatus: (opp as any).avenirStatus,
           rawAvenirStatus: (opp as any).rawAvenirStatus,
-          displayStatus,
-          note: 'Filter uses canonicalStage (except LOST/ONGOING uses tenderResult). KPI cards use getDisplayStatus().',
+          note: 'Filter uses getDisplayStatus() (avenirStatus AWARDED overrides everything; otherwise tenderResult wins; otherwise canonicalStage).',
         },
       };
     }

@@ -22,7 +22,7 @@ import { Separator } from "@/components/ui/separator";
 import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths, subQuarters, subYears } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Opportunity, GROUP_CLASSIFICATIONS } from "@/data/opportunityData";
-import { CANONICAL_STATUS_ORDER } from "@/lib/opportunityStatus";
+import { CANONICAL_STATUS_ORDER, getDisplayStatus, normalizeCanonicalStatus } from "@/lib/opportunityStatus";
 
 type DatePreset = "all" | "thisMonth" | "lastMonth" | "thisQuarter" | "lastQuarter" | "thisYear" | "lastYear" | "custom";
 
@@ -652,24 +652,14 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
       if (!searchableBlob.includes(searchLower)) return false;
     }
 
-    // ✅ UPDATED: Filter by both canonicalStage AND tenderResult for LOST/ONGOING
     if (filters.statuses.length > 0) {
-      const matchesStatus = filters.statuses.some(status => {
-        // For LOST and ONGOING, check tenderResult instead of canonicalStage
-        if (status === 'LOST') {
-          return o.tenderResult === 'LOST';
-        }
-        if (status === 'ONGOING') {
-          return o.tenderResult === 'ONGOING';
-        }
-        // For other statuses, check canonicalStage
-        return o.canonicalStage === status;
-      });
+      const displayStatus = normalizeCanonicalStatus(getDisplayStatus(o));
+      const matchesStatus = filters.statuses.some((status) => displayStatus === normalizeCanonicalStatus(status));
       
       if (!matchesStatus) return false;
     }
 
-    if (filters.excludeLostOutcomes && o.tenderResult === 'LOST') {
+    if (filters.excludeLostOutcomes && normalizeCanonicalStatus(getDisplayStatus(o)) === 'LOST') {
       return false;
     }
 

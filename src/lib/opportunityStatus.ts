@@ -34,6 +34,8 @@ export const isEoiNormalizedOpportunity = (opp: Partial<Opportunity>) => (
 );
 
 export const getDisplayStatus = (opp: Partial<Opportunity>) => {
+  const avenirStatus = normalizeCanonicalStatus(opp.avenirStatus);
+  if (avenirStatus === 'AWARDED') return 'AWARDED';
   const tenderResult = normalizeCanonicalStatus(opp.tenderResult);
   if (tenderResult && tenderResult !== 'UNKNOWN') return tenderResult;
   return normalizeCanonicalStatus(opp.avenirStatus || opp.canonicalStage || '');

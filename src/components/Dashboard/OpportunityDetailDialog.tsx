@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { Opportunity } from '@/data/opportunityData';
-import { getDisplayResult, getDisplayStatus, isEoiNormalizedOpportunity } from '@/lib/opportunityStatus';
+import { getDisplayResult, getDisplayStatus, isEoiNormalizedOpportunity, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 
 interface OpportunityDetailDialogProps {
   opportunity: Opportunity | null;
@@ -129,7 +129,7 @@ export function OpportunityDetailDialog({
   if (!opportunity) return null;
 
   const getHeaderColor = () => {
-    if (opportunity.canonicalStage === 'AWARDED') return 'bg-emerald-600';
+    if (normalizeCanonicalStatus(getDisplayStatus(opportunity)) === 'AWARDED') return 'bg-emerald-600';
     if (opportunity.isAtRisk) return 'bg-red-600';
     if (isEoiNormalizedOpportunity(opportunity)) return 'bg-violet-700';
     return 'bg-slate-700';

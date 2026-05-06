@@ -1,5 +1,5 @@
 import { isSubmissionWithinDays } from '@/lib/submissionDate';
-import { CANONICAL_STATUS_ORDER, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
+import { CANONICAL_STATUS_ORDER, getDisplayStatus, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 
 export interface Opportunity {
   id: string;
@@ -225,37 +225,37 @@ export const sumQuotedValueWithDedup = (data: Opportunity[]) => (
 
 export function calculateSummaryStats(data: Opportunity[]) {
 
-  const activeOpps = data.filter(o =>
-    ['WORKING', 'SUBMITTED', 'AWARDED'].includes(normalizeCanonicalStatus(o.canonicalStage))
-  );
+  const activeOpps = data.filter((o) => (
+    ['WORKING', 'SUBMITTED', 'AWARDED'].includes(normalizeCanonicalStatus(getDisplayStatus(o)))
+  ));
   const activeVisibleOpps = hideConvertedEoiDuplicates(activeOpps);
   const activeTenderTypeBreakdown = activeVisibleOpps.reduce((acc, opp) => {
     const type = classifyActiveTenderType(opp);
     acc[type] += 1;
     return acc;
   }, { tender: 0, eoi: 0 });
-  const awardedOpps = data.filter(o => normalizeCanonicalStatus(o.canonicalStage) === 'AWARDED');
+  const awardedOpps = data.filter((o) => normalizeCanonicalStatus(getDisplayStatus(o)) === 'AWARDED');
   const totalActiveValue = sumQuotedValueWithDedup(data);
   const awardedCount = awardedOpps.length;
   const awardedValue = awardedOpps.reduce((sum, o) => sum + getEffectiveOpportunityValue(o), 0);
 
-  const lostOpps = data.filter(o => normalizeCanonicalStatus(o.tenderResult) === 'LOST');
+  const lostOpps = data.filter((o) => normalizeCanonicalStatus(getDisplayStatus(o)) === 'LOST');
   const lostCount = lostOpps.length;
   const lostValue = lostOpps.reduce((sum, o) => sum + getEffectiveOpportunityValue(o), 0);
 
-  const regrettedOpps = data.filter(o => normalizeCanonicalStatus(o.canonicalStage) === 'REGRETTED');
+  const regrettedOpps = data.filter((o) => normalizeCanonicalStatus(getDisplayStatus(o)) === 'REGRETTED');
   const regrettedCount = regrettedOpps.length;
   const regrettedValue = regrettedOpps.reduce((sum, o) => sum + getEffectiveOpportunityValue(o), 0);
 
-  const workingOpps = data.filter(o => normalizeCanonicalStatus(o.canonicalStage) === 'WORKING');
+  const workingOpps = data.filter((o) => normalizeCanonicalStatus(getDisplayStatus(o)) === 'WORKING');
   const workingCount = workingOpps.length;
   const workingValue = workingOpps.reduce((sum, o) => sum + getEffectiveOpportunityValue(o), 0);
 
-  const toStartOpps = data.filter(o => normalizeCanonicalStatus(o.canonicalStage) === 'TO START');
+  const toStartOpps = data.filter((o) => normalizeCanonicalStatus(getDisplayStatus(o)) === 'TO START');
   const toStartCount = toStartOpps.length;
   const toStartValue = toStartOpps.reduce((sum, o) => sum + getEffectiveOpportunityValue(o), 0);
 
-  const ongoingOpps = data.filter(o => normalizeCanonicalStatus(o.tenderResult) === 'ONGOING');
+  const ongoingOpps = data.filter((o) => normalizeCanonicalStatus(getDisplayStatus(o)) === 'ONGOING');
   const ongoingCount = ongoingOpps.length;
   const ongoingValue = ongoingOpps.reduce((sum, o) => sum + getEffectiveOpportunityValue(o), 0);
 
@@ -296,11 +296,7 @@ export function calculateFunnelData(data: Opportunity[]) {
   });
   
   data.forEach(opp => {
-    let stage = normalizeCanonicalStatus(opp.canonicalStage);
-    
-    if (normalizeCanonicalStatus(opp.tenderResult) === 'LOST' || normalizeCanonicalStatus(opp.tenderResult) === 'ONGOING') {
-      stage = normalizeCanonicalStatus(opp.tenderResult);
-    }
+    const stage = normalizeCanonicalStatus(getDisplayStatus(opp));
     
     if (stageCounts[stage]) {
       stageCounts[stage].count++;
@@ -339,9 +335,9 @@ export function getLeaderboardData(data: Opportunity[]) {
     leadStats[o.internalLead].count++;
     leadStats[o.internalLead].value += getEffectiveOpportunityValue(o);
     
-    if (normalizeCanonicalStatus(o.canonicalStage) === 'AWARDED') leadStats[o.internalLead].won++;
-    // ✅ UPDATED: Count LOST from tenderResult, not canonicalStage
-    if (normalizeCanonicalStatus(o.tenderResult) === 'LOST' || normalizeCanonicalStatus(o.canonicalStage) === 'REGRETTED') leadStats[o.internalLead].lost++;
+    const status = normalizeCanonicalStatus(getDisplayStatus(o));
+    if (status === 'AWARDED') leadStats[o.internalLead].won++;
+    if (status === 'LOST' || status === 'REGRETTED') leadStats[o.internalLead].lost++;
   });
   
   return Object.entries(leadStats)
@@ -365,7 +361,7 @@ export function getClientData(data: Opportunity[]) {
       clientStats[name] = { count: 0, value: 0 };
     }
     clientStats[name].count++;
-    if (normalizeCanonicalStatus(o.canonicalStage) === 'AWARDED') {
+    if (normalizeCanonicalStatus(getDisplayStatus(o)) === 'AWARDED') {
       clientStats[name].value += getEffectiveOpportunityValue(o);
     }
   });
