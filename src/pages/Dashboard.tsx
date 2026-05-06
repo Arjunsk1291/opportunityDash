@@ -631,7 +631,9 @@ const Dashboard = () => {
   };
 
   const openKpiOmittedWindow = (kpiType: DashboardKpiType, nextFilters: FilterState) => {
-    const scopeFilters = getKpiScopeFilters(kpiType, nextFilters);
+    const scopeFilters = kpiType === 'value'
+      ? withKpiOverrides('value', nextFilters)
+      : getKpiScopeFilters(kpiType, nextFilters);
     const preKpiScopedRows = applyFilters(opportunities, scopeFilters);
     const grouped = buildProjectGroups(preKpiScopedRows);
 
@@ -659,6 +661,7 @@ const Dashboard = () => {
     const scopedIds = new Set(preKpiScopedRows.map((row) => String(row.id)));
     opportunities.forEach((opp) => {
       if (scopedIds.has(String(opp.id))) return;
+      if (kpiType === 'value' && normalizeCanonicalStatus(getDisplayStatus(opp)) !== 'AWARDED') return;
       omittedRows.push(toDiagnosticEntry(opp, 'excluded by active filters before KPI rule evaluation'));
     });
 

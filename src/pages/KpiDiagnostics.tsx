@@ -94,11 +94,23 @@ const KpiDiagnostics = () => {
 
   const report = useMemo(() => readReport(reportId), [reportId]);
   const duplicateRows = useMemo(
-    () => (report?.omitted || []).filter((row) => Boolean(row.replacement)),
+    () => {
+      const base = (report?.omitted || []).filter((row) => Boolean(row.replacement));
+      if (String(report?.kpiType || '').toLowerCase() === 'value') {
+        return base.filter((row) => String(row.status || '').trim().toUpperCase() === 'AWARDED');
+      }
+      return base;
+    },
     [report],
   );
   const omittedRows = useMemo(
-    () => (report?.omitted || []).filter((row) => !row.replacement),
+    () => {
+      const base = (report?.omitted || []).filter((row) => !row.replacement);
+      if (String(report?.kpiType || '').toLowerCase() === 'value') {
+        return base.filter((row) => String(row.status || '').trim().toUpperCase() === 'AWARDED');
+      }
+      return base;
+    },
     [report],
   );
 
