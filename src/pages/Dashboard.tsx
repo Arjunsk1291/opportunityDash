@@ -753,6 +753,35 @@ const Dashboard = () => {
       const verdict = includesForKpi(kpiType, group);
       if (verdict.included) includedRows.push(toDiagnosticEntry(row, 'K.INCLUDED', verdict.reason));
       else omittedRows.push(toDiagnosticEntry(row, 'K.EXCLUDED', verdict.reason));
+
+      if (kpiType === 'value' && group.status === 'AWARDED') {
+        const awardedTenderRows = group.items
+          .filter((opp) => getJourneyType(opp) === 'tender')
+          .filter((opp) => normalizeCanonicalStatus(getDisplayStatus(opp)) === 'AWARDED')
+          .map((opp) => ({
+            opp,
+            rawValue: Number(opp.opportunityValue || 0),
+          }))
+          .filter(({ rawValue }) => Number.isFinite(rawValue) && rawValue > 0);
+
+        if (awardedTenderRows.length > 1) {
+          const maxValue = Math.max(...awardedTenderRows.map(({ rawValue }) => rawValue));
+          const kept = awardedTenderRows.find(({ rawValue }) => rawValue == maxValue)?.opp || null;
+          const notCounted = kept
+            ? awardedTenderRows.filter(({ opp }) => opp !== kept)
+            : awardedTenderRows;
+
+          notCounted.forEach(({ opp }) => {
+            omittedRows.push(toDiagnosticEntry(
+              opp,
+              'K.VALUE_NOT_COUNTED',
+              'excluded: AWARDED row not counted in value KPI (project group uses max awarded value)',
+              { projectKey: group.key, countedValue: maxValue },
+              kept || undefined,
+            ));
+          });
+        }
+      }
     });
 
     grouped.duplicateOmissions.forEach(({ omitted, kept, reason }) => {
@@ -814,6 +843,35 @@ const Dashboard = () => {
       const verdict = includesForKpi(kpiType, group);
       if (verdict.included) includedRows.push(toDiagnosticEntry(row, 'K.INCLUDED', verdict.reason));
       else omittedRows.push(toDiagnosticEntry(row, 'K.EXCLUDED', verdict.reason));
+
+      if (kpiType === 'value' && group.status === 'AWARDED') {
+        const awardedTenderRows = group.items
+          .filter((opp) => getJourneyType(opp) === 'tender')
+          .filter((opp) => normalizeCanonicalStatus(getDisplayStatus(opp)) === 'AWARDED')
+          .map((opp) => ({
+            opp,
+            rawValue: Number(opp.opportunityValue || 0),
+          }))
+          .filter(({ rawValue }) => Number.isFinite(rawValue) && rawValue > 0);
+
+        if (awardedTenderRows.length > 1) {
+          const maxValue = Math.max(...awardedTenderRows.map(({ rawValue }) => rawValue));
+          const kept = awardedTenderRows.find(({ rawValue }) => rawValue == maxValue)?.opp || null;
+          const notCounted = kept
+            ? awardedTenderRows.filter(({ opp }) => opp !== kept)
+            : awardedTenderRows;
+
+          notCounted.forEach(({ opp }) => {
+            omittedRows.push(toDiagnosticEntry(
+              opp,
+              'K.VALUE_NOT_COUNTED',
+              'excluded: AWARDED row not counted in value KPI (project group uses max awarded value)',
+              { projectKey: group.key, countedValue: maxValue },
+              kept || undefined,
+            ));
+          });
+        }
+      }
     });
 
     grouped.duplicateOmissions.forEach(({ omitted, kept, reason }) => {
