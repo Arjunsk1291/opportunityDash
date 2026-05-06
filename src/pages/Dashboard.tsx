@@ -921,6 +921,10 @@ const Dashboard = () => {
   const handleKPIClick = (kpiType: DashboardKpiType) => {
     const nextFilters = withKpiOverrides(kpiType, filters);
     setFilters(nextFilters);
+    if (kpiType === 'value') {
+      openKpiOmittedWindow(kpiType, nextFilters);
+      return;
+    }
     openKpiDiagnosticsWindow(kpiType, nextFilters);
   };
 
