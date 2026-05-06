@@ -402,8 +402,17 @@ const explainFilterExclusion = (opp: Opportunity, filters: FilterState) => {
     }
   }
 
-  if (filters.excludeLostOutcomes && opp.tenderResult === 'LOST') {
-    return { reasonCode: 'F.EXCLUDE_LOST', reason: 'excluded: exclude-lost-outcomes enabled', reasonMeta: { tenderResult: opp.tenderResult } };
+  if (filters.excludeLostOutcomes && normalizeCanonicalStatus(getDisplayStatus(opp)) === 'LOST') {
+    return {
+      reasonCode: 'F.EXCLUDE_LOST',
+      reason: 'excluded: exclude-lost-outcomes enabled',
+      reasonMeta: {
+        displayStatus: normalizeCanonicalStatus(getDisplayStatus(opp)),
+        tenderResult: (opp as any).tenderResult,
+        avenirStatus: (opp as any).avenirStatus,
+        canonicalStage: (opp as any).canonicalStage,
+      },
+    };
   }
 
   if (filters.groups.length > 0 && !filters.groups.includes(opp.groupClassification)) {
