@@ -216,15 +216,24 @@ const getMergedReportStatus = (item = {}) => {
   return String(rawStatus || '').trim().toUpperCase();
 };
 
+const isTerminalTenderResult = (value) => {
+  const normalized = String(value || '').trim().toUpperCase();
+  return normalized === 'AWARDED' || normalized === 'LOST';
+};
+
 const calculateSummaryStats = (data = []) => {
   const canonicalStage = (item) => String(item?.canonicalStage || '').trim().toUpperCase();
-  const awardedCount = data.filter((item) => canonicalStage(item) === 'AWARDED').length;
+  const awardedCount = data.filter((item) => getMergedReportStatus(item) === 'AWARDED').length;
   const lostCount = data.filter((item) => getMergedReportStatus(item) === 'LOST').length;
   const regrettedCount = data.filter((item) => canonicalStage(item) === 'REGRETTED').length;
   const workingCount = data.filter((item) => canonicalStage(item) === 'WORKING').length;
   const toStartCount = data.filter((item) => canonicalStage(item) === 'TO START').length;
   const atRiskCount = data.filter((item) => Boolean(item?.isAtRisk || item?.atRisk)).length;
-  const totalActive = data.filter((item) => ['WORKING', 'SUBMITTED', 'AWARDED'].includes(canonicalStage(item))).length;
+  const totalActive = data.filter((item) => {
+    const stage = canonicalStage(item);
+    if (stage === 'WORKING' || stage === 'SUBMITTED') return true;
+    return getMergedReportStatus(item) === 'AWARDED';
+  }).length;
 
   return {
     awardedCount,
@@ -464,7 +473,11 @@ const filterOpportunitiesForBulkApprove = (opportunities = [], filters = {}) => 
     if (status) {
       const mergedStatus = normalizeFilterValue(getMergedReportStatus(opportunity));
       const canonicalStage = normalizeFilterValue(opportunity?.canonicalStage || opportunity?.status || '');
-      if (mergedStatus !== status && canonicalStage !== status) return false;
+      if (isTerminalTenderResult(status)) {
+        if (mergedStatus !== status) return false;
+      } else if (mergedStatus !== status && canonicalStage !== status) {
+        return false;
+      }
     }
 
     if (dateFrom || dateTo) {
