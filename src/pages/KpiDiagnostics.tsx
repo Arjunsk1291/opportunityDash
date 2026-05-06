@@ -89,10 +89,15 @@ const DiagnosticsTable = ({ title, rows }: { title: string; rows: KpiDiagnosticE
 const KpiDiagnostics = () => {
   const [searchParams] = useSearchParams();
   const reportId = searchParams.get('report');
+  const view = (searchParams.get('view') || 'all').toLowerCase();
 
   const report = useMemo(() => readReport(reportId), [reportId]);
   const duplicateRows = useMemo(
     () => (report?.omitted || []).filter((row) => Boolean(row.replacement)),
+    [report],
+  );
+  const omittedRows = useMemo(
+    () => (report?.omitted || []).filter((row) => !row.replacement),
     [report],
   );
 
@@ -118,12 +123,16 @@ const KpiDiagnostics = () => {
           <div className="rounded-lg border border-slate-200 bg-white p-3">Included: <strong>{report.counts.includedRows}</strong></div>
           <div className="rounded-lg border border-slate-200 bg-white p-3">Duplicates removed: <strong>{duplicateRows.length}</strong></div>
         </div>
+        <div className="mt-2 text-xs text-slate-700">
+          Omitted (non-duplicate): <strong>{omittedRows.length}</strong>
+        </div>
         <div className="mt-3 text-xs text-slate-600">
           Applied statuses: {report.appliedFilters.statuses.length ? report.appliedFilters.statuses.join(', ') : 'none'} | showAtRisk: {String(report.appliedFilters.showAtRisk)} | excludeLostOutcomes: {String(report.appliedFilters.excludeLostOutcomes)}
         </div>
       </div>
 
-      <DiagnosticsTable title="Included in KPI" rows={report.included} />
+      {view !== 'omitted' ? <DiagnosticsTable title="Included in KPI" rows={report.included} /> : null}
+      <DiagnosticsTable title="Omitted from KPI" rows={omittedRows} />
       <DiagnosticsTable title="Duplicates Removed (Dedupe Only)" rows={duplicateRows} />
     </div>
   );

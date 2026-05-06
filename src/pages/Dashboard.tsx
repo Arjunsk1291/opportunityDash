@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Loader2,
   RefreshCw,
+  Info,
   Target,
   Send,
   ThumbsDown,
@@ -565,6 +566,62 @@ const Dashboard = () => {
     window.open(`/kpi-diagnostics?report=${encodeURIComponent(reportId)}`, '_blank', 'noopener,noreferrer');
   };
 
+  const openKpiOmittedWindow = (kpiType: DashboardKpiType, nextFilters: FilterState) => {
+    const scopeFilters = getKpiScopeFilters(kpiType, nextFilters);
+    const preKpiScopedRows = applyFilters(opportunities, scopeFilters);
+    const grouped = buildProjectGroups(preKpiScopedRows);
+
+    const includedRows: KpiDiagnosticEntry[] = [];
+    const omittedRows: KpiDiagnosticEntry[] = [];
+
+    grouped.groups.forEach((group) => {
+      const row = group.primary || group.items[0];
+      if (!row) return;
+      const verdict = includesForKpi(kpiType, group);
+      if (verdict.included) includedRows.push(toDiagnosticEntry(row, verdict.reason));
+      else omittedRows.push(toDiagnosticEntry(row, verdict.reason));
+    });
+
+    grouped.duplicateOmissions.forEach(({ omitted, kept, reason }) => {
+      omittedRows.push(toDiagnosticEntry(
+        omitted,
+        reason === 'duplicate_project_grouping'
+          ? 'excluded: merged into canonical project key (base ref/tender-name grouping)'
+          : 'excluded: merged into canonical project key',
+        kept,
+      ));
+    });
+
+    const scopedIds = new Set(preKpiScopedRows.map((row) => String(row.id)));
+    opportunities.forEach((opp) => {
+      if (scopedIds.has(String(opp.id))) return;
+      omittedRows.push(toDiagnosticEntry(opp, 'excluded by active filters before KPI rule evaluation'));
+    });
+
+    const reportId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const report: KpiDiagnosticsReport = {
+      reportId,
+      generatedAt: new Date().toISOString(),
+      kpiType,
+      appliedFilters: {
+        statuses: nextFilters.statuses,
+        showAtRisk: nextFilters.showAtRisk,
+        excludeLostOutcomes: nextFilters.excludeLostOutcomes,
+      },
+      counts: {
+        sourceRows: opportunities.length,
+        preKpiScopedRows: preKpiScopedRows.length,
+        includedRows: includedRows.length,
+        omittedRows: omittedRows.length,
+      },
+      included: includedRows,
+      omitted: omittedRows,
+    };
+
+    localStorage.setItem(`kpi-diagnostics:${reportId}`, JSON.stringify(report));
+    window.open(`/kpi-diagnostics?report=${encodeURIComponent(reportId)}&view=omitted`, '_blank', 'noopener,noreferrer');
+  };
+
   const handleKPIClick = (kpiType: DashboardKpiType) => {
     const nextFilters = withKpiOverrides(kpiType, filters);
     setFilters(nextFilters);
@@ -856,8 +913,23 @@ const Dashboard = () => {
                 ) : null}
                 {card.chip ? <p className="pt-1 text-[11px] text-slate-500">{card.chip}</p> : null}
               </div>
-              <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
-                <card.icon className="h-5 w-5" />
+              <div className="flex flex-col items-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-200 bg-white/80 p-1 text-slate-500 hover:text-slate-900"
+                  aria-label={`Show omitted rows for ${card.label}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const nextFilters = withKpiOverrides(card.type, filters);
+                    openKpiOmittedWindow(card.type, nextFilters);
+                  }}
+                >
+                  <Info className="h-4 w-4" />
+                </button>
+                <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
+                  <card.icon className="h-5 w-5" />
+                </div>
               </div>
             </div>
           </button>
