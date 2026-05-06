@@ -55,7 +55,7 @@ const DiagnosticsTable = ({ title, rows }: { title: string; rows: KpiDiagnosticE
   <div className="analytics-card p-4 sm:p-5">
     <h2 className="text-sm font-semibold text-slate-800">{title} ({rows.length})</h2>
     <div className="mt-3 overflow-x-auto">
-      <table className="w-full min-w-[980px] text-left text-xs">
+      <table className="w-full min-w-[1180px] text-left text-xs">
         <thead>
           <tr className="border-b border-slate-200 text-slate-500">
             <th className="py-2 pr-3">Ref</th>
@@ -65,6 +65,7 @@ const DiagnosticsTable = ({ title, rows }: { title: string; rows: KpiDiagnosticE
             <th className="py-2 pr-3">Status</th>
             <th className="py-2 pr-3">Code</th>
             <th className="py-2 pr-3">Reason</th>
+            <th className="py-2 pr-3">Meta</th>
             <th className="py-2 pr-3">Considered Instead</th>
           </tr>
         </thead>
@@ -78,6 +79,9 @@ const DiagnosticsTable = ({ title, rows }: { title: string; rows: KpiDiagnosticE
               <td className="py-2 pr-3">{row.status || '-'}</td>
               <td className="py-2 pr-3 font-mono">{row.reasonCode || '-'}</td>
               <td className="py-2 pr-3">{row.reason}</td>
+              <td className="py-2 pr-3 font-mono text-[10px] text-slate-600">
+                {row.reasonMeta ? JSON.stringify(row.reasonMeta) : '-'}
+              </td>
               <td className="py-2 pr-3">
                 {row.replacement
                   ? `${row.replacement.refNo || '-'} | ${row.replacement.tenderName || '-'} | ${row.replacement.status || '-'}`
