@@ -58,8 +58,11 @@ export default function Login() {
 
   const getErrorMessage = (error: unknown): string => {
     const message = error instanceof Error ? error.message : String(error);
-    
+
     // Don't reveal sensitive information
+    if (message.includes('Invalid email format')) {
+      return 'Please enter a valid email address.';
+    }
     if (message.includes('403') || message.includes('Invalid credentials')) {
       return 'Authentication failed. Please check your credentials.';
     }
@@ -93,7 +96,15 @@ export default function Login() {
     if (!email || !password) {
       setFormState(prev => ({ 
         ...prev, 
-        error: 'Username and password are required',
+        error: 'Email and password are required',
+      }));
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setFormState(prev => ({
+        ...prev,
+        error: 'Please enter a valid email address.',
       }));
       return;
     }
@@ -197,7 +208,7 @@ export default function Login() {
           <div className="space-y-4">
             <div className="space-y-2">
               <label htmlFor="email" className="text-xs font-medium text-slate-700">
-                Username
+                Email
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400 pointer-events-none" />
