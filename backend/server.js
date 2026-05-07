@@ -51,6 +51,8 @@ const JWT_SECRET = String(process.env.JWT_SECRET || process.env.SESSION_JWT_SECR
 const IS_PROD = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const ALLOW_LEGACY_USERNAME_AUTH = String(process.env.ALLOW_LEGACY_USERNAME_AUTH || '').toLowerCase() === 'true';
 const EFFECTIVE_JWT_SECRET = JWT_SECRET || (IS_PROD ? '' : (String(process.env.DEV_JWT_SECRET || '').trim() || randomBytes(48).toString('hex')));
+const BOOTSTRAP_ADMIN_SECRET = String(process.env.BOOTSTRAP_ADMIN_SECRET || '').trim();
+const ALLOW_PROD_USERNAME_ALIASES = String(process.env.ALLOW_PROD_USERNAME_ALIASES || '').toLowerCase() === 'true';
 
 if (IS_PROD && !JWT_SECRET) {
   console.error('[startup.security] Missing JWT secret in production; refusing to start. Set `JWT_SECRET` (or `SESSION_JWT_SECRET`) to a long random value.');
@@ -2226,6 +2228,68 @@ app.post('/api/auth/simple-role-login', authRateLimiter, async (req, res) => {
   }
 });
 
+// One-time production bootstrap for an initial Master password login.
+// Guarded by `BOOTSTRAP_ADMIN_SECRET` to avoid exposing a permanent backdoor.
+app.post('/api/auth/bootstrap-master', authRateLimiter, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (DISABLE_MONGODB) return res.status(403).json({ error: 'Bootstrap not available in offline mode' });
+    if (!IS_PROD) return res.status(400).json({ error: 'Bootstrap is only intended for production environments' });
+
+    if (!BOOTSTRAP_ADMIN_SECRET) {
+      return res.status(503).json({ error: 'Bootstrap is not configured' });
+    }
+
+    const provided = String(req.headers['x-bootstrap-secret'] || '').trim();
+    if (!provided || provided !== BOOTSTRAP_ADMIN_SECRET) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const existingMaster = await AuthorizedUser.findOne({ role: { $in: ['Master', 'MASTER'] }, status: 'approved' }).lean();
+    if (existingMaster) {
+      return res.status(409).json({ error: 'Master already exists' });
+    }
+
+    const email = 'master@dev.local';
+    const passwordHash = await hashPassword('123');
+    const user = await AuthorizedUser.findOneAndUpdate(
+      { email },
+      {
+        $setOnInsert: { email, createdAt: new Date() },
+        $set: {
+          displayName: 'Master',
+          role: 'Master',
+          status: 'approved',
+          approvedBy: 'bootstrap-master',
+          approvedAt: new Date(),
+          passwordHash,
+          passwordChangedAt: null,
+          requiresPasswordChange: true,
+          failedLoginAttempts: 0,
+          accountLockedUntil: null,
+          lastFailedLoginAt: null,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+
+    res.json({
+      success: true,
+      user: {
+        email: user.email,
+        displayName: user.displayName || user.email,
+        role: user.role,
+        status: user.status,
+        assignedGroup: user.assignedGroup,
+        requiresPasswordChange: Boolean(user.requiresPasswordChange),
+      },
+    });
+  } catch (error) {
+    console.error('[auth.bootstrap-master.error]', error?.message || String(error));
+    res.status(500).json({ error: 'Authentication service error' });
+  }
+});
+
 // Password-based login (for TempUser and configured accounts)
 app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
   try {
@@ -2240,8 +2304,12 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    if (!IS_PROD && email && !email.includes('@')) {
-      email = `${email}@dev.local`;
+    if (email && !email.includes('@')) {
+      if (!IS_PROD) {
+        email = `${email}@dev.local`;
+      } else if (ALLOW_PROD_USERNAME_ALIASES && email === 'master') {
+        email = 'master@dev.local';
+      }
     }
 
     // Security: Validate email format (ISO/IEC 27001 - A.14.1.1)
