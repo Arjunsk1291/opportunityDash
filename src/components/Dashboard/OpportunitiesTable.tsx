@@ -205,6 +205,8 @@ export function OpportunitiesTable({
   const [sortBy, setSortBy] = useState<'ref' | 'rfp'>('ref');
   const [rfpSortOrder, setRfpSortOrder] = useState<'desc' | 'asc'>('desc');
   const [refSortOrder, setRefSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sheetSortHeader, setSheetSortHeader] = useState<string>('Tender no');
+  const [sheetSortOrder, setSheetSortOrder] = useState<'asc' | 'desc'>('asc');
   const { formatCurrency } = useCurrency();
   const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, bulkApprove, bulkRevert, revertApproval, refreshApprovals } = useApproval();
   const { isProposalHead, isSVP, isMaster, user, token, canPerformAction } = useAuth();
@@ -581,25 +583,47 @@ export function OpportunitiesTable({
     });
 
   const visibleData = useMemo(() => {
-    if (showConvertedEoiRows) return filteredData;
+    const base = showConvertedEoiRows
+      ? filteredData
+      : filteredData.filter((tender) => {
+        if (!isEoiRow(tender)) return true;
 
-    return filteredData.filter((tender) => {
-      if (!isEoiRow(tender)) return true;
+        const baseRefNo = normalizeComparisonText(getBaseRefNo(tender.opportunityRefNo));
+        const tenderName = normalizeComparisonText(tender.tenderName);
+        if (!baseRefNo || !tenderName) return true;
 
-      const baseRefNo = normalizeComparisonText(getBaseRefNo(tender.opportunityRefNo));
-      const tenderName = normalizeComparisonText(tender.tenderName);
-      if (!baseRefNo || !tenderName) return true;
+        const convertedTenderExists = filteredData.some((candidate) => (
+          candidate.id !== tender.id
+          && !isEoiRow(candidate)
+          && normalizeComparisonText(getBaseRefNo(candidate.opportunityRefNo)) === baseRefNo
+          && normalizeComparisonText(candidate.tenderName) === tenderName
+        ));
 
-      const convertedTenderExists = filteredData.some((candidate) => (
-        candidate.id !== tender.id
-        && !isEoiRow(candidate)
-        && normalizeComparisonText(getBaseRefNo(candidate.opportunityRefNo)) === baseRefNo
-        && normalizeComparisonText(candidate.tenderName) === tenderName
-      ));
+        return !convertedTenderExists;
+      });
 
-      return !convertedTenderExists;
+    if (!isSheetPreset) return base;
+
+    const order = sheetSortOrder === 'asc' ? 1 : -1;
+    const header = sheetSortHeader;
+    return [...base].sort((a, b) => {
+      const aVal = getDisplayColumnValue(a, header);
+      const bVal = getDisplayColumnValue(b, header);
+      const cmp = String(aVal || '').localeCompare(String(bVal || ''), undefined, { numeric: true, sensitivity: 'base' });
+      return cmp * order;
     });
-  }, [filteredData, showConvertedEoiRows]);
+  }, [filteredData, showConvertedEoiRows, isSheetPreset, sheetSortHeader, sheetSortOrder]);
+
+  const toggleSheetSort = (header: string) => {
+    setSheetSortHeader((prev) => {
+      if (prev === header) {
+        setSheetSortOrder((order) => (order === 'asc' ? 'desc' : 'asc'));
+        return prev;
+      }
+      setSheetSortOrder('asc');
+      return header;
+    });
+  };
 
   const getTenderTypeBadge = (type?: string) => {
     const key = String(type || '').toUpperCase();
@@ -803,7 +827,15 @@ export function OpportunitiesTable({
                 {isSheetPreset ? (
                   ALL_COLUMN_HEADERS.map((header) => (
                     <TableHead key={header} className={`${cellPaddingClass} font-bold`}>
-                      {header}
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 text-primary hover:text-primary/80"
+                        onClick={() => toggleSheetSort(header)}
+                        title="Sort"
+                      >
+                        {header}
+                        <ArrowUpDown className="h-3 w-3" />
+                      </button>
                     </TableHead>
                   ))
                 ) : (
@@ -860,7 +892,15 @@ export function OpportunitiesTable({
                     {showAllColumns ? (
                       ALL_COLUMN_HEADERS.map((header) => (
                         <TableHead key={header} className={`${cellPaddingClass} font-bold`}>
-                          {header}
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-primary hover:text-primary/80"
+                            onClick={() => toggleSheetSort(header)}
+                            title="Sort"
+                          >
+                            {header}
+                            <ArrowUpDown className="h-3 w-3" />
+                          </button>
                         </TableHead>
                       ))
                     ) : null}
