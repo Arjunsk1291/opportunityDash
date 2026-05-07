@@ -52,7 +52,7 @@ const IS_PROD = String(process.env.NODE_ENV || '').toLowerCase() === 'production
 const ALLOW_LEGACY_USERNAME_AUTH = String(process.env.ALLOW_LEGACY_USERNAME_AUTH || '').toLowerCase() === 'true';
 
 if (IS_PROD && !JWT_SECRET) {
-  console.error('[startup.security] Missing JWT_SECRET in production; refusing to start.');
+  console.error('[startup.security] Missing JWT secret in production; refusing to start. Set `JWT_SECRET` (or `SESSION_JWT_SECRET`) to a long random value.');
   process.exit(1);
 }
 
