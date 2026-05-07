@@ -223,7 +223,7 @@ export function SpreadsheetOpportunitiesTable({
         instanceRef.current = null;
       }
     };
-  }, [filteredData, onSelectOpportunity, sheetData, zoomScale]);
+  }, [filteredData, onRowDoubleClick, onSelectOpportunity, sheetData, zoomScale]);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">

@@ -234,7 +234,10 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
   const canEdit = canPerformAction('manual_opportunity_updates_write');
   const editFromRow = (row: Opportunity) => {
-    if (!canEdit) return;
+    if (!canEdit) {
+      toast.error('You do not have permission to edit rows.');
+      return;
+    }
     setEditorMode('update');
     setEditorOpen(true);
     setSelectedRow(row);
