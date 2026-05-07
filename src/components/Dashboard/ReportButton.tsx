@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Download, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   Dialog,
   DialogContent,
@@ -617,6 +618,7 @@ footer {
 export function ReportButton({ data, filters }: ReportButtonProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [durationKey, setDurationKey] = useState<ReportDurationKey>('90d');
+  const { token } = useAuth();
 
   const reportData = useMemo(() => filterDataByDuration(data, durationKey), [data, durationKey]);
   const reportMeta = useMemo(() => getDurationMeta(durationKey), [durationKey]);
@@ -637,9 +639,10 @@ export function ReportButton({ data, filters }: ReportButtonProps) {
 
   const handleExportWord = async () => {
     try {
+      if (!token) throw new Error('Missing session token');
       const response = await fetch(`${API_BASE_URL}/generate-report`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
         body: JSON.stringify({ data: reportData, filters, reportMeta }),
       });
 

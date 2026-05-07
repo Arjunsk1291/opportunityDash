@@ -1260,10 +1260,12 @@ export default function Admin() {
   };
 
   const loadClients = async () => {
+    if (!token) return;
     try {
       const response = await fetch(API_URL + '/clients', {
         headers: {
           'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token,
         },
       });
       if (!response.ok) return;

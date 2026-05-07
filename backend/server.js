@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { randomUUID, scrypt as nodeScrypt, timingSafeEqual } from 'crypto';
+import { randomBytes, randomUUID, scrypt as nodeScrypt, timingSafeEqual } from 'crypto';
 import jwt from 'jsonwebtoken';
 import compression from 'compression';
 import approvalDb from './approvalDb.js';
@@ -50,6 +50,7 @@ const DISABLE_MONGODB = String(process.env.DISABLE_MONGODB || '').toLowerCase() 
 const JWT_SECRET = String(process.env.JWT_SECRET || process.env.SESSION_JWT_SECRET || '').trim();
 const IS_PROD = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 const ALLOW_LEGACY_USERNAME_AUTH = String(process.env.ALLOW_LEGACY_USERNAME_AUTH || '').toLowerCase() === 'true';
+const EFFECTIVE_JWT_SECRET = JWT_SECRET || (IS_PROD ? '' : (String(process.env.DEV_JWT_SECRET || '').trim() || randomBytes(48).toString('hex')));
 
 if (IS_PROD && !JWT_SECRET) {
   console.error('[startup.security] Missing JWT secret in production; refusing to start. Set `JWT_SECRET` (or `SESSION_JWT_SECRET`) to a long random value.');
@@ -135,8 +136,8 @@ app.use((req, res, next) => {
   return privilegedRateLimiter(req, res, next);
 });
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
 
 const isDatabaseReady = () => {
   if (DISABLE_MONGODB) return true;
@@ -157,7 +158,7 @@ const upsertLocalAuthorizedUser = (email, updates = {}) => {
 };
 
 const createSessionToken = (user) => {
-  const secret = JWT_SECRET || 'dev-insecure-secret';
+  const secret = EFFECTIVE_JWT_SECRET;
   const payload = {
     email: String(user?.email || '').trim().toLowerCase(),
     role: String(user?.role || '').trim(),
@@ -1947,7 +1948,7 @@ const getUsernameFromRequest = (req) => {
       return null;
     }
     try {
-      const decoded = jwt.verify(token, JWT_SECRET || 'dev-insecure-secret');
+      const decoded = jwt.verify(token, EFFECTIVE_JWT_SECRET);
       const email = decoded && typeof decoded === 'object' ? decoded.email : null;
       if (typeof email === 'string' && email.trim()) return email.trim().toLowerCase();
       return null;
@@ -2140,6 +2141,10 @@ app.post('/api/auth/simple-role-login', authRateLimiter, async (req, res) => {
   try {
     if (!isDatabaseReady()) {
       return respondDatabaseUnavailable(res);
+    }
+
+    if (IS_PROD) {
+      return res.status(404).json({ error: 'Not found' });
     }
 
     const role = String(req.body?.role || '').trim();
@@ -4268,13 +4273,13 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
   }
 });
 
-app.get('/api/opportunities', async (req, res) => {
+app.get('/api/opportunities', verifyToken, async (req, res) => {
   try {
     const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
     const mapped = opportunities.map(opp => mapIdField(opp));
     res.json(mapped);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -4692,13 +4697,13 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
   }
 });
 
-app.get('/api/vendors', async (_req, res) => {
+app.get('/api/vendors', verifyToken, async (_req, res) => {
   try {
     await cleanupDummyVendors();
     const vendors = await Vendor.find().sort({ updatedAt: -1, companyName: 1 }).lean();
     res.json(vendors.map((vendor) => mapIdField(vendor)));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -4768,12 +4773,12 @@ app.post('/api/vendors/import', verifyToken, async (req, res) => {
   }
 });
 
-app.get('/api/clients', async (_req, res) => {
+app.get('/api/clients', verifyToken, async (_req, res) => {
   try {
     const clients = await Client.find().sort({ updatedAt: -1 }).lean();
     res.json(clients.map((client) => mapIdField(client)));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -4896,7 +4901,7 @@ app.get('/api/opportunities/stats', verifyToken, async (req, res) => {
 });
 
 
-app.post('/api/generate-report', async (req, res) => {
+app.post('/api/generate-report', verifyToken, express.json({ limit: '10mb' }), async (req, res) => {
   try {
     const body = req.body || {};
     const data = Array.isArray(body.data) ? body.data : [];
