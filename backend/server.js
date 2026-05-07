@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { randomUUID } from 'crypto';
+import { randomUUID, scrypt as nodeScrypt, timingSafeEqual } from 'crypto';
 import jwt from 'jsonwebtoken';
 import compression from 'compression';
 import approvalDb from './approvalDb.js';
@@ -48,6 +48,13 @@ console.log('Debug flags:', { MAIL_DEBUG: String(process.env.MAIL_DEBUG || '').t
 
 const DISABLE_MONGODB = String(process.env.DISABLE_MONGODB || '').toLowerCase() === 'true';
 const JWT_SECRET = String(process.env.JWT_SECRET || process.env.SESSION_JWT_SECRET || '').trim();
+const IS_PROD = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
+const ALLOW_LEGACY_USERNAME_AUTH = String(process.env.ALLOW_LEGACY_USERNAME_AUTH || '').toLowerCase() === 'true';
+
+if (IS_PROD && !JWT_SECRET) {
+  console.error('[startup.security] Missing JWT_SECRET in production; refusing to start.');
+  process.exit(1);
+}
 
 const DEFAULT_CORS_ORIGINS = [
   'http://localhost:5173',
@@ -156,6 +163,64 @@ const createSessionToken = (user) => {
     role: String(user?.role || '').trim(),
   };
   return jwt.sign(payload, secret, { expiresIn: '12h' });
+};
+
+const scryptAsync = (password, salt, options) => new Promise((resolve, reject) => {
+  nodeScrypt(password, salt, options.keylen, { N: options.N, r: options.r, p: options.p, maxmem: options.maxmem }, (err, derivedKey) => {
+    if (err) return reject(err);
+    resolve(derivedKey);
+  });
+});
+
+const PASSWORD_HASH_PREFIX = 'scrypt';
+const hashPassword = async (password) => {
+  const normalized = String(password || '');
+  if (!normalized) throw new Error('Password is required');
+  const salt = Buffer.from(randomUUID().replace(/-/g, ''), 'hex');
+  const params = { N: 16384, r: 8, p: 1, keylen: 64, maxmem: 64 * 1024 * 1024 };
+  const derived = await scryptAsync(normalized, salt, params);
+  const hash = Buffer.isBuffer(derived) ? derived : Buffer.from(derived);
+  return [
+    PASSWORD_HASH_PREFIX,
+    `N=${params.N}`,
+    `r=${params.r}`,
+    `p=${params.p}`,
+    `salt=${salt.toString('base64')}`,
+    `hash=${hash.toString('base64')}`,
+  ].join('$');
+};
+
+const verifyPassword = async (password, storedHash) => {
+  const raw = String(storedHash || '');
+  if (!raw) return false;
+  const parts = raw.split('$');
+  if (parts.length < 6 || parts[0] !== PASSWORD_HASH_PREFIX) return false;
+  const parse = (prefix) => {
+    const match = parts.find((p) => p.startsWith(prefix));
+    return match ? match.slice(prefix.length) : '';
+  };
+  const N = Number(parse('N='));
+  const r = Number(parse('r='));
+  const p = Number(parse('p='));
+  const saltB64 = parse('salt=');
+  const hashB64 = parse('hash=');
+  if (!Number.isFinite(N) || !Number.isFinite(r) || !Number.isFinite(p) || !saltB64 || !hashB64) return false;
+  const salt = Buffer.from(saltB64, 'base64');
+  const expected = Buffer.from(hashB64, 'base64');
+  const derived = await scryptAsync(String(password || ''), salt, { N, r, p, keylen: expected.length, maxmem: 64 * 1024 * 1024 });
+  const actual = Buffer.isBuffer(derived) ? derived : Buffer.from(derived);
+  if (actual.length !== expected.length) return false;
+  return timingSafeEqual(actual, expected);
+};
+
+const assertStrongPassword = (password) => {
+  const value = String(password || '');
+  // Minimum baseline: 10+ chars, mixed case, number, symbol.
+  if (value.length < 10) throw new Error('Password must be at least 10 characters');
+  if (!/[a-z]/.test(value)) throw new Error('Password must include a lowercase letter');
+  if (!/[A-Z]/.test(value)) throw new Error('Password must include an uppercase letter');
+  if (!/[0-9]/.test(value)) throw new Error('Password must include a number');
+  if (!/[^A-Za-z0-9]/.test(value)) throw new Error('Password must include a symbol');
 };
 
 app.get('/healthz', (_req, res) => {
@@ -1875,23 +1940,26 @@ const scheduleDailyNotificationCheck = () => {
 const getUsernameFromRequest = (req) => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const tokenOrUsername = authHeader.substring(7).trim();
-    const looksLikeJwt = tokenOrUsername.split('.').length === 3;
-    if (looksLikeJwt) {
-      try {
-        const decoded = jwt.verify(tokenOrUsername, JWT_SECRET || 'dev-insecure-secret');
-        const email = decoded && typeof decoded === 'object' ? decoded.email : null;
-        if (typeof email === 'string' && email.trim()) return email.trim().toLowerCase();
-      } catch (_error) {
-        // Fall through to treat as legacy username.
-      }
+    const token = authHeader.substring(7).trim();
+    const looksLikeJwt = token.split('.').length === 3;
+    if (!looksLikeJwt) {
+      if (!IS_PROD && ALLOW_LEGACY_USERNAME_AUTH) return token.toLowerCase();
+      return null;
     }
-    return tokenOrUsername.toLowerCase();
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET || 'dev-insecure-secret');
+      const email = decoded && typeof decoded === 'object' ? decoded.email : null;
+      if (typeof email === 'string' && email.trim()) return email.trim().toLowerCase();
+      return null;
+    } catch (_error) {
+      return null;
+    }
   }
 
   const headerUsername = req.headers['x-username'];
   if (typeof headerUsername === 'string') {
-    return headerUsername.trim().toLowerCase();
+    if (!IS_PROD && ALLOW_LEGACY_USERNAME_AUTH) return headerUsername.trim().toLowerCase();
+    return null;
   }
 
   return null;
@@ -2256,12 +2324,43 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
         role: user.role,
         status: user.status,
         assignedGroup: user.assignedGroup,
+        requiresPasswordChange: Boolean(user.requiresPasswordChange),
       },
       sessionToken: createSessionToken(user),
     });
   } catch (error) {
     console.error('[auth.password-login.error]', error.message);
     res.status(500).json({ error: 'Authentication service error' });
+  }
+});
+
+app.post('/api/auth/change-password', authRateLimiter, verifyToken, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const email = String(req.user?.email || '').trim().toLowerCase();
+    const currentPassword = String(req.body?.currentPassword || '');
+    const newPassword = String(req.body?.newPassword || '');
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: 'currentPassword and newPassword are required' });
+
+    assertStrongPassword(newPassword);
+    const user = await AuthorizedUser.findOne({ email });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user.passwordHash) return res.status(400).json({ error: 'Password login not configured for this user' });
+
+    const matches = await verifyPassword(currentPassword, user.passwordHash);
+    if (!matches) return res.status(403).json({ error: 'Invalid current password' });
+
+    user.passwordHash = await hashPassword(newPassword);
+    user.passwordChangedAt = new Date();
+    user.requiresPasswordChange = false;
+    user.failedLoginAttempts = 0;
+    user.accountLockedUntil = null;
+    user.lastFailedLoginAt = null;
+    await user.save();
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -2278,6 +2377,36 @@ app.get('/api/users/authorized', verifyToken, async (req, res) => {
   }
 });
 
+app.post('/api/users/set-password', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'users_manage')) return;
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const newPassword = String(req.body?.newPassword || '');
+    const requireChange = req.body?.requireChange !== undefined ? Boolean(req.body.requireChange) : true;
+
+    if (!email || !newPassword) return res.status(400).json({ error: 'email and newPassword are required' });
+    assertStrongPassword(newPassword);
+
+    const existing = await AuthorizedUser.findOne({ email });
+    if (!existing) return res.status(404).json({ error: 'User not found' });
+    const targetIsMaster = existing.role === 'Master' || existing.role === 'MASTER';
+    const requesterIsMaster = req.user.role === 'Master' || req.user.role === 'MASTER';
+    if (targetIsMaster && !requesterIsMaster) return res.status(403).json({ error: 'Only Master users can modify Master users' });
+
+    existing.passwordHash = await hashPassword(newPassword);
+    existing.passwordChangedAt = new Date();
+    existing.requiresPasswordChange = requireChange;
+    existing.failedLoginAttempts = 0;
+    existing.accountLockedUntil = null;
+    existing.lastFailedLoginAt = null;
+    await existing.save();
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 app.post('/api/users/add', verifyToken, async (req, res) => {
   try {
@@ -2288,10 +2417,12 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
     const role = String(req.body?.role || 'Basic');
     const assignedGroupRaw = req.body?.assignedGroup ? String(req.body?.assignedGroup).toUpperCase().trim() : null;
     const status = String(req.body?.status || 'approved');
+    const rawPassword = req.body?.password !== undefined ? String(req.body.password) : '';
+    const tempAccessExpiresAt = req.body?.tempAccessExpiresAt ? new Date(String(req.body.tempAccessExpiresAt)) : null;
 
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
-    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
+    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'];
     if (!validRoles.includes(role)) return res.status(400).json({ error: 'Invalid role' });
     if (role === 'Master') {
       return res.status(403).json({ error: 'Assigning Master is not allowed' });
@@ -2305,9 +2436,26 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'assignedGroup must be one of GES, GDS, GTS' });
     }
 
+    if (role === 'TempUser') {
+      if (!rawPassword) return res.status(400).json({ error: 'Temp password is required for TempUser' });
+      if (!tempAccessExpiresAt || Number.isNaN(tempAccessExpiresAt.getTime())) return res.status(400).json({ error: 'Valid tempAccessExpiresAt is required for TempUser' });
+    }
+
     const existing = await AuthorizedUser.findOne({ email });
     if (existing?.role === 'Master' || existing?.role === 'MASTER') {
       return res.status(403).json({ error: 'Modifying Master users is not allowed' });
+    }
+
+    const passwordPatch = {};
+    if (rawPassword) {
+      // Masters/Admins can set/reset passwords; enforce strong policy for all accounts.
+      assertStrongPassword(rawPassword);
+      passwordPatch.passwordHash = await hashPassword(rawPassword);
+      passwordPatch.passwordChangedAt = new Date();
+      passwordPatch.requiresPasswordChange = role === 'TempUser' ? true : false;
+      passwordPatch.failedLoginAttempts = 0;
+      passwordPatch.accountLockedUntil = null;
+      passwordPatch.lastFailedLoginAt = null;
     }
 
     const user = await AuthorizedUser.findOneAndUpdate(
@@ -2318,6 +2466,8 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
         role,
         assignedGroup: role === 'SVP' ? assignedGroupRaw : null,
         status: ['approved', 'pending', 'rejected'].includes(status) ? status : 'approved',
+        tempAccessExpiresAt: role === 'TempUser' ? tempAccessExpiresAt : null,
+        ...passwordPatch,
         approvedBy: req.user.email,
         approvedAt: new Date(),
       },
@@ -2397,7 +2547,7 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Email and newRole are required' });
     }
 
-    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'MASTER', 'PROPOSAL_HEAD'];
+    const validRoles = ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser', 'MASTER', 'PROPOSAL_HEAD'];
     if (!validRoles.includes(newRole)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
