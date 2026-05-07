@@ -592,6 +592,18 @@ const Dashboard = () => {
 
   const groupedOpportunities = useMemo(() => buildProjectGroups(filteredData), [filteredData]);
 
+  const rawAwardedRows = useMemo(() => (
+    filteredData.filter((opp) => normalizeCanonicalStatus(getDisplayStatus(opp)) === 'AWARDED')
+  ), [filteredData]);
+
+  const rawAwardedValue = useMemo(() => (
+    rawAwardedRows.reduce((sum, opp) => {
+      const value = Number(opp.opportunityValue || 0);
+      if (!Number.isFinite(value) || value <= 0) return sum;
+      return sum + value;
+    }, 0)
+  ), [rawAwardedRows]);
+
   const groupedBuckets = useMemo(() => {
     const receivedGroups: ProjectGroup[] = [...groupedOpportunities.groups];
     const submittedGroups: ProjectGroup[] = receivedGroups.filter((group) => group.hasSubmittedSignal);
@@ -987,7 +999,7 @@ const Dashboard = () => {
     },
     {
       label: 'Won',
-      value: groupedBuckets.won.groups.length,
+      value: rawAwardedRows.length,
       tone: 'text-emerald-600',
       glow: 'analytics-kpi-glow-emerald',
       icon: Trophy,
@@ -995,8 +1007,8 @@ const Dashboard = () => {
     },
     {
       label: 'Value',
-      value: groupedBuckets.won.value,
-      displayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.won.value))}`,
+      value: rawAwardedValue,
+      displayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(rawAwardedValue))}`,
       valuePrefix: currency === 'AED' ? 'aed' : 'text',
       tone: 'text-violet-600',
       glow: 'analytics-kpi-glow-emerald',
