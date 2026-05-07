@@ -32,6 +32,7 @@ import {
   Opportunity,
 } from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { getDisplayStatus, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 import { isSubmissionWithinDays } from '@/lib/submissionDate';
@@ -616,6 +617,7 @@ const tryStoreKpiDiagnostics = (reportId: string, report: KpiDiagnosticsReport) 
 
 const Dashboard = () => {
   const { opportunities, isLoading, error, lastSyncTime, isLiveRefreshActive } = useData();
+  const { isMaster } = useAuth();
   const { formatCurrency, currency, convertValue } = useCurrency();
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
@@ -632,6 +634,10 @@ const Dashboard = () => {
 
   const rawAwardedRows = useMemo(() => (
     filteredData.filter((opp) => normalizeCanonicalStatus(getDisplayStatus(opp)) === 'AWARDED')
+  ), [filteredData]);
+
+  const rawLostRows = useMemo(() => (
+    filteredData.filter((opp) => normalizeCanonicalStatus(getDisplayStatus(opp)) === 'LOST')
   ), [filteredData]);
 
   const rawAwardedValue = useMemo(() => (
@@ -666,7 +672,8 @@ const Dashboard = () => {
     }, 0);
     const submittedTenderCount = submittedGroups.filter((group) => group.hasTender).length;
     const submittedEoiCount = submittedGroups.filter((group) => group.hasEoi).length;
-    const winRatio = resolvedGroups.length ? (wonGroups.length / resolvedGroups.length) : 0;
+    const denominator = rawAwardedRows.length + rawLostRows.length;
+    const winRatio = denominator ? (rawAwardedRows.length / denominator) : 0;
 
     return {
       received: {
@@ -688,12 +695,12 @@ const Dashboard = () => {
       lost: { groups: lostGroups, rows: groupRows(lostGroups) },
       submission: { groups: submissionNearGroups, rows: groupRows(submissionNearGroups) },
       winRatio: {
-        resolvedCount: resolvedGroups.length,
-        wonCount: wonGroups.length,
+        resolvedCount: rawAwardedRows.length + rawLostRows.length,
+        wonCount: rawAwardedRows.length,
         ratio: winRatio,
       },
     };
-  }, [groupedOpportunities]);
+  }, [groupedOpportunities, rawAwardedRows.length, rawLostRows.length]);
 
   const receivedDedupe = {
     totalTenders: groupedBuckets.received.tender,
@@ -1032,6 +1039,10 @@ const Dashboard = () => {
   const handleKPIClick = (kpiType: DashboardKpiType) => {
     const nextFilters = withKpiOverrides(kpiType, filters);
     setFilters(nextFilters);
+  };
+
+  const openDiagnosticsForKpi = (kpiType: DashboardKpiType) => {
+    const nextFilters = withKpiOverrides(kpiType, filters);
     if (kpiType === 'value') {
       openKpiOmittedWindow(kpiType, nextFilters);
       return;
@@ -1231,12 +1242,7 @@ const Dashboard = () => {
                   type="button"
                   className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5`}
                   style={{ animationDelay: `${index * 0.07}s` }}
-                  onClick={() => {
-                    const journeyType = card.label.toLowerCase().includes('eoi') ? 'eoi' : 'tender';
-                    const nextFilters = withKpiOverrides('received', filters);
-                    setFilters(nextFilters);
-                    openDedupeOmittedWindow('received', journeyType, nextFilters);
-                  }}
+                  onClick={() => handleKPIClick('received')}
                 >
                   <div className="relative z-10 flex items-start justify-between p-5">
                     <div className="space-y-1.5">
@@ -1245,8 +1251,26 @@ const Dashboard = () => {
                         <span>{card.value}</span>
                       </div>
                     </div>
-                    <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
-                      <card.icon className="h-5 w-5" />
+                    <div className="flex items-start gap-2">
+                      {isMaster ? (
+                        <button
+                          type="button"
+                          className="rounded-lg border border-slate-200 bg-white/80 p-1 text-slate-500 hover:text-slate-900"
+                          aria-label={`Diagnose omitted rows for ${card.label}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const journeyType = card.label.toLowerCase().includes('eoi') ? 'eoi' : 'tender';
+                            const nextFilters = withKpiOverrides('received', filters);
+                            openDedupeOmittedWindow('received', journeyType, nextFilters);
+                          }}
+                        >
+                          <Info className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                      <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
+                        <card.icon className="h-5 w-5" />
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -1266,12 +1290,7 @@ const Dashboard = () => {
                   type="button"
                   className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5`}
                   style={{ animationDelay: `${index * 0.07}s` }}
-                  onClick={() => {
-                    const journeyType = card.label.toLowerCase().includes('eoi') ? 'eoi' : 'tender';
-                    const nextFilters = withKpiOverrides('submitted', filters);
-                    setFilters(nextFilters);
-                    openDedupeOmittedWindow('submitted', journeyType, nextFilters);
-                  }}
+                  onClick={() => handleKPIClick('submitted')}
                 >
                   <div className="relative z-10 flex items-start justify-between p-5">
                     <div className="space-y-1.5">
@@ -1280,8 +1299,26 @@ const Dashboard = () => {
                         <span>{card.value}</span>
                       </div>
                     </div>
-                    <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
-                      <card.icon className="h-5 w-5" />
+                    <div className="flex items-start gap-2">
+                      {isMaster ? (
+                        <button
+                          type="button"
+                          className="rounded-lg border border-slate-200 bg-white/80 p-1 text-slate-500 hover:text-slate-900"
+                          aria-label={`Diagnose omitted rows for ${card.label}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const journeyType = card.label.toLowerCase().includes('eoi') ? 'eoi' : 'tender';
+                            const nextFilters = withKpiOverrides('submitted', filters);
+                            openDedupeOmittedWindow('submitted', journeyType, nextFilters);
+                          }}
+                        >
+                          <Info className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                      <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
+                        <card.icon className="h-5 w-5" />
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -1335,19 +1372,20 @@ const Dashboard = () => {
                 {card.chip ? <p className="pt-1 text-[11px] text-slate-500">{card.chip}</p> : null}
               </div>
               <div className="flex flex-col items-end gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg border border-slate-200 bg-white/80 p-1 text-slate-500 hover:text-slate-900"
-                  aria-label={`Show omitted rows for ${card.label}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const nextFilters = withKpiOverrides(card.type, filters);
-                    openKpiOmittedWindow(card.type, nextFilters);
-                  }}
-                >
-                  <Info className="h-4 w-4" />
-                </button>
+                {isMaster ? (
+                  <button
+                    type="button"
+                    className="rounded-lg border border-slate-200 bg-white/80 p-1 text-slate-500 hover:text-slate-900"
+                    aria-label={`Diagnose omitted rows for ${card.label}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openDiagnosticsForKpi(card.type);
+                    }}
+                  >
+                    <Info className="h-4 w-4" />
+                  </button>
+                ) : null}
                 <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
                   <card.icon className="h-5 w-5" />
                 </div>
