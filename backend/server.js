@@ -9,6 +9,8 @@ import jwt from 'jsonwebtoken';
 import compression from 'compression';
 import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
+import OpportunityManualUpdate from './models/OpportunityManualUpdate.js';
+import OpportunityFieldConflict from './models/OpportunityFieldConflict.js';
 import LeadEmailMapping from './models/LeadEmailMapping.js';
 import Approval from './models/Approval.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
@@ -3026,6 +3028,7 @@ const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
 const ACTION_KEYS = [
   'opportunities_sync',
   'opportunities_sheet_upload',
+  'manual_opportunity_updates_write',
   'approvals_proposal_head',
   'approvals_svp',
   'approvals_bulk_revert',
@@ -3061,6 +3064,7 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
 const DEFAULT_ACTION_ROLE_ACCESS = {
   opportunities_sync: ['Master', 'Admin'],
   opportunities_sheet_upload: ['Master', 'Admin'],
+  manual_opportunity_updates_write: ['Master', 'Admin'],
   approvals_proposal_head: ['Master', 'ProposalHead'],
   approvals_svp: ['Master', 'SVP'],
   approvals_bulk_revert: ['Master', 'ProposalHead'],
@@ -4249,6 +4253,236 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
     }
 
     res.json({ success: true, created, updated, touched: touchedIds.length, rows: touchedRows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/opportunities/value-conflicts', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
+
+    const pending = await OpportunityFieldConflict.find({ status: 'pending' }).sort({ detectedAt: -1 }).lean();
+    const byRefKey = new Map();
+
+    for (const conflict of pending) {
+      const refKey = String(conflict.refKey || '').trim();
+      if (!refKey) continue;
+
+      if (!byRefKey.has(refKey)) {
+        byRefKey.set(refKey, {
+          refKey,
+          opportunityRefNo: String(conflict.opportunityRefNo || '').trim(),
+          tenderName: '',
+          fields: [],
+        });
+      }
+
+      const group = byRefKey.get(refKey);
+      group.fields.push({
+        id: String(conflict._id),
+        fieldKey: String(conflict.fieldKey || '').trim(),
+        fieldLabel: String(conflict.fieldLabel || '').trim(),
+        sheetValue: conflict.sheetValue,
+        existingValue: conflict.existingValue,
+      });
+    }
+
+    const groups = Array.from(byRefKey.values());
+    const opportunityRefNos = groups.map((g) => g.opportunityRefNo).filter(Boolean);
+    const oppByRef = new Map();
+
+    if (opportunityRefNos.length) {
+      const opportunities = await SyncedOpportunity.find({ opportunityRefNo: { $in: opportunityRefNos } })
+        .select({ opportunityRefNo: 1, tenderName: 1 })
+        .lean();
+      opportunities.forEach((opp) => {
+        oppByRef.set(String(opp.opportunityRefNo || '').trim(), opp);
+      });
+    }
+
+    groups.forEach((group) => {
+      const match = oppByRef.get(group.opportunityRefNo);
+      group.tenderName = String(match?.tenderName || '').trim();
+    });
+
+    res.json({ success: true, conflicts: groups });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/opportunities/value-conflicts/resolve', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
+    const decisions = Array.isArray(req.body?.decisions) ? req.body.decisions : [];
+    if (!decisions.length) return res.status(400).json({ error: 'No decisions provided' });
+
+    let resolved = 0;
+
+    for (const decision of decisions) {
+      const conflictId = String(decision?.conflictId || '').trim();
+      const action = String(decision?.action || '').trim();
+      if (!conflictId || !['use_sheet', 'keep_existing'].includes(action)) continue;
+
+      const conflict = await OpportunityFieldConflict.findOne({ _id: conflictId, status: 'pending' });
+      if (!conflict) continue;
+
+      if (action === 'use_sheet') {
+        const fieldKey = String(conflict.fieldKey || '').trim();
+        const opportunityRefNo = String(conflict.opportunityRefNo || '').trim();
+        if (fieldKey && opportunityRefNo) {
+          await SyncedOpportunity.updateOne(
+            { opportunityRefNo },
+            { $set: { [fieldKey]: conflict.sheetValue, syncedAt: new Date() } },
+          );
+        }
+      }
+
+      conflict.status = 'resolved';
+      conflict.resolvedAt = new Date();
+      conflict.resolvedBy = String(req.user?.email || '');
+      conflict.resolutionAction = action;
+      await conflict.save();
+      resolved += 1;
+    }
+
+    res.json({ success: true, resolved });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/opportunities/manual-entry/preview', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
+
+    const mode = String(req.body?.mode || 'update');
+    const opportunityRefNo = String(req.body?.opportunityRefNo || '').trim();
+    if (!opportunityRefNo) return res.status(400).json({ error: 'opportunityRefNo is required' });
+
+    const existing = await SyncedOpportunity.findOne({ opportunityRefNo }).lean();
+    if (mode === 'new' && existing) {
+      return res.json({ success: true, overwrites: [], allChanges: [], warning: 'Opportunity already exists' });
+    }
+    if (mode === 'update' && !existing) {
+      return res.status(404).json({ error: 'Opportunity not found' });
+    }
+
+    const LABELS = {
+      opportunityRefNo: 'Avenir Ref',
+      tenderName: 'Tender Name',
+      opportunityClassification: 'Tender Type',
+      clientName: 'Client',
+      groupClassification: 'Group',
+      dateTenderReceived: 'RFP Received',
+      tenderPlannedSubmissionDate: 'Submission',
+      internalLead: 'Lead',
+      opportunityValue: 'Value',
+      avenirStatus: 'Status',
+      adnocRftNo: 'CLIENT Ref',
+    };
+
+    const FIELD_KEYS = Object.keys(LABELS);
+    const toText = (value) => String(value ?? '').trim();
+
+    const overwrites = [];
+    const allChanges = [];
+
+    for (const fieldKey of FIELD_KEYS) {
+      if (fieldKey === 'opportunityRefNo') continue;
+      const nextValue = req.body?.[fieldKey];
+      const prevValue = existing?.[fieldKey];
+
+      const nextText = toText(nextValue);
+      const prevText = toText(prevValue);
+      if (nextText === prevText) continue;
+
+      const hasExistingValue = prevText !== '';
+      const diff = {
+        fieldKey,
+        fieldLabel: LABELS[fieldKey],
+        previousValue: prevValue ?? null,
+        nextValue: nextValue ?? null,
+        hasExistingValue,
+      };
+
+      allChanges.push(diff);
+      if (hasExistingValue && nextText !== '') overwrites.push(diff);
+    }
+
+    res.json({ success: true, overwrites, allChanges });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
+
+    const mode = String(req.body?.mode || 'update');
+    const confirmed = Boolean(req.body?.confirmed);
+    const opportunityRefNo = String(req.body?.opportunityRefNo || '').trim();
+    if (!opportunityRefNo) return res.status(400).json({ error: 'opportunityRefNo is required' });
+
+    const payload = {
+      opportunityRefNo,
+      adnocRftNo: String(req.body?.adnocRftNo || '').trim(),
+      tenderName: String(req.body?.tenderName || '').trim(),
+      clientName: String(req.body?.clientName || '').trim(),
+      groupClassification: String(req.body?.groupClassification || '').trim(),
+      internalLead: String(req.body?.internalLead || '').trim(),
+      opportunityClassification: String(req.body?.opportunityClassification || '').trim(),
+      dateTenderReceived: String(req.body?.dateTenderReceived || '').trim(),
+      tenderPlannedSubmissionDate: String(req.body?.tenderPlannedSubmissionDate || '').trim(),
+      avenirStatus: String(req.body?.avenirStatus || '').trim(),
+    };
+
+    const valueRaw = req.body?.opportunityValue;
+    if (valueRaw !== undefined && valueRaw !== null && String(valueRaw).trim() !== '') {
+      const parsed = Number(String(valueRaw).replace(/,/g, ''));
+      if (!Number.isNaN(parsed)) payload.opportunityValue = parsed;
+    }
+
+    const existing = await SyncedOpportunity.findOne({ opportunityRefNo });
+    if (mode === 'new' && existing) return res.status(409).json({ error: 'Opportunity already exists' });
+    if (mode === 'update' && !existing) return res.status(404).json({ error: 'Opportunity not found' });
+
+    const before = existing ? existing.toObject() : null;
+    const doc = existing || new SyncedOpportunity({ opportunityRefNo });
+
+    Object.assign(doc, payload);
+    doc.syncedAt = new Date();
+
+    const toText = (v) => String(v ?? '').trim();
+    let overwriteCount = 0;
+    if (before) {
+      overwriteCount = Object.keys(payload).filter((key) => {
+        if (key === 'opportunityRefNo') return false;
+        const prevText = toText(before?.[key]);
+        const nextText = toText(payload[key]);
+        return prevText !== '' && nextText !== '' && prevText !== nextText;
+      }).length;
+    }
+    if (!confirmed && overwriteCount > 0) return res.status(400).json({ error: 'CONFIRMATION_REQUIRED', overwriteCount });
+
+    await doc.save();
+
+    const updatedBy = String(req.user?.email || '');
+    const refKey = String(opportunityRefNo).trim().toUpperCase();
+    await OpportunityManualUpdate.updateOne(
+      { refKey },
+      { $set: { ...payload, refKey, updatedBy } },
+      { upsert: true },
+    );
+
+    const after = doc.toObject();
+    const changedFields = before
+      ? Object.keys(payload).filter((key) => key !== 'opportunityRefNo' && toText(before?.[key]) !== toText(after?.[key])).length
+      : Object.keys(payload).filter((key) => key !== 'opportunityRefNo' && toText(payload[key]) !== '').length;
+
+    res.json({ success: true, changedFields, overwriteCount, row: mapIdField(after) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
