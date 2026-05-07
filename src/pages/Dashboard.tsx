@@ -313,9 +313,47 @@ const includesForKpi = (kpiType: DashboardKpiType, group: ProjectGroup) => {
     return { included: true, reason: 'included: unique project in received scope' };
   }
   if (kpiType === 'submitted') {
-    return group.hasSubmittedSignal
-      ? { included: true, reason: 'included: project has submitted/awarded/lost tender signal' }
-      : { included: false, reason: 'excluded: no submitted/awarded/lost tender signal in project' };
+    const tenderItems = group.items.filter((opp) => getJourneyType(opp) === 'tender');
+    if (!tenderItems.length) {
+      return { included: false, reason: 'excluded: project has no tender rows (EOI-only project)' };
+    }
+
+    const statuses = tenderItems.map((opp) => normalizeCanonicalStatus(getDisplayStatus(opp))).filter(Boolean);
+    const counts = statuses.reduce<Record<string, number>>((acc, status) => {
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {});
+
+    const hasSubmitted = statuses.includes('SUBMITTED');
+    const hasAwarded = statuses.includes('AWARDED');
+    const hasLost = statuses.includes('LOST');
+
+    if (hasSubmitted || hasAwarded || hasLost) {
+      const reasons = [
+        hasSubmitted ? 'has SUBMITTED tender row' : '',
+        hasAwarded ? 'has AWARDED tender row' : '',
+        hasLost ? 'has LOST tender row' : '',
+      ].filter(Boolean).join(', ');
+      return {
+        included: true,
+        reason: `included: ${reasons}`,
+      };
+    }
+
+    if (statuses.length === 0) {
+      return { included: false, reason: 'excluded: tender rows have no status values' };
+    }
+
+    const topStatuses = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 5)
+      .map(([status, count]) => `${status}:${count}`)
+      .join(', ');
+
+    return {
+      included: false,
+      reason: `excluded: tender status set contains no SUBMITTED/AWARDED/LOST (found ${topStatuses || 'none'})`,
+    };
   }
   if (kpiType === 'submission') {
     return group.hasSubmissionNear

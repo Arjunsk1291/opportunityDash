@@ -167,7 +167,6 @@ const KpiDiagnostics = () => {
         </div>
       </div>
 
-      {view !== 'omitted' ? <DiagnosticsTable title="Included in KPI" rows={report.included} /> : null}
       <DiagnosticsTable title="Omitted from KPI" rows={omittedRows} />
       <DiagnosticsTable title="Duplicates Removed (Dedupe Only)" rows={duplicateRows} />
     </div>
