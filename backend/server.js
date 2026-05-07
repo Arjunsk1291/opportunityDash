@@ -4576,23 +4576,62 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
     const opportunityRefNo = String(req.body?.opportunityRefNo || '').trim();
     if (!opportunityRefNo) return res.status(400).json({ error: 'opportunityRefNo is required' });
 
-    const payload = {
-      opportunityRefNo,
-      adnocRftNo: String(req.body?.adnocRftNo || '').trim(),
-      tenderName: String(req.body?.tenderName || '').trim(),
-      clientName: String(req.body?.clientName || '').trim(),
-      groupClassification: String(req.body?.groupClassification || '').trim(),
-      internalLead: String(req.body?.internalLead || '').trim(),
-      opportunityClassification: String(req.body?.opportunityClassification || '').trim(),
-      dateTenderReceived: String(req.body?.dateTenderReceived || '').trim(),
-      tenderPlannedSubmissionDate: String(req.body?.tenderPlannedSubmissionDate || '').trim(),
-      avenirStatus: String(req.body?.avenirStatus || '').trim(),
+    const ALLOWED_KEYS = new Set([
+      'adnocRftNo',
+      'tenderName',
+      'clientName',
+      'groupClassification',
+      'internalLead',
+      'opportunityClassification',
+      'dateTenderReceived',
+      'tenderPlannedSubmissionDate',
+      'opportunityValue',
+      'avenirStatus',
+    ]);
+
+    const buildFullPayload = () => {
+      const base = {
+        opportunityRefNo,
+        adnocRftNo: String(req.body?.adnocRftNo || '').trim(),
+        tenderName: String(req.body?.tenderName || '').trim(),
+        clientName: String(req.body?.clientName || '').trim(),
+        groupClassification: String(req.body?.groupClassification || '').trim(),
+        internalLead: String(req.body?.internalLead || '').trim(),
+        opportunityClassification: String(req.body?.opportunityClassification || '').trim(),
+        dateTenderReceived: String(req.body?.dateTenderReceived || '').trim(),
+        tenderPlannedSubmissionDate: String(req.body?.tenderPlannedSubmissionDate || '').trim(),
+        avenirStatus: String(req.body?.avenirStatus || '').trim(),
+      };
+
+      const valueRaw = req.body?.opportunityValue;
+      if (valueRaw !== undefined && valueRaw !== null && String(valueRaw).trim() !== '') {
+        const parsed = Number(String(valueRaw).replace(/,/g, ''));
+        if (!Number.isNaN(parsed)) base.opportunityValue = parsed;
+      }
+      return base;
     };
 
-    const valueRaw = req.body?.opportunityValue;
-    if (valueRaw !== undefined && valueRaw !== null && String(valueRaw).trim() !== '') {
-      const parsed = Number(String(valueRaw).replace(/,/g, ''));
-      if (!Number.isNaN(parsed)) payload.opportunityValue = parsed;
+    const buildPatchPayload = () => {
+      const patch = req.body?.patch && typeof req.body.patch === 'object' ? req.body.patch : null;
+      if (!patch) return null;
+      const payload = { opportunityRefNo };
+      for (const [key, value] of Object.entries(patch)) {
+        if (!ALLOWED_KEYS.has(key)) continue;
+        if (key === 'opportunityValue') {
+          const parsed = Number(String(value ?? '').replace(/,/g, '').trim());
+          if (!Number.isNaN(parsed)) payload.opportunityValue = parsed;
+          continue;
+        }
+        payload[key] = String(value ?? '').trim();
+      }
+      return payload;
+    };
+
+    const patchPayload = buildPatchPayload();
+    const payload = patchPayload || buildFullPayload();
+
+    if (Object.keys(payload).length <= 1) {
+      return res.status(400).json({ error: 'No editable fields provided' });
     }
 
     const existing = await SyncedOpportunity.findOne({ opportunityRefNo });

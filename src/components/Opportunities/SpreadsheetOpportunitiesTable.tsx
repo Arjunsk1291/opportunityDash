@@ -7,12 +7,15 @@ import { Separator } from '@/components/ui/separator';
 import { Minus, Plus, RotateCcw, Search, X } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { getDisplayStatus, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
+import { toast } from 'sonner';
 import styles from './SpreadsheetOpportunitiesTable.module.css';
 
 type Column = {
   header: string;
   widthPx?: number;
 };
+
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
 
@@ -49,6 +52,19 @@ const ALL_COLUMN_HEADERS: Column[] = [
   { header: 'who was awarded the project', widthPx: 260 },
   { header: 'final awarded price', widthPx: 180 },
 ] as const;
+
+const EDITABLE_HEADER_TO_FIELD: Record<string, keyof Opportunity> = {
+  [normalizeHeader('Tender name')]: 'tenderName',
+  [normalizeHeader('Client')]: 'clientName',
+  [normalizeHeader('GDS/GES')]: 'groupClassification',
+  [normalizeHeader('Assigned Person')]: 'internalLead',
+  [normalizeHeader('Tender Type')]: 'opportunityClassification',
+  [normalizeHeader('date tender recd')]: 'dateTenderReceived',
+  [normalizeHeader('Tender Due  date')]: 'tenderPlannedSubmissionDate',
+  [normalizeHeader('AVENIR STATUS')]: 'avenirStatus',
+  [normalizeHeader('ADNOC RFT NO')]: 'adnocRftNo',
+  [normalizeHeader('Tender value')]: 'opportunityValue',
+};
 
 function getSnapshotValue(opp: Opportunity, headerLabel: string): string {
   const snapshot = opp.rawGraphData?.rowSnapshot;
@@ -113,13 +129,20 @@ export function SpreadsheetOpportunitiesTable({
   data,
   onSelectOpportunity,
   onRowDoubleClick,
+  token,
+  canEdit,
+  onUpsertRow,
 }: {
   data: Opportunity[];
   onSelectOpportunity?: (opp: Opportunity) => void;
   onRowDoubleClick?: (opp: Opportunity) => void;
+  token?: string | null;
+  canEdit?: boolean;
+  onUpsertRow?: (row: Partial<Opportunity> & { id?: string }) => void;
 }) {
   const spreadsheetRef = useRef<HTMLDivElement | null>(null);
   const instanceRef = useRef<{ destroy?: () => void } | null>(null);
+  const pendingRevertRef = useRef(new Map<string, string>());
   const [zoomPct, setZoomPct] = useState(100);
   const zoomScale = Math.max(50, Math.min(160, zoomPct)) / 100;
   const [query, setQuery] = useState('');
@@ -168,7 +191,7 @@ export function SpreadsheetOpportunitiesTable({
       type: index === 0 ? 'numeric' : 'text',
       title: col.header,
       width: Math.round((col.widthPx || 180) * zoomScale),
-      readOnly: true,
+      readOnly: index === 0 || !canEdit || !EDITABLE_HEADER_TO_FIELD[normalizeHeader(col.header)],
     }));
 
     instanceRef.current = jspreadsheet(spreadsheetRef.current, {
@@ -186,6 +209,51 @@ export function SpreadsheetOpportunitiesTable({
       tableWidth: '100%',
       tableHeight: '100%',
       defaultRowHeight: 28,
+      onbeforechange: (_instance: unknown, cell: HTMLElement, x: number, y: number) => {
+        pendingRevertRef.current.set(`${x}:${y}`, cell?.innerText ?? '');
+        return true;
+      },
+      onchange: async (sheet: unknown, _cell: HTMLElement, x: number, y: number, value: unknown) => {
+        const header = ALL_COLUMN_HEADERS[x]?.header;
+        const fieldKey = header ? EDITABLE_HEADER_TO_FIELD[normalizeHeader(header)] : undefined;
+        const opp = filteredData[y];
+        if (!fieldKey || !opp) return;
+        if (!token) {
+          toast.error('Not authenticated.');
+          return;
+        }
+
+        try {
+          const response = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'update',
+              confirmed: false,
+              opportunityRefNo: String(opp.opportunityRefNo || opp.tenderNo || '').trim(),
+              patch: { [fieldKey]: value },
+            }),
+          });
+
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            const err = String(data?.error || 'Failed to save');
+            throw new Error(err === 'CONFIRMATION_REQUIRED' ? 'Overwrite requires confirmation (use Update dialog).' : err);
+          }
+          if (data?.row) onUpsertRow?.(data.row);
+          toast.success('Saved.');
+        } catch (error) {
+          const key = `${x}:${y}`;
+          const previous = pendingRevertRef.current.get(key);
+          const api = sheet as { setValueFromCoords?: (col: number, row: number, val: string) => void };
+          if (previous !== undefined && api?.setValueFromCoords) {
+            api.setValueFromCoords(x, y, previous);
+          }
+          toast.error((error as Error).message || 'Failed to save.');
+        } finally {
+          pendingRevertRef.current.delete(`${x}:${y}`);
+        }
+      },
       onselection: (_instance: unknown, _x1: unknown, y1: number) => {
         const index = Number(y1);
         const opp = filteredData[index];
@@ -209,21 +277,14 @@ export function SpreadsheetOpportunitiesTable({
     // Apply zoom by scaling font-size.
     const root = spreadsheetRef.current;
     root.style.fontSize = `${Math.round(12 * zoomScale)}px`;
-    const handleDoubleClick = () => {
-      const selected = lastSelectedRef.current;
-      if (!selected) return;
-      onRowDoubleClick?.(selected);
-    };
-    root.addEventListener('dblclick', handleDoubleClick);
 
     return () => {
-      root.removeEventListener('dblclick', handleDoubleClick);
       if (instanceRef.current?.destroy) {
         instanceRef.current.destroy();
         instanceRef.current = null;
       }
     };
-  }, [filteredData, onRowDoubleClick, onSelectOpportunity, sheetData, zoomScale]);
+  }, [canEdit, filteredData, onSelectOpportunity, onUpsertRow, sheetData, token, zoomScale]);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">

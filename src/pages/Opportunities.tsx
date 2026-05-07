@@ -794,6 +794,9 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
               data={filteredData}
               onSelectOpportunity={setSelectedRow}
               onRowDoubleClick={(row) => editFromRow(row)}
+              token={token}
+              canEdit={canEdit}
+              onUpsertRow={(row) => upsertOpportunities([row])}
             />
           </ErrorBoundary>
         )}
