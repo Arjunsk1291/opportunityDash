@@ -930,6 +930,67 @@ const Dashboard = () => {
     window.open(`/kpi-diagnostics?report=${encodeURIComponent(reportId)}&view=omitted`, '_blank', 'noopener,noreferrer');
   };
 
+  const openDedupeOmittedWindow = (
+    section: 'received' | 'submitted',
+    journeyType: 'tender' | 'eoi',
+    nextFilters: FilterState,
+  ) => {
+    const kpiType: DashboardKpiType = section;
+    const scopeFilters = getKpiScopeFilters(kpiType, nextFilters);
+    const preKpiScopedRows = applyFilters(opportunities, scopeFilters);
+    const grouped = buildProjectGroups(preKpiScopedRows);
+
+    const includedRows: KpiDiagnosticEntry[] = [];
+    const omittedRows: KpiDiagnosticEntry[] = [];
+
+    grouped.groups.forEach((group) => {
+      const row = group.primary || group.items[0];
+      if (!row) return;
+      if (getJourneyType(row) !== journeyType) return;
+      includedRows.push(toDiagnosticEntry(
+        row,
+        'K.INCLUDED',
+        `included: counted in deduped ${section} ${journeyType} total (primary row kept for project group)`,
+      ));
+    });
+
+    grouped.duplicateOmissions.forEach(({ omitted, kept, reason }) => {
+      if (getJourneyType(omitted) !== journeyType) return;
+      omittedRows.push(toDiagnosticEntry(
+        omitted,
+        'K.DEDUPE_MERGED',
+        reason === 'duplicate_project_grouping'
+          ? `excluded: merged into canonical project key (counts in ${section} ${journeyType} total)`
+          : `excluded: merged into canonical project key (counts in ${section} ${journeyType} total)`,
+        { section, journeyType, dedupeReason: reason },
+        kept,
+      ));
+    });
+
+    const reportId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const report: KpiDiagnosticsReport = {
+      reportId,
+      generatedAt: new Date().toISOString(),
+      kpiType: `${section}:${journeyType}`,
+      appliedFilters: {
+        statuses: nextFilters.statuses,
+        showAtRisk: nextFilters.showAtRisk,
+        excludeLostOutcomes: nextFilters.excludeLostOutcomes,
+      },
+      counts: {
+        sourceRows: opportunities.length,
+        preKpiScopedRows: preKpiScopedRows.length,
+        includedRows: includedRows.length,
+        omittedRows: omittedRows.length,
+      },
+      included: includedRows,
+      omitted: omittedRows,
+    } as unknown as KpiDiagnosticsReport;
+
+    tryStoreKpiDiagnostics(reportId, report);
+    window.open(`/kpi-diagnostics?report=${encodeURIComponent(reportId)}&view=omitted`, '_blank', 'noopener,noreferrer');
+  };
+
   const handleKPIClick = (kpiType: DashboardKpiType) => {
     const nextFilters = withKpiOverrides(kpiType, filters);
     setFilters(nextFilters);
@@ -1132,7 +1193,12 @@ const Dashboard = () => {
                   type="button"
                   className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5`}
                   style={{ animationDelay: `${index * 0.07}s` }}
-                  onClick={() => handleKPIClick('received')}
+                  onClick={() => {
+                    const journeyType = card.label.toLowerCase().includes('eoi') ? 'eoi' : 'tender';
+                    const nextFilters = withKpiOverrides('received', filters);
+                    setFilters(nextFilters);
+                    openDedupeOmittedWindow('received', journeyType, nextFilters);
+                  }}
                 >
                   <div className="relative z-10 flex items-start justify-between p-5">
                     <div className="space-y-1.5">
@@ -1162,7 +1228,12 @@ const Dashboard = () => {
                   type="button"
                   className={`analytics-card analytics-kpi-card ${card.glow} w-full text-left transition-transform hover:-translate-y-0.5`}
                   style={{ animationDelay: `${index * 0.07}s` }}
-                  onClick={() => handleKPIClick('submitted')}
+                  onClick={() => {
+                    const journeyType = card.label.toLowerCase().includes('eoi') ? 'eoi' : 'tender';
+                    const nextFilters = withKpiOverrides('submitted', filters);
+                    setFilters(nextFilters);
+                    openDedupeOmittedWindow('submitted', journeyType, nextFilters);
+                  }}
                 >
                   <div className="relative z-10 flex items-start justify-between p-5">
                     <div className="space-y-1.5">
