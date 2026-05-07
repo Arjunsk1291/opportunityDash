@@ -2233,11 +2233,15 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       return respondDatabaseUnavailable(res);
     }
 
-    const email = String(req.body?.email || '').trim().toLowerCase();
+    let email = String(req.body?.email || '').trim().toLowerCase();
     const password = String(req.body?.password || '');
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    if (!IS_PROD && email && !email.includes('@')) {
+      email = `${email}@dev.local`;
     }
 
     // Security: Validate email format (ISO/IEC 27001 - A.14.1.1)

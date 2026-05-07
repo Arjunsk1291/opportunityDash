@@ -101,7 +101,15 @@ export default function Login() {
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!import.meta.env.DEV && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setFormState(prev => ({
+        ...prev,
+        error: 'Please enter a valid email address.',
+      }));
+      return;
+    }
+
+    if (import.meta.env.DEV && email.includes('@') && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setFormState(prev => ({
         ...prev,
         error: 'Please enter a valid email address.',
