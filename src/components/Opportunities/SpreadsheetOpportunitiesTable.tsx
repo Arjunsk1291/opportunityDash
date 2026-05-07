@@ -66,6 +66,8 @@ const EDITABLE_HEADER_TO_FIELD: Record<string, keyof Opportunity> = {
   [normalizeHeader('Tender value')]: 'opportunityValue',
 };
 
+const isEditableColumn = (header: string) => normalizeHeader(header) !== normalizeHeader('Sr.no');
+
 function getSnapshotValue(opp: Opportunity, headerLabel: string): string {
   const snapshot = opp.rawGraphData?.rowSnapshot;
   if (!snapshot || typeof snapshot !== 'object') return '';
@@ -191,7 +193,7 @@ export function SpreadsheetOpportunitiesTable({
       type: index === 0 ? 'numeric' : 'text',
       title: col.header,
       width: Math.round((col.widthPx || 180) * zoomScale),
-      readOnly: index === 0 || !canEdit || !EDITABLE_HEADER_TO_FIELD[normalizeHeader(col.header)],
+      readOnly: index === 0 || !canEdit || !isEditableColumn(col.header),
     }));
 
     instanceRef.current = jspreadsheet(spreadsheetRef.current, {
@@ -217,21 +219,28 @@ export function SpreadsheetOpportunitiesTable({
         const header = ALL_COLUMN_HEADERS[x]?.header;
         const fieldKey = header ? EDITABLE_HEADER_TO_FIELD[normalizeHeader(header)] : undefined;
         const opp = filteredData[y];
-        if (!fieldKey || !opp) return;
+        if (!opp || !header || x === 0) return;
         if (!token) {
           toast.error('Not authenticated.');
           return;
         }
 
         try {
+          const opportunityRefNo = String(opp.opportunityRefNo || opp.tenderNo || '').trim();
+          if (!opportunityRefNo) throw new Error('Missing opportunity reference number for this row.');
+
+          const patch = fieldKey
+            ? { [fieldKey]: value }
+            : { snapshot: { header, value } };
+
           const response = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               mode: 'update',
               confirmed: false,
-              opportunityRefNo: String(opp.opportunityRefNo || opp.tenderNo || '').trim(),
-              patch: { [fieldKey]: value },
+              opportunityRefNo,
+              patch,
             }),
           });
 

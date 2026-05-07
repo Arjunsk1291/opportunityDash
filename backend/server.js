@@ -4616,6 +4616,13 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
       if (!patch) return null;
       const payload = { opportunityRefNo };
       for (const [key, value] of Object.entries(patch)) {
+        if (key === 'snapshot' && value && typeof value === 'object') {
+          const header = String(value.header || '').trim();
+          if (!header) continue;
+          const snapshotValue = value.value === null || value.value === undefined ? '' : String(value.value);
+          payload.snapshot = { header, value: snapshotValue };
+          continue;
+        }
         if (!ALLOWED_KEYS.has(key)) continue;
         if (key === 'opportunityValue') {
           const parsed = Number(String(value ?? '').replace(/,/g, '').trim());
@@ -4640,6 +4647,14 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
 
     const before = existing ? existing.toObject() : null;
     const doc = existing || new SyncedOpportunity({ opportunityRefNo });
+
+    if (payload.snapshot) {
+      const currentRaw = (doc.rawGraphData && typeof doc.rawGraphData === 'object') ? doc.rawGraphData : {};
+      const currentSnapshot = (currentRaw.rowSnapshot && typeof currentRaw.rowSnapshot === 'object') ? currentRaw.rowSnapshot : {};
+      const nextSnapshot = { ...currentSnapshot, [payload.snapshot.header]: payload.snapshot.value };
+      doc.rawGraphData = { ...currentRaw, rowSnapshot: nextSnapshot };
+      delete payload.snapshot;
+    }
 
     Object.assign(doc, payload);
     doc.syncedAt = new Date();
