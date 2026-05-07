@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
-import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
 import { SpreadsheetOpportunitiesTable } from '@/components/Opportunities/SpreadsheetOpportunitiesTable';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -198,7 +197,6 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const { token, canPerformAction } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [filters, setFilters] = useState<FilterState>(() => ({
     ...defaultFilters,
     statuses: statusFilter ? [statusFilter] : [],
@@ -235,6 +233,14 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
   const canEdit = canPerformAction('manual_opportunity_updates_write');
+  const editFromRow = (row: Opportunity) => {
+    if (!canEdit) return;
+    setEditorMode('update');
+    setEditorOpen(true);
+    setSelectedRow(row);
+    setFormFromOpportunity(row);
+    setSearch(String(row.opportunityRefNo || '').trim());
+  };
   const formOptions = useMemo(() => {
     const dedupeSorted = (values: Array<string | null | undefined>) => (
       Array.from(
@@ -757,7 +763,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         {viewMode === 'dashboard_table' || spreadsheetCrashed ? (
           <OpportunitiesTable
             data={filteredData}
-            onSelectOpportunity={setSelectedOpp}
+            onSelectOpportunity={setSelectedRow}
+            onRowDoubleClick={(row) => editFromRow(row)}
             columnPreset="sheet"
             responsiveMode="default"
             maxHeight="max-h-[calc(100vh-18rem)]"
@@ -772,24 +779,22 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
             fallback={(
               <OpportunitiesTable
                 data={filteredData}
-                onSelectOpportunity={setSelectedOpp}
+                onSelectOpportunity={setSelectedRow}
+                onRowDoubleClick={(row) => editFromRow(row)}
                 columnPreset="sheet"
                 responsiveMode="default"
                 maxHeight="max-h-[calc(100vh-18rem)]"
               />
             )}
           >
-            <SpreadsheetOpportunitiesTable data={filteredData} onSelectOpportunity={setSelectedOpp} />
+            <SpreadsheetOpportunitiesTable
+              data={filteredData}
+              onSelectOpportunity={setSelectedRow}
+              onRowDoubleClick={(row) => editFromRow(row)}
+            />
           </ErrorBoundary>
         )}
       </div>
-
-      <OpportunityDetailDialog
-        open={!!selectedOpp}
-        opportunity={selectedOpp}
-        onOpenChange={(open) => { if (!open) setSelectedOpp(null); }}
-        formatCurrency={formatCurrency}
-      />
 
       <Dialog
         open={sheetUploadOpen}
@@ -972,7 +977,15 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
               <Separator />
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setEditorOpen(false)} disabled={saving || previewing}>Cancel</Button>
-                <Button type="button" onClick={handlePreviewAndSave} disabled={saving || previewing}>
+                <Button
+                  type="button"
+                  onClick={handlePreviewAndSave}
+                  disabled={saving || previewing}
+                  className={cn(
+                    'relative overflow-hidden',
+                    (saving || previewing) ? 'animate-pulse' : '',
+                  )}
+                >
                   {previewing ? 'Previewing...' : saving ? 'Saving...' : (editorMode === 'new' ? 'Create Row' : 'Preview Update')}
                 </Button>
               </div>

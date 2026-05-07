@@ -112,9 +112,11 @@ function getDisplayValue(opp: Opportunity, headerLabel: string): string {
 export function SpreadsheetOpportunitiesTable({
   data,
   onSelectOpportunity,
+  onRowDoubleClick,
 }: {
   data: Opportunity[];
   onSelectOpportunity?: (opp: Opportunity) => void;
+  onRowDoubleClick?: (opp: Opportunity) => void;
 }) {
   const spreadsheetRef = useRef<HTMLDivElement | null>(null);
   const instanceRef = useRef<{ destroy?: () => void } | null>(null);
@@ -122,6 +124,7 @@ export function SpreadsheetOpportunitiesTable({
   const zoomScale = Math.max(50, Math.min(160, zoomPct)) / 100;
   const [query, setQuery] = useState('');
   const normalizedQuery = query.trim().toLowerCase();
+  const lastSelectedRef = useRef<Opportunity | null>(null);
 
   const filteredData = useMemo(() => {
     if (!normalizedQuery) return data;
@@ -186,7 +189,10 @@ export function SpreadsheetOpportunitiesTable({
       onselection: (_instance: unknown, _x1: unknown, y1: number) => {
         const index = Number(y1);
         const opp = filteredData[index];
-        if (opp) onSelectOpportunity?.(opp);
+        if (opp) {
+          lastSelectedRef.current = opp;
+          onSelectOpportunity?.(opp);
+        }
       },
       updateTable: (_instance: unknown, cell: HTMLElement, _col: number, rowIndex: number) => {
         if (!cell) return;
@@ -203,8 +209,15 @@ export function SpreadsheetOpportunitiesTable({
     // Apply zoom by scaling font-size.
     const root = spreadsheetRef.current;
     root.style.fontSize = `${Math.round(12 * zoomScale)}px`;
+    const handleDoubleClick = () => {
+      const selected = lastSelectedRef.current;
+      if (!selected) return;
+      onRowDoubleClick?.(selected);
+    };
+    root.addEventListener('dblclick', handleDoubleClick);
 
     return () => {
+      root.removeEventListener('dblclick', handleDoubleClick);
       if (instanceRef.current?.destroy) {
         instanceRef.current.destroy();
         instanceRef.current = null;

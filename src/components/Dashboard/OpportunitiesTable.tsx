@@ -23,6 +23,7 @@ import { CANONICAL_STATUS_ORDER, getDisplayStatus, getStatusBadgeClass, normaliz
 interface OpportunitiesTableProps {
   data: Opportunity[];
   onSelectOpportunity?: (opp: Opportunity) => void;
+  onRowDoubleClick?: (opp: Opportunity) => void;
   onEditCell?: (opp: Opportunity, fieldKey: string) => void;
   columnPreset?: 'summary' | 'sheet';
   scrollContainerClassName?: string;
@@ -189,6 +190,7 @@ const getPostBidBadgeClass = (detailType?: string) => {
 export function OpportunitiesTable({
   data,
   onSelectOpportunity,
+  onRowDoubleClick,
   onEditCell,
   columnPreset = 'summary',
   scrollContainerClassName,
@@ -882,6 +884,10 @@ export function OpportunitiesTable({
                         return;
                       }
                       onSelectOpportunity?.(tender);
+                    }}
+                    onDoubleClick={() => {
+                      if (rowTrace) return;
+                      onRowDoubleClick?.(tender);
                     }}
                   >
                     {isSheetPreset ? (
