@@ -1,11 +1,10 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle, CheckCircle, Loader2, Lock, Mail } from 'lucide-react';
-import { useAuth, UserRole } from '@/contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { cn } from '@/lib/utils';
 import logo from '@/assets/Avenir_Logo.avif';
 
 type AuthMode = 'password-login' | 'success';
@@ -129,7 +128,7 @@ export default function Login() {
         password: '', // Clear password on error for security
       }));
     }
-  }, [formState.selectedRole, formState.email, formState.password, loginWithPassword, navigate, isRateLimited]);
+  }, [formState.email, formState.password, loginWithPassword, navigate, isRateLimited]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !formState.loading) {
@@ -273,12 +272,12 @@ export default function Login() {
               </Button>
 
               <Button
-                onClick={handleBackToRoleSelect}
+                onClick={() => setFormState(prev => ({ ...prev, email: '', password: '', error: null }))}
                 disabled={formState.loading}
                 variant="outline"
                 className="w-full"
               >
-                Back
+                Clear
               </Button>
             </div>
           </div>
