@@ -221,6 +221,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const [sheetUploadSaving, setSheetUploadSaving] = useState(false);
   const [sheetUploadRows, setSheetUploadRows] = useState<FormState[]>([]);
   const [sheetUploadMeta, setSheetUploadMeta] = useState<{ created: number; updated: number } | null>(null);
+  const [sheetUploadProgress, setSheetUploadProgress] = useState<{ stage: string; pct: number } | null>(null);
 
   const logManualFlow = (flowId: string, stage: string, details: Record<string, unknown> = {}) => {
     console.log('[opportunities.manual-flow]', {
@@ -339,9 +340,12 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
 
       const totalStart = performance.now();
       setSheetUploadLoading(true);
+      setSheetUploadProgress({ stage: 'Reading file…', pct: 5 });
       setSheetUploadMeta(null);
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 
       console.time('[opportunities.sheetUpload] total');
+      setSheetUploadProgress({ stage: 'Loading workbook…', pct: 20 });
       const buffer = await file.arrayBuffer();
       console.time('[opportunities.sheetUpload] workbookLoad');
       const workbook = await loadWorkbookFromArrayBuffer(buffer);
@@ -352,6 +356,9 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       const maxColumns = 50;
       const maxScanRows = Math.min(15, worksheet.rowCount);
       const maxRows = Math.min(worksheet.rowCount, MAX_OPPORTUNITY_UPLOAD_ROWS);
+
+      setSheetUploadProgress({ stage: 'Detecting headers…', pct: 35 });
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 
       const normalizeHeader = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
       const headerCandidates: Record<keyof FormState, string[]> = {
@@ -415,6 +422,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       };
 
       console.time('[opportunities.sheetUpload] parseRows');
+      setSheetUploadProgress({ stage: 'Parsing rows…', pct: 55 });
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
       const parsed: FormState[] = [];
       for (let rowIndex = headerRowIndex + 1; rowIndex <= maxRows; rowIndex += 1) {
         const excelRow = worksheet.getRow(rowIndex);
@@ -445,6 +454,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       console.timeEnd('[opportunities.sheetUpload] parseRows');
 
       console.time('[opportunities.sheetUpload] diff');
+      setSheetUploadProgress({ stage: 'Diffing…', pct: 80 });
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
       const normalizeRef = (value: string) => String(value || '').trim().toLowerCase();
       const existingByRef = new Map(opportunities.map((opp) => [normalizeRef(String(opp.opportunityRefNo || opp.tenderNo || '')), opp]));
 
@@ -480,6 +491,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       setSheetUploadRows([...created, ...updated, ...unchanged]);
       setSheetUploadMeta({ created: created.length, updated: updated.length });
       setSheetUploadOpen(true);
+      setSheetUploadProgress({ stage: 'Ready', pct: 100 });
       console.timeEnd('[opportunities.sheetUpload] diff');
       console.log('[opportunities.sheetUpload] done', {
         file: file.name,
@@ -496,6 +508,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       toast.error((error as Error).message || 'Failed to parse uploaded sheet.');
     } finally {
       setSheetUploadLoading(false);
+      window.setTimeout(() => setSheetUploadProgress(null), 800);
     }
   };
 
@@ -722,8 +735,20 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
                 onClick={() => document.getElementById('opportunities-sheet-upload')?.click()}
                 disabled={sheetUploadLoading || sheetUploadSaving}
               >
-                {sheetUploadLoading ? 'Parsing…' : 'Upload Sheet'}
+                {sheetUploadLoading
+                  ? (sheetUploadProgress ? `${sheetUploadProgress.stage} ${Math.round(sheetUploadProgress.pct)}%` : 'Parsing…')
+                  : 'Upload Sheet'}
               </Button>
+              {sheetUploadLoading && sheetUploadProgress ? (
+                <div className="hidden sm:flex items-center gap-2 pl-1">
+                  <div className="h-2 w-40 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full bg-primary transition-[width] duration-200"
+                      style={{ width: `${Math.max(2, Math.min(100, sheetUploadProgress.pct))}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null}
             </>
           ) : null}
           <Button
