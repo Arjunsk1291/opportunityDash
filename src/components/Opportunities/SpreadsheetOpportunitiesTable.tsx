@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import jspreadsheet from 'jspreadsheet-ce';
-import 'jspreadsheet-ce/dist/jspreadsheet.css';
+import { DataGrid, type GridColDef, type GridRowModel, type GridRowId } from '@mui/x-data-grid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { Minus, Plus, RotateCcw, Search, X } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Minus, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { getDisplayStatus, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 import { toast } from 'sonner';
@@ -13,6 +13,36 @@ import styles from './SpreadsheetOpportunitiesTable.module.css';
 type Column = {
   header: string;
   widthPx?: number;
+};
+
+type RowKind = 'existing' | 'draft';
+
+type SheetRow = {
+  __kind: RowKind;
+  __gridId: string;
+  __sourceId?: string;
+  opportunityRefNo: string;
+  tenderName: string;
+  clientName: string;
+  groupClassification: string;
+  internalLead: string;
+  opportunityClassification: string;
+  dateTenderReceived: string;
+  tenderPlannedSubmissionDate: string;
+  avenirStatus: string;
+  adnocRftNo: string;
+  opportunityValue: string;
+  rawSnapshot: Record<string, string>;
+};
+
+type PendingCellKey = `${string}:${string}`;
+
+type ConfirmationState = null | {
+  rowId: string;
+  fieldLabel: string;
+  requestBody: Record<string, unknown>;
+  previousRow: SheetRow;
+  nextRow: SheetRow;
 };
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -53,6 +83,7 @@ const ALL_COLUMN_HEADERS: Column[] = [
   { header: 'final awarded price', widthPx: 180 },
 ] as const;
 
+// Sensitive mapping: keep as-is (do not change semantics).
 const EDITABLE_HEADER_TO_FIELD: Record<string, keyof Opportunity> = {
   [normalizeHeader('Tender name')]: 'tenderName',
   [normalizeHeader('Client')]: 'clientName',
@@ -66,7 +97,21 @@ const EDITABLE_HEADER_TO_FIELD: Record<string, keyof Opportunity> = {
   [normalizeHeader('Tender value')]: 'opportunityValue',
 };
 
-const isEditableColumn = (header: string) => normalizeHeader(header) !== normalizeHeader('Sr.no');
+const EMPTY_ROW: Omit<SheetRow, '__kind' | '__gridId'> = {
+  __sourceId: undefined,
+  opportunityRefNo: '',
+  tenderName: '',
+  clientName: '',
+  groupClassification: '',
+  internalLead: '',
+  opportunityClassification: '',
+  dateTenderReceived: '',
+  tenderPlannedSubmissionDate: '',
+  avenirStatus: '',
+  adnocRftNo: '',
+  opportunityValue: '',
+  rawSnapshot: {},
+};
 
 function getSnapshotValue(opp: Opportunity, headerLabel: string): string {
   const snapshot = opp.rawGraphData?.rowSnapshot;
@@ -112,19 +157,41 @@ function getSmartValue(opp: Opportunity, headerLabel: string): string {
       return String(opp.tenderResult || opp.rawTenderResult || '').trim();
     case 'TENDER STATUS -':
       return String(opp.tenderStatusRemark || '').trim();
-    case 'ADNOC RFT NO':
-      return String(opp.adnocRftNo || '').trim();
-    case 'TENDER VALUE':
-      return opp.opportunityValue !== null && opp.opportunityValue !== undefined ? String(opp.opportunityValue) : '';
     default:
-      return '';
+      return getSnapshotValue(opp, headerLabel);
   }
 }
 
-function getDisplayValue(opp: Opportunity, headerLabel: string): string {
-  const primary = getSmartValue(opp, headerLabel);
-  if (primary) return primary;
-  return getSnapshotValue(opp, headerLabel);
+function buildExistingRow(opp: Opportunity, rowIndex: number): SheetRow {
+  const rawSnapshot: Record<string, string> = {};
+  const snapshot = opp.rawGraphData?.rowSnapshot;
+  if (snapshot && typeof snapshot === 'object') {
+    for (const [k, v] of Object.entries(snapshot)) rawSnapshot[String(k)] = v === null || v === undefined ? '' : String(v);
+  }
+  return {
+    __kind: 'existing',
+    __gridId: String(opp.id || opp._id || `${rowIndex}`),
+    __sourceId: String(opp.id || opp._id || ''),
+    opportunityRefNo: String(opp.opportunityRefNo || opp.tenderNo || '').trim(),
+    tenderName: String(opp.tenderName || '').trim(),
+    clientName: String(opp.clientName || '').trim(),
+    groupClassification: String(opp.groupClassification || '').trim(),
+    internalLead: String(opp.internalLead || '').trim(),
+    opportunityClassification: String(opp.opportunityClassification || '').trim(),
+    dateTenderReceived: String(opp.dateTenderReceived || '').trim(),
+    tenderPlannedSubmissionDate: String(opp.tenderPlannedSubmissionDate || '').trim(),
+    avenirStatus: String(opp.avenirStatus || '').trim(),
+    adnocRftNo: String(opp.adnocRftNo || '').trim(),
+    opportunityValue: opp.opportunityValue === null || opp.opportunityValue === undefined ? '' : String(opp.opportunityValue),
+    rawSnapshot,
+  };
+}
+
+function isEditableHeader(header: string) {
+  const normalized = normalizeHeader(header);
+  if (normalized === normalizeHeader('Sr.no')) return false;
+  if (normalized === normalizeHeader('Tender no')) return false;
+  return Boolean(EDITABLE_HEADER_TO_FIELD[normalized]);
 }
 
 export function SpreadsheetOpportunitiesTable({
@@ -142,14 +209,21 @@ export function SpreadsheetOpportunitiesTable({
   canEdit?: boolean;
   onUpsertRow?: (row: Partial<Opportunity> & { id?: string }) => void;
 }) {
-  const spreadsheetRef = useRef<HTMLDivElement | null>(null);
-  const instanceRef = useRef<{ destroy?: () => void } | null>(null);
-  const pendingRevertRef = useRef(new Map<string, string>());
   const [zoomPct, setZoomPct] = useState(100);
   const zoomScale = Math.max(50, Math.min(160, zoomPct)) / 100;
   const [query, setQuery] = useState('');
   const normalizedQuery = query.trim().toLowerCase();
-  const lastSelectedRef = useRef<Opportunity | null>(null);
+
+  const [rows, setRows] = useState<SheetRow[]>([]);
+  const existingByGridId = useRef(new Map<string, Opportunity>());
+  const [pendingCells, setPendingCells] = useState<Set<PendingCellKey>>(() => new Set());
+  const [confirmState, setConfirmState] = useState<ConfirmationState>(null);
+
+  useEffect(() => {
+    existingByGridId.current = new Map(
+      data.map((opp, idx) => [String(opp.id || opp._id || `${idx}`), opp]),
+    );
+  }, [data]);
 
   const filteredData = useMemo(() => {
     if (!normalizedQuery) return data;
@@ -170,130 +244,412 @@ export function SpreadsheetOpportunitiesTable({
     });
   }, [data, normalizedQuery]);
 
-  const sheetData = useMemo(() => {
-    return filteredData.map((opp, idx) => {
-      const row: string[] = [];
-      row.push(String(idx + 1));
-      for (const col of ALL_COLUMN_HEADERS.slice(1)) {
-        row.push(getDisplayValue(opp, col.header));
-      }
-      return row;
-    });
+  useEffect(() => {
+    setRows(filteredData.map((opp, idx) => buildExistingRow(opp, idx)));
   }, [filteredData]);
 
-  useEffect(() => {
-    if (!spreadsheetRef.current) return;
+  const insertDraftRowBelow = (gridId: string) => {
+    setRows((prev) => {
+      const index = prev.findIndex((r) => r.__gridId === gridId);
+      const at = index >= 0 ? index + 1 : prev.length;
+      const id = `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const draft: SheetRow = { __kind: 'draft', __gridId: id, ...EMPTY_ROW };
+      const next = prev.slice();
+      next.splice(at, 0, draft);
+      return next;
+    });
+  };
 
-    if (instanceRef.current?.destroy) {
-      instanceRef.current.destroy();
-      instanceRef.current = null;
+  const discardDraftRow = (gridId: string) => {
+    setRows((prev) => prev.filter((r) => r.__gridId !== gridId));
+  };
+
+  const setPending = (rowId: string, field: string, on: boolean) => {
+    const key: PendingCellKey = `${rowId}:${field}`;
+    setPendingCells((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  };
+
+  const saveExistingPatch = async (row: SheetRow, field: keyof Opportunity, value: unknown, confirmed: boolean) => {
+    if (!token) throw new Error('Not authenticated.');
+    const opportunityRefNo = String(row.opportunityRefNo || '').trim();
+    if (!opportunityRefNo) throw new Error('Missing opportunity reference number for this row.');
+    const response = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'update',
+        confirmed,
+        opportunityRefNo,
+        patch: { [field]: value },
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = String(data?.error || 'Failed to save');
+      const e = new Error(err);
+      // @ts-expect-error attach payload
+      e.__payload = data;
+      throw e;
     }
+    if (data?.row) onUpsertRow?.(data.row);
+    return data;
+  };
 
-    const columns = ALL_COLUMN_HEADERS.map((col, index) => ({
-      type: index === 0 ? 'numeric' : 'text',
-      title: col.header,
-      width: Math.round((col.widthPx || 180) * zoomScale),
-      readOnly: index === 0 || !canEdit || !isEditableColumn(col.header),
-    }));
+  const saveExistingSnapshot = async (row: SheetRow, header: string, value: unknown, confirmed: boolean) => {
+    if (!token) throw new Error('Not authenticated.');
+    const opportunityRefNo = String(row.opportunityRefNo || '').trim();
+    if (!opportunityRefNo) throw new Error('Missing opportunity reference number for this row.');
+    const response = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'update',
+        confirmed,
+        opportunityRefNo,
+        patch: { snapshot: { header, value } },
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = String(data?.error || 'Failed to save');
+      const e = new Error(err);
+      // @ts-expect-error attach payload
+      e.__payload = data;
+      throw e;
+    }
+    if (data?.row) onUpsertRow?.(data.row);
+    return data;
+  };
 
-    instanceRef.current = jspreadsheet(spreadsheetRef.current, {
-      data: sheetData,
-      columns,
-      minDimensions: [columns.length, Math.max(sheetData.length, 1)],
-      columnDrag: false,
-      rowDrag: false,
-      allowInsertRow: false,
-      allowInsertColumn: false,
-      allowDeleteRow: false,
-      allowDeleteColumn: false,
-      columnSorting: true,
-      tableOverflow: true,
-      tableWidth: '100%',
-      tableHeight: '100%',
-      defaultRowHeight: 28,
-      onbeforechange: (_instance: unknown, cell: HTMLElement, x: number, y: number) => {
-        pendingRevertRef.current.set(`${x}:${y}`, cell?.innerText ?? '');
-        return true;
-      },
-      onchange: async (sheet: unknown, _cell: HTMLElement, x: number, y: number, value: unknown) => {
-        const header = ALL_COLUMN_HEADERS[x]?.header;
-        const fieldKey = header ? EDITABLE_HEADER_TO_FIELD[normalizeHeader(header)] : undefined;
-        const opp = filteredData[y];
-        if (!opp || !header || x === 0) return;
-        if (!token) {
-          toast.error('Not authenticated.');
-          return;
+  const createDraftAsNew = async (row: SheetRow, confirmed: boolean) => {
+    if (!token) throw new Error('Not authenticated.');
+    const opportunityRefNo = String(row.opportunityRefNo || '').trim();
+    if (!opportunityRefNo) throw new Error('opportunityRefNo is required');
+    const response = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'new',
+        confirmed,
+        opportunityRefNo,
+        tenderName: row.tenderName,
+        clientName: row.clientName,
+        groupClassification: row.groupClassification,
+        internalLead: row.internalLead,
+        opportunityClassification: row.opportunityClassification,
+        dateTenderReceived: row.dateTenderReceived,
+        tenderPlannedSubmissionDate: row.tenderPlannedSubmissionDate,
+        opportunityValue: row.opportunityValue,
+        avenirStatus: row.avenirStatus,
+        adnocRftNo: row.adnocRftNo,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = String(data?.error || 'Failed to create');
+      const e = new Error(err);
+      // @ts-expect-error attach payload
+      e.__payload = data;
+      // @ts-expect-error attach status
+      e.__status = response.status;
+      throw e;
+    }
+    if (data?.row) onUpsertRow?.(data.row);
+    return data;
+  };
+
+  const processRowUpdate = async (newRowModel: GridRowModel, oldRowModel: GridRowModel) => {
+    const newRow = newRowModel as SheetRow;
+    const oldRow = oldRowModel as SheetRow;
+    const rowId = String(newRow.__gridId);
+
+    const changedKeys = (Object.keys(EMPTY_ROW) as Array<keyof typeof EMPTY_ROW>).filter((k) => {
+      if (k === 'rawSnapshot') return false;
+      return String((newRow as any)[k] ?? '') !== String((oldRow as any)[k] ?? '');
+    });
+
+    if (!changedKeys.length) return newRow;
+
+    // Only one field changes in cell edit mode; pick first.
+    const key = changedKeys[0] as keyof SheetRow;
+
+    try {
+      setPending(rowId, String(key), true);
+
+      if (!canEdit) throw new Error('You do not have permission to edit rows.');
+
+      if (newRow.__kind === 'draft') {
+        if (key !== 'opportunityRefNo' && !String(newRow.opportunityRefNo || '').trim()) {
+          // keep draft local until ref is present
+          return newRow;
         }
 
-        try {
-          const opportunityRefNo = String(opp.opportunityRefNo || opp.tenderNo || '').trim();
-          if (!opportunityRefNo) throw new Error('Missing opportunity reference number for this row.');
+        // attempt create once ref is present (or when ref itself is edited)
+        const created = await createDraftAsNew(newRow, false);
+        const createdRow = created?.row as Opportunity | undefined;
+        if (createdRow) {
+          toast.success('New row added.');
+          return buildExistingRow(createdRow, 0);
+        }
+        return newRow;
+      }
 
-          const patch = fieldKey
-            ? { [fieldKey]: value }
-            : { snapshot: { header, value } };
+      // existing row
+      const headerLabel = (() => {
+        if (key === 'opportunityRefNo') return 'Tender no';
+        if (key === 'tenderName') return 'Tender name';
+        if (key === 'clientName') return 'Client';
+        if (key === 'groupClassification') return 'GDS/GES';
+        if (key === 'internalLead') return 'Assigned Person';
+        if (key === 'opportunityClassification') return 'Tender Type';
+        if (key === 'dateTenderReceived') return 'date tender recd';
+        if (key === 'tenderPlannedSubmissionDate') return 'Tender Due  date';
+        if (key === 'avenirStatus') return 'AVENIR STATUS';
+        if (key === 'adnocRftNo') return 'ADNOC RFT NO';
+        if (key === 'opportunityValue') return 'Tender value';
+        return '';
+      })();
 
-          const response = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+      const normalized = headerLabel ? normalizeHeader(headerLabel) : '';
+      const fieldKey = normalized ? EDITABLE_HEADER_TO_FIELD[normalized] : undefined;
+      if (fieldKey) {
+        await saveExistingPatch(newRow, fieldKey, (newRow as any)[key], false);
+      } else if (headerLabel) {
+        await saveExistingSnapshot(newRow, headerLabel, (newRow as any)[key], false);
+      } else {
+        throw new Error('This column is not editable.');
+      }
+
+      toast.success('Saved.');
+      return newRow;
+    } catch (error) {
+      const err = error as Error & { __payload?: any; __status?: number };
+      const payload = (err as any).__payload;
+      const message = err?.message || 'Failed to save.';
+
+      if (message === 'CONFIRMATION_REQUIRED') {
+        const fieldLabel = String(changedKeys[0] || 'field');
+        const requestBody = newRow.__kind === 'draft'
+          ? {
+              mode: 'new',
+              confirmed: true,
+              opportunityRefNo: newRow.opportunityRefNo,
+              tenderName: newRow.tenderName,
+              clientName: newRow.clientName,
+              groupClassification: newRow.groupClassification,
+              internalLead: newRow.internalLead,
+              opportunityClassification: newRow.opportunityClassification,
+              dateTenderReceived: newRow.dateTenderReceived,
+              tenderPlannedSubmissionDate: newRow.tenderPlannedSubmissionDate,
+              opportunityValue: newRow.opportunityValue,
+              avenirStatus: newRow.avenirStatus,
+              adnocRftNo: newRow.adnocRftNo,
+            }
+          : {
               mode: 'update',
-              confirmed: false,
-              opportunityRefNo,
-              patch,
-            }),
-          });
+              confirmed: true,
+              opportunityRefNo: newRow.opportunityRefNo,
+              patch: (() => {
+                const headerLabel = (() => {
+                  if (key === 'tenderName') return 'Tender name';
+                  if (key === 'clientName') return 'Client';
+                  if (key === 'groupClassification') return 'GDS/GES';
+                  if (key === 'internalLead') return 'Assigned Person';
+                  if (key === 'opportunityClassification') return 'Tender Type';
+                  if (key === 'dateTenderReceived') return 'date tender recd';
+                  if (key === 'tenderPlannedSubmissionDate') return 'Tender Due  date';
+                  if (key === 'avenirStatus') return 'AVENIR STATUS';
+                  if (key === 'adnocRftNo') return 'ADNOC RFT NO';
+                  if (key === 'opportunityValue') return 'Tender value';
+                  return '';
+                })();
+                const normalized = headerLabel ? normalizeHeader(headerLabel) : '';
+                const fieldKey = normalized ? EDITABLE_HEADER_TO_FIELD[normalized] : undefined;
+                if (fieldKey) return { [fieldKey]: (newRow as any)[key] };
+                if (headerLabel) return { snapshot: { header: headerLabel, value: (newRow as any)[key] } };
+                return {};
+              })(),
+            };
 
-          const data = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            const err = String(data?.error || 'Failed to save');
-            throw new Error(err === 'CONFIRMATION_REQUIRED' ? 'Overwrite requires confirmation (use Update dialog).' : err);
-          }
-          if (data?.row) onUpsertRow?.(data.row);
-          toast.success('Saved.');
-        } catch (error) {
-          const key = `${x}:${y}`;
-          const previous = pendingRevertRef.current.get(key);
-          const api = sheet as { setValueFromCoords?: (col: number, row: number, val: string) => void };
-          if (previous !== undefined && api?.setValueFromCoords) {
-            api.setValueFromCoords(x, y, previous);
-          }
-          toast.error((error as Error).message || 'Failed to save.');
-        } finally {
-          pendingRevertRef.current.delete(`${x}:${y}`);
-        }
-      },
-      onselection: (_instance: unknown, _x1: unknown, y1: number) => {
-        const index = Number(y1);
-        const opp = filteredData[index];
-        if (opp) {
-          lastSelectedRef.current = opp;
-          onSelectOpportunity?.(opp);
-        }
-      },
-      updateTable: (_instance: unknown, cell: HTMLElement, _col: number, rowIndex: number) => {
-        if (!cell) return;
-        const rowEl = cell.parentElement as HTMLTableRowElement | null;
-        if (!rowEl) return;
-        const opp = filteredData[rowIndex];
-        if (!opp) return;
-        const status = normalizeCanonicalStatus(getDisplayStatus(opp));
-        const className = status ? `opp-row status-${status.replace(/\s+/g, '-').replace(/\//g, '-').toLowerCase()}` : 'opp-row';
-        if (rowEl.className !== className) rowEl.className = className;
+        setConfirmState({
+          rowId,
+          fieldLabel,
+          requestBody,
+          previousRow: oldRow,
+          nextRow: newRow,
+        });
+        return oldRow;
+      }
+
+      if (newRow.__kind === 'draft' && (err as any).__status === 409) {
+        toast.error('Opportunity already exists for this Tender no.');
+        return oldRow;
+      }
+
+      toast.error(String(payload?.error || message || 'Failed to save.'));
+      return oldRow;
+    } finally {
+      const key = changedKeys[0] ? String(changedKeys[0]) : '';
+      if (key) setPending(rowId, key, false);
+    }
+  };
+
+  const columns = useMemo(() => {
+    const cols: GridColDef<SheetRow>[] = [];
+
+    cols.push({
+      field: '__actions',
+      headerName: '',
+      width: Math.round(84 * zoomScale),
+      sortable: false,
+      filterable: false,
+      disableColumnMenu: true,
+      renderCell: (params) => {
+        const row = params.row;
+        return (
+          <div className="flex items-center gap-1">
+            {row.__kind === 'draft' ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={() => discardDraftRow(row.__gridId)}
+                title="Discard draft row"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            ) : null}
+            {canEdit ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                onClick={() => insertDraftRowBelow(row.__gridId)}
+                title="Insert row below"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            ) : null}
+          </div>
+        );
       },
     });
 
-    // Apply zoom by scaling font-size.
-    const root = spreadsheetRef.current;
-    root.style.fontSize = `${Math.round(12 * zoomScale)}px`;
+    cols.push({
+      field: 'srNo',
+      headerName: 'Sr.no',
+      width: Math.round(72 * zoomScale),
+      sortable: false,
+      filterable: false,
+      valueGetter: (_value, row) => {
+        const index = rows.findIndex((r) => r.__gridId === row.__gridId);
+        return index >= 0 ? String(index + 1) : '';
+      },
+    });
 
-    return () => {
-      if (instanceRef.current?.destroy) {
-        instanceRef.current.destroy();
-        instanceRef.current = null;
-      }
-    };
-  }, [canEdit, filteredData, onSelectOpportunity, onUpsertRow, sheetData, token, zoomScale]);
+    // Tender no as opportunityRefNo.
+    cols.push({
+      field: 'opportunityRefNo',
+      headerName: 'Tender no',
+      width: Math.round(140 * zoomScale),
+      editable: Boolean(canEdit),
+      preProcessEditCellProps: (params) => {
+        const value = String(params.props.value ?? '').trim();
+        if (params.row.__kind !== 'draft') return { ...params.props, error: false };
+        return { ...params.props, error: !value };
+      },
+      renderCell: (params) => {
+        const pending = pendingCells.has(`${params.row.__gridId}:opportunityRefNo`);
+        return (
+          <div className={`truncate ${pending ? 'opacity-60' : ''}`} title={String(params.value ?? '')}>
+            {String(params.value ?? '')}
+          </div>
+        );
+      },
+    });
+
+    const byHeader: Array<{ header: string; field: keyof SheetRow; editable: boolean; width: number }> = [
+      { header: 'Tender name', field: 'tenderName', editable: true, width: 320 },
+      { header: 'Client', field: 'clientName', editable: true, width: 220 },
+      { header: 'ADNOC RFT NO', field: 'adnocRftNo', editable: true, width: 160 },
+      { header: 'GDS/GES', field: 'groupClassification', editable: true, width: 110 },
+      { header: 'Assigned Person', field: 'internalLead', editable: true, width: 200 },
+      { header: 'Tender Type', field: 'opportunityClassification', editable: true, width: 140 },
+      { header: 'date tender recd', field: 'dateTenderReceived', editable: true, width: 140 },
+      { header: 'Tender Due  date', field: 'tenderPlannedSubmissionDate', editable: true, width: 140 },
+      { header: 'AVENIR STATUS', field: 'avenirStatus', editable: true, width: 140 },
+      { header: 'Tender value', field: 'opportunityValue', editable: true, width: 160 },
+    ];
+
+    byHeader.forEach(({ header, field, editable, width }) => {
+      cols.push({
+        field: String(field),
+        headerName: header,
+        width: Math.round(width * zoomScale),
+        editable: Boolean(canEdit) && editable,
+        renderCell: (params) => {
+          const pending = pendingCells.has(`${params.row.__gridId}:${String(field)}`);
+          return (
+            <div className={`truncate ${pending ? 'opacity-60' : ''}`} title={String(params.value ?? '')}>
+              {String(params.value ?? '')}
+            </div>
+          );
+        },
+      });
+    });
+
+    // Non-editable snapshot columns (read-only): render from rawSnapshot if present.
+    const already = new Set(cols.map((c) => normalizeHeader(String(c.headerName || ''))));
+    ALL_COLUMN_HEADERS.forEach((col) => {
+      const header = col.header;
+      const normalized = normalizeHeader(header);
+      if (already.has(normalized)) return;
+      cols.push({
+        field: `snap__${normalized}`,
+        headerName: header,
+        width: Math.round((col.widthPx || 180) * zoomScale),
+        editable: false,
+        sortable: false,
+        valueGetter: (_value, row) => {
+          if (row.__kind !== 'existing') return '';
+          const opp = existingByGridId.current.get(row.__gridId);
+          if (!opp) return '';
+          return getSmartValue(opp, header);
+        },
+      });
+    });
+
+    return cols;
+  }, [canEdit, pendingCells, rows, zoomScale]);
+
+  const rowHeight = Math.round(28 * zoomScale);
+  const headerHeight = Math.round(34 * zoomScale);
+
+  const handleConfirm = async () => {
+    if (!confirmState) return;
+    const { requestBody, nextRow } = confirmState;
+    try {
+      if (!token) throw new Error('Not authenticated.');
+      const response = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(data?.error || 'Failed to save'));
+      if (data?.row) onUpsertRow?.(data.row);
+      toast.success('Saved.');
+      setRows((prev) => prev.map((r) => (r.__gridId === confirmState.rowId ? nextRow : r)));
+      setConfirmState(null);
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to save.');
+    }
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
@@ -304,8 +660,8 @@ export function SpreadsheetOpportunitiesTable({
           <div className="text-xs text-muted-foreground">Zoom {Math.round(zoomScale * 100)}%</div>
           <Separator orientation="vertical" className="h-5" />
           <div className="text-xs text-muted-foreground">
-            {filteredData.length} rows
-            {filteredData.length !== data.length ? ` (filtered from ${data.length})` : ''}
+            {rows.length} rows
+            {rows.length !== data.length ? ` (filtered from ${data.length})` : ''}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -337,12 +693,105 @@ export function SpreadsheetOpportunitiesTable({
           <Button type="button" variant="ghost" size="sm" onClick={() => setZoomPct(100)}>
             <RotateCcw className="mr-2 h-4 w-4" /> Reset
           </Button>
+          {canEdit ? (
+            <Button type="button" size="sm" onClick={() => {
+              if (!rows.length) {
+                const id = `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                setRows([{ __kind: 'draft', __gridId: id, ...EMPTY_ROW }]);
+                return;
+              }
+              insertDraftRowBelow(rows[rows.length - 1].__gridId);
+            }}>
+              <Plus className="mr-2 h-4 w-4" /> Add row
+            </Button>
+          ) : null}
         </div>
       </div>
 
-      <div className={`flex-1 min-h-0 overflow-hidden rounded-xl border border-border bg-background ${styles.shell}`}>
-        <div ref={spreadsheetRef} className={`h-full w-full ${styles.sheet}`} />
+      <div className={`${styles.viewport} flex-1 min-h-0 rounded-xl border border-border bg-background`}>
+        <DataGrid
+          rows={rows}
+          columns={columns}
+          getRowId={(row) => (row as SheetRow).__gridId as GridRowId}
+          density="compact"
+          rowHeight={rowHeight}
+          columnHeaderHeight={headerHeight}
+          disableRowSelectionOnClick
+          editMode="cell"
+          processRowUpdate={processRowUpdate}
+          onRowClick={(params) => {
+            const row = params.row as SheetRow;
+            if (row.__kind !== 'existing') return;
+            const opp = existingByGridId.current.get(row.__gridId);
+            if (opp) onSelectOpportunity?.(opp);
+          }}
+          onRowDoubleClick={(params) => {
+            const row = params.row as SheetRow;
+            if (row.__kind !== 'existing') return;
+            const opp = existingByGridId.current.get(row.__gridId);
+            if (opp) onRowDoubleClick?.(opp);
+          }}
+          getRowClassName={(params) => {
+            const row = params.row as SheetRow;
+            if (row.__kind !== 'existing') return 'opp-row';
+            const opp = existingByGridId.current.get(row.__gridId);
+            const status = opp ? normalizeCanonicalStatus(getDisplayStatus(opp)) : '';
+            if (!status) return 'opp-row';
+            return `opp-row status-${status.replace(/\s+/g, '-').replace(/\//g, '-').toLowerCase()}`;
+          }}
+          sx={{
+            height: '100%',
+            border: 0,
+            backgroundColor: 'transparent',
+            '& .MuiDataGrid-columnHeaders': {
+              backgroundColor: 'hsl(var(--card))',
+              color: 'hsl(var(--foreground))',
+              borderBottom: '1px solid hsl(var(--border))',
+              fontWeight: 700,
+            },
+            '& .MuiDataGrid-columnSeparator': { color: 'hsl(var(--border))' },
+            '& .MuiDataGrid-cell': {
+              borderBottom: '1px solid hsl(var(--border))',
+              color: 'hsl(var(--foreground))',
+              outline: 'none',
+            },
+            '& .MuiDataGrid-row:hover': { backgroundColor: 'hsl(var(--muted) / 0.5)' },
+            '& .MuiDataGrid-row.Mui-selected': { backgroundColor: 'hsl(var(--primary) / 0.06)' },
+            '& .MuiDataGrid-row.Mui-selected:hover': { backgroundColor: 'hsl(var(--primary) / 0.1)' },
+            '& .opp-row.status-working': { backgroundColor: 'hsl(var(--warning) / 0.24)' },
+            '& .opp-row.status-submitted': { backgroundColor: 'hsl(var(--pending) / 0.24)' },
+            '& .opp-row.status-awarded': { backgroundColor: 'hsl(var(--success) / 0.24)' },
+            '& .opp-row.status-lost': { backgroundColor: 'hsl(var(--destructive) / 0.24)' },
+            '& .opp-row.status-regretted': { backgroundColor: 'hsl(var(--muted) / 0.88)' },
+            '& .opp-row.status-to-start': { backgroundColor: 'hsl(var(--info) / 0.22)' },
+            '& .opp-row.status-ongoing': { backgroundColor: 'hsl(var(--info) / 0.22)' },
+            '& .opp-row.status-hold---closed': { backgroundColor: 'hsl(var(--muted) / 0.88)' },
+            '& .opp-row:hover': { backgroundColor: 'hsl(var(--muted) / 0.65) !important' },
+          }}
+        />
       </div>
+
+      <Dialog open={Boolean(confirmState)} onOpenChange={(open) => { if (!open) setConfirmState(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Overwrite existing value?</DialogTitle>
+            <DialogDescription>
+              This change would overwrite an existing value. Confirm to proceed or cancel to revert.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md border p-3 text-sm">
+            <div className="font-semibold">Field</div>
+            <div className="text-muted-foreground">{confirmState?.fieldLabel || 'Field'}</div>
+            <div className="mt-3 font-semibold">Tender no</div>
+            <div className="text-muted-foreground">{confirmState?.nextRow.opportunityRefNo || '—'}</div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfirmState(null)}>Cancel</Button>
+            <Button type="button" onClick={handleConfirm}>Confirm overwrite</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
