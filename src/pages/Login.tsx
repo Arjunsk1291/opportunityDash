@@ -7,10 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import logo from '@/assets/Avenir_Logo.avif';
 
-type AuthMode = 'password-login' | 'success';
+type AuthMode = 'role-password-login' | 'success';
 
 interface FormState {
-  email: string;
+  userId: string;
   password: string;
   showPassword: boolean;
   loading: boolean;
@@ -24,12 +24,12 @@ const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_ATTEMPTS = 5;
 
 export default function Login() {
-  const { isAuthenticated, isLoading: authLoading, loginWithPassword } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, loginWithRolePassword } = useAuth();
   const navigate = useNavigate();
 
-  const [authMode, setAuthMode] = useState<AuthMode>('password-login');
+  const [authMode, setAuthMode] = useState<AuthMode>('role-password-login');
   const [formState, setFormState] = useState<FormState>({
-    email: '',
+    userId: '',
     password: '',
     showPassword: false,
     loading: false,
@@ -80,7 +80,7 @@ export default function Login() {
     return 'Authentication failed. Please try again.';
   };
 
-  const handlePasswordLogin = useCallback(async () => {
+  const handleRolePasswordLogin = useCallback(async () => {
     if (isRateLimited()) {
       const timeRemaining = Math.ceil((RATE_LIMIT_WINDOW_MS - (Date.now() - formState.lastAttemptTime)) / 1000 / 60);
       setFormState(prev => ({
@@ -90,29 +90,13 @@ export default function Login() {
       return;
     }
 
-    const email = formState.email.trim().toLowerCase();
+    const userId = formState.userId.trim();
     const password = formState.password;
 
-    if (!email || !password) {
+    if (!userId || !password) {
       setFormState(prev => ({ 
         ...prev, 
-        error: 'Email and password are required',
-      }));
-      return;
-    }
-
-    if (!import.meta.env.DEV && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setFormState(prev => ({
-        ...prev,
-        error: 'Please enter a valid email address.',
-      }));
-      return;
-    }
-
-    if (import.meta.env.DEV && email.includes('@') && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setFormState(prev => ({
-        ...prev,
-        error: 'Please enter a valid email address.',
+        error: 'User ID and password are required',
       }));
       return;
     }
@@ -120,7 +104,7 @@ export default function Login() {
     setFormState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      await loginWithPassword(email, password);
+      await loginWithRolePassword(userId, password);
       
       setFormState(prev => ({
         ...prev,
@@ -147,12 +131,12 @@ export default function Login() {
         password: '', // Clear password on error for security
       }));
     }
-  }, [formState.email, formState.password, loginWithPassword, navigate, isRateLimited]);
+  }, [formState.lastAttemptTime, formState.password, formState.userId, loginWithRolePassword, navigate, isRateLimited]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !formState.loading) {
-      if (authMode === 'password-login') {
-        handlePasswordLogin();
+      if (authMode === 'role-password-login') {
+        handleRolePasswordLogin();
       }
     }
   };
@@ -211,27 +195,27 @@ export default function Login() {
           </Alert>
         )}
 
-        {/* Password Login */}
-        {authMode === 'password-login' && (
+        {/* Role + Password Login */}
+        {authMode === 'role-password-login' && (
           <div className="space-y-4">
             <div className="space-y-2">
-              <label htmlFor="email" className="text-xs font-medium text-slate-700">
-                Email
+              <label htmlFor="userId" className="text-xs font-medium text-slate-700">
+                User ID (Role)
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400 pointer-events-none" />
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@company.com"
-                  value={formState.email}
+                  id="userId"
+                  type="text"
+                  placeholder="Master / Basic / Admin"
+                  value={formState.userId}
                   onChange={(e) =>
-                    setFormState(prev => ({ ...prev, email: e.target.value, error: null }))
+                    setFormState(prev => ({ ...prev, userId: e.target.value, error: null }))
                   }
                   onKeyDown={handleKeyDown}
                   disabled={formState.loading}
                   className="pl-10 text-sm"
-                  autoComplete="email"
+                  autoComplete="username"
                   required
                 />
               </div>
@@ -275,8 +259,8 @@ export default function Login() {
 
             <div className="space-y-3 pt-4">
               <Button
-                onClick={handlePasswordLogin}
-                disabled={formState.loading || !formState.email || !formState.password}
+                onClick={handleRolePasswordLogin}
+                disabled={formState.loading || !formState.userId || !formState.password}
                 className="w-full"
                 size="lg"
               >
@@ -291,7 +275,7 @@ export default function Login() {
               </Button>
 
               <Button
-                onClick={() => setFormState(prev => ({ ...prev, email: '', password: '', error: null }))}
+                onClick={() => setFormState(prev => ({ ...prev, userId: '', password: '', error: null }))}
                 disabled={formState.loading}
                 variant="outline"
                 className="w-full"

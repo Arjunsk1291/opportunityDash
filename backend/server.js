@@ -2228,6 +2228,103 @@ app.post('/api/auth/simple-role-login', authRateLimiter, async (req, res) => {
   }
 });
 
+// Simple role + password login (temporary; enabled in both dev and prod by request)
+// userId is treated as a role identifier (e.g., Master, Basic). Password must equal "123".
+app.post('/api/auth/role-password-login', authRateLimiter, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+
+    const userId = String(req.body?.userId || '').trim();
+    const password = String(req.body?.password || '');
+    if (!userId || !password) {
+      return res.status(400).json({ error: 'userId and password are required' });
+    }
+
+    if (password !== '123') {
+      return res.status(403).json({ error: 'Invalid credentials' });
+    }
+
+    const roleKey = userId.replace(/\s+/g, '');
+    const ROLE_MAP = {
+      master: 'Master',
+      admin: 'Admin',
+      proposalhead: 'ProposalHead',
+      svp: 'SVP',
+      bdteam: 'BDTeam',
+      basic: 'Basic',
+      tempuser: 'TempUser',
+    };
+    const role = ROLE_MAP[String(roleKey).toLowerCase()];
+    if (!role) {
+      return res.status(400).json({ error: 'Invalid role userId' });
+    }
+
+    const email = `${role.toLowerCase()}@role.local`;
+    const displayName = `${role} (RoleLogin)`;
+
+    if (DISABLE_MONGODB) {
+      const localUser = upsertLocalAuthorizedUser(email, {
+        displayName,
+        role,
+        status: 'approved',
+      });
+      return res.json({
+        success: true,
+        user: {
+          email: localUser.email,
+          displayName: localUser.displayName || localUser.email,
+          role: localUser.role,
+          status: localUser.status,
+          assignedGroup: localUser.assignedGroup,
+        },
+        sessionToken: createSessionToken(localUser),
+      });
+    }
+
+    const user = await AuthorizedUser.findOneAndUpdate(
+      { email },
+      {
+        $setOnInsert: { email, createdAt: new Date() },
+        $set: {
+          displayName,
+          role,
+          status: 'approved',
+          approvedBy: 'role-password-login',
+          approvedAt: new Date(),
+          lastLogin: new Date(),
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    const loginLog = new LoginLog({
+      email: user.email,
+      role: user.role,
+      ipAddress: req.ip,
+      success: true,
+      authMethod: 'role-password',
+    });
+    await loginLog.save();
+
+    console.log(`[auth.role-password-login.success] email=${email} role=${role} ip=${req.ip}`);
+
+    res.json({
+      success: true,
+      user: {
+        email: user.email,
+        displayName: user.displayName || user.email,
+        role: user.role,
+        status: user.status,
+        assignedGroup: user.assignedGroup,
+      },
+      sessionToken: createSessionToken(user),
+    });
+  } catch (error) {
+    console.error('[auth.role-password-login.error]', error.message);
+    res.status(500).json({ error: 'Authentication service error' });
+  }
+});
+
 // One-time production bootstrap for an initial Master password login.
 // Guarded by `BOOTSTRAP_ADMIN_SECRET` to avoid exposing a permanent backdoor.
 app.post('/api/auth/bootstrap-master', authRateLimiter, async (req, res) => {

@@ -31,6 +31,7 @@ interface AuthContextType {
   updateUserRole: (userId: string, newRole: UserRole, assignedGroup?: string) => Promise<void>;
   refreshCurrentUser: () => Promise<void>;
   loginWithPassword: (email: string, password: string) => Promise<void>;
+  loginWithRolePassword: (userId: string, password: string) => Promise<void>;
   loginAsRole: (role: UserRole, emailOverride?: string) => Promise<void>;
   pagePermissions: Record<PageKey, UserRole[]>;
   pageExcludePermissions: Record<PageKey, UserRole[]>;
@@ -200,6 +201,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data?.error || 'Password login failed');
+    }
+    const nextUser: User = {
+      email: data.user.email,
+      displayName: data.user.displayName || data.user.email,
+      role: data.user.role,
+      status: data.user.status,
+      assignedGroup: data.user.assignedGroup || null,
+    };
+    setUser(nextUser);
+    setToken(data.sessionToken || null);
+    setAuthError(null);
+    setIsPending(nextUser.status === 'pending');
+  }, []);
+
+  const loginWithRolePassword = useCallback(async (userId: string, password: string) => {
+    const normalizedUserId = String(userId || '').trim();
+    const response = await fetch(API_URL + '/auth/role-password-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: normalizedUserId, password }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.error || 'Role login failed');
     }
     const nextUser: User = {
       email: data.user.email,
@@ -451,6 +476,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateUserRole,
         refreshCurrentUser,
         loginWithPassword,
+        loginWithRolePassword,
         loginAsRole,
         pagePermissions,
         pageExcludePermissions,
