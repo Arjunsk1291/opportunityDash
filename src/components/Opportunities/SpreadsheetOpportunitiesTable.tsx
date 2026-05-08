@@ -46,7 +46,9 @@ type ConfirmationState = null | {
 };
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
-const MAX_SPREADSHEET_VISIBLE_ROWS = 1500;
+const TAIL_DRAFT_BATCH_SIZE = 50;
+const INITIAL_TAIL_DRAFT_ROWS = 100;
+const TAIL_DRAFT_ID_PREFIX = 'tail-draft-';
 
 const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
 
@@ -195,15 +197,25 @@ function isEditableHeader(header: string) {
   return Boolean(EDITABLE_HEADER_TO_FIELD[normalized]);
 }
 
+function buildDraftRow(id: string): SheetRow {
+  return { __kind: 'draft', __gridId: id, ...EMPTY_ROW };
+}
+
+function isTailDraftRow(row: SheetRow) {
+  return row.__kind === 'draft' && String(row.__gridId).startsWith(TAIL_DRAFT_ID_PREFIX);
+}
+
 export function SpreadsheetOpportunitiesTable({
   data,
   onSelectOpportunity,
+  onRowDoubleClick,
   token,
   canEdit,
   onUpsertRow,
 }: {
   data: Opportunity[];
   onSelectOpportunity?: (opp: Opportunity) => void;
+  onRowDoubleClick?: (opp: Opportunity) => void;
   token?: string | null;
   canEdit?: boolean;
   onUpsertRow?: (row: Partial<Opportunity> & { id?: string }) => void;
@@ -217,6 +229,7 @@ export function SpreadsheetOpportunitiesTable({
   const existingByGridId = useRef(new Map<string, Opportunity>());
   const [pendingCells, setPendingCells] = useState<Set<PendingCellKey>>(() => new Set());
   const [confirmState, setConfirmState] = useState<ConfirmationState>(null);
+  const [tailDraftCount, setTailDraftCount] = useState(INITIAL_TAIL_DRAFT_ROWS);
 
   useEffect(() => {
     existingByGridId.current = new Map(
@@ -244,15 +257,28 @@ export function SpreadsheetOpportunitiesTable({
   }, [data, normalizedQuery]);
 
   useEffect(() => {
-    setRows(filteredData.slice(0, MAX_SPREADSHEET_VISIBLE_ROWS).map((opp, idx) => buildExistingRow(opp, idx)));
-  }, [filteredData]);
+    setRows((previous) => {
+      const preservedDrafts = previous.filter((row) => row.__kind === 'draft' && !isTailDraftRow(row));
+      const existingRows = filteredData.map((opp, idx) => buildExistingRow(opp, idx));
+      const tailDraftRows = Array.from({ length: tailDraftCount }, (_, idx) => buildDraftRow(`${TAIL_DRAFT_ID_PREFIX}${idx + 1}`));
+      return [...existingRows, ...preservedDrafts, ...tailDraftRows];
+    });
+  }, [filteredData, tailDraftCount]);
+
+  useEffect(() => {
+    setRows((previous) => {
+      const withoutTail = previous.filter((row) => !isTailDraftRow(row));
+      const tailDraftRows = Array.from({ length: tailDraftCount }, (_, idx) => buildDraftRow(`${TAIL_DRAFT_ID_PREFIX}${idx + 1}`));
+      return [...withoutTail, ...tailDraftRows];
+    });
+  }, [tailDraftCount]);
 
   const insertDraftRowBelow = (gridId: string) => {
     setRows((prev) => {
       const index = prev.findIndex((r) => r.__gridId === gridId);
       const at = index >= 0 ? index + 1 : prev.length;
       const id = `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const draft: SheetRow = { __kind: 'draft', __gridId: id, ...EMPTY_ROW };
+      const draft: SheetRow = buildDraftRow(id);
       const next = prev.slice();
       next.splice(at, 0, draft);
       return next;
@@ -697,7 +723,7 @@ export function SpreadsheetOpportunitiesTable({
             <Button type="button" size="sm" onClick={() => {
               if (!rows.length) {
                 const id = `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-                setRows([{ __kind: 'draft', __gridId: id, ...EMPTY_ROW }]);
+                setRows([buildDraftRow(id)]);
                 return;
               }
               insertDraftRowBelow(rows[rows.length - 1].__gridId);
@@ -719,11 +745,18 @@ export function SpreadsheetOpportunitiesTable({
           disableRowSelectionOnClick
           editMode="cell"
           processRowUpdate={processRowUpdate}
+          onRowsScrollEnd={() => setTailDraftCount((current) => current + TAIL_DRAFT_BATCH_SIZE)}
           onRowClick={(params) => {
             const row = params.row as SheetRow;
             if (row.__kind !== 'existing') return;
             const opp = existingByGridId.current.get(row.__gridId);
             if (opp) onSelectOpportunity?.(opp);
+          }}
+          onRowDoubleClick={(params) => {
+            const row = params.row as SheetRow;
+            if (row.__kind !== 'existing') return;
+            const opp = existingByGridId.current.get(row.__gridId);
+            if (opp) onRowDoubleClick?.(opp);
           }}
           getRowClassName={(params) => {
             const row = params.row as SheetRow;
