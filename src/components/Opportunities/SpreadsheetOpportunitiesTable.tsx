@@ -46,6 +46,7 @@ type ConfirmationState = null | {
 };
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+const MAX_SPREADSHEET_VISIBLE_ROWS = 1500;
 
 const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
 
@@ -243,7 +244,7 @@ export function SpreadsheetOpportunitiesTable({
   }, [data, normalizedQuery]);
 
   useEffect(() => {
-    setRows(filteredData.map((opp, idx) => buildExistingRow(opp, idx)));
+    setRows(filteredData.slice(0, MAX_SPREADSHEET_VISIBLE_ROWS).map((opp, idx) => buildExistingRow(opp, idx)));
   }, [filteredData]);
 
   const insertDraftRowBelow = (gridId: string) => {
@@ -547,7 +548,7 @@ export function SpreadsheetOpportunitiesTable({
       filterable: false,
       valueGetter: (_value, row) => {
         const index = rows.findIndex((r) => r.__gridId === row.__gridId);
-        return index >= 0 ? String(index + 1) : '';
+        return index >= 0 ? String(rows.length - index) : '';
       },
     });
 
