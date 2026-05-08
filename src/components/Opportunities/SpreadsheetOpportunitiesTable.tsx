@@ -197,14 +197,12 @@ function isEditableHeader(header: string) {
 export function SpreadsheetOpportunitiesTable({
   data,
   onSelectOpportunity,
-  onRowDoubleClick,
   token,
   canEdit,
   onUpsertRow,
 }: {
   data: Opportunity[];
   onSelectOpportunity?: (opp: Opportunity) => void;
-  onRowDoubleClick?: (opp: Opportunity) => void;
   token?: string | null;
   canEdit?: boolean;
   onUpsertRow?: (row: Partial<Opportunity> & { id?: string }) => void;
@@ -512,7 +510,7 @@ export function SpreadsheetOpportunitiesTable({
       renderCell: (params) => {
         const row = params.row;
         return (
-          <div className="flex items-center gap-1">
+          <div className="sheet-row-actions flex items-center gap-1">
             {row.__kind === 'draft' ? (
               <Button
                 type="button"
@@ -529,6 +527,7 @@ export function SpreadsheetOpportunitiesTable({
                 type="button"
                 size="icon"
                 variant="outline"
+                className="sheet-insert-row-btn"
                 onClick={() => insertDraftRowBelow(row.__gridId)}
                 title="Insert row below"
               >
@@ -627,7 +626,7 @@ export function SpreadsheetOpportunitiesTable({
     return cols;
   }, [canEdit, pendingCells, rows, zoomScale]);
 
-  const rowHeight = Math.round(28 * zoomScale);
+  const rowHeight = Math.round(34 * zoomScale);
   const headerHeight = Math.round(34 * zoomScale);
 
   const handleConfirm = async () => {
@@ -725,12 +724,6 @@ export function SpreadsheetOpportunitiesTable({
             const opp = existingByGridId.current.get(row.__gridId);
             if (opp) onSelectOpportunity?.(opp);
           }}
-          onRowDoubleClick={(params) => {
-            const row = params.row as SheetRow;
-            if (row.__kind !== 'existing') return;
-            const opp = existingByGridId.current.get(row.__gridId);
-            if (opp) onRowDoubleClick?.(opp);
-          }}
           getRowClassName={(params) => {
             const row = params.row as SheetRow;
             if (row.__kind !== 'existing') return 'opp-row';
@@ -758,6 +751,8 @@ export function SpreadsheetOpportunitiesTable({
             '& .MuiDataGrid-row:hover': { backgroundColor: 'hsl(var(--muted) / 0.5)' },
             '& .MuiDataGrid-row.Mui-selected': { backgroundColor: 'hsl(var(--primary) / 0.06)' },
             '& .MuiDataGrid-row.Mui-selected:hover': { backgroundColor: 'hsl(var(--primary) / 0.1)' },
+            '& .sheet-insert-row-btn': { opacity: 0, pointerEvents: 'none' },
+            '& .MuiDataGrid-row:hover .sheet-insert-row-btn': { opacity: 1, pointerEvents: 'auto' },
             '& .opp-row.status-working': { backgroundColor: 'hsl(var(--warning) / 0.24)' },
             '& .opp-row.status-submitted': { backgroundColor: 'hsl(var(--pending) / 0.24)' },
             '& .opp-row.status-awarded': { backgroundColor: 'hsl(var(--success) / 0.24)' },
@@ -794,4 +789,3 @@ export function SpreadsheetOpportunitiesTable({
     </div>
   );
 }
-
