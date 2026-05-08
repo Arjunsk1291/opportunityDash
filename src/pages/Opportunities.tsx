@@ -222,6 +222,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const [sheetUploadRows, setSheetUploadRows] = useState<FormState[]>([]);
   const [sheetUploadMeta, setSheetUploadMeta] = useState<{ created: number; updated: number } | null>(null);
   const [sheetUploadProgress, setSheetUploadProgress] = useState<{ stage: string; pct: number } | null>(null);
+  const [sheetUploadCommitProgress, setSheetUploadCommitProgress] = useState<{ stage: string; pct: number } | null>(null);
 
   const logManualFlow = (flowId: string, stage: string, details: Record<string, unknown> = {}) => {
     console.log('[opportunities.manual-flow]', {
@@ -523,6 +524,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         return;
       }
       setSheetUploadSaving(true);
+      setSheetUploadCommitProgress({ stage: 'Preparing…', pct: 5 });
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
       const response = await fetch(`${API_URL}/opportunities/sheet-upload/commit`, {
         method: 'POST',
         headers: {
@@ -531,14 +534,17 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         },
         body: JSON.stringify({ rows: sheetUploadRows }),
       });
+      setSheetUploadCommitProgress({ stage: 'Saving…', pct: 55 });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data?.error || 'Failed to save rows.');
+      setSheetUploadCommitProgress({ stage: 'Applying updates…', pct: 80 });
       toast.success(`Saved. Created ${data?.created ?? 0}, updated ${data?.updated ?? 0}.`);
       const touched = Array.isArray(data?.rows) ? data.rows : [];
       if (touched.length) {
         upsertOpportunities(touched);
         console.log('[opportunities.sheetUpload] upserted', { rows: touched.length });
       }
+      setSheetUploadCommitProgress({ stage: 'Finalizing…', pct: 95 });
       setSheetUploadOpen(false);
       setSheetUploadRows([]);
       setSheetUploadMeta(null);
@@ -549,6 +555,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       toast.error((error as Error).message || 'Failed to save parsed rows.');
     } finally {
       setSheetUploadSaving(false);
+      window.setTimeout(() => setSheetUploadCommitProgress(null), 800);
     }
   };
 
@@ -877,8 +884,23 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
             <Button type="button" variant="outline" onClick={() => setSheetUploadOpen(false)} disabled={sheetUploadSaving}>
               Cancel
             </Button>
+            {sheetUploadSaving && sheetUploadCommitProgress ? (
+              <div className="mr-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="h-2 w-40 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full bg-primary transition-[width] duration-200"
+                    style={{ width: `${Math.max(2, Math.min(100, sheetUploadCommitProgress.pct))}%` }}
+                  />
+                </div>
+                <span className="tabular-nums">
+                  {sheetUploadCommitProgress.stage} {Math.round(sheetUploadCommitProgress.pct)}%
+                </span>
+              </div>
+            ) : null}
             <Button type="button" onClick={commitSheetUpload} disabled={sheetUploadSaving || !sheetUploadRows.length}>
-              {sheetUploadSaving ? 'Saving…' : `Save ${sheetUploadRows.length} Row${sheetUploadRows.length === 1 ? '' : 's'}`}
+              {sheetUploadSaving
+                ? (sheetUploadCommitProgress ? `${sheetUploadCommitProgress.stage}` : 'Saving…')
+                : `Save ${sheetUploadRows.length} Row${sheetUploadRows.length === 1 ? '' : 's'}`}
             </Button>
           </div>
         </DialogContent>
