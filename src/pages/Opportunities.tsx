@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
-import { ExportButton } from '@/components/Dashboard/ExportButton';
 import { Spreadsheet } from '@/components/spreadsheet/Spreadsheet';
 import { useSpreadsheet } from '@/lib/spreadsheet/store';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -867,7 +866,6 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
               ) : null}
             </>
           ) : null}
-          <ExportButton data={filteredData} filename={statusFilter ? `${statusFilter.toLowerCase().replace(/\//g, '-')}-tenders` : 'all-tenders'} />
         </div>
       </div>
 
