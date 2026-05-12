@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
-import { SpreadsheetOpportunitiesTable } from '@/components/Opportunities/SpreadsheetOpportunitiesTable';
+import TenderSpreadsheetV2 from '@/pages/TenderSpreadsheetV2';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -822,14 +822,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
               />
             )}
           >
-            <SpreadsheetOpportunitiesTable
-              data={filteredData}
-              onSelectOpportunity={setSelectedRow}
-              onRowDoubleClick={(row) => editFromRow(row)}
-              token={token}
-              canEdit={canEdit}
-              onUpsertRow={(row) => upsertOpportunities([row])}
-            />
+            <TenderSpreadsheetV2 />
           </ErrorBoundary>
         )}
       </div>
