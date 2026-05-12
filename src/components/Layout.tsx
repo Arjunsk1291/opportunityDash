@@ -4,6 +4,7 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { BarChart3, Search, User, LogOut, Shield } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -57,17 +58,23 @@ export function Layout({ children }: LayoutProps) {
                 alt="Avenir Engineering"
                 className="hidden md:block h-7 w-auto"
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={() => setSearchOpen(true)}
-                title="Universal Search (Ctrl+K / Cmd+K)"
-              >
-                <Search className="h-4 w-4" />
-                <span className="hidden lg:inline">Search</span>
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => setSearchOpen(true)}
+                  >
+                    <Search className="h-4 w-4" />
+                    <span className="hidden lg:inline">Search</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" align="center">
+                  Universal Search <kbd className="ml-2 hidden text-[10px] opacity-60 md:inline">Ctrl+K</kbd>
+                </TooltipContent>
+              </Tooltip>
               <ThemeToggle />
               
               {/* User Menu */}
