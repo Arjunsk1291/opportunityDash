@@ -21,6 +21,7 @@ import { syncTendersFromGraph, transformTendersToOpportunities } from './service
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
+import { buildOpportunitiesWorkbookForSpreadsheet } from './services/spreadsheetWorkbookService.js';
 import SystemConfig from './models/SystemConfig.js';
 import { encryptSecret } from './services/cryptoService.js';
 import {
@@ -4449,6 +4450,15 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
     res.json(mapped);
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/spreadsheet/workbook/opportunities', verifyToken, async (_req, res) => {
+  try {
+    const payload = await buildOpportunitiesWorkbookForSpreadsheet();
+    res.json(payload);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
 
