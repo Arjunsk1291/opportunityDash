@@ -19,6 +19,7 @@ import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
+import BDEngagement from './models/BDEngagement.js';
 import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 import { buildOpportunitiesWorkbookForSpreadsheet } from './services/spreadsheetWorkbookService.js';
@@ -3343,17 +3344,19 @@ const PAGE_KEYS = [
   'vendor_directory',
   'clients',
   'analytics',
+  'bd_engagements',
   'master',
   'master_general',
   'master_users',
   'master_data_sync',
   'master_telecast',
 ];
-const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'];
+const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'BDTeam'];
 const ACTION_KEYS = [
   'opportunities_sync',
   'opportunities_sheet_upload',
   'manual_opportunity_updates_write',
+  'bd_engagements_write',
   'approvals_proposal_head',
   'approvals_svp',
   'approvals_bulk_revert',
@@ -3380,6 +3383,7 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
   vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  bd_engagements: ['Master', 'Admin', 'BDTeam'],
   master: ['Master', 'Admin'],
   master_general: ['Master', 'Admin'],
   master_users: ['Master', 'Admin'],
@@ -3390,6 +3394,7 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   opportunities_sync: ['Master', 'Admin'],
   opportunities_sheet_upload: ['Master', 'Admin'],
   manual_opportunity_updates_write: ['Master', 'Admin'],
+  bd_engagements_write: ['Master', 'Admin', 'BDTeam'],
   approvals_proposal_head: ['Master', 'ProposalHead'],
   approvals_svp: ['Master', 'SVP'],
   approvals_bulk_revert: ['Master', 'ProposalHead'],
@@ -4457,6 +4462,133 @@ app.get('/api/spreadsheet/workbook/opportunities', verifyToken, async (_req, res
   try {
     const payload = await buildOpportunitiesWorkbookForSpreadsheet();
     res.json(payload);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// --- BD Engagements ---
+app.get('/api/bd-engagements', verifyToken, async (req, res) => {
+  try {
+    const rows = await BDEngagement.find().sort({ createdAt: -1 }).lean();
+    res.json(rows.map(mapIdField));
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+app.post('/api/bd-engagements', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'bd_engagements_write')) return;
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const ref = String(payload?.ref || '').trim();
+    if (!ref) return res.status(400).json({ error: 'ref is required' });
+    const created = await BDEngagement.create({
+      ref,
+      date: String(payload?.date || '').trim(),
+      clientName: String(payload?.clientName || '').trim(),
+      meetingType: String(payload?.meetingType || '').trim(),
+      status: String(payload?.status || 'Open').trim() || 'Open',
+      location: String(payload?.location || '').trim(),
+      discussionPoints: String(payload?.discussionPoints || '').trim(),
+      reportSubmitted: Boolean(payload?.reportSubmitted),
+      leadGenerated: Boolean(payload?.leadGenerated),
+      focalPerson: String(payload?.focalPerson || '').trim(),
+      designation: String(payload?.designation || '').trim(),
+      email: String(payload?.email || '').trim(),
+      mobileNumber: String(payload?.mobileNumber || '').trim(),
+      leadDescription: String(payload?.leadDescription || '').trim(),
+      nextSteps: String(payload?.nextSteps || '').trim(),
+      lastContact: String(payload?.lastContact || '').trim(),
+    });
+    res.json({ success: true, row: mapIdField(created.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+app.post('/api/bd-engagements/bulk', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'bd_engagements_write')) return;
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) return res.json({ success: true, rows: [] });
+    const docs = rows
+      .map((payload) => ({
+        ref: String(payload?.ref || '').trim(),
+        date: String(payload?.date || '').trim(),
+        clientName: String(payload?.clientName || '').trim(),
+        meetingType: String(payload?.meetingType || '').trim(),
+        status: String(payload?.status || 'Open').trim() || 'Open',
+        location: String(payload?.location || '').trim(),
+        discussionPoints: String(payload?.discussionPoints || '').trim(),
+        reportSubmitted: Boolean(payload?.reportSubmitted),
+        leadGenerated: Boolean(payload?.leadGenerated),
+        focalPerson: String(payload?.focalPerson || '').trim(),
+        designation: String(payload?.designation || '').trim(),
+        email: String(payload?.email || '').trim(),
+        mobileNumber: String(payload?.mobileNumber || '').trim(),
+        leadDescription: String(payload?.leadDescription || '').trim(),
+        nextSteps: String(payload?.nextSteps || '').trim(),
+        lastContact: String(payload?.lastContact || '').trim(),
+      }))
+      .filter((row) => row.ref);
+    const created = await BDEngagement.insertMany(docs, { ordered: false });
+    res.json({ success: true, rows: created.map((d) => mapIdField(d.toObject())) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+app.put('/api/bd-engagements/:id', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'bd_engagements_write')) return;
+    const id = String(req.params.id || '').trim();
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const existing = await BDEngagement.findById(id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    const next = {
+      ref: String(payload?.ref || existing.ref || '').trim(),
+      date: String(payload?.date || existing.date || '').trim(),
+      clientName: String(payload?.clientName || existing.clientName || '').trim(),
+      meetingType: String(payload?.meetingType || existing.meetingType || '').trim(),
+      status: String(payload?.status || existing.status || 'Open').trim() || 'Open',
+      location: String(payload?.location || existing.location || '').trim(),
+      discussionPoints: String(payload?.discussionPoints || existing.discussionPoints || '').trim(),
+      reportSubmitted: Boolean(payload?.reportSubmitted),
+      leadGenerated: Boolean(payload?.leadGenerated),
+      focalPerson: String(payload?.focalPerson || existing.focalPerson || '').trim(),
+      designation: String(payload?.designation || existing.designation || '').trim(),
+      email: String(payload?.email || existing.email || '').trim(),
+      mobileNumber: String(payload?.mobileNumber || existing.mobileNumber || '').trim(),
+      leadDescription: String(payload?.leadDescription || existing.leadDescription || '').trim(),
+      nextSteps: String(payload?.nextSteps || existing.nextSteps || '').trim(),
+      lastContact: String(payload?.lastContact || existing.lastContact || '').trim(),
+    };
+    Object.assign(existing, next);
+    await existing.save();
+    res.json({ success: true, row: mapIdField(existing.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+app.post('/api/bd-engagements/clear', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'bd_engagements_write')) return;
+    await BDEngagement.deleteMany({});
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+app.delete('/api/bd-engagements/:id', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'bd_engagements_write')) return;
+    const id = String(req.params.id || '').trim();
+    const deleted = await BDEngagement.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Internal server error' });
   }

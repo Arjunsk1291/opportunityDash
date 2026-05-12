@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useRef } from "react";
 import { normalizeRange } from "@/lib/spreadsheet/utils";
+import { downloadWorkbook } from "@/lib/excelWorkbook";
 
 function ToolBtn({ children, onClick, title, active }: { children: React.ReactNode; onClick: () => void; title: string; active?: boolean }) {
   return (
@@ -57,6 +58,72 @@ export function Toolbar() {
     const a = document.createElement("a");
     a.href = url; a.download = "sheet.csv"; a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadXlsx = async () => {
+    const state = useSpreadsheet.getState();
+    const wbState = state.workbook;
+    const active = wbState.sheets.find((s) => s.id === wbState.activeSheetId) || wbState.sheets[0];
+    const ExcelJS = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet(active?.name || "Sheet1");
+
+    const toExcelFill = (hex?: string) => {
+      if (!hex) return undefined;
+      const raw = String(hex).replace("#", "").toUpperCase();
+      const argb = raw.length === 6 ? `FF${raw}` : raw;
+      return { type: "pattern", pattern: "solid", fgColor: { argb } } as const;
+    };
+    const toExcelColor = (hex?: string) => {
+      if (!hex) return undefined;
+      const raw = String(hex).replace("#", "").toUpperCase();
+      const argb = raw.length === 6 ? `FF${raw}` : raw;
+      return { argb } as const;
+    };
+
+    // widths/heights
+    for (let c = 0; c < active.colCount; c++) {
+      const px = active.colWidths?.[c] ?? 100;
+      ws.getColumn(c + 1).width = Math.max(4, Math.round(Number(px) / 7));
+    }
+    for (let r = 0; r < active.rowCount; r++) {
+      const px = active.rowHeights?.[r] ?? 24;
+      ws.getRow(r + 1).height = Math.max(12, Math.round(Number(px) / 1.33));
+    }
+
+    for (let r = 0; r < active.rowCount; r++) {
+      if (active.hiddenRows?.[r]) continue;
+      for (let c = 0; c < active.colCount; c++) {
+        if (active.hiddenCols?.[c]) continue;
+        const key = `${r},${c}`;
+        const cell = active.cells?.[key];
+        if (!cell) continue;
+        const out = ws.getCell(r + 1, c + 1);
+        const text = String(cell.value ?? "");
+        out.value = text.startsWith("=") ? { formula: text.slice(1) } : text;
+        const fmt = cell.format || {};
+        if (fmt.bg) out.fill = toExcelFill(fmt.bg) as any;
+        out.font = {
+          name: "Calibri",
+          size: 13,
+          bold: Boolean(fmt.bold),
+          italic: Boolean(fmt.italic),
+          underline: fmt.underline ? "single" : undefined,
+          color: toExcelColor(fmt.color) as any,
+        } as any;
+        out.alignment = {
+          horizontal: fmt.align || undefined,
+          vertical: "middle",
+          wrapText: Boolean(fmt.wrap),
+        } as any;
+      }
+    }
+
+    (active.merges || []).forEach((m) => {
+      try { ws.mergeCells(m.r1 + 1, m.c1 + 1, m.r2 + 1, m.c2 + 1); } catch { /* ignore */ }
+    });
+
+    await downloadWorkbook(workbook as any, `${String(active?.name || "sheet").replace(/[^\w\- ]+/g, "")}.xlsx`);
   };
 
   const insertSum = () => {
@@ -135,6 +202,7 @@ export function Toolbar() {
       />
       <ToolBtn onClick={() => fileRef.current?.click()} title="Import CSV"><Upload className="h-4 w-4" /></ToolBtn>
       <ToolBtn onClick={downloadCSV} title="Export CSV"><Download className="h-4 w-4" /></ToolBtn>
+      <ToolBtn onClick={() => { void downloadXlsx(); }} title="Export XLSX"><Download className="h-4 w-4" /></ToolBtn>
     </div>
   );
 }
