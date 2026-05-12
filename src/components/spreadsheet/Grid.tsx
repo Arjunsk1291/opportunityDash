@@ -26,6 +26,10 @@ export function Grid() {
   const clearSelection = useSpreadsheet((s) => s.clearSelection);
   const undo = useSpreadsheet((s) => s.undo);
   const redo = useSpreadsheet((s) => s.redo);
+  const painter = useSpreadsheet((s) => s.formatPainter);
+  const applyPainterCell = useSpreadsheet((s) => s.applyFormatPainterCell);
+  const stopPainter = useSpreadsheet((s) => s.stopFormatPainter);
+  const ensureTailRows = useSpreadsheet((s) => s.ensureTailRows);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ x: 0, y: 0 });
@@ -91,9 +95,14 @@ export function Grid() {
     if (editing) commitEdit();
     isDragging.current = true;
     setActive(r, c, e.shiftKey);
+    ensureTailRows(50);
+    if (painter) applyPainterCell(r, c);
   };
   const onCellMouseEnter = (r: number, c: number) => {
-    if (isDragging.current) setSelection({ anchor: selection.anchor, focus: { r, c } });
+    if (isDragging.current) {
+      setSelection({ anchor: selection.anchor, focus: { r, c } });
+      if (painter) applyPainterCell(r, c);
+    }
   };
   useEffect(() => {
     const up = () => { isDragging.current = false; };
@@ -103,6 +112,11 @@ export function Grid() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && painter) {
+        e.preventDefault();
+        stopPainter();
+        return;
+      }
       if (editing) {
         if (e.key === "Enter") { e.preventDefault(); commitEdit({ dr: 1, dc: 0 }); }
         else if (e.key === "Tab") { e.preventDefault(); commitEdit({ dr: 0, dc: e.shiftKey ? -1 : 1 }); }
@@ -122,11 +136,11 @@ export function Grid() {
       const ext = e.shiftKey;
       switch (e.key) {
         case "ArrowUp": e.preventDefault(); moveActive(-1, 0, ext); return;
-        case "ArrowDown": e.preventDefault(); moveActive(1, 0, ext); return;
+        case "ArrowDown": e.preventDefault(); moveActive(1, 0, ext); ensureTailRows(50); return;
         case "ArrowLeft": e.preventDefault(); moveActive(0, -1, ext); return;
         case "ArrowRight": e.preventDefault(); moveActive(0, 1, ext); return;
         case "Tab": e.preventDefault(); moveActive(0, e.shiftKey ? -1 : 1); return;
-        case "Enter": e.preventDefault(); startEdit(selection.focus.r, selection.focus.c); return;
+        case "Enter": e.preventDefault(); startEdit(selection.focus.r, selection.focus.c); ensureTailRows(50); return;
         case "F2": e.preventDefault(); startEdit(selection.focus.r, selection.focus.c); return;
         case "Delete":
         case "Backspace": e.preventDefault(); clearSelection(); return;
@@ -137,7 +151,7 @@ export function Grid() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editing, selection, sheet, cancelEdit, clearSelection, commitEdit, copySelection, moveActive, redo, setActive, setSelection, startEdit, undo]);
+  }, [editing, selection, sheet, cancelEdit, clearSelection, commitEdit, copySelection, moveActive, redo, setActive, setSelection, startEdit, undo, painter, stopPainter, ensureTailRows]);
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {

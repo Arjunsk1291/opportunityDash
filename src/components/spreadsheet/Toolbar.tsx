@@ -4,6 +4,7 @@ import {
   Undo2, Redo2, Scissors, Copy, ClipboardPaste, Trash2,
   ArrowDownAZ, ArrowUpAZ, Filter, FilterX,
   Snowflake, EyeOff, Eye, Plus, Download, Upload, Sigma,
+  Paintbrush,
 } from "lucide-react";
 import { useRef } from "react";
 import { normalizeRange } from "@/lib/spreadsheet/utils";
@@ -41,6 +42,9 @@ export function Toolbar() {
   const importCSV = useSpreadsheet((s) => s.importCSV);
   const exportCSV = useSpreadsheet((s) => s.exportCSV);
   const setCell = useSpreadsheet((s) => s.setCell);
+  const startPainter = useSpreadsheet((s) => s.startFormatPainter);
+  const stopPainter = useSpreadsheet((s) => s.stopFormatPainter);
+  const painter = useSpreadsheet((s) => s.formatPainter);
   const selection = useSpreadsheet((s) => s.selection);
 
   const fileRef = useRef<HTMLInputElement>(null);
@@ -100,6 +104,15 @@ export function Toolbar() {
       <ToolBtn onClick={filterPrompt} title="Filter column"><Filter className="h-4 w-4" /></ToolBtn>
       <ToolBtn onClick={clearFilters} title="Clear filters"><FilterX className="h-4 w-4" /></ToolBtn>
       <Sep />
+      <button
+        type="button"
+        onClick={() => { if (painter) stopPainter(); else startPainter(false); }}
+        onDoubleClick={() => { startPainter(true); }}
+        title="Format painter (click to apply once, double-click to lock, Esc to release)"
+        className={`inline-flex h-7 w-7 items-center justify-center rounded text-foreground/80 hover:bg-muted ${painter ? "bg-muted text-foreground" : ""}`}
+      >
+        <Paintbrush className="h-4 w-4" />
+      </button>
       <ToolBtn onClick={freezeTopRow} title="Freeze top row"><Snowflake className="h-4 w-4" /></ToolBtn>
       <ToolBtn onClick={freezeFirstCol} title="Freeze first column"><Snowflake className="h-4 w-4 -rotate-90" /></ToolBtn>
       <Sep />
@@ -125,4 +138,3 @@ export function Toolbar() {
     </div>
   );
 }
-

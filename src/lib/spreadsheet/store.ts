@@ -65,6 +65,7 @@ type SpreadsheetState = {
   formatPainter: { format: CellFormat; locked: boolean } | null;
 
   hydrateFromWorkbookPayload: (payload: unknown) => void;
+  ensureTailRows: (minExtra?: number) => void;
 
   setActiveSheet: (id: string) => void;
   addSheet: () => void;
@@ -112,6 +113,10 @@ type SpreadsheetState = {
 
   importCSV: (text: string) => void;
   exportCSV: () => string;
+
+  startFormatPainter: (locked?: boolean) => void;
+  stopFormatPainter: () => void;
+  applyFormatPainterCell: (r: number, c: number) => void;
 };
 
 function pushHistory(state: SpreadsheetState) {
@@ -148,6 +153,43 @@ function applyFiltersToSheet(sheet: Sheet) {
   sheet.hiddenRows = { ...sheet.hiddenRows, ...nextHidden };
 }
 
+const HEX = {
+  headerBand: "#9BC2E6",
+  banner: "#D9E1F2",
+  grey: "#D9D9D9",
+  softYellow: "#FFF2CC",
+  hardYellow: "#FFFF00",
+  softOrange: "#FCE4D6",
+  softRed: "#FFC7CE",
+  hardRed: "#FF0000",
+  softGreen: "#C6E0B4",
+  medGreen: "#A9D08E",
+  coolGrey: "#D0CECE",
+  white: "#FFFFFF",
+  darkRedText: "#9C0006",
+  black: "#000000",
+  whiteText: "#FFFFFF",
+} as const;
+
+function normalizeStatusText(value: string) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function pickStatusFormat(statusRaw: string): CellFormat | null {
+  const status = normalizeStatusText(statusRaw);
+  if (!status) return null;
+  if (status.includes("AWARD") || status === "WON") return { bg: HEX.medGreen, color: HEX.black };
+  if (status.includes("LOST") || status.includes("NO BID") || status.includes("CANCEL") || status.includes("REGRET")) {
+    return { bg: HEX.softRed, color: HEX.darkRedText };
+  }
+  if (status.includes("SUBMIT")) return { bg: HEX.softOrange, color: HEX.black };
+  if (status.includes("WORK") || status.includes("IN PROGRESS") || status.includes("ONGOING") || status.includes("PENDING") || status.includes("UNDER REVIEW")) {
+    return { bg: HEX.softYellow, color: HEX.black };
+  }
+  if (status.includes("ARCHIV")) return { bg: HEX.coolGrey, color: HEX.black };
+  return null;
+}
+
 export const useSpreadsheet = create<SpreadsheetState>((set, get) => ({
   workbook: { activeSheetId: "sheet-1", sheets: [emptySheet("sheet-1", "MASTER TENDER LIST AVENIR")] },
   selection: { anchor: { r: 0, c: 0 }, focus: { r: 0, c: 0 } },
@@ -157,8 +199,9 @@ export const useSpreadsheet = create<SpreadsheetState>((set, get) => ({
   formatPainter: null,
 
   hydrateFromWorkbookPayload: (payload) => {
-    const p = payload as any;
-    const sheetsIn = Array.isArray(p?.workbook?.sheets) ? p.workbook.sheets : [];
+    const p = payload as unknown as { workbook?: { sheets?: unknown[] } } | null;
+    const workbookObj = p && typeof p === "object" ? (p as any).workbook : null;
+    const sheetsIn = Array.isArray(workbookObj?.sheets) ? workbookObj.sheets : [];
     if (!sheetsIn.length) return;
     const sheets: Sheet[] = sheetsIn.map((s: any, sheetIdx: number) => {
       const id = String(s.id || `sheet-${sheetIdx + 1}`);
@@ -176,6 +219,40 @@ export const useSpreadsheet = create<SpreadsheetState>((set, get) => ({
           const text = String(v);
           if (text === "") continue;
           cellsMap[cellKey(r, c)] = { value: text };
+        }
+      }
+
+      // Default workbook color coding (hardcoded hex fills) to match tender workbook conventions.
+      // - Row 4 (0-based index 3) header band
+      // - Row 2 banner background (0-based index 1)
+      const headerRowIdx = Math.max(0, freezeRows - 1);
+      for (let c = 0; c < colCount; c++) {
+        const k = cellKey(headerRowIdx, c);
+        const cur = cellsMap[k] || { value: matrix?.[headerRowIdx]?.[c] == null ? "" : String(matrix[headerRowIdx][c]) };
+        cellsMap[k] = { ...cur, format: { ...(cur.format || {}), bg: HEX.headerBand, color: HEX.black, bold: true, wrap: true } };
+      }
+      for (let c = 0; c < colCount; c++) {
+        const k = cellKey(1, c);
+        const existing = cellsMap[k];
+        if (!existing) continue;
+        cellsMap[k] = { ...existing, format: { ...(existing.format || {}), bg: HEX.banner, color: HEX.black, bold: true, align: "center", wrap: true } };
+      }
+
+      // Status column coding (MASTER sheet & other sheets when the header exists).
+      const statusHeader = "AVENIR STATUS";
+      let statusCol = -1;
+      const headerRow = matrix?.[headerRowIdx] || [];
+      for (let c = 0; c < headerRow.length; c++) {
+        if (String(headerRow[c] ?? "").trim().toUpperCase() === statusHeader) { statusCol = c; break; }
+      }
+      if (statusCol >= 0) {
+        for (let r = freezeRows; r < rowCount; r++) {
+          const k = cellKey(r, statusCol);
+          const cell = cellsMap[k];
+          if (!cell) continue;
+          const fmt = pickStatusFormat(cell.value);
+          if (!fmt) continue;
+          cellsMap[k] = { ...cell, format: { ...(cell.format || {}), ...fmt } };
         }
       }
       const merges: Merge[] = (Array.isArray(s.merges) ? s.merges : []).map((m: any) => {
@@ -221,6 +298,18 @@ export const useSpreadsheet = create<SpreadsheetState>((set, get) => ({
       history: { undo: [], redo: [] },
     });
   },
+
+  ensureTailRows: (minExtra = 50) => set((state) => {
+    const wb = cloneWorkbook(state.workbook);
+    const sheet = getActiveSheet(wb);
+    const focusR = state.selection.focus.r;
+    const tail = Math.max(10, Number(minExtra || 50));
+    if (sheet.rowCount - focusR <= 5) {
+      sheet.rowCount += tail;
+      return { workbook: wb };
+    }
+    return {};
+  }),
 
   setActiveSheet: (id) => set((state) => ({ workbook: { ...state.workbook, activeSheetId: id } })),
   addSheet: () => set((state) => {
@@ -292,6 +381,7 @@ export const useSpreadsheet = create<SpreadsheetState>((set, get) => ({
     const dc = opts?.dc ?? 0;
     const nr = clamp(ed.r + dr, 0, sheet.rowCount - 1);
     const nc = clamp(ed.c + dc, 0, sheet.colCount - 1);
+    if (sheet.rowCount - nr <= 3) sheet.rowCount += 50;
     return {
       workbook: wb,
       editing: null,
@@ -575,6 +665,27 @@ export const useSpreadsheet = create<SpreadsheetState>((set, get) => ({
     }
     return lines.join("\n");
   },
+
+  startFormatPainter: (locked = false) => set((state) => {
+    const sheet = getActiveSheet(state.workbook);
+    const { r, c } = state.selection.focus;
+    const cell = sheet.cells[cellKey(r, c)];
+    const format: CellFormat = { ...(cell?.format || {}) };
+    return { formatPainter: { format, locked: Boolean(locked) } };
+  }),
+  stopFormatPainter: () => set(() => ({ formatPainter: null })),
+  applyFormatPainterCell: (r, c) => set((state) => {
+    const painter = state.formatPainter;
+    if (!painter) return {};
+    pushHistory(state);
+    const wb = cloneWorkbook(state.workbook);
+    const sheet = getActiveSheet(wb);
+    ensureSize(sheet, r, c);
+    const k = cellKey(r, c);
+    const cur = sheet.cells[k] || { value: "" };
+    sheet.cells[k] = { ...cur, format: { ...(cur.format || {}), ...painter.format } };
+    return { workbook: wb, formatPainter: painter.locked ? painter : null };
+  }),
 }));
 
 function a1ToAddr(a1Text: string) {
@@ -587,4 +698,3 @@ function a1ToAddr(a1Text: string) {
   for (let i = 0; i < colLetters.length; i++) col = col * 26 + (colLetters.charCodeAt(i) - 64);
   return { r: rowNum - 1, c: col - 1 };
 }
-
