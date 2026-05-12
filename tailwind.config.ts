@@ -86,6 +86,13 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        toolbar: "hsl(var(--toolbar))",
+        "grid-header": "hsl(var(--grid-header))",
+        "grid-header-active": "hsl(var(--grid-header-active))",
+        "grid-header-fg": "hsl(var(--grid-header-fg))",
+        "grid-selection": "hsl(var(--grid-selection))",
+        "grid-selection-fill": "hsl(var(--grid-selection-fill))",
+        "grid-active-cell": "hsl(var(--grid-active-cell))",
       },
       borderRadius: {
         lg: "var(--radius)",

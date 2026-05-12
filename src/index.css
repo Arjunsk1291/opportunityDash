@@ -76,6 +76,16 @@
     --sidebar-accent-foreground: 222 47% 11%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217 91% 60%;
+
+    /* Spreadsheet chrome */
+    --toolbar: 220 14% 96%;
+    --grid-header: 220 14% 96%;
+    --grid-header-active: 220 13% 91%;
+    --grid-header-fg: 222 47% 11%;
+    --grid-line: hsl(var(--border));
+    --grid-selection: 217 91% 60%;
+    --grid-selection-fill: 217 91% 60% / 0.12;
+    --grid-active-cell: 0 0% 100%;
   }
 
   .dark {

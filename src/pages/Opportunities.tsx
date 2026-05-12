@@ -3,7 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
-import TenderSpreadsheetV2 from '@/pages/TenderSpreadsheetV2';
+import { Spreadsheet } from '@/components/spreadsheet/Spreadsheet';
+import { useSpreadsheet } from '@/lib/spreadsheet/store';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -822,7 +823,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
               />
             )}
           >
-            <TenderSpreadsheetV2 />
+            <SpreadsheetMount token={token} />
           </ErrorBoundary>
         )}
       </div>
@@ -1128,5 +1129,39 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
     </div>
   );
 };
+
+function SpreadsheetMount({ token }: { token?: string | null }) {
+  const hydrate = useSpreadsheet((s) => s.hydrateFromWorkbookPayload);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!token) return;
+      setError(null);
+      try {
+        const res = await fetch(`${API_URL}/spreadsheet/workbook/opportunities`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const maybeError = (data && typeof data === 'object' && 'error' in data) ? (data as { error?: unknown }).error : undefined;
+          throw new Error(String(maybeError || 'Failed to load workbook'));
+        }
+        if (!cancelled) hydrate(data);
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message);
+      }
+    };
+    void run();
+    return () => { cancelled = true; };
+  }, [token, hydrate]);
+
+  if (error) {
+    return <div className="p-4 text-sm text-destructive">{error}</div>;
+  }
+
+  return <Spreadsheet />;
+}
 
 export default Opportunities;
