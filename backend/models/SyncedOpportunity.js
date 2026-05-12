@@ -65,5 +65,9 @@ syncedOpportunitySchema.index({ opportunityRefNo: 1 });
 syncedOpportunitySchema.index({ telecastAlerted: 1, telecastAlertedKey: 1 });
 syncedOpportunitySchema.index({ telecastAlerted: 1, telecastAlertedRefNo: 1 });
 syncedOpportunitySchema.index({ syncedAt: -1 });
+syncedOpportunitySchema.index({ createdAt: -1 });
+syncedOpportunitySchema.index({ clientName: 1 });
+syncedOpportunitySchema.index({ internalLead: 1 });
+syncedOpportunitySchema.index({ avenirStatus: 1 });
 
 export default mongoose.model('SyncedOpportunity', syncedOpportunitySchema);
