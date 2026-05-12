@@ -63,14 +63,41 @@ const API_URL = import.meta.env.VITE_API_URL || '/api';
 const REQUIRED_KEYS: Array<keyof FormState> = [
   'opportunityRefNo',
   'tenderName',
-  'opportunityClassification',
-  'clientName',
-  'groupClassification',
-  'dateTenderReceived',
-  'tenderPlannedSubmissionDate',
-  'internalLead',
-  'opportunityValue',
-  'avenirStatus',
+];
+
+// Full tender workbook headers (used for snapshot inputs). Keep literal labels to preserve workbook conventions.
+const SHEET_HEADERS: string[] = [
+  'Sr.no',
+  'Year',
+  'Tender no',
+  'Tender name',
+  'Client',
+  'END USER',
+  'ADNOC RFT NO',
+  'Tender Location (Execution)',
+  'GDS/GES',
+  'Assigned Person',
+  'Stage of project, Concept, FEED, DE',
+  'Tender Type',
+  'date tender recd',
+  'Tender Due  date',
+  'Tender  Submitted  date',
+  'AVENIR STATUS',
+  'REMARKS/REASON',
+  'TENDER RESULT',
+  'TENDER STATUS -',
+  'Currency, USD/AED',
+  'GM%',
+  'Tender value',
+  'Sub-contract value',
+  'GM Value',
+  'Go%',
+  'Get %',
+  'GO/Get %',
+  'go/get value',
+  'USD to AED',
+  'who was awarded the project',
+  'final awarded price',
 ];
 
 const EMPTY_FORM: FormState = {
@@ -100,6 +127,25 @@ const LABELS: Record<keyof FormState, string> = {
   avenirStatus: 'Status',
   adnocRftNo: 'CLIENT Ref',
 };
+
+const NORMALIZE_HEADER = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+const FORM_BACKED_HEADERS = new Set([
+  'TENDER NO', // opportunityRefNo
+  'REF NO',
+  'TENDER NAME',
+  'CLIENT',
+  'GDS/GES',
+  'ASSIGNED PERSON',
+  'TENDER TYPE',
+  'DATE TENDER RECD',
+  'TENDER DUE  DATE',
+  'TENDER DUE DATE',
+  'TENDER VALUE',
+  'AVENIR STATUS',
+  'ADNOC RFT NO',
+].map(NORMALIZE_HEADER));
+
+const SNAPSHOT_HEADERS = SHEET_HEADERS.filter((h) => !FORM_BACKED_HEADERS.has(NORMALIZE_HEADER(h)));
 
 const toDisplay = (value: unknown) => {
   if (value === null || value === undefined) return '—';
@@ -207,6 +253,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const [search, setSearch] = useState('');
   const [selectedRow, setSelectedRow] = useState<Opportunity | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [snapshotEdits, setSnapshotEdits] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -285,6 +332,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const setFormFromOpportunity = (opp: Opportunity | null) => {
     if (!opp) {
       setForm(EMPTY_FORM);
+      setSnapshotEdits({});
       return;
     }
     setForm({
@@ -300,6 +348,15 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       avenirStatus: String(opp.avenirStatus || ''),
       adnocRftNo: String(opp.adnocRftNo || ''),
     });
+
+    const nextSnapshots: Record<string, string> = {};
+    const snap = opp.rawGraphData?.rowSnapshot;
+    if (snap && typeof snap === 'object') {
+      Object.entries(snap as Record<string, unknown>).forEach(([k, v]) => {
+        nextSnapshots[String(k)] = v === null || v === undefined ? '' : String(v);
+      });
+    }
+    setSnapshotEdits(nextSnapshots);
   };
 
   const openEditor = (mode: EditMode) => {
@@ -312,6 +369,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
     setPreviewDiffs([]);
     setConfirmOpen(false);
     setForm(EMPTY_FORM);
+    setSnapshotEdits({});
   };
 
   const loadConflicts = async () => {
@@ -602,6 +660,31 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       const requestMs = Math.round(performance.now() - requestStartedAt);
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || 'Failed to save');
+
+      const refForSnapshots = String(form.opportunityRefNo || '').trim();
+      const snapshotEntries = Object.entries(snapshotEdits || {})
+        .map(([header, value]) => ({ header: String(header || '').trim(), value: value === null || value === undefined ? '' : String(value) }))
+        .filter((row) => row.header && row.value.trim() !== '');
+      if (refForSnapshots && snapshotEntries.length) {
+        const snapshotStartedAt = performance.now();
+        logManualFlow(flowId, 'save-snapshots-start', { count: snapshotEntries.length });
+        for (const entry of snapshotEntries) {
+          const snapRes = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'update',
+              confirmed: true,
+              opportunityRefNo: refForSnapshots,
+              patch: { snapshot: { header: entry.header, value: entry.value } },
+            }),
+          });
+          const snapData = await snapRes.json().catch(() => ({}));
+          if (!snapRes.ok) throw new Error(snapData?.error || `Failed to save snapshot: ${entry.header}`);
+        }
+        logManualFlow(flowId, 'save-snapshots-success', { count: snapshotEntries.length, totalMs: Math.round(performance.now() - snapshotStartedAt) });
+      }
+
       logManualFlow(flowId, 'save-success', {
         requestMs,
         changedFields: Number(data?.changedFields || 0),
@@ -1020,6 +1103,25 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
                     </div>
                   );
                 })}
+              </div>
+              <Separator />
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Additional Sheet Columns (saved into raw snapshot)
+                </div>
+                <div className="grid gap-2 md:grid-cols-2 max-h-[30vh] overflow-y-auto pr-1">
+                  {SNAPSHOT_HEADERS.map((header) => (
+                    <div key={header} className="space-y-1">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{header}</div>
+                      <Input
+                        value={snapshotEdits[header] ?? ''}
+                        onChange={(e) => setSnapshotEdits((prev) => ({ ...prev, [header]: e.target.value }))}
+                        placeholder={header}
+                        disabled={saving || previewing}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
               <Separator />
               <div className="flex justify-end gap-2">
