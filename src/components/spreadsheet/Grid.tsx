@@ -60,6 +60,11 @@ export function Grid() {
   const totalW = colOffsets[sheet.colCount];
   const totalH = rowOffsets[sheet.rowCount];
 
+  const getCellX = useCallback((col: number) => colOffsets[col] || 0, [colOffsets]);
+  const getCellY = useCallback((row: number) => rowOffsets[row] || 0, [rowOffsets]);
+  const getCellWidth = useCallback((col: number) => getColW(sheet, col), [sheet]);
+  const getCellHeight = useCallback((row: number) => getRowH(sheet, row), [sheet]);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -179,10 +184,21 @@ export function Grid() {
   }, [resizing, setColWidth, setRowHeight]);
 
   const sel = normalizeRange(selection.anchor, selection.focus);
-  const visibleRows: number[] = [];
-  for (let r = startRow; r < endRow; r++) if (!sheet.hiddenRows[r]) visibleRows.push(r);
   const visibleCols: number[] = [];
   for (let c = startCol; c < endCol; c++) if (!sheet.hiddenCols[c]) visibleCols.push(c);
+
+  const freezeRowCount = Math.max(0, Math.min(sheet.freezeRows || 0, sheet.rowCount));
+  const frozenRows: number[] = [];
+  for (let r = 0; r < freezeRowCount; r++) if (!sheet.hiddenRows[r]) frozenRows.push(r);
+
+  const bodyRows: number[] = [];
+  const bodyStart = Math.max(startRow, freezeRowCount);
+  for (let r = bodyStart; r < endRow; r++) if (!sheet.hiddenRows[r]) bodyRows.push(r);
+
+  const rowHeaderRows: number[] = [];
+  // Row headers should line up with what is actually rendered: frozen rows (in frozen band) + body rows.
+  frozenRows.forEach((r) => rowHeaderRows.push(r));
+  bodyRows.forEach((r) => rowHeaderRows.push(r));
 
   const mergeOrigin = useMemo(() => {
     const origins = new Map<string, { r1: number; c1: number; r2: number; c2: number }>();
@@ -205,6 +221,14 @@ export function Grid() {
     return cell.value;
   }, [sheet.cells]);
 
+  const mergeSpan = useCallback((r: number, c: number) => {
+    const mg = mergeOrigin.origins.get(`${r},${c}`);
+    if (!mg) return null;
+    const width = (getCellX(mg.c2) + getCellWidth(mg.c2)) - getCellX(mg.c1);
+    const height = (getCellY(mg.r2) + getCellHeight(mg.r2)) - getCellY(mg.r1);
+    return { width, height, mg };
+  }, [mergeOrigin, getCellX, getCellY, getCellWidth, getCellHeight]);
+
   return (
     <GridContextMenu>
       <div
@@ -215,18 +239,14 @@ export function Grid() {
         onContextMenu={(e) => e.preventDefault()}
       >
         <div style={{ width: totalW + HEADER_WIDTH, height: totalH + HEADER_HEIGHT, position: "relative" }}>
-          <div
-            className="sticky left-0 top-0 z-30 border-b border-r bg-grid-header"
-            style={{ width: HEADER_WIDTH, height: HEADER_HEIGHT, position: "sticky" }}
-          />
+          {/* Corner */}
+          <div className="sticky left-0 top-0 z-40 border-b border-r bg-grid-header" style={{ width: HEADER_WIDTH, height: HEADER_HEIGHT }} />
 
-          <div
-            className="sticky top-0 z-20"
-            style={{ position: "sticky", top: 0, left: HEADER_WIDTH, height: HEADER_HEIGHT }}
-          >
+          {/* Column headers */}
+          <div className="sticky top-0 z-30" style={{ left: HEADER_WIDTH, height: HEADER_HEIGHT, marginLeft: HEADER_WIDTH }}>
             {visibleCols.map((c) => {
-              const left = colOffsets[c];
-              const w = getColW(sheet, c);
+              const left = getCellX(c);
+              const w = getCellWidth(c);
               const active = c >= sel.c1 && c <= sel.c2;
               return (
                 <div
@@ -251,76 +271,95 @@ export function Grid() {
             })}
           </div>
 
-          {sheet.freezeRows > 0 && (() => {
-            const fr = Math.min(sheet.freezeRows, sheet.rowCount);
-            const frozenH = rowOffsets[fr] - rowOffsets[0];
-            return (
-              <div className="z-[22]" style={{ position: "sticky", top: HEADER_HEIGHT, left: 0, height: 0, marginLeft: HEADER_WIDTH, marginTop: 0 }}>
-                <div style={{ position: "absolute", top: 0, left: 0, height: frozenH, width: totalW, pointerEvents: "auto" }}>
-                  {Array.from({ length: fr }, (_, r) => r).map((r) => (
-                    !sheet.hiddenRows[r] && visibleCols.map((c) => {
-                      if (mergeOrigin.skip.has(`${r},${c}`)) return null;
-                      const left = colOffsets[c];
-                      const top = rowOffsets[r];
-                      let w = getColW(sheet, c);
-                      let h = getRowH(sheet, r);
-                      const mg = mergeOrigin.origins.get(`${r},${c}`);
-                      if (mg) {
-                        w = (colOffsets[mg.c2] + getColW(sheet, mg.c2)) - colOffsets[mg.c1];
-                        h = (rowOffsets[mg.r2] + getRowH(sheet, mg.r2)) - rowOffsets[mg.r1];
-                      }
-                      const cell = sheet.cells[cellKey(r, c)];
-                      const fmt = cell?.format;
-                      const display = renderCell(r, c);
-                      const isNum = typeof display === "string" && display !== "" && !isNaN(parseFloat(display)) && /^-?\d*\.?\d+$/.test(display.trim());
-                      const align = fmt?.align || (isNum ? "right" : "left");
-                      const wrap = fmt?.wrap;
-                      return (
+          {/* Frozen rows overlay (rendered once; excluded from body). */}
+          {freezeRowCount > 0 && (
+            <div className="sticky z-[25]" style={{ top: HEADER_HEIGHT, left: HEADER_WIDTH, height: 0, marginLeft: HEADER_WIDTH }}>
+              <div style={{ position: "absolute", top: 0, left: 0, height: getCellY(freezeRowCount), width: totalW, pointerEvents: "auto" }}>
+                {frozenRows.map((r) =>
+                  visibleCols.map((c) => {
+                    if (mergeOrigin.skip.has(`${r},${c}`)) return null;
+                    const left = getCellX(c);
+                    const top = getCellY(r);
+                    let w = getCellWidth(c);
+                    let h = getCellHeight(r);
+                    const span = mergeSpan(r, c);
+                    if (span) { w = span.width; h = span.height; }
+                    const cell = sheet.cells[cellKey(r, c)];
+                    const fmt = cell?.format;
+                    const display = renderCell(r, c);
+                    const isNum = typeof display === "string" && display !== "" && !isNaN(parseFloat(display)) && /^-?\d*\.?\d+$/.test(display.trim());
+                    const align = fmt?.align || (isNum ? "right" : "left");
+                    const wrap = fmt?.wrap;
+                    return (
+                      <div
+                        key={`f-${r}-${c}`}
+                        className="absolute border-b border-r text-[13px] overflow-hidden"
+                        style={{
+                          left, top, width: w, height: h,
+                          borderColor: "var(--grid-line)",
+                          backgroundColor: fmt?.bg || "hsl(var(--grid-header))",
+                          boxShadow: r === freezeRowCount - 1 ? "0 1px 0 var(--border)" : undefined,
+                        }}
+                        onMouseDown={(e) => onCellMouseDown(r, c, e)}
+                        onMouseEnter={() => onCellMouseEnter(r, c)}
+                        onDoubleClick={() => startEdit(r, c)}
+                      >
                         <div
-                          key={`f-${r}-${c}`}
-                          className="absolute border-b border-r text-[13px] overflow-hidden"
+                          className={`px-1.5 leading-tight flex h-full ${wrap ? "items-start py-1" : "items-center whitespace-nowrap"}`}
                           style={{
-                            left, top, width: w, height: h,
-                            borderColor: "var(--grid-line)",
-                            backgroundColor: fmt?.bg || "hsl(var(--grid-header))",
-                            boxShadow: r === fr - 1 ? "0 1px 0 var(--border)" : undefined,
+                            justifyContent: align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start",
+                            textAlign: align as any,
+                            fontWeight: fmt?.bold ? 700 : 400,
+                            fontStyle: fmt?.italic ? "italic" : "normal",
+                            textDecoration: fmt?.underline ? "underline" : "none",
+                            color: fmt?.color,
+                            whiteSpace: wrap ? "pre-wrap" : "nowrap",
+                            wordBreak: wrap ? "break-word" : "normal",
                           }}
-                          onMouseDown={(e) => onCellMouseDown(r, c, e)}
-                          onMouseEnter={() => onCellMouseEnter(r, c)}
-                          onDoubleClick={() => startEdit(r, c)}
                         >
-                          <div
-                            className={`px-1.5 leading-tight flex h-full ${wrap ? "items-start py-1" : "items-center whitespace-nowrap"}`}
-                            style={{
-                              justifyContent: align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start",
-                              textAlign: align as any,
-                              fontWeight: fmt?.bold ? 700 : 400,
-                              fontStyle: fmt?.italic ? "italic" : "normal",
-                              textDecoration: fmt?.underline ? "underline" : "none",
-                              color: fmt?.color,
-                              whiteSpace: wrap ? "pre-wrap" : "nowrap",
-                              wordBreak: wrap ? "break-word" : "normal",
-                            }}
-                          >
-                            {display}
-                          </div>
+                          {display}
                         </div>
-                      );
-                    })
-                  ))}
-                </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
-            );
-          })()}
+            </div>
+          )}
 
-          <div className="sticky left-0 z-20" style={{ position: "sticky", left: 0, width: HEADER_WIDTH, marginTop: 0, marginLeft: -HEADER_WIDTH }}>
-            {visibleRows.map((r) => {
-              const top = rowOffsets[r] + HEADER_HEIGHT;
-              const h = getRowH(sheet, r);
+          {/* Row headers: frozen band (sticky) + body (scroll). */}
+          {freezeRowCount > 0 && (
+            <div className="sticky left-0 z-[26]" style={{ top: HEADER_HEIGHT, width: HEADER_WIDTH, height: 0 }}>
+              <div style={{ position: "absolute", top: 0, left: 0, width: HEADER_WIDTH, height: getCellY(freezeRowCount), pointerEvents: "auto" }}>
+                {frozenRows.map((r) => {
+                  const top = getCellY(r);
+                  const h = getCellHeight(r);
+                  const active = r >= sel.r1 && r <= sel.r2;
+                  return (
+                    <div
+                      key={`rh-f-${r}`}
+                      className={`absolute flex items-center justify-center border-b border-r text-[11px] font-medium text-grid-header-fg select-none ${active ? "bg-grid-header-active" : "bg-grid-header"}`}
+                      style={{ top, height: h, width: HEADER_WIDTH }}
+                      onMouseDown={(e) => { if (e.button !== 0) return; isDragging.current = true; setSelection({ anchor: { r, c: 0 }, focus: { r, c: sheet.colCount - 1 } }); }}
+                      onMouseEnter={() => { if (isDragging.current) setSelection({ anchor: selection.anchor, focus: { r, c: sheet.colCount - 1 } }); }}
+                    >
+                      {r + 1}
+                      <div className="absolute bottom-0 left-0 h-1 w-full cursor-row-resize hover:bg-primary/40" onMouseDown={(e) => { e.stopPropagation(); setResizing({ kind: "row", idx: r, start: e.clientY, orig: h }); }} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="sticky left-0 z-30" style={{ top: HEADER_HEIGHT, width: HEADER_WIDTH, height: totalH }}>
+            {bodyRows.map((r) => {
+              const top = getCellY(r);
+              const h = getCellHeight(r);
               const active = r >= sel.r1 && r <= sel.r2;
               return (
                 <div
-                  key={r}
+                  key={`rh-${r}`}
                   className={`absolute flex items-center justify-center border-b border-r text-[11px] font-medium text-grid-header-fg select-none ${active ? "bg-grid-header-active" : "bg-grid-header"}`}
                   style={{ top, height: h, width: HEADER_WIDTH }}
                   onMouseDown={(e) => { if (e.button !== 0) return; isDragging.current = true; setSelection({ anchor: { r, c: 0 }, focus: { r, c: sheet.colCount - 1 } }); }}
@@ -333,19 +372,17 @@ export function Grid() {
             })}
           </div>
 
+          {/* Body cells (non-frozen rows only). */}
           <div style={{ position: "absolute", left: HEADER_WIDTH, top: HEADER_HEIGHT }}>
-            {visibleRows.map((r) =>
+            {bodyRows.map((r) =>
               visibleCols.map((c) => {
                 if (mergeOrigin.skip.has(`${r},${c}`)) return null;
-                const left = colOffsets[c];
-                const top = rowOffsets[r];
-                let w = getColW(sheet, c);
-                let h = getRowH(sheet, r);
-                const mg = mergeOrigin.origins.get(`${r},${c}`);
-                if (mg) {
-                  w = (colOffsets[mg.c2] + getColW(sheet, mg.c2)) - colOffsets[mg.c1];
-                  h = (rowOffsets[mg.r2] + getRowH(sheet, mg.r2)) - rowOffsets[mg.r1];
-                }
+                const left = getCellX(c);
+                const top = getCellY(r);
+                let w = getCellWidth(c);
+                let h = getCellHeight(r);
+                const span = mergeSpan(r, c);
+                if (span) { w = span.width; h = span.height; }
                 const cell = sheet.cells[cellKey(r, c)];
                 const fmt = cell?.format;
                 const isInRange = r >= sel.r1 && r <= sel.r2 && c >= sel.c1 && c <= sel.c2;
@@ -397,10 +434,10 @@ export function Grid() {
             )}
 
             {!editing && (() => {
-              const left = colOffsets[sel.c1];
-              const top = rowOffsets[sel.r1];
-              const right = colOffsets[sel.c2] + getColW(sheet, sel.c2);
-              const bot = rowOffsets[sel.r2] + getRowH(sheet, sel.r2);
+              const left = getCellX(sel.c1);
+              const top = getCellY(sel.r1);
+              const right = getCellX(sel.c2) + getCellWidth(sel.c2);
+              const bot = getCellY(sel.r2) + getCellHeight(sel.r2);
               return (
                 <div className="pointer-events-none absolute border-2 border-grid-selection" style={{ left: left - 1, top: top - 1, width: right - left + 1, height: bot - top + 1 }} />
               );
