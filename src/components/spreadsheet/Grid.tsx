@@ -208,7 +208,7 @@ export function Grid() {
 
           <div
             className="sticky top-0 z-20"
-            style={{ position: "sticky", top: 0, height: HEADER_HEIGHT, marginLeft: HEADER_WIDTH, marginTop: -HEADER_HEIGHT }}
+            style={{ position: "sticky", top: 0, left: HEADER_WIDTH, height: HEADER_HEIGHT }}
           >
             {visibleCols.map((c) => {
               const left = colOffsets[c];
@@ -268,7 +268,7 @@ export function Grid() {
                           style={{
                             left, top, width: w, height: h,
                             borderColor: "var(--grid-line)",
-                            backgroundColor: fmt?.bg || "var(--grid-header)",
+                            backgroundColor: fmt?.bg || "hsl(var(--grid-header))",
                             boxShadow: r === fr - 1 ? "0 1px 0 var(--border)" : undefined,
                           }}
                           onMouseDown={(e) => onCellMouseDown(r, c, e)}
@@ -397,4 +397,3 @@ export function Grid() {
     </GridContextMenu>
   );
 }
-
