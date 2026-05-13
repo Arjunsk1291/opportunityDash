@@ -558,6 +558,7 @@ export async function syncTendersFromGraph(config) {
   }
 
   const tenders = [];
+  const statusWarnings = [];
 
   for (let i = detectedHeaderRowOffset + 1; i < rows.length; i++) {
     const row = rows[i] || [];
@@ -618,9 +619,12 @@ export async function syncTendersFromGraph(config) {
     const plannedSubmissionDisplay = buildDateDisplay(year, submissionDeadlineRaw, plannedSubmissionDate);
     const tenderSubmittedDisplay = buildDateDisplay(year, tenderSubmittedRaw, tenderSubmittedDate);
 
+    const rawAvenirStatus = normalizeStatus(getValue(colIndices.avenirStatus));
+    const rawTenderResult = normalizeStatus(getValue(colIndices.tenderResult));
+
     const derivedStatuses = deriveOpportunityStatusFields({
-      rawAvenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
-      rawTenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
+      rawAvenirStatus,
+      rawTenderResult,
       dateTenderReceived: rfpDate,
       tenderPlannedSubmissionDate: plannedSubmissionDate,
       tenderSubmittedDate,
@@ -687,6 +691,25 @@ export async function syncTendersFromGraph(config) {
       syncedAt: new Date(),
     };
 
+    const normalizedRawTenderResult = normalizeStatus(rawTenderResult);
+    const normalizedRawAvenirStatus = normalizeStatus(rawAvenirStatus);
+    if (
+      (normalizedRawTenderResult === 'LOST' || normalizedRawTenderResult === 'AWARDED')
+      && normalizedRawAvenirStatus
+      && normalizedRawAvenirStatus !== normalizedRawTenderResult
+    ) {
+      statusWarnings.push({
+        opportunityRefNo: tender.opportunityRefNo,
+        tenderName: tender.tenderName,
+        clientName: tender.clientName,
+        rawAvenirStatus: normalizedRawAvenirStatus,
+        rawTenderResult: normalizedRawTenderResult,
+        derivedAvenirStatus: tender.avenirStatus,
+        derivedTenderResult: tender.tenderResult,
+        derivedCanonicalStage: tender.canonicalStage,
+      });
+    }
+
     // Backward compatibility: many workbooks have a single remarks column.
     // If one of remarks/comments is blank, mirror the available value.
     if (!tender.remarksReason && tender.comments) {
@@ -700,7 +723,7 @@ export async function syncTendersFromGraph(config) {
     }
   }
 
-  return tenders;
+  return { tenders, statusWarnings };
 }
 
 export async function transformTendersToOpportunities(tenders) {

@@ -1075,13 +1075,25 @@ export default function Admin() {
           }
         }
         setProgress(82, 'Refreshing stats');
-        setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Graph Excel (${result.newRowsCount || 0} new rows)` });
+        const warningsCount = Number(result?.statusWarningsCount || 0);
+        setMessage({ type: 'success', text: `✅ Synced ${result.count} tenders from Graph Excel (${result.newRowsCount || 0} new rows)${warningsCount > 0 ? ` · ⚠️ ${warningsCount} status conflicts` : ''}` });
         await Promise.all([
           loadCollectionStats(),
           loadNotificationStatus(),
         ]);
         setProgress(92, 'Refreshing notification status');
         toast.success(`Synced ${result.count} tenders from Graph Excel (${result.newRowsCount || 0} new rows)`);
+        if (warningsCount > 0) {
+          console.warn('[admin.sync.status-conflicts]', result?.statusWarnings || []);
+          // Minimal, explicit popup as requested: conflicts mean the sheet has final result (LOST/AWARDED)
+          // but Avenir status disagrees; tenderResult is treated as authoritative.
+          window.alert(
+            `⚠️ Status conflicts detected (${warningsCount}).\n\n` +
+            `Some rows have TENDER RESULT = LOST/AWARDED but AVENIR STATUS says something else.\n` +
+            `We treat tender result as authoritative for final outcomes.\n\n` +
+            `Open DevTools Console for details (logged as admin.sync.status-conflicts).`
+          );
+        }
         setTimeout(() => setMessage(null), 3000);
       });
     } catch (error) {

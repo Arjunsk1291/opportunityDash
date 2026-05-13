@@ -64,7 +64,9 @@ export function deriveOpportunityStatusFields({
   const sourceAvenirStatus = normalizeCanonicalStatus(rawAvenirStatus || fallbackAvenirStatus || fallbackCanonicalStage);
   const sourceTenderResult = normalizeCanonicalStatus(rawTenderResult || fallbackTenderResult);
 
-  if (sourceAvenirStatus === 'EOI') {
+  // EOI special-case: treat EOI as submitted unless sheet explicitly provides a final result.
+  // If the sheet says LOST/AWARDED, that must win even if Avenir status says EOI.
+  if (sourceAvenirStatus === 'EOI' && sourceTenderResult !== CANONICAL_STATUS.LOST && sourceTenderResult !== CANONICAL_STATUS.AWARDED) {
     return {
       rawAvenirStatus: sourceAvenirStatus,
       rawTenderResult: sourceTenderResult,
@@ -87,6 +89,9 @@ export function deriveOpportunityStatusFields({
     || effectiveCanonicalStage === CANONICAL_STATUS.AWARDED
   ) {
     effectiveCanonicalStage = CANONICAL_STATUS.AWARDED;
+  } else if (effectiveTenderResult === CANONICAL_STATUS.LOST) {
+    // Sheet tender result is authoritative for final outcomes.
+    effectiveCanonicalStage = CANONICAL_STATUS.LOST;
   }
 
   const awardedCandidate = (

@@ -1625,8 +1625,15 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   }
 
   let tenders;
+  let statusWarnings = [];
   try {
-    tenders = await syncTendersFromGraph(config);
+    const syncPayload = await syncTendersFromGraph(config);
+    if (Array.isArray(syncPayload)) {
+      tenders = syncPayload;
+    } else {
+      tenders = Array.isArray(syncPayload?.tenders) ? syncPayload.tenders : [];
+      statusWarnings = Array.isArray(syncPayload?.statusWarnings) ? syncPayload.statusWarnings : [];
+    }
   } catch (error) {
     error.details = {
       ...(error.details || {}),
@@ -1843,6 +1850,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     clientsSeeded: clientSyncResult?.created || 0,
     clientsUpdated: clientSyncResult?.updated || 0,
     newRowsPreview,
+    statusWarnings,
   };
 };
 
@@ -4410,7 +4418,15 @@ app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
     if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
 
     const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
-    res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
+    res.json({
+      success: true,
+      count: syncResult.insertedCount,
+      syncedCount: syncResult.insertedCount,
+      newRowsCount: syncResult.newRowsCount,
+      newRowSignatures: syncResult.newRowSignatures,
+      statusWarningsCount: Array.isArray(syncResult.statusWarnings) ? syncResult.statusWarnings.length : 0,
+      statusWarnings: Array.isArray(syncResult.statusWarnings) ? syncResult.statusWarnings.slice(0, 50) : [],
+    });
   } catch (error) {
     res.status(500).json(toApiError(error, 'GRAPH_SYNC_FAILED'));
   }

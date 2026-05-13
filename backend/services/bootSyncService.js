@@ -14,7 +14,10 @@ export async function initializeBootSync() {
 
     console.log('🚀 BOOT SYNC: syncing from Microsoft Graph Excel...');
 
-    const tenders = await syncTendersFromGraph(config);
+    const syncPayload = await syncTendersFromGraph(config);
+    const tenders = Array.isArray(syncPayload)
+      ? syncPayload
+      : (Array.isArray(syncPayload?.tenders) ? syncPayload.tenders : []);
     const opportunities = await transformTendersToOpportunities(tenders);
 
     const existingOpportunityMeta = await SyncedOpportunity.find(
