@@ -66,6 +66,20 @@ export function parseDate(year, dateValue) {
     }
   }
 
+  // Sheets often store dates as strings in DD/MM/YY or DD/MM/YYYY (e.g. 13/10/25 = 2025-10-13).
+  // Treat this format as authoritative and do not fall back to locale-dependent parsing.
+  const ddmmyy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+  if (ddmmyy) {
+    const dd = ddmmyy[1];
+    const mm = ddmmyy[2];
+    const yyyy = `20${ddmmyy[3]}`;
+    return toIso(yyyy, mm, dd);
+  }
+  const ddmmyyyy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (ddmmyyyy) {
+    return toIso(ddmmyyyy[3], ddmmyyyy[2], ddmmyyyy[1]);
+  }
+
   const fullDate = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
   if (fullDate) {
     return toIso(fullDate[1], fullDate[2], fullDate[3]);
@@ -122,6 +136,29 @@ export function parseDate(year, dateValue) {
   }
 
   return null;
+}
+
+function diffDays(aIso, bIso) {
+  if (!aIso || !bIso) return null;
+  const a = new Date(`${aIso}T00:00:00Z`);
+  const b = new Date(`${bIso}T00:00:00Z`);
+  const aMs = a.getTime();
+  const bMs = b.getTime();
+  if (Number.isNaN(aMs) || Number.isNaN(bMs)) return null;
+  return Math.round(Math.abs(aMs - bMs) / (24 * 60 * 60 * 1000));
+}
+
+function deriveIsoDateFromNumericRefNo(refNo) {
+  const raw = String(refNo || '').trim();
+  if (!/^\d{6}$/.test(raw)) return null;
+  const yy = raw.slice(0, 2);
+  const mm = raw.slice(2, 4);
+  const dd = raw.slice(4, 6);
+  const yyyy = `20${yy}`;
+  const date = `${yyyy}-${mm}-${dd}`;
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return date;
 }
 
 export function buildDateDisplay(year, dateValue, isoDate) {
@@ -612,7 +649,24 @@ export async function syncTendersFromGraph(config) {
     const dateReceived = getRawValue(colIndices.dateReceived);
     const submissionDeadlineRaw = getRawValue(colIndices.submissionDeadline);
     const tenderSubmittedRaw = getRawValue(colIndices.tenderSubmittedDate);
-    const rfpDate = parseDate(year, dateReceived);
+    const refNo = getValue(colIndices.tenderNo);
+    let rfpDate = parseDate(year, dateReceived);
+    const refDerived = deriveIsoDateFromNumericRefNo(refNo);
+    if (refDerived) {
+      const delta = rfpDate ? diffDays(rfpDate, refDerived) : null;
+      if (!rfpDate || (delta !== null && delta > 5)) {
+        statusWarnings.push({
+          opportunityRefNo: refNo,
+          tenderName: getValue(colIndices.tenderName),
+          clientName: getValue(colIndices.client),
+          rawAvenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
+          rawTenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
+          warningType: 'REF_DATE_OVERRIDE',
+          message: `Date column parsed as ${rfpDate || 'null'} but refNo implies ${refDerived}; using ref-derived date.`,
+        });
+        rfpDate = refDerived;
+      }
+    }
     const plannedSubmissionDate = parseDate(year, submissionDeadlineRaw);
     const tenderSubmittedDate = parseDate(year, tenderSubmittedRaw);
     const rfpReceivedDisplay = buildDateDisplay(year, dateReceived, rfpDate);
