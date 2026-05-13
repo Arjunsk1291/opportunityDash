@@ -4449,11 +4449,21 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
 });
 
 app.get('/api/opportunities', verifyToken, async (req, res) => {
+  const start = performance.now();
   try {
-    const opportunities = await SyncedOpportunity.find().sort({ createdAt: -1 }).lean();
+    // Performance: Optimize payload by excluding the unused large rawGoogleData field.
+    // We keep rawGraphData as it might be used by components like the Spreadsheet.
+    const opportunities = await SyncedOpportunity.find({}, { rawGoogleData: 0 })
+      .sort({ createdAt: -1 })
+      .lean();
+
     const mapped = opportunities.map(opp => mapIdField(opp));
+
+    const totalMs = Math.round(performance.now() - start);
+    res.setHeader('X-Opps-Total-Ms', totalMs);
     res.json(mapped);
   } catch (error) {
+    console.error('[api.opportunities.get.error]', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -4663,16 +4673,15 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
     if (!rows.length) return res.status(400).json({ error: 'No rows provided' });
 
-    let created = 0;
-    let updated = 0;
-    const touchedIds = [];
-    const touchedRows = [];
-
+    const now = new Date();
+    const ops = [];
+    const processedRefs = new Set();
     const normalizeRef = (value) => String(value || '').trim();
 
     for (const input of rows) {
       const opportunityRefNo = normalizeRef(input?.opportunityRefNo || input?.tenderNo || input?.refNo);
-      if (!opportunityRefNo) continue;
+      if (!opportunityRefNo || processedRefs.has(opportunityRefNo)) continue;
+      processedRefs.add(opportunityRefNo);
 
       const payload = {
         opportunityRefNo,
@@ -4690,6 +4699,7 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
         remarksReason: String(input?.remarksReason || '').trim(),
         tenderStatusRemark: String(input?.tenderStatusRemark || '').trim(),
         rawSheetYear: String(input?.rawSheetYear || input?.year || '').trim(),
+        syncedAt: now,
       };
 
       const valueNumber = input?.opportunityValue;
@@ -4698,27 +4708,33 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
         if (!Number.isNaN(parsed)) payload.opportunityValue = parsed;
       }
 
-      const existing = await SyncedOpportunity.findOne({ opportunityRefNo });
-      if (!existing) {
-        const createdDoc = await SyncedOpportunity.create({
-          ...payload,
-          syncedAt: new Date(),
-        });
-        created += 1;
-        touchedIds.push(createdDoc._id.toString());
-        touchedRows.push(mapIdField(createdDoc.toObject()));
-        continue;
-      }
-
-      Object.assign(existing, payload);
-      existing.syncedAt = new Date();
-      await existing.save();
-      updated += 1;
-      touchedIds.push(existing._id.toString());
-      touchedRows.push(mapIdField(existing.toObject()));
+      ops.push({
+        updateOne: {
+          filter: { opportunityRefNo },
+          update: { $set: payload },
+          upsert: true,
+        },
+      });
     }
 
-    res.json({ success: true, created, updated, touched: touchedIds.length, rows: touchedRows });
+    if (ops.length === 0) {
+      return res.json({ success: true, created: 0, updated: 0, touched: 0, rows: [] });
+    }
+
+    // Performance: replace individual save/create calls with bulkWrite for O(1) database round-trip.
+    const result = await SyncedOpportunity.bulkWrite(ops, { ordered: false });
+
+    const touchedRefs = Array.from(processedRefs);
+    const updatedDocs = await SyncedOpportunity.find({ opportunityRefNo: { $in: touchedRefs } }).lean();
+    const touchedRows = updatedDocs.map(opp => mapIdField(opp));
+
+    res.json({
+      success: true,
+      created: result.upsertedCount || 0,
+      updated: result.modifiedCount || 0,
+      touched: touchedRows.length,
+      rows: touchedRows,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
