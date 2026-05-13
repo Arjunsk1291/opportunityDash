@@ -127,6 +127,17 @@ const sortByDateDesc = (left: string, right: string) => {
   return rightTs - leftTs;
 };
 
+const deriveIsoDateFromRef = (ref: string) => {
+  const raw = String(ref || '').trim();
+  if (!/^[0-9]{6}$/.test(raw)) return '';
+  const yy = raw.slice(0, 2);
+  const mm = raw.slice(2, 4);
+  const dd = raw.slice(4, 6);
+  const iso = `20${yy}-${mm}-${dd}`;
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) ? '' : iso;
+};
+
 const formatMonthLabel = (value: string) => {
   const parsed = new Date(`${value}-01T00:00:00`);
   return parsed.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
@@ -211,6 +222,7 @@ const BDEngagements = () => {
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<'date' | 'client' | 'lastContact'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [dateSourceMode, setDateSourceMode] = useState<'sheet' | 'ref'>('sheet');
   const [clientSearch, setClientSearch] = useState('');
   const [clientSort, setClientSort] = useState<'engagements' | 'leads' | 'reports' | 'name' | 'lastContact'>('engagements');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -662,6 +674,15 @@ const BDEngagements = () => {
       ].join(' ').toLowerCase().includes(searchTerm);
     });
 
+    const getSortDate = (row: BDEngagement) => {
+      if (sortField !== 'date') return row.date;
+      if (dateSourceMode === 'ref') {
+        const refIso = deriveIsoDateFromRef(row.ref);
+        if (refIso) return refIso;
+      }
+      return row.date;
+    };
+
     sorted.sort((left, right) => {
       const direction = sortOrder === 'asc' ? 1 : -1;
       if (sortField === 'client') return left.clientName.localeCompare(right.clientName) * direction;
@@ -670,8 +691,8 @@ const BDEngagements = () => {
         const rightTs = parseBDEngagementDate(right.lastContact)?.getTime() || 0;
         return (leftTs - rightTs) * direction;
       }
-      const leftTs = parseBDEngagementDate(left.date)?.getTime() || 0;
-      const rightTs = parseBDEngagementDate(right.date)?.getTime() || 0;
+      const leftTs = parseBDEngagementDate(getSortDate(left))?.getTime() || 0;
+      const rightTs = parseBDEngagementDate(getSortDate(right))?.getTime() || 0;
       return (leftTs - rightTs) * direction;
     });
 
@@ -1224,7 +1245,16 @@ const BDEngagements = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Ref</TableHead>
-                    <TableHead>Date</TableHead>
+                    <TableHead
+                      className="select-none"
+                      title="Double-click to toggle date source (sheet vs ref-derived)"
+                      onDoubleClick={() => {
+                        setDateSourceMode((prev) => (prev === 'sheet' ? 'ref' : 'sheet'));
+                        setSortField('date');
+                      }}
+                    >
+                      Date {dateSourceMode === 'ref' ? '(Ref)' : '(Sheet)'}
+                    </TableHead>
                   <TableHead>Client Name</TableHead>
                   <TableHead>Meeting Type</TableHead>
                   <TableHead>Status Q/N</TableHead>
@@ -1243,7 +1273,7 @@ const BDEngagements = () => {
                   {filteredRows.map((row) => (
                     <TableRow key={row.id} className="cursor-pointer" onClick={() => setSelectedEngagement(row)}>
                       <TableCell className="font-medium">{row.ref}</TableCell>
-                      <TableCell>{formatPrettyDate(row.date)}</TableCell>
+                      <TableCell>{formatPrettyDate(dateSourceMode === 'ref' ? (deriveIsoDateFromRef(row.ref) || row.date) : row.date)}</TableCell>
                       <TableCell>{row.clientName}</TableCell>
                       <TableCell>{row.meetingType}</TableCell>
                       <TableCell>{row.status || '—'}</TableCell>
