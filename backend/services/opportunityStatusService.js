@@ -29,6 +29,16 @@ function normalizeCanonicalStatus(value) {
   return STATUS_ALIASES[normalized] || normalized;
 }
 
+function normalizeTenderResultValue(value) {
+  const normalized = normalizeCanonicalStatus(value);
+  if (!normalized) return '';
+  if (normalized.includes('AWARD')) return CANONICAL_STATUS.AWARDED;
+  if (normalized.includes('LOST')) return CANONICAL_STATUS.LOST;
+  if (normalized.includes('REGRET')) return CANONICAL_STATUS.REGRETTED;
+  if (normalized.includes('HOLD')) return CANONICAL_STATUS.HOLD_CLOSED;
+  return normalized;
+}
+
 function parseDateSafe(value) {
   if (!value) return null;
   const parsed = new Date(value);
@@ -62,7 +72,7 @@ export function deriveOpportunityStatusFields({
   tenderStatusRemark = '',
 } = {}) {
   const sourceAvenirStatus = normalizeCanonicalStatus(rawAvenirStatus || fallbackAvenirStatus || fallbackCanonicalStage);
-  const sourceTenderResult = normalizeCanonicalStatus(rawTenderResult || fallbackTenderResult);
+  const sourceTenderResult = normalizeTenderResultValue(rawTenderResult || fallbackTenderResult);
 
   // EOI special-case: treat EOI as submitted unless sheet explicitly provides a final result.
   // If the sheet says LOST/AWARDED, that must win even if Avenir status says EOI.
