@@ -4691,34 +4691,76 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
 
     const now = new Date();
     const ops = [];
-    const processedRefs = new Set();
     const normalizeRef = (value) => String(value || '').trim();
+    const isNumericDateEncodedRefNo = (value) => /^\d{6}$/.test(String(value || '').trim());
 
-    for (const input of rows) {
+    const grouped = new Map();
+    rows.forEach((input, idx) => {
       const opportunityRefNo = normalizeRef(input?.opportunityRefNo || input?.tenderNo || input?.refNo);
-      if (!opportunityRefNo || processedRefs.has(opportunityRefNo)) continue;
-      processedRefs.add(opportunityRefNo);
+      if (!opportunityRefNo) return;
+      const bucket = grouped.get(opportunityRefNo) || [];
+      bucket.push({ input, idx });
+      grouped.set(opportunityRefNo, bucket);
+    });
+
+    for (const [opportunityRefNo, entries] of grouped.entries()) {
+      const sorted = [...entries].sort((a, b) => {
+        const aDate = String(a.input?.dateTenderReceived || '');
+        const bDate = String(b.input?.dateTenderReceived || '');
+        if (aDate && bDate && aDate !== bDate) return bDate.localeCompare(aDate);
+        return b.idx - a.idx;
+      });
+
+      const primary = sorted[0]?.input || {};
+      const rest = sorted.slice(1);
+      const updateHistory = (!isNumericDateEncodedRefNo(opportunityRefNo) && rest.length > 0)
+        ? rest.map(({ input, idx }) => ({
+          rowIndex: idx,
+          dateTenderReceived: input?.dateTenderReceived || null,
+          tenderPlannedSubmissionDate: input?.tenderPlannedSubmissionDate || null,
+          tenderSubmittedDate: input?.tenderSubmittedDate || null,
+          rawAvenirStatus: String(input?.rawAvenirStatus || '').trim(),
+          rawTenderResult: String(input?.rawTenderResult || '').trim(),
+          avenirStatus: String(input?.avenirStatus || '').trim(),
+          tenderResult: String(input?.tenderResult || '').trim(),
+          canonicalStage: String(input?.canonicalStage || '').trim(),
+          opportunityValue: input?.opportunityValue ?? null,
+          probability: input?.probability ?? null,
+          remarksReason: String(input?.remarksReason || '').trim(),
+          comments: String(input?.comments || '').trim(),
+          tenderStatusRemark: String(input?.tenderStatusRemark || '').trim(),
+          syncedAt: now,
+          rawGraphData: input?.rawGraphData || null,
+          dateAudit: input?.dateAudit || null,
+        }))
+        : [];
 
       const payload = {
         opportunityRefNo,
-        adnocRftNo: String(input?.adnocRftNo || '').trim(),
-        tenderName: String(input?.tenderName || '').trim(),
-        clientName: String(input?.clientName || '').trim(),
-        groupClassification: String(input?.groupClassification || '').trim(),
-        internalLead: String(input?.internalLead || '').trim(),
-        opportunityClassification: String(input?.opportunityClassification || '').trim(),
-        dateTenderReceived: String(input?.dateTenderReceived || '').trim(),
-        tenderPlannedSubmissionDate: String(input?.tenderPlannedSubmissionDate || '').trim(),
-        tenderSubmittedDate: String(input?.tenderSubmittedDate || '').trim(),
-        avenirStatus: String(input?.avenirStatus || '').trim(),
-        tenderResult: String(input?.tenderResult || '').trim(),
-        remarksReason: String(input?.remarksReason || '').trim(),
-        tenderStatusRemark: String(input?.tenderStatusRemark || '').trim(),
-        rawSheetYear: String(input?.rawSheetYear || input?.year || '').trim(),
+        adnocRftNo: String(primary?.adnocRftNo || '').trim(),
+        tenderName: String(primary?.tenderName || '').trim(),
+        clientName: String(primary?.clientName || '').trim(),
+        groupClassification: String(primary?.groupClassification || '').trim(),
+        internalLead: String(primary?.internalLead || '').trim(),
+        opportunityClassification: String(primary?.opportunityClassification || '').trim(),
+        dateTenderReceived: String(primary?.dateTenderReceived || '').trim(),
+        tenderPlannedSubmissionDate: String(primary?.tenderPlannedSubmissionDate || '').trim(),
+        tenderSubmittedDate: String(primary?.tenderSubmittedDate || '').trim(),
+        avenirStatus: String(primary?.avenirStatus || '').trim(),
+        tenderResult: String(primary?.tenderResult || '').trim(),
+        canonicalStage: String(primary?.canonicalStage || '').trim(),
+        remarksReason: String(primary?.remarksReason || '').trim(),
+        comments: String(primary?.comments || '').trim(),
+        tenderStatusRemark: String(primary?.tenderStatusRemark || '').trim(),
+        rawSheetYear: String(primary?.rawSheetYear || primary?.year || '').trim(),
+        rawAvenirStatus: String(primary?.rawAvenirStatus || '').trim(),
+        rawTenderResult: String(primary?.rawTenderResult || '').trim(),
+        dateAudit: primary?.dateAudit || null,
+        updateHistory,
         syncedAt: now,
       };
 
-      const valueNumber = input?.opportunityValue;
+      const valueNumber = primary?.opportunityValue;
       if (valueNumber !== undefined && valueNumber !== null && String(valueNumber).trim() !== '') {
         const parsed = Number(String(valueNumber).replace(/,/g, ''));
         if (!Number.isNaN(parsed)) payload.opportunityValue = parsed;
@@ -4740,7 +4782,7 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
     // Performance: replace individual save/create calls with bulkWrite for O(1) database round-trip.
     const result = await SyncedOpportunity.bulkWrite(ops, { ordered: false });
 
-    const touchedRefs = Array.from(processedRefs);
+    const touchedRefs = Array.from(grouped.keys());
     const updatedDocs = await SyncedOpportunity.find({ opportunityRefNo: { $in: touchedRefs } }).lean();
     const touchedRows = updatedDocs.map(opp => mapIdField(opp));
 

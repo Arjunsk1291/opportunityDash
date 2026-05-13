@@ -663,8 +663,15 @@ export async function syncTendersFromGraph(config) {
     const refNo = getValue(colIndices.tenderNo);
     let rfpDate = parseDate(year, dateReceived);
     const refDerived = deriveIsoDateFromNumericRefNo(refNo);
+    const dateAudit = {
+      sheetParsedDate: rfpDate,
+      refDerivedDate: refDerived,
+      deltaDays: null,
+      overriddenByRef: false,
+    };
     if (refDerived) {
       const delta = rfpDate ? diffDays(rfpDate, refDerived) : null;
+      dateAudit.deltaDays = delta;
       if (!rfpDate || (delta !== null && delta > 5)) {
         statusWarnings.push({
           opportunityRefNo: refNo,
@@ -676,6 +683,7 @@ export async function syncTendersFromGraph(config) {
           message: `Date column parsed as ${rfpDate || 'null'} but refNo implies ${refDerived}; using ref-derived date.`,
         });
         rfpDate = refDerived;
+        dateAudit.overriddenByRef = true;
       }
     }
     const plannedSubmissionDate = parseDate(year, submissionDeadlineRaw);
@@ -719,6 +727,7 @@ export async function syncTendersFromGraph(config) {
     });
 
     const tender = {
+      sheetRowIndex: i,
       opportunityRefNo: getValue(colIndices.tenderNo),
       tenderName: getValue(colIndices.tenderName),
       clientName: getValue(colIndices.client),
@@ -732,6 +741,7 @@ export async function syncTendersFromGraph(config) {
       rawSubmissionDeadline: submissionDeadlineRaw,
       rawTenderSubmittedDate: tenderSubmittedRaw,
       dateTenderReceived: rfpDate || null,
+      dateAudit,
       tenderPlannedSubmissionDate: plannedSubmissionDate || null,
       tenderSubmittedDate: tenderSubmittedDate || null,
       ...guardedStatuses,
@@ -772,6 +782,8 @@ export async function syncTendersFromGraph(config) {
         derivedAvenirStatus: tender.avenirStatus,
         derivedTenderResult: tender.tenderResult,
         derivedCanonicalStage: tender.canonicalStage,
+        warningType: 'STATUS_CONFLICT',
+        message: `TENDER RESULT=${normalizedRawTenderResult} but AVENIR STATUS=${normalizedRawAvenirStatus}; tenderResult is treated as authoritative.`,
       });
     }
 
@@ -813,12 +825,14 @@ export async function syncTendersFromGraph(config) {
       const bDate = String(b.item?.dateTenderReceived || '');
       const byDate = compareIsoDesc(aDate, bDate);
       if (byDate !== 0) return byDate;
-      return b.idx - a.idx; // later rows win
+      const aRow = Number(a.item?.sheetRowIndex ?? a.idx);
+      const bRow = Number(b.item?.sheetRowIndex ?? b.idx);
+      return bRow - aRow; // later sheet rows win
     });
 
     const primary = withIndex[0]?.item || items[0];
     const updateHistory = withIndex.slice(1).map(({ item, idx }) => ({
-      rowIndex: idx,
+      rowIndex: Number(item?.sheetRowIndex ?? idx),
       dateTenderReceived: item?.dateTenderReceived || null,
       tenderPlannedSubmissionDate: item?.tenderPlannedSubmissionDate || null,
       tenderSubmittedDate: item?.tenderSubmittedDate || null,
@@ -834,6 +848,7 @@ export async function syncTendersFromGraph(config) {
       tenderStatusRemark: item?.tenderStatusRemark || '',
       syncedAt: item?.syncedAt || null,
       rawGraphData: item?.rawGraphData || null,
+      dateAudit: item?.dateAudit || null,
     }));
 
     consolidated.push({

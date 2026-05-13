@@ -56,6 +56,7 @@ export interface Opportunity {
   rawDateReceived?: unknown;
   rawSubmissionDeadline?: unknown;
   rawTenderSubmittedDate?: unknown;
+  dateAudit?: Record<string, unknown> | null;
   rawAvenirStatus?: string;
   rawTenderResult?: string;
   avenirStatus?: string;

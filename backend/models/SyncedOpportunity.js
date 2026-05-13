@@ -18,6 +18,7 @@ const syncedOpportunitySchema = new mongoose.Schema(
     rawSubmissionDeadline: { type: mongoose.Schema.Types.Mixed, default: '' },
     rawTenderSubmittedDate: { type: mongoose.Schema.Types.Mixed, default: '' },
     dateTenderReceived: String,
+    dateAudit: { type: mongoose.Schema.Types.Mixed, default: null },
     groupClassification: String,
     opportunityClassification: String,
     qualificationStatus: String,
