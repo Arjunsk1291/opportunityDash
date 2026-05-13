@@ -65,6 +65,7 @@ export interface Opportunity {
   postBidDetailUpdatedBy?: string;
   postBidDetailUpdatedAt?: string | null;
   combinedStatuses?: string[];
+  updateHistory?: Array<Record<string, unknown>>;
   rawGraphData?: {
     year?: string;
     dateReceived?: string;

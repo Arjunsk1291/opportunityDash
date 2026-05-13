@@ -525,6 +525,17 @@ function parseAwardedDateFromRemarks({ remarksReason = '', comments = '', tender
   return null;
 }
 
+function isNumericDateEncodedRefNo(refNo) {
+  return /^\d{6}$/.test(String(refNo || '').trim());
+}
+
+function compareIsoDesc(aIso, bIso) {
+  if (!aIso && !bIso) return 0;
+  if (!aIso) return 1;
+  if (!bIso) return -1;
+  return bIso.localeCompare(aIso);
+}
+
 export async function syncTendersFromGraph(config) {
   if (!config?.driveId || !config?.fileId || !config?.worksheetName) {
     throw new Error('Graph sync config missing driveId/fileId/worksheetName');
@@ -777,7 +788,61 @@ export async function syncTendersFromGraph(config) {
     }
   }
 
-  return { tenders, statusWarnings };
+  const consolidated = [];
+  const byTextRef = new Map();
+  tenders.forEach((tender) => {
+    const refNo = String(tender?.opportunityRefNo || '').trim();
+    if (!refNo) return;
+    if (isNumericDateEncodedRefNo(refNo)) {
+      consolidated.push(tender);
+      return;
+    }
+    const bucket = byTextRef.get(refNo) || [];
+    bucket.push(tender);
+    byTextRef.set(refNo, bucket);
+  });
+
+  byTextRef.forEach((items, refNo) => {
+    if (items.length === 1) {
+      consolidated.push(items[0]);
+      return;
+    }
+    const withIndex = items.map((item, idx) => ({ item, idx }));
+    withIndex.sort((a, b) => {
+      const aDate = String(a.item?.dateTenderReceived || '');
+      const bDate = String(b.item?.dateTenderReceived || '');
+      const byDate = compareIsoDesc(aDate, bDate);
+      if (byDate !== 0) return byDate;
+      return b.idx - a.idx; // later rows win
+    });
+
+    const primary = withIndex[0]?.item || items[0];
+    const updateHistory = withIndex.slice(1).map(({ item, idx }) => ({
+      rowIndex: idx,
+      dateTenderReceived: item?.dateTenderReceived || null,
+      tenderPlannedSubmissionDate: item?.tenderPlannedSubmissionDate || null,
+      tenderSubmittedDate: item?.tenderSubmittedDate || null,
+      rawAvenirStatus: item?.rawAvenirStatus || '',
+      rawTenderResult: item?.rawTenderResult || '',
+      avenirStatus: item?.avenirStatus || '',
+      tenderResult: item?.tenderResult || '',
+      canonicalStage: item?.canonicalStage || '',
+      opportunityValue: item?.opportunityValue ?? null,
+      probability: item?.probability ?? null,
+      remarksReason: item?.remarksReason || '',
+      comments: item?.comments || '',
+      tenderStatusRemark: item?.tenderStatusRemark || '',
+      syncedAt: item?.syncedAt || null,
+      rawGraphData: item?.rawGraphData || null,
+    }));
+
+    consolidated.push({
+      ...primary,
+      updateHistory,
+    });
+  });
+
+  return { tenders: consolidated, statusWarnings };
 }
 
 export async function transformTendersToOpportunities(tenders) {
