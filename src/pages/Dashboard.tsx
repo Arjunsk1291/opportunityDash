@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
+import { FunnelChart } from '@/components/Dashboard/FunnelChart';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AtRiskWidget } from '@/components/Dashboard/AtRiskWidget';
 import { ClientLeaderboard } from '@/components/Dashboard/ClientLeaderboard';
@@ -24,7 +25,12 @@ import {
   XCircle,
   TimerReset,
 } from 'lucide-react';
-import { getClientData, calculateDataHealth, Opportunity } from '@/data/opportunityData';
+import {
+  calculateFunnelData,
+  getClientData,
+  calculateDataHealth,
+  Opportunity,
+} from '@/data/opportunityData';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
@@ -620,6 +626,7 @@ const Dashboard = () => {
   const wonClickRef = useRef<{ count: number; timer: number | null }>({ count: 0, timer: null });
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
+  const funnelData = useMemo(() => calculateFunnelData(filteredData), [filteredData]);
   const clientData = useMemo(() => getClientData(filteredData), [filteredData]);
   const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
 
@@ -1051,49 +1058,6 @@ const Dashboard = () => {
     }));
   };
 
-  const pipelineStageCards = [
-    {
-      key: 'received' as const,
-      label: 'Received',
-      count: groupedBuckets.received.groups.length,
-      value: groupedBuckets.received.rows.reduce((sum, row) => sum + Number(row.opportunityValue || 0), 0),
-      statuses: [] as string[],
-      tone: 'bg-sky-500',
-    },
-    {
-      key: 'submitted' as const,
-      label: 'Submitted',
-      count: groupedBuckets.submitted.groups.length,
-      value: groupedBuckets.submitted.submittedOnlyValue || 0,
-      statuses: ['SUBMITTED'] as string[],
-      tone: 'bg-violet-500',
-    },
-    {
-      key: 'won' as const,
-      label: 'Won',
-      count: groupedBuckets.won.groups.length,
-      value: groupedBuckets.won.value || 0,
-      statuses: ['AWARDED'] as string[],
-      tone: 'bg-emerald-500',
-    },
-    {
-      key: 'lost' as const,
-      label: 'Lost',
-      count: groupedBuckets.lost.groups.length,
-      value: groupedBuckets.lost.rows.reduce((sum, row) => sum + Number(row.opportunityValue || 0), 0),
-      statuses: ['LOST'] as string[],
-      tone: 'bg-rose-500',
-    },
-    {
-      key: 'hold' as const,
-      label: 'Hold / Closed',
-      count: groupedBuckets.hold.groups.length,
-      value: groupedBuckets.hold.rows.reduce((sum, row) => sum + Number(row.opportunityValue || 0), 0),
-      statuses: ['HOLD / CLOSED'] as string[],
-      tone: 'bg-amber-500',
-    },
-  ];
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -1496,41 +1460,7 @@ const Dashboard = () => {
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
-        <div className="rounded-xl border bg-card p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Pipeline by Stage</h3>
-            <p className="text-xs text-muted-foreground">Click a stage to filter</p>
-          </div>
-          <div className="mt-3 space-y-2">
-            {pipelineStageCards.map((stage) => (
-              <button
-                key={stage.key}
-                type="button"
-                className="w-full rounded-lg border bg-background p-2 text-left hover:bg-muted/50"
-                onClick={() => {
-                  if (stage.statuses.length === 0) {
-                    setFilters((prev) => ({ ...prev, statuses: [] }));
-                    return;
-                  }
-                  handleFunnelClick(stage.statuses[0]);
-                }}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className={`h-2.5 w-2.5 rounded-full ${stage.tone}`} />
-                    <span className="text-sm font-medium">{stage.label}</span>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-semibold">{stage.count.toLocaleString()}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {currency === 'AED' ? '' : '$'}{formatCompactNumber(convertValue(stage.value))}
-                    </div>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
+        <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
         <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
         <ClientLeaderboard data={clientData} onClientClick={(client) => {
           setFilters((prevFilters) => ({
