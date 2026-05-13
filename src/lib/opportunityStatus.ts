@@ -17,6 +17,16 @@ export const normalizeCanonicalStatus = (value: string | null | undefined) => {
   return STATUS_ALIASES[normalized] || normalized;
 };
 
+const normalizeTenderResultLike = (value: string | null | undefined) => {
+  const normalized = normalizeCanonicalStatus(value);
+  if (!normalized) return '';
+  if (normalized.includes('AWARD')) return 'AWARDED';
+  if (normalized.includes('LOST')) return 'LOST';
+  if (normalized.includes('REGRET')) return 'REGRETTED';
+  if (normalized.includes('HOLD')) return 'HOLD / CLOSED';
+  return normalized;
+};
+
 export const STATUS_BADGE_CLASSES: Record<string, string> = {
   WORKING: 'border border-amber-300 bg-amber-100 text-amber-900',
   SUBMITTED: 'border border-violet-300 bg-violet-100 text-violet-900',
@@ -36,13 +46,17 @@ export const isEoiNormalizedOpportunity = (opp: Partial<Opportunity>) => (
 export const getDisplayStatus = (opp: Partial<Opportunity>) => {
   const avenirStatus = normalizeCanonicalStatus(opp.avenirStatus);
   if (avenirStatus === 'AWARDED') return 'AWARDED';
-  const tenderResult = normalizeCanonicalStatus(opp.tenderResult);
+  const tenderResult = normalizeTenderResultLike(opp.tenderResult);
   if (tenderResult && tenderResult !== 'UNKNOWN') return tenderResult;
+  // Backward-compatibility: if older docs didn't persist tenderResult correctly,
+  // prefer rawTenderResult when it carries a final outcome (LOST/AWARDED/etc).
+  const rawTenderResult = normalizeTenderResultLike(opp.rawTenderResult);
+  if (rawTenderResult && rawTenderResult !== 'UNKNOWN') return rawTenderResult;
   return normalizeCanonicalStatus(opp.avenirStatus || opp.canonicalStage || '');
 };
 
 export const getDisplayResult = (opp: Partial<Opportunity>) => {
-  const tenderResult = normalizeCanonicalStatus(opp.tenderResult);
+  const tenderResult = normalizeTenderResultLike(opp.tenderResult);
   if (tenderResult) return tenderResult;
   if (isEoiNormalizedOpportunity(opp)) return 'UNKNOWN';
   return '';
@@ -53,7 +67,7 @@ export const getRawAvenirStatus = (opp: Partial<Opportunity>) => (
 );
 
 export const getRawTenderResult = (opp: Partial<Opportunity>) => (
-  normalizeCanonicalStatus(opp.rawTenderResult || opp.tenderResult || '')
+  normalizeTenderResultLike(opp.rawTenderResult || opp.tenderResult || '')
 );
 
 export const getStatusBadgeClass = (status: string | null | undefined, opp?: Partial<Opportunity>) => {
