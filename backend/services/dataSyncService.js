@@ -672,7 +672,9 @@ export async function syncTendersFromGraph(config) {
     if (refDerived) {
       const delta = rfpDate ? diffDays(rfpDate, refDerived) : null;
       dateAudit.deltaDays = delta;
-      if (!rfpDate || (delta !== null && delta > 5)) {
+      // Sheet date is the source of truth when present.
+      // Only fall back to ref-derived date when the sheet date is missing.
+      if (!rfpDate) {
         statusWarnings.push({
           opportunityRefNo: refNo,
           tenderName: getValue(colIndices.tenderName),
@@ -680,10 +682,21 @@ export async function syncTendersFromGraph(config) {
           rawAvenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
           rawTenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
           warningType: 'REF_DATE_OVERRIDE',
-          message: `Date column parsed as ${rfpDate || 'null'} but refNo implies ${refDerived}; using ref-derived date.`,
+          message: `Date column missing/invalid; using refNo-derived date ${refDerived}.`,
         });
         rfpDate = refDerived;
         dateAudit.overriddenByRef = true;
+      } else if (delta !== null && delta > 5) {
+        // Do not override; persist discrepancy for audit and surface as warning.
+        statusWarnings.push({
+          opportunityRefNo: refNo,
+          tenderName: getValue(colIndices.tenderName),
+          clientName: getValue(colIndices.client),
+          rawAvenirStatus: normalizeStatus(getValue(colIndices.avenirStatus)),
+          rawTenderResult: normalizeStatus(getValue(colIndices.tenderResult)),
+          warningType: 'REF_DATE_MISMATCH',
+          message: `Sheet date ${rfpDate} conflicts with refNo-derived ${refDerived} (Δ ${delta}d). Keeping sheet date.`,
+        });
       }
     }
     const plannedSubmissionDate = parseDate(year, submissionDeadlineRaw);
