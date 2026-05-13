@@ -672,8 +672,8 @@ const Dashboard = () => {
     }, 0);
     const submittedTenderCount = submittedGroups.filter((group) => group.hasTender).length;
     const submittedEoiCount = submittedGroups.filter((group) => group.hasEoi).length;
-    const denominator = rawAwardedRows.length + rawLostRows.length;
-    const winRatio = denominator ? (rawAwardedRows.length / denominator) : 0;
+    const denominator = resolvedGroups.length;
+    const winRatio = denominator ? (wonGroups.length / denominator) : 0;
 
     return {
       received: {
@@ -695,12 +695,12 @@ const Dashboard = () => {
       lost: { groups: lostGroups, rows: groupRows(lostGroups) },
       submission: { groups: submissionNearGroups, rows: groupRows(submissionNearGroups) },
       winRatio: {
-        resolvedCount: rawAwardedRows.length + rawLostRows.length,
-        wonCount: rawAwardedRows.length,
+        resolvedCount: resolvedGroups.length,
+        wonCount: wonGroups.length,
         ratio: winRatio,
       },
     };
-  }, [groupedOpportunities, rawAwardedRows.length, rawLostRows.length]);
+  }, [groupedOpportunities]);
 
   const receivedDedupe = {
     totalTenders: groupedBuckets.received.tender,
@@ -1109,7 +1109,7 @@ const Dashboard = () => {
     },
     {
       label: 'Won',
-      value: rawAwardedRows.length,
+      value: groupedBuckets.won.groups.length,
       tone: 'text-emerald-600',
       glow: 'analytics-kpi-glow-emerald',
       icon: Trophy,
@@ -1117,8 +1117,8 @@ const Dashboard = () => {
     },
     {
       label: 'Value',
-      value: rawAwardedValue,
-      displayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(rawAwardedValue))}`,
+      value: groupedBuckets.won.value,
+      displayValue: `${currency === 'AED' ? '' : '$'}${formatCompactNumber(convertValue(groupedBuckets.won.value))}`,
       valuePrefix: currency === 'AED' ? 'aed' : 'text',
       tone: 'text-violet-600',
       glow: 'analytics-kpi-glow-emerald',
