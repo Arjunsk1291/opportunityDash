@@ -20,7 +20,7 @@ import Vendor from './models/Vendor.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import BDEngagement from './models/BDEngagement.js';
-import { resolveShareLink, getWorksheets, getWorksheetRangeValues, bootstrapDelegatedToken, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig } from './services/graphExcelService.js';
+import { resolveShareLink, getWorksheets, getWorksheetRangeValues, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig, startDeviceCodeFlow, exchangeDeviceCodeForToken } from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 import { buildOpportunitiesWorkbookForSpreadsheet } from './services/spreadsheetWorkbookService.js';
 import SystemConfig from './models/SystemConfig.js';
@@ -3754,49 +3754,59 @@ app.get('/api/telecast/auth/status', verifyToken, async (req, res) => {
   }
 });
 
-app.post('/api/telecast/auth/bootstrap', verifyToken, async (req, res) => {
-  const username = req.body?.username || '';
+// Deprecated: password-grant (ROPC) breaks with MFA/expired passwords and is blocked in many tenants.
+// Use device-code flow endpoints below instead.
+app.post('/api/telecast/auth/bootstrap', verifyToken, async (_req, res) => {
+  res.status(400).json({
+    error: 'DEPRECATED',
+    message: 'Telecast password bootstrap is deprecated. Use /api/telecast/auth/device-code/start + /complete to connect a delegated token.',
+  });
+});
+
+app.post('/api/telecast/auth/device-code/start', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'telecast_auth_write')) return;
+    const { loginHint } = req.body || {};
+    const flow = await startDeviceCodeFlow();
+    res.json({
+      success: true,
+      deviceCode: flow.deviceCode,
+      userCode: flow.userCode,
+      verificationUri: flow.verificationUri,
+      consentUrl: buildDelegatedConsentUrl({ loginHint }),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to start device code flow' });
+  }
+});
 
-    const { password } = req.body || {};
-    if (!username || !password) {
-      return res.status(400).json({ error: 'username and password are required' });
-    }
+app.post('/api/telecast/auth/device-code/complete', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'telecast_auth_write')) return;
+    const { deviceCode, username } = req.body || {};
+    if (!deviceCode) return res.status(400).json({ error: 'deviceCode is required' });
 
-    const tokenResult = await bootstrapDelegatedToken({ username, password });
+    const tokenResult = await exchangeDeviceCodeForToken(deviceCode);
     if (!tokenResult.refreshToken) {
-      return res.status(500).json({ error: 'No refresh token returned. Check Azure app delegated permissions and token settings.' });
+      return res.status(500).json({ error: 'No refresh token returned. Ensure offline_access + delegated Mail.Send are granted.' });
     }
 
     const config = await getSystemConfig();
     config.telecastGraphAuthMode = 'delegated';
-    config.telecastGraphAccountUsername = String(username).toLowerCase();
+    config.telecastGraphAccountUsername = String(username || '').toLowerCase();
     config.telecastGraphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
     config.telecastGraphTokenUpdatedAt = new Date();
     config.updatedBy = req.user.email;
     await config.save();
 
-    res.json({ success: true, message: 'Telecast auth connected successfully.', mode: 'delegated' });
+    res.json({ success: true, message: 'Telecast auth connected successfully (device code).', mode: 'delegated' });
   } catch (error) {
     const msg = String(error.message || error);
-    if (msg.includes('AADSTS50076') || msg.toLowerCase().includes('mfa')) {
-      return res.status(400).json({ error: 'MFA_REQUIRED', message: 'MFA is enabled. Use a non-MFA service account for telecast bootstrap.' });
-    }
-    if (msg.includes('AADSTS50126')) {
-      return res.status(400).json({ error: 'INVALID_CREDENTIALS', message: 'Invalid username or password.' });
-    }
-    if (msg.includes('AADSTS50034')) {
-      return res.status(400).json({ error: 'USER_NOT_FOUND', message: 'User not found in this tenant.' });
-    }
-    if (msg.includes('AADSTS65001')) {
-      const consentUrl = buildDelegatedConsentUrl({ loginHint: username });
-      return res.status(400).json({
-        error: 'CONSENT_REQUIRED',
-        message: 'This account has not granted consent to the app yet. Open consent URL and accept once, then retry telecast connect.',
-        consentUrl,
-      });
-    }
+    // Device code common cases
+    if (msg.includes('authorization_pending')) return res.status(400).json({ error: 'AUTH_PENDING', message: 'Authorization pending. Complete sign-in then retry.' });
+    if (msg.includes('authorization_declined')) return res.status(400).json({ error: 'AUTH_DECLINED', message: 'Authorization declined.' });
+    if (msg.includes('expired_token')) return res.status(400).json({ error: 'DEVICE_CODE_EXPIRED', message: 'Device code expired. Start again.' });
+    if (msg.includes('AADSTS65001')) return res.status(400).json({ error: 'CONSENT_REQUIRED', message: 'Consent required. Use the consent URL, then retry.' });
     res.status(500).json({ error: msg });
   }
 });

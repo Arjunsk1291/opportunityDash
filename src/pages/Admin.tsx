@@ -331,6 +331,9 @@ export default function Admin() {
   const [telecastRecipientEmail, setTelecastRecipientEmail] = useState('');
   const [telecastUsername, setTelecastUsername] = useState(DEFAULT_SERVICE_ACCOUNT);
   const [telecastPassword, setTelecastPassword] = useState('');
+  const [telecastDeviceCode, setTelecastDeviceCode] = useState('');
+  const [telecastUserCode, setTelecastUserCode] = useState('');
+  const [telecastVerificationUri, setTelecastVerificationUri] = useState('');
   const [telecastSending, setTelecastSending] = useState(false);
   const [reportingTemplateSending, setReportingTemplateSending] = useState(false);
   const [telecastTemplateSubject, setTelecastTemplateSubject] = useState('New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
@@ -2007,26 +2010,55 @@ export default function Admin() {
   };
 
 
-  const bootstrapTelecastAuth = async () => {
-    if (!token || !telecastUsername || !telecastPassword) {
-      toast.error('Telecast username and password are required');
-      return;
-    }
-
+  const startTelecastDeviceCode = async () => {
+    if (!token) return;
     setConfigSaving(true);
     try {
-      const response = await fetch(API_URL + '/telecast/auth/bootstrap', {
+      const response = await fetch(API_URL + '/telecast/auth/device-code/start', {
         method: 'POST',
         headers: {
           Authorization: 'Bearer ' + token,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ username: telecastUsername, password: telecastPassword }),
+        body: JSON.stringify({ loginHint: telecastUsername }),
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || data.error || 'Failed to connect telecast auth');
+      if (!response.ok) throw new Error(data.message || data.error || 'Failed to start device code flow');
 
+      setTelecastDeviceCode(String(data.deviceCode || ''));
+      setTelecastUserCode(String(data.userCode || ''));
+      setTelecastVerificationUri(String(data.verificationUri || ''));
+      toast.success('Device code started. Complete sign-in, then click Finish.');
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const finishTelecastDeviceCode = async () => {
+    if (!token) return;
+    if (!telecastDeviceCode) {
+      toast.error('Start device code flow first.');
+      return;
+    }
+    setConfigSaving(true);
+    try {
+      const response = await fetch(API_URL + '/telecast/auth/device-code/complete', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ deviceCode: telecastDeviceCode, username: telecastUsername }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || 'Failed to finish device code flow');
+
+      setTelecastDeviceCode('');
+      setTelecastUserCode('');
+      setTelecastVerificationUri('');
       setTelecastPassword('');
       toast.success(data.message || 'Telecast account connected');
       await loadTelecastAuthStatus();
@@ -3919,14 +3951,23 @@ export default function Admin() {
                     <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" value={telecastUsername} onChange={(e) => setTelecastUsername(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
                   </div>
                   <div className="space-y-1 sm:space-y-2">
-                    <p className="text-xs sm:text-sm md:text-base font-medium">Telecast Account Password</p>
-                    <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" type="password" value={telecastPassword} onChange={(e) => setTelecastPassword(e.target.value)} placeholder="Enter telecast account password" />
+                    <p className="text-xs sm:text-sm md:text-base font-medium">Telecast Account Password (Deprecated)</p>
+                    <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" type="password" value={telecastPassword} onChange={(e) => setTelecastPassword(e.target.value)} placeholder="No longer used (device code auth)" disabled />
                   </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
-                  <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={bootstrapTelecastAuth} disabled={configSaving || !telecastUsername || !telecastPassword}>Connect Telecast Account</Button>
+                  <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={startTelecastDeviceCode} disabled={configSaving || !telecastUsername}>Start Device Code</Button>
+                  <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={finishTelecastDeviceCode} disabled={configSaving || !telecastDeviceCode}>Finish</Button>
                   <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={clearTelecastAuth} disabled={configSaving}>Clear Telecast Token</Button>
+                  {telecastUserCode && telecastVerificationUri ? (
+                    <div className="mt-3 rounded-xl border bg-white/60 p-3 text-xs sm:text-sm">
+                      <p className="font-semibold">Complete sign-in to connect Telecast</p>
+                      <p className="mt-1">1) Open: {telecastVerificationUri}</p>
+                      <p className="mt-1">2) Enter code: <span className="font-mono font-bold">{telecastUserCode}</span></p>
+                      <p className="mt-2 text-muted-foreground">After approving, click Finish.</p>
+                    </div>
+                  ) : null}
                 </div>
               </CardContent>
             </Card>
