@@ -1164,6 +1164,10 @@ const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' })
     return { success: true, skipped: 'disabled' };
   }
 
+  if (!String(process.env.TELECAST_SENDER || '').trim()) {
+    return { success: true, skipped: 'telecast_sender_not_configured' };
+  }
+
   const group = getGroupFromOpportunity(opportunity);
   if (!group) {
     return { success: true, skipped: 'no_group' };
@@ -1179,10 +1183,6 @@ const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' })
     return { success: true, skipped: 'no_recipients' };
   }
 
-  if (!process.env.TELECAST_SENDER) {
-    return { skipped: 'telecast_sender_not_configured' };
-  }
-
   const values = {
     ...getTemplateValues(opportunity),
     COMMENTS: approvedBy ? `Approved by Tender Manager: ${approvedBy}` : getTemplateValues(opportunity).COMMENTS,
@@ -1193,7 +1193,7 @@ const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' })
   const subject = renderTemplate(subjectTemplate, values);
   const renderedBody = renderTemplate(bodyTemplate, values);
   const html = buildApprovalAlertEmailHtml({ values, renderedBody, styleKey: style.key });
-  const accessToken = await getMailAccessToken();
+  const { accessToken } = await getMailAccessToken();
 
   const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${process.env.TELECAST_SENDER}/sendMail`, {
     method: 'POST',
@@ -1244,6 +1244,10 @@ const sendDeadlineAlertForOpportunity = async ({ opportunity, config, leadDirect
     return { success: true, skipped: 'disabled' };
   }
 
+  if (!String(process.env.TELECAST_SENDER || '').trim()) {
+    return { success: true, skipped: 'telecast_sender_not_configured' };
+  }
+
   const { email: leadEmail, source: leadEmailSource } = resolveLeadEmailForOpportunity(opportunity, leadDirectory);
   if (!leadEmail) {
     return { success: true, skipped: 'no_lead_email' };
@@ -1263,10 +1267,6 @@ const sendDeadlineAlertForOpportunity = async ({ opportunity, config, leadDirect
     return { success: true, skipped: 'not_due' };
   }
 
-  if (!process.env.TELECAST_SENDER) {
-    return { skipped: 'telecast_sender_not_configured' };
-  }
-
   const values = getTemplateValues(opportunity);
   const subjectTemplate = config.deadlineAlertTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}';
   const bodyTemplate = config.deadlineAlertTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.';
@@ -1274,7 +1274,7 @@ const sendDeadlineAlertForOpportunity = async ({ opportunity, config, leadDirect
   const subject = renderTemplate(subjectTemplate, values);
   const renderedBody = renderTemplate(bodyTemplate, values);
   const html = buildTelecastEmailHtml({ values, renderedBody, styleKey: style.key });
-  const accessToken = await getMailAccessToken();
+  const { accessToken } = await getMailAccessToken();
 
   const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${process.env.TELECAST_SENDER}/sendMail`, {
     method: 'POST',
@@ -1327,8 +1327,8 @@ const sendBulkApprovalAlerts = async ({ opportunities = [], approvedBy = '', fil
     return { success: true, skipped: 'disabled' };
   }
 
-  if (!process.env.TELECAST_SENDER) {
-    return { skipped: 'telecast_sender_not_configured' };
+  if (!String(process.env.TELECAST_SENDER || '').trim()) {
+    return { success: true, skipped: 'telecast_sender_not_configured' };
   }
 
   const grouped = opportunities.reduce((acc, opp) => {
@@ -1339,7 +1339,7 @@ const sendBulkApprovalAlerts = async ({ opportunities = [], approvedBy = '', fil
     return acc;
   }, {});
 
-  const accessToken = await getMailAccessToken();
+  const { accessToken } = await getMailAccessToken();
   const style = getTelecastTemplateStyle(config.approvalAlertTemplateStyle);
   const results = {};
 
@@ -1545,7 +1545,7 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
       dispatchedRefNos: [],
     };
   }
-  if (!process.env.TELECAST_SENDER) {
+  if (!String(process.env.TELECAST_SENDER || '').trim()) {
     return {
       sent: 0,
       skipped: 'telecast_sender_not_configured',
@@ -1563,7 +1563,7 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
     GTS: normalizeEmailList(systemConfig?.telecastGroupRecipients?.GTS || []),
   };
 
-  const accessToken = await getMailAccessToken();
+  const { accessToken } = await getMailAccessToken();
   const subjectTemplate = systemConfig.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
   const bodyTemplate = systemConfig.telecastTemplateBody || 'New row detected for {{TENDER_NO}}';
   const templateStyle = getTelecastTemplateStyle(systemConfig.telecastTemplateStyle);
@@ -4091,17 +4091,17 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can send test mail' });
     }
 
+    if (!String(process.env.TELECAST_SENDER || '').trim()) {
+      return res.json({ success: true, skipped: 'telecast_sender_not_configured' });
+    }
+
     const recipientEmail = String(req.body?.recipientEmail || '').trim();
     if (!recipientEmail) {
       return res.status(400).json({ error: 'recipientEmail is required' });
     }
 
     const config = await getSystemConfig();
-    if (!process.env.TELECAST_SENDER) {
-      return res.status(400).json({ error: 'telecast_sender_not_configured' });
-    }
-
-    const accessToken = await getMailAccessToken();
+    const { accessToken } = await getMailAccessToken();
     const subjectTemplate = config.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
     const bodyTemplate = config.telecastTemplateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.';
     const templateStyle = getTelecastTemplateStyle(config.telecastTemplateStyle);
@@ -4162,17 +4162,17 @@ app.post('/api/telecast/test-deadline-mail', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can send test mail' });
     }
 
+    if (!String(process.env.TELECAST_SENDER || '').trim()) {
+      return res.json({ success: true, skipped: 'telecast_sender_not_configured' });
+    }
+
     const recipientEmail = String(req.body?.recipientEmail || '').trim();
     if (!recipientEmail) {
       return res.status(400).json({ error: 'recipientEmail is required' });
     }
 
     const config = await getSystemConfig();
-    if (!process.env.TELECAST_SENDER) {
-      return res.status(400).json({ error: 'telecast_sender_not_configured' });
-    }
-
-    const accessToken = await getMailAccessToken();
+    const { accessToken } = await getMailAccessToken();
     const subjectTemplate = config.deadlineAlertTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}';
     const bodyTemplate = config.deadlineAlertTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.';
     const templateStyle = getTelecastTemplateStyle(config.deadlineAlertTemplateStyle || 'sunset_alert');
@@ -4305,17 +4305,17 @@ app.post('/api/telecast/test-approval-mail', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can send approval alert test mail' });
     }
 
+    if (!String(process.env.TELECAST_SENDER || '').trim()) {
+      return res.json({ success: true, skipped: 'telecast_sender_not_configured' });
+    }
+
     const recipientEmail = String(req.body?.recipientEmail || '').trim();
     if (!recipientEmail) {
       return res.status(400).json({ error: 'recipientEmail is required' });
     }
 
     const config = await getSystemConfig();
-    if (!process.env.TELECAST_SENDER) {
-      return res.status(400).json({ error: 'telecast_sender_not_configured' });
-    }
-
-    const accessToken = await getMailAccessToken();
+    const { accessToken } = await getMailAccessToken();
     const values = {
       TENDER_NO: `AVR-APR-${String(Math.floor(Math.random() * 900) + 100)}`,
       TENDER_NAME: 'District Cooling Plant Expansion',
@@ -4369,17 +4369,17 @@ app.post('/api/reporting/test-mail', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can send reporting test mail' });
     }
 
+    if (!String(process.env.TELECAST_SENDER || '').trim()) {
+      return res.json({ success: true, skipped: 'telecast_sender_not_configured' });
+    }
+
     const recipientEmail = String(req.body?.recipientEmail || '').trim();
     if (!recipientEmail) {
       return res.status(400).json({ error: 'recipientEmail is required' });
     }
 
     const config = await getSystemConfig();
-    if (!process.env.TELECAST_SENDER) {
-      return res.status(400).json({ error: 'telecast_sender_not_configured' });
-    }
-
-    const accessToken = await getMailAccessToken();
+    const { accessToken } = await getMailAccessToken();
     const reportedAt = new Date().toISOString();
     const subject = 'Issue report preview: Dashboard · data mismatch';
     const html = buildIssueReportEmailHtml({
@@ -4459,12 +4459,12 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No Master recipients configured' });
     }
 
-    const config = await getSystemConfig();
-    if (!process.env.TELECAST_SENDER) {
-      return res.status(400).json({ error: 'telecast_sender_not_configured' });
+    if (!String(process.env.TELECAST_SENDER || '').trim()) {
+      return res.json({ success: true, skipped: 'telecast_sender_not_configured' });
     }
 
-    const accessToken = await getMailAccessToken();
+    const config = await getSystemConfig();
+    const { accessToken } = await getMailAccessToken();
     const featureLabel = feature.toLowerCase() === 'other' ? featureOther : feature;
     const subject = `Issue report: ${featureLabel} · ${issueTypes.join(', ')}`;
     const reportedAt = new Date().toISOString();
