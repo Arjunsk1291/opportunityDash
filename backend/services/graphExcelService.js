@@ -159,6 +159,48 @@ export async function getAccessTokenWithConfig(config) {
   return { accessToken: appRes.access_token };
 }
 
+let _mailTokenCache = null;
+
+export async function getMailAccessToken() {
+  const now = Date.now();
+  // Refresh 5 minutes before expiry
+  if (_mailTokenCache && _mailTokenCache.expiresAt > now + 5 * 60 * 1000) {
+    return _mailTokenCache.accessToken;
+  }
+
+  const tenantId = envValue('GRAPH_TENANT_ID') || envValue('AZURE_TENANT_ID');
+  const clientId = envValue('GRAPH_CLIENT_ID') || envValue('AZURE_CLIENT_ID');
+  const clientSecret = graphClientSecret();
+
+  if (!tenantId || !clientId || !clientSecret) {
+    throw new Error('Missing Graph credentials for mail access token (Tenant, Client ID, or Secret)');
+  }
+
+  const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: clientId,
+    client_secret: clientSecret,
+    scope: 'https://graph.microsoft.com/.default',
+  });
+
+  const response = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error_description || 'Mail Token Error');
+
+  _mailTokenCache = {
+    accessToken: data.access_token,
+    expiresAt: now + (data.expires_in * 1000),
+  };
+
+  return _mailTokenCache.accessToken;
+}
+
 // --- EXPORTS: EXCEL ---
 export async function resolveShareLink(shareLink, config) {
   const { accessToken } = await getAccessTokenWithConfig(config);
