@@ -55,6 +55,20 @@ const ALLOW_LEGACY_USERNAME_AUTH = String(process.env.ALLOW_LEGACY_USERNAME_AUTH
 const EFFECTIVE_JWT_SECRET = JWT_SECRET || (IS_PROD ? '' : (String(process.env.DEV_JWT_SECRET || '').trim() || randomBytes(48).toString('hex')));
 const BOOTSTRAP_ADMIN_SECRET = String(process.env.BOOTSTRAP_ADMIN_SECRET || '').trim();
 const ALLOW_PROD_USERNAME_ALIASES = String(process.env.ALLOW_PROD_USERNAME_ALIASES || '').toLowerCase() === 'true';
+const DEFAULT_ADMIN_PASSWORD = String(process.env.DEFAULT_ADMIN_PASSWORD || '123456789');
+const ADMIN_USERS = String(process.env.ADMIN_USERS || '')
+  .split(',')
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+const ADMIN_USERS_SET = new Set(ADMIN_USERS);
+const normalizeLoginEmail = (value) => String(value || '').trim().toLowerCase();
+const isConfiguredAdminUsername = (value) => {
+  const normalized = normalizeLoginEmail(value);
+  if (!normalized) return false;
+  if (ADMIN_USERS_SET.has(normalized)) return true;
+  if (!normalized.includes('@') && ADMIN_USERS_SET.has(`${normalized}@dev.local`)) return true;
+  return false;
+};
 
 if (IS_PROD && !JWT_SECRET) {
   console.error('[startup.security] Missing JWT secret in production; refusing to start. Set `JWT_SECRET` (or `SESSION_JWT_SECRET`) to a long random value.');
@@ -2411,7 +2425,7 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    if (email && !email.includes('@')) {
+        if (email && !email.includes('@')) {
       if (!IS_PROD) {
         email = `${email}@dev.local`;
       } else if (ALLOW_PROD_USERNAME_ALIASES && email === 'master') {
@@ -2428,7 +2442,30 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       return res.status(403).json({ error: 'Password login not available in offline mode' });
     }
 
-    const user = await AuthorizedUser.findOne({ email });
+    let user = await AuthorizedUser.findOne({ email });
+    if (!user && isConfiguredAdminUsername(email)) {
+      const passwordHash = await hashPassword(DEFAULT_ADMIN_PASSWORD);
+      user = await AuthorizedUser.findOneAndUpdate(
+        { email },
+        {
+          $setOnInsert: { email, createdAt: new Date() },
+          $set: {
+            displayName: email,
+            role: 'Admin',
+            status: 'approved',
+            approvedBy: 'env-admin-users',
+            approvedAt: new Date(),
+            passwordHash,
+            passwordChangedAt: null,
+            requiresPasswordChange: true,
+            failedLoginAttempts: 0,
+            accountLockedUntil: null,
+            lastFailedLoginAt: null,
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+    }
     if (!user) {
       console.warn(`[auth.login.invalid-user] email=${email}`);
       return res.status(403).json({ error: 'Invalid credentials' });
@@ -3982,6 +4019,51 @@ app.post('/api/notifications/force-refresh', verifyToken, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json(toApiError(error, 'NOTIFICATION_FORCE_REFRESH_FAILED'));
+  }
+});
+
+
+app.get('/api/telecast/track/:id', async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+
+    const rawId = String(req.params?.id || '').trim();
+    if (!rawId) return res.status(400).json({ error: 'track id is required' });
+
+    const normalizedId = rawId.toLowerCase();
+    const query = {
+      $or: [
+        { opportunityRefNo: rawId },
+        { telecastAlertedRefNo: rawId },
+        { telecastAlertedKey: rawId },
+      ],
+    };
+
+    if (mongoose.Types.ObjectId.isValid(rawId)) {
+      query.$or.push({ _id: rawId });
+    }
+
+    const opportunity = await SyncedOpportunity.findOne(query).sort({ syncedAt: -1, updatedAt: -1 }).lean();
+    if (!opportunity) {
+      return res.status(404).json({ error: 'Tracking record not found' });
+    }
+
+    const summary = {
+      refNo: String(opportunity.opportunityRefNo || opportunity.telecastAlertedRefNo || rawId).trim(),
+      tenderName: String(opportunity.tenderName || '').trim(),
+      client: String(opportunity.clientName || '').trim(),
+      group: String(opportunity.groupClassification || '').trim(),
+      submissionDate: String(opportunity.tenderPlannedSubmissionDate || '').trim(),
+      dateReceived: String(opportunity.dateTenderReceived || '').trim(),
+      status: String(opportunity.avenirStatus || '').trim(),
+      tenderResult: String(opportunity.tenderResult || '').trim(),
+      lastUpdatedAt: opportunity.updatedAt || opportunity.syncedAt || null,
+      trackedByTelecast: Boolean(opportunity.telecastAlerted),
+    };
+
+    return res.json({ success: true, summary, access: 'public_read_only', keyType: normalizedId === String(opportunity.telecastAlertedKey || '').toLowerCase() ? 'telecastKey' : 'refNo' });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Failed to fetch public tracking summary' });
   }
 });
 
