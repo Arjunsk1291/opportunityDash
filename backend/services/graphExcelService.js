@@ -12,14 +12,22 @@ function envValue(name, fallback = '') {
   return typeof value === 'string' ? value.trim() : fallback;
 }
 
+function graphTenantId() {
+  return envValue('GRAPH_TENANT_ID') || envValue('AZURE_TENANT_ID');
+}
+
+function graphClientId() {
+  return envValue('GRAPH_CLIENT_ID') || envValue('AZURE_CLIENT_ID');
+}
+
 function graphClientSecret() {
   return envValue('GRAPH_CLIENT_SECRET') || envValue('CLIENT_SECRET') || envValue('AZURE_CLIENT_SECRET');
 }
 
 function validateEnv() {
   const values = {
-    GRAPH_TENANT_ID: envValue('GRAPH_TENANT_ID'),
-    GRAPH_CLIENT_ID: envValue('GRAPH_CLIENT_ID'),
+    GRAPH_TENANT_ID: graphTenantId(),
+    GRAPH_CLIENT_ID: graphClientId(),
     GRAPH_CLIENT_SECRET: graphClientSecret(),
   };
   const missing = requiredEnv.filter((name) => !values[name]);
@@ -73,11 +81,11 @@ export function unprotectRefreshToken(payload) {
 // --- CORE OAUTH ---
 async function postToken(params) {
   validateEnv();
-  const tokenUrl = `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/token`;
+  const tokenUrl = `https://login.microsoftonline.com/${graphTenantId()}/oauth2/v2.0/token`;
   const body = new URLSearchParams();
   Object.entries(params || {}).forEach(([k, v]) => { if (v) body.set(k, String(v)); });
   
-  body.set('client_id', envValue('GRAPH_CLIENT_ID'));
+  body.set('client_id', graphClientId());
   body.set('client_secret', graphClientSecret());
 
   const response = await fetch(tokenUrl, {
@@ -98,22 +106,22 @@ export function mailboxDelegatedScopesString() {
 
 export function buildDelegatedConsentUrl({ loginHint } = {}) {
   const params = new URLSearchParams({
-    client_id: envValue('GRAPH_CLIENT_ID'),
+    client_id: graphClientId(),
     response_type: 'code',
     redirect_uri: envValue('GRAPH_CONSENT_REDIRECT_URI') || 'https://opportunitydash.onrender.com',
     scope: DELEGATED_SCOPES.join(' '),
     prompt: 'consent',
   });
   if (loginHint) params.set('login_hint', loginHint);
-  return `https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/authorize?${params.toString()}`;
+  return `https://login.microsoftonline.com/${graphTenantId()}/oauth2/v2.0/authorize?${params.toString()}`;
 }
 
 export async function startDeviceCodeFlow(options = {}) {
-  const response = await fetch(`https://login.microsoftonline.com/${envValue('GRAPH_TENANT_ID')}/oauth2/v2.0/devicecode`, {
+  const response = await fetch(`https://login.microsoftonline.com/${graphTenantId()}/oauth2/v2.0/devicecode`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ 
-      client_id: envValue('GRAPH_CLIENT_ID'), 
+      client_id: graphClientId(),
       scope: options.scopes || DELEGATED_SCOPES.join(' ') 
     }),
   });
@@ -157,6 +165,27 @@ export async function getAccessTokenWithConfig(config) {
     scope: 'https://graph.microsoft.com/.default' 
   });
   return { accessToken: appRes.access_token };
+}
+
+let _mailTokenCache = null;
+
+export async function getMailAccessToken() {
+  const now = Date.now();
+  if (_mailTokenCache && _mailTokenCache.expiresAt > now + 5 * 60 * 1000) {
+    return _mailTokenCache.accessToken;
+  }
+
+  const res = await postToken({
+    grant_type: 'client_credentials',
+    scope: 'https://graph.microsoft.com/.default',
+  });
+
+  _mailTokenCache = {
+    accessToken: res.access_token,
+    expiresAt: now + (res.expires_in * 1000),
+  };
+
+  return _mailTokenCache.accessToken;
 }
 
 // --- EXPORTS: EXCEL ---
