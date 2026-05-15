@@ -2010,6 +2010,30 @@ export default function Admin() {
   };
 
 
+
+  const connectTelecastWithPassword = async () => {
+    if (!token || !telecastUsername || !telecastPassword) {
+      toast.error('Username and password are required');
+      return;
+    }
+    try {
+      setConfigSaving(true);
+      const response = await fetch(API_URL + '/telecast/auth/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ username: telecastUsername.trim(), password: telecastPassword }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || data.error || 'Failed to connect telecast account');
+      toast.success(data.message || 'Telecast connected');
+      await Promise.all([loadTelecastAuthStatus(), loadTelecastConfig()]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to connect telecast account');
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
   const startTelecastDeviceCode = async () => {
     if (!token) return;
     setConfigSaving(true);
@@ -3951,12 +3975,13 @@ export default function Admin() {
                     <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" value={telecastUsername} onChange={(e) => setTelecastUsername(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
                   </div>
                   <div className="space-y-1 sm:space-y-2">
-                    <p className="text-xs sm:text-sm md:text-base font-medium">Telecast Account Password (Deprecated)</p>
-                    <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" type="password" value={telecastPassword} onChange={(e) => setTelecastPassword(e.target.value)} placeholder="No longer used (device code auth)" disabled />
+                    <p className="text-xs sm:text-sm md:text-base font-medium">Telecast Account Password</p>
+                    <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" type="password" value={telecastPassword} onChange={(e) => setTelecastPassword(e.target.value)} placeholder="Enter telecast account password" />
                   </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
+                  <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={connectTelecastWithPassword} disabled={configSaving || !telecastUsername || !telecastPassword}>Connect with ID/Password</Button>
                   <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={startTelecastDeviceCode} disabled={configSaving || !telecastUsername}>Start Device Code</Button>
                   <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={finishTelecastDeviceCode} disabled={configSaving || !telecastDeviceCode}>Finish</Button>
                   <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={clearTelecastAuth} disabled={configSaving}>Clear Telecast Token</Button>

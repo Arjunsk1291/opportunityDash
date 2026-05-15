@@ -55,6 +55,24 @@ const ALLOW_LEGACY_USERNAME_AUTH = String(process.env.ALLOW_LEGACY_USERNAME_AUTH
 const EFFECTIVE_JWT_SECRET = JWT_SECRET || (IS_PROD ? '' : (String(process.env.DEV_JWT_SECRET || '').trim() || randomBytes(48).toString('hex')));
 const BOOTSTRAP_ADMIN_SECRET = String(process.env.BOOTSTRAP_ADMIN_SECRET || '').trim();
 const ALLOW_PROD_USERNAME_ALIASES = String(process.env.ALLOW_PROD_USERNAME_ALIASES || '').toLowerCase() === 'true';
+const DEFAULT_ADMIN_PASSWORD = String(process.env.DEFAULT_ADMIN_PASSWORD || '123456789');
+const ADMIN_USERS = String(process.env.ADMIN_USERS || '')
+  .split(',')
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+const ADMIN_USERS_SET = new Set(ADMIN_USERS);
+const normalizeLoginEmail = (value) => String(value || '').trim().toLowerCase();
+const resolveConfiguredAdminEmail = (value) => {
+  const normalized = normalizeLoginEmail(value);
+  if (!normalized) return '';
+  if (ADMIN_USERS_SET.has(normalized)) return normalized.includes('@') ? normalized : `${normalized}@dev.local`;
+  if (!normalized.includes('@')) {
+    const matched = ADMIN_USERS.find((entry) => entry.split('@')[0] === normalized);
+    if (matched) return matched.includes('@') ? matched : `${matched}@dev.local`;
+  }
+  return '';
+};
+const isConfiguredAdminUsername = (value) => Boolean(resolveConfiguredAdminEmail(value));
 
 if (IS_PROD && !JWT_SECRET) {
   console.error('[startup.security] Missing JWT secret in production; refusing to start. Set `JWT_SECRET` (or `SESSION_JWT_SECRET`) to a long random value.');
@@ -2404,11 +2422,17 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       return respondDatabaseUnavailable(res);
     }
 
-    let email = String(req.body?.email || '').trim().toLowerCase();
+    const requestedLogin = String(req.body?.email || '').trim().toLowerCase();
+    let email = requestedLogin;
     const password = String(req.body?.password || '');
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+        const configuredAdminEmail = resolveConfiguredAdminEmail(requestedLogin);
+    if (configuredAdminEmail) {
+      email = configuredAdminEmail;
     }
 
     if (email && !email.includes('@')) {
@@ -2428,7 +2452,30 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       return res.status(403).json({ error: 'Password login not available in offline mode' });
     }
 
-    const user = await AuthorizedUser.findOne({ email });
+    let user = await AuthorizedUser.findOne({ email });
+    if (!user && isConfiguredAdminUsername(email)) {
+      const passwordHash = await hashPassword(DEFAULT_ADMIN_PASSWORD);
+      user = await AuthorizedUser.findOneAndUpdate(
+        { email },
+        {
+          $setOnInsert: { email, createdAt: new Date() },
+          $set: {
+            displayName: email,
+            role: 'Admin',
+            status: 'approved',
+            approvedBy: 'env-admin-users',
+            approvedAt: new Date(),
+            passwordHash,
+            passwordChangedAt: null,
+            requiresPasswordChange: true,
+            failedLoginAttempts: 0,
+            accountLockedUntil: null,
+            lastFailedLoginAt: null,
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+    }
     if (!user) {
       console.warn(`[auth.login.invalid-user] email=${email}`);
       return res.status(403).json({ error: 'Invalid credentials' });
@@ -3756,11 +3803,32 @@ app.get('/api/telecast/auth/status', verifyToken, async (req, res) => {
 
 // Deprecated: password-grant (ROPC) breaks with MFA/expired passwords and is blocked in many tenants.
 // Use device-code flow endpoints below instead.
-app.post('/api/telecast/auth/bootstrap', verifyToken, async (_req, res) => {
-  res.status(400).json({
-    error: 'DEPRECATED',
-    message: 'Telecast password bootstrap is deprecated. Use /api/telecast/auth/device-code/start + /complete to connect a delegated token.',
-  });
+app.post('/api/telecast/auth/bootstrap', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'telecast_auth_write')) return;
+    const username = String(req.body?.username || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    if (!username || !password) {
+      return res.status(400).json({ error: 'username and password are required' });
+    }
+
+    const tokenResult = await bootstrapDelegatedToken({ username, password });
+    if (!tokenResult.refreshToken) {
+      return res.status(500).json({ error: 'No refresh token returned for telecast bootstrap account.' });
+    }
+
+    const config = await getSystemConfig();
+    config.telecastGraphAuthMode = 'delegated';
+    config.telecastGraphAccountUsername = username;
+    config.telecastGraphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
+    config.telecastGraphTokenUpdatedAt = new Date();
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    return res.json({ success: true, message: 'Telecast account connected with username/password.', mode: 'delegated' });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Failed to bootstrap telecast auth' });
+  }
 });
 
 app.post('/api/telecast/auth/device-code/start', verifyToken, async (req, res) => {
@@ -3982,6 +4050,51 @@ app.post('/api/notifications/force-refresh', verifyToken, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json(toApiError(error, 'NOTIFICATION_FORCE_REFRESH_FAILED'));
+  }
+});
+
+
+app.get('/api/telecast/track/:id', async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+
+    const rawId = String(req.params?.id || '').trim();
+    if (!rawId) return res.status(400).json({ error: 'track id is required' });
+
+    const normalizedId = rawId.toLowerCase();
+    const query = {
+      $or: [
+        { opportunityRefNo: rawId },
+        { telecastAlertedRefNo: rawId },
+        { telecastAlertedKey: rawId },
+      ],
+    };
+
+    if (mongoose.Types.ObjectId.isValid(rawId)) {
+      query.$or.push({ _id: rawId });
+    }
+
+    const opportunity = await SyncedOpportunity.findOne(query).sort({ syncedAt: -1, updatedAt: -1 }).lean();
+    if (!opportunity) {
+      return res.status(404).json({ error: 'Tracking record not found' });
+    }
+
+    const summary = {
+      refNo: String(opportunity.opportunityRefNo || opportunity.telecastAlertedRefNo || rawId).trim(),
+      tenderName: String(opportunity.tenderName || '').trim(),
+      client: String(opportunity.clientName || '').trim(),
+      group: String(opportunity.groupClassification || '').trim(),
+      submissionDate: String(opportunity.tenderPlannedSubmissionDate || '').trim(),
+      dateReceived: String(opportunity.dateTenderReceived || '').trim(),
+      status: String(opportunity.avenirStatus || '').trim(),
+      tenderResult: String(opportunity.tenderResult || '').trim(),
+      lastUpdatedAt: opportunity.updatedAt || opportunity.syncedAt || null,
+      trackedByTelecast: Boolean(opportunity.telecastAlerted),
+    };
+
+    return res.json({ success: true, summary, access: 'public_read_only', keyType: normalizedId === String(opportunity.telecastAlertedKey || '').toLowerCase() ? 'telecastKey' : 'refNo' });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Failed to fetch public tracking summary' });
   }
 });
 
