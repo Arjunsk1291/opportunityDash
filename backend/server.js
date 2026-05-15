@@ -4018,6 +4018,51 @@ app.post('/api/notifications/force-refresh', verifyToken, async (req, res) => {
   }
 });
 
+
+app.get('/api/telecast/track/:id', async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+
+    const rawId = String(req.params?.id || '').trim();
+    if (!rawId) return res.status(400).json({ error: 'track id is required' });
+
+    const normalizedId = rawId.toLowerCase();
+    const query = {
+      $or: [
+        { opportunityRefNo: rawId },
+        { telecastAlertedRefNo: rawId },
+        { telecastAlertedKey: rawId },
+      ],
+    };
+
+    if (mongoose.Types.ObjectId.isValid(rawId)) {
+      query.$or.push({ _id: rawId });
+    }
+
+    const opportunity = await SyncedOpportunity.findOne(query).sort({ syncedAt: -1, updatedAt: -1 }).lean();
+    if (!opportunity) {
+      return res.status(404).json({ error: 'Tracking record not found' });
+    }
+
+    const summary = {
+      refNo: String(opportunity.opportunityRefNo || opportunity.telecastAlertedRefNo || rawId).trim(),
+      tenderName: String(opportunity.tenderName || '').trim(),
+      client: String(opportunity.clientName || '').trim(),
+      group: String(opportunity.groupClassification || '').trim(),
+      submissionDate: String(opportunity.tenderPlannedSubmissionDate || '').trim(),
+      dateReceived: String(opportunity.dateTenderReceived || '').trim(),
+      status: String(opportunity.avenirStatus || '').trim(),
+      tenderResult: String(opportunity.tenderResult || '').trim(),
+      lastUpdatedAt: opportunity.updatedAt || opportunity.syncedAt || null,
+      trackedByTelecast: Boolean(opportunity.telecastAlerted),
+    };
+
+    return res.json({ success: true, summary, access: 'public_read_only', keyType: normalizedId === String(opportunity.telecastAlertedKey || '').toLowerCase() ? 'telecastKey' : 'refNo' });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Failed to fetch public tracking summary' });
+  }
+});
+
 app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
   try {
     if (!['Master', 'Admin'].includes(req.user.role)) {
