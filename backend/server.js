@@ -2415,7 +2415,8 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       return respondDatabaseUnavailable(res);
     }
 
-    let email = String(req.body?.email || '').trim().toLowerCase();
+    const requestedLogin = String(req.body?.email || '').trim().toLowerCase();
+    let email = requestedLogin;
     const password = String(req.body?.password || '');
 
     if (!email || !password) {
@@ -3789,11 +3790,32 @@ app.get('/api/telecast/auth/status', verifyToken, async (req, res) => {
 
 // Deprecated: password-grant (ROPC) breaks with MFA/expired passwords and is blocked in many tenants.
 // Use device-code flow endpoints below instead.
-app.post('/api/telecast/auth/bootstrap', verifyToken, async (_req, res) => {
-  res.status(400).json({
-    error: 'DEPRECATED',
-    message: 'Telecast password bootstrap is deprecated. Use /api/telecast/auth/device-code/start + /complete to connect a delegated token.',
-  });
+app.post('/api/telecast/auth/bootstrap', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'telecast_auth_write')) return;
+    const username = String(req.body?.username || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    if (!username || !password) {
+      return res.status(400).json({ error: 'username and password are required' });
+    }
+
+    const tokenResult = await bootstrapDelegatedToken({ username, password });
+    if (!tokenResult.refreshToken) {
+      return res.status(500).json({ error: 'No refresh token returned for telecast bootstrap account.' });
+    }
+
+    const config = await getSystemConfig();
+    config.telecastGraphAuthMode = 'delegated';
+    config.telecastGraphAccountUsername = username;
+    config.telecastGraphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
+    config.telecastGraphTokenUpdatedAt = new Date();
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    return res.json({ success: true, message: 'Telecast account connected with username/password.', mode: 'delegated' });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Failed to bootstrap telecast auth' });
+  }
 });
 
 app.post('/api/telecast/auth/device-code/start', verifyToken, async (req, res) => {
