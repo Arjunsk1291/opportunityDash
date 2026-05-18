@@ -18,6 +18,7 @@ import Admin from "./pages/Admin";
 import PendingApproval from "./pages/PendingApproval";
 import NotFound from "./pages/NotFound";
 import TenderSpreadsheetV2 from "./pages/TenderSpreadsheetV2";
+import PqActivities from "./pages/PqActivities";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
@@ -94,6 +95,7 @@ function AppRoutes() {
             <Route index element={<PageAccessRoute pageKey="dashboard"><Dashboard /></PageAccessRoute>} />
             <Route path="opportunities" element={<PageAccessRoute pageKey="opportunities"><Opportunities /></PageAccessRoute>} />
             <Route path="tender-updates" element={<PageAccessRoute pageKey="tender_updates"><TenderUpdates /></PageAccessRoute>} />
+            <Route path="pq-activities" element={<PageAccessRoute pageKey="pq_activities"><PqActivities /></PageAccessRoute>} />
             <Route path="tender-spreadsheet-v2" element={<PageAccessRoute pageKey="opportunities"><TenderSpreadsheetV2 /></PageAccessRoute>} />
             <Route path="vendors" element={<PageAccessRoute pageKey="vendor_directory"><VendorDirectory /></PageAccessRoute>} />
             <Route path="clients" element={<PageAccessRoute pageKey="clients"><Clients /></PageAccessRoute>} />

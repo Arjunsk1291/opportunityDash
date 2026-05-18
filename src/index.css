@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -86,6 +86,19 @@
     --grid-selection: 217 91% 60%;
     --grid-selection-fill: 217 91% 60% / 0.12;
     --grid-active-cell: 0 0% 100%;
+
+    /* Navy Trust tokens (Avin PQ page) */
+    --nt-background: 223 62% 15%;
+    --nt-surface: 213 52% 25%;
+    --nt-elevated: 212 46% 31%;
+    --nt-primary: 208 46% 43%;
+    --nt-foreground: 210 26% 92%;
+    --nt-gold: 44 51% 54%;
+    --nt-shadow-elegant: 0 18px 40px hsl(var(--nt-background) / 0.45);
+    --nt-shadow-glow: 0 0 28px hsl(var(--nt-primary) / 0.28);
+    --nt-shadow-gold: 0 0 18px hsl(var(--nt-gold) / 0.34);
+    --nt-gradient-hero: linear-gradient(135deg, hsl(var(--nt-background)) 0%, hsl(var(--nt-primary)) 100%);
+    --nt-gradient-gold: linear-gradient(135deg, hsl(var(--nt-gold) / 0.95) 0%, hsl(var(--nt-gold) / 0.62) 100%);
   }
 
   .dark {
@@ -125,6 +138,19 @@
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217 33% 17%;
     --sidebar-ring: 217 91% 60%;
+
+    /* Navy Trust tokens (Avin PQ page) */
+    --nt-background: 223 62% 15%;
+    --nt-surface: 213 52% 25%;
+    --nt-elevated: 212 46% 31%;
+    --nt-primary: 208 46% 43%;
+    --nt-foreground: 210 26% 92%;
+    --nt-gold: 44 51% 54%;
+    --nt-shadow-elegant: 0 18px 40px hsl(var(--nt-background) / 0.45);
+    --nt-shadow-glow: 0 0 28px hsl(var(--nt-primary) / 0.28);
+    --nt-shadow-gold: 0 0 18px hsl(var(--nt-gold) / 0.34);
+    --nt-gradient-hero: linear-gradient(135deg, hsl(var(--nt-background)) 0%, hsl(var(--nt-primary)) 100%);
+    --nt-gradient-gold: linear-gradient(135deg, hsl(var(--nt-gold) / 0.95) 0%, hsl(var(--nt-gold) / 0.62) 100%);
   }
 }
 

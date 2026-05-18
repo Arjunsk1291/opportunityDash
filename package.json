@@ -51,6 +51,7 @@
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.6.0",
     "exceljs": "^4.4.0",
+    "framer-motion": "^11.18.2",
     "input-otp": "^1.4.2",
     "jspreadsheet-ce": "^4.15.0",
     "lucide-react": "^0.462.0",

@@ -3,6 +3,7 @@ export type PageKey =
   | 'dashboard'
   | 'opportunities'
   | 'tender_updates'
+  | 'pq_activities'
   | 'vendor_directory'
   | 'clients'
   | 'analytics'
@@ -19,6 +20,7 @@ export const PAGE_LABELS: Record<PageKey, string> = {
   dashboard: 'Dashboard',
   opportunities: 'Opportunities',
   tender_updates: 'Tender Updates Tracker',
+  pq_activities: 'PQ & Registration Activities',
   vendor_directory: 'Partners',
   clients: 'Clients',
   analytics: 'Analytics',
@@ -33,7 +35,7 @@ export const PAGE_LABELS: Record<PageKey, string> = {
 };
 
 export const PAGE_GROUPS: Array<{ label: string; pages: PageKey[] }> = [
-  { label: 'Core Workspace', pages: ['dashboard', 'opportunities', 'tender_updates', 'vendor_directory', 'clients', 'analytics', 'bd_engagements'] },
+  { label: 'Core Workspace', pages: ['dashboard', 'opportunities', 'tender_updates', 'pq_activities', 'vendor_directory', 'clients', 'analytics', 'bd_engagements'] },
   { label: 'Master Panel', pages: ['master', 'master_general', 'master_users', 'master_data_sync', 'master_telecast', 'master_update', 'master_export'] },
 ];
 
@@ -41,6 +43,7 @@ export const DEFAULT_PAGE_ROLE_ACCESS: Record<PageKey, string[]> = {
   dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'],
   opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  pq_activities: ['Master', 'Admin'],
   vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
@@ -58,6 +61,7 @@ export const NAV_ITEMS = [
   { title: 'Dashboard', url: '/', pageKey: 'dashboard' as const, icon: LayoutDashboard, section: 'main' as const },
   { title: 'Opportunities', url: '/opportunities', pageKey: 'opportunities' as const, icon: FileText, section: 'main' as const },
   { title: 'Tender Updates', url: '/tender-updates', pageKey: 'tender_updates' as const, icon: Sparkles, section: 'main' as const },
+  { title: 'PQ Activities', url: '/pq-activities', pageKey: 'pq_activities' as const, icon: FileText, section: 'main' as const },
   { title: 'Partners', url: '/vendors', pageKey: 'vendor_directory' as const, icon: Building2, section: 'main' as const },
   { title: 'Clients', url: '/clients', pageKey: 'clients' as const, icon: Building2, section: 'main' as const },
   { title: 'Analytics', url: '/analytics', pageKey: 'analytics' as const, icon: BarChart3, section: 'main' as const },

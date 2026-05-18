@@ -11,6 +11,7 @@ export type ActionKey =
   | 'clients_write'
   | 'clients_import'
   | 'clients_seed'
+  | 'pq_activities_manage'
   | 'users_manage'
   | 'navigation_permissions_write'
   | 'graph_config_write'
@@ -34,6 +35,7 @@ export const ACTION_LABELS: Record<ActionKey, string> = {
   clients_write: 'Create / Update Clients',
   clients_import: 'Import Clients',
   clients_seed: 'Seed Clients from Opportunities',
+  pq_activities_manage: 'Manage PQ / Registration Activities',
   users_manage: 'Manage Authorized Users',
   navigation_permissions_write: 'Save Page Visibility Rules',
   graph_config_write: 'Save Data Sync Config',
@@ -58,6 +60,7 @@ export const ACTION_DESCRIPTIONS: Record<ActionKey, string> = {
   clients_write: 'Create or update client records.',
   clients_import: 'Bulk import client records.',
   clients_seed: 'Seed clients from synced opportunity data.',
+  pq_activities_manage: 'Create, edit, delete, import, and export portal PQ/registration records (includes credentials).',
   users_manage: 'Add, approve, reject, remove, or change authorized users.',
   navigation_permissions_write: 'Persist sidebar and route visibility rules.',
   graph_config_write: 'Persist workbook sync configuration.',
@@ -82,6 +85,7 @@ export const DEFAULT_ACTION_ROLE_ACCESS: Record<ActionKey, UserRole[]> = {
   clients_write: ['Master', 'Admin', 'ProposalHead'],
   clients_import: ['Master', 'Admin'],
   clients_seed: ['Master', 'Admin'],
+  pq_activities_manage: ['Master', 'Admin'],
   users_manage: ['Master'],
   navigation_permissions_write: ['Master'],
   graph_config_write: ['Master'],

@@ -108,6 +108,21 @@ Optional debug flags:
 - `NOTIFICATION_DEBUG=true|false`
 - `GRAPH_TOKEN_DEBUG=true|false`
 
+## PQ & Registration Activities (Import Format)
+
+The page **PQ & Registration Activities** supports importing an `.xlsx` file with a header row (case/whitespace/punctuation tolerant) containing:
+
+- `S.No`
+- `Company`
+- `Status`
+- `Registered Email`
+- `User ID (Portal)`
+- `Password(Portal)`
+- `Link(Portal)`
+
+Import upserts by **Company** (case-insensitive) and normalizes Status to one of:
+`Prequalified`, `Registered`, `Registration on Process`.
+
 ## Docker Deployment (Recommended)
 
 This repository includes production-like Docker setup for frontend + backend + MongoDB.
