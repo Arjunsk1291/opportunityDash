@@ -78,14 +78,15 @@
     --sidebar-ring: 217 91% 60%;
 
     /* Spreadsheet chrome */
-    --toolbar: 220 14% 96%;
-    --grid-header: 220 14% 96%;
-    --grid-header-active: 220 13% 91%;
-    --grid-header-fg: 222 47% 11%;
+    /* Keep spreadsheet UI aligned with the dashboard theme tokens. */
+    --toolbar: var(--secondary);
+    --grid-header: var(--secondary);
+    --grid-header-active: var(--border);
+    --grid-header-fg: var(--foreground);
     --grid-line: hsl(var(--border));
-    --grid-selection: 217 91% 60%;
-    --grid-selection-fill: 217 91% 60% / 0.12;
-    --grid-active-cell: 0 0% 100%;
+    --grid-selection: var(--primary);
+    --grid-selection-fill: var(--primary) / 0.12;
+    --grid-active-cell: var(--card);
 
     /* Navy Trust tokens (Avin PQ page) */
     /* Map PQ page theme onto the app theme tokens for visual consistency. */
