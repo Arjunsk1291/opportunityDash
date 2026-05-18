@@ -1,4 +1,4 @@
-import { BarChart3, BriefcaseBusiness, Building2, FileText, LayoutDashboard, Shield, Sparkles } from 'lucide-react';
+import { BarChart3, BriefcaseBusiness, Building2, FileText, LayoutDashboard, Shield, Sparkles, Workflow } from 'lucide-react';
 export type PageKey =
   | 'dashboard'
   | 'opportunities'
@@ -67,4 +67,5 @@ export const NAV_ITEMS = [
   { title: 'Analytics', url: '/analytics', pageKey: 'analytics' as const, icon: BarChart3, section: 'main' as const },
   { title: 'BD Engagements', url: '/bd-engagements', pageKey: 'bd_engagements' as const, icon: BriefcaseBusiness, section: 'main' as const },
   { title: 'Master Panel', url: '/master', pageKey: 'master' as const, icon: Shield, section: 'admin' as const },
+  { title: 'HireFlow', url: '/hireflow', pageKey: 'master' as const, icon: Workflow, section: 'admin' as const },
 ];

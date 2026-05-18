@@ -19,6 +19,7 @@ import PendingApproval from "./pages/PendingApproval";
 import NotFound from "./pages/NotFound";
 import TenderSpreadsheetV2 from "./pages/TenderSpreadsheetV2";
 import PqActivities from "./pages/PqActivities";
+import HireFlow from "./pages/HireFlow";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
@@ -102,6 +103,7 @@ function AppRoutes() {
             <Route path="analytics" element={<PageAccessRoute pageKey="analytics"><Analytics /></PageAccessRoute>} />
             <Route path="bd-engagements" element={<PageAccessRoute pageKey="bd_engagements"><BDEngagements /></PageAccessRoute>} />
             <Route path="master" element={<PageAccessRoute pageKey="master"><Admin /></PageAccessRoute>} />
+            <Route path="hireflow" element={<PageAccessRoute pageKey="master"><HireFlow /></PageAccessRoute>} />
 
             <Route path="status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />
             <Route path="status/in-progress" element={<Opportunities statusFilter="In Progress" />} />
