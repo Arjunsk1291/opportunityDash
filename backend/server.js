@@ -4258,7 +4258,16 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
     }
 
     const config = await getSystemConfig();
-    const { accessToken } = await getMailAccessToken();
+    telecastDebug('Test mail requested.', {
+      by: req.user?.email,
+      sender: telecastSender,
+      recipient: recipientEmail,
+      authMode: config.telecastGraphAuthMode || 'application',
+      hasRefreshToken: Boolean(config.telecastGraphRefreshTokenEnc),
+      tokenUpdatedAt: config.telecastGraphTokenUpdatedAt || null,
+    });
+
+    const { accessToken } = await getTelecastSendMailAccessToken(config);
     const subjectTemplate = config.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
     const bodyTemplate = config.telecastTemplateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.';
     const templateStyle = getTelecastTemplateStyle(config.telecastTemplateStyle);
@@ -4282,6 +4291,12 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
       renderedBody,
       styleKey: templateStyle.key,
     });
+
+    telecastDebug('Test mail composed.', {
+      subject: String(renderedSubject || '').slice(0, 160),
+      styleKey: templateStyle.key,
+    });
+
     const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
       method: 'POST',
       headers: {
@@ -4304,11 +4319,18 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
     if (!graphResponse.ok) {
       const payload = await graphResponse.json().catch(() => ({}));
       const message = payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`;
+      telecastDebug('Test mail failed.', {
+        status: graphResponse.status,
+        graphError: payload?.error?.code,
+        graphMessage: payload?.error?.message,
+      });
       return res.status(500).json({ error: message });
     }
 
+    telecastDebug('Test mail sent OK.', { status: graphResponse.status, recipient: recipientEmail });
     res.json({ success: true, message: `Template preview mail sent to ${recipientEmail}`, subject: renderedSubject });
   } catch (error) {
+    telecastDebug('Test mail threw.', String(error?.message || error));
     res.status(500).json({ error: error.message || 'Failed to send test mail' });
   }
 });
