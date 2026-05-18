@@ -1378,7 +1378,7 @@ const sendBulkApprovalAlerts = async ({ opportunities = [], approvedBy = '', fil
     return acc;
   }, {});
 
-  const { accessToken } = await getMailAccessToken();
+  const { accessToken } = await getTelecastSendMailAccessToken(config);
   const style = getTelecastTemplateStyle(config.approvalAlertTemplateStyle);
   const results = {};
 
@@ -1417,6 +1417,13 @@ const sendBulkApprovalAlerts = async ({ opportunities = [], approvedBy = '', fil
       html = buildBulkApprovalAlertEmailHtml({ group, opportunities: groupOpps, summaryText, styleKey: style.key });
     }
 
+    telecastDebug('Sending bulk approval alert mail.', {
+      group,
+      recipients: recipientEmails.length,
+      tenders: count,
+      sender: telecastSender,
+    });
+
     const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
       method: 'POST',
       headers: {
@@ -1435,6 +1442,7 @@ const sendBulkApprovalAlerts = async ({ opportunities = [], approvedBy = '', fil
 
     if (!graphResponse.ok) {
       const payload = await graphResponse.json().catch(() => ({}));
+      telecastDebug('Bulk approval alert mail failed.', { group, status: graphResponse.status, message: payload?.error?.message });
       throw new Error(payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`);
     }
 
@@ -4352,7 +4360,7 @@ app.post('/api/telecast/test-deadline-mail', verifyToken, async (req, res) => {
     }
 
     const config = await getSystemConfig();
-    const { accessToken } = await getMailAccessToken();
+    const { accessToken } = await getTelecastSendMailAccessToken(config);
     const subjectTemplate = config.deadlineAlertTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}';
     const bodyTemplate = config.deadlineAlertTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.';
     const templateStyle = getTelecastTemplateStyle(config.deadlineAlertTemplateStyle || 'sunset_alert');
@@ -4400,6 +4408,7 @@ app.post('/api/telecast/test-deadline-mail', verifyToken, async (req, res) => {
     if (!graphResponse.ok) {
       const payload = await graphResponse.json().catch(() => ({}));
       const message = payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`;
+      telecastDebug('Deadline test mail failed.', { status: graphResponse.status, message: payload?.error?.message });
       return res.status(500).json({ error: message });
     }
 
@@ -4496,7 +4505,7 @@ app.post('/api/telecast/test-approval-mail', verifyToken, async (req, res) => {
     }
 
     const config = await getSystemConfig();
-    const { accessToken } = await getMailAccessToken();
+    const { accessToken } = await getTelecastSendMailAccessToken(config);
     const values = {
       TENDER_NO: `AVR-APR-${String(Math.floor(Math.random() * 900) + 100)}`,
       TENDER_NAME: 'District Cooling Plant Expansion',
@@ -4535,6 +4544,7 @@ app.post('/api/telecast/test-approval-mail', verifyToken, async (req, res) => {
     if (!graphResponse.ok) {
       const payload = await graphResponse.json().catch(() => ({}));
       const message = payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`;
+      telecastDebug('Approval test mail failed.', { status: graphResponse.status, message: payload?.error?.message });
       return res.status(500).json({ error: message });
     }
 
@@ -4561,7 +4571,7 @@ app.post('/api/reporting/test-mail', verifyToken, async (req, res) => {
     }
 
     const config = await getSystemConfig();
-    const { accessToken } = await getMailAccessToken();
+    const { accessToken } = await getTelecastSendMailAccessToken(config);
     const reportedAt = new Date().toISOString();
     const subject = 'Issue report preview: Dashboard · data mismatch';
     const html = buildIssueReportEmailHtml({
@@ -4600,6 +4610,7 @@ app.post('/api/reporting/test-mail', verifyToken, async (req, res) => {
     if (!graphResponse.ok) {
       const payload = await graphResponse.json().catch(() => ({}));
       const message = payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`;
+      telecastDebug('Reporting test mail failed.', { status: graphResponse.status, message: payload?.error?.message });
       return res.status(500).json({ error: message });
     }
 
@@ -4647,7 +4658,7 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
     }
 
     const config = await getSystemConfig();
-    const { accessToken } = await getMailAccessToken();
+    const { accessToken } = await getTelecastSendMailAccessToken(config);
     const featureLabel = feature.toLowerCase() === 'other' ? featureOther : feature;
     const subject = `Issue report: ${featureLabel} · ${issueTypes.join(', ')}`;
     const reportedAt = new Date().toISOString();
@@ -4694,6 +4705,7 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
     if (!graphResponse.ok) {
       const payload = await graphResponse.json().catch(() => ({}));
       const message = payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`;
+      telecastDebug('Issue report mail failed.', { status: graphResponse.status, message: payload?.error?.message });
       return res.status(500).json({ error: message });
     }
 
