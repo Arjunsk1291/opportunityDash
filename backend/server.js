@@ -21,7 +21,18 @@ import PqActivity from './models/PqActivity.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import BDEngagement from './models/BDEngagement.js';
-import { resolveShareLink, getWorksheets, getWorksheetRangeValues, protectRefreshToken, buildDelegatedConsentUrl, getAccessTokenWithConfig, getMailAccessToken, startDeviceCodeFlow, exchangeDeviceCodeForToken } from './services/graphExcelService.js';
+import {
+  resolveShareLink,
+  getWorksheets,
+  getWorksheetRangeValues,
+  protectRefreshToken,
+  unprotectRefreshToken,
+  buildDelegatedConsentUrl,
+  getAccessTokenWithConfig,
+  getMailAccessToken,
+  startDeviceCodeFlow,
+  exchangeDeviceCodeForToken,
+} from './services/graphExcelService.js';
 import { initializeBootSync } from './services/bootSyncService.js';
 import { buildOpportunitiesWorkbookForSpreadsheet } from './services/spreadsheetWorkbookService.js';
 import SystemConfig from './models/SystemConfig.js';
@@ -1217,7 +1228,7 @@ const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' })
   const subject = renderTemplate(subjectTemplate, values);
   const renderedBody = renderTemplate(bodyTemplate, values);
   const html = buildApprovalAlertEmailHtml({ values, renderedBody, styleKey: style.key });
-  const { accessToken } = await getMailAccessToken();
+  const { accessToken } = await getTelecastSendMailAccessToken(config);
 
   const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
     method: 'POST',
@@ -1237,6 +1248,7 @@ const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' })
 
   if (!graphResponse.ok) {
     const payload = await graphResponse.json().catch(() => ({}));
+    telecastDebug('Approval alert sendMail failed.', { status: graphResponse.status, message: payload?.error?.message });
     throw new Error(payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`);
   }
 
@@ -1299,7 +1311,7 @@ const sendDeadlineAlertForOpportunity = async ({ opportunity, config, leadDirect
   const subject = renderTemplate(subjectTemplate, values);
   const renderedBody = renderTemplate(bodyTemplate, values);
   const html = buildTelecastEmailHtml({ values, renderedBody, styleKey: style.key });
-  const { accessToken } = await getMailAccessToken();
+  const { accessToken } = await getTelecastSendMailAccessToken(config);
 
   const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
     method: 'POST',
@@ -1319,6 +1331,7 @@ const sendDeadlineAlertForOpportunity = async ({ opportunity, config, leadDirect
 
   if (!graphResponse.ok) {
     const payload = await graphResponse.json().catch(() => ({}));
+    telecastDebug('Deadline alert sendMail failed.', { status: graphResponse.status, message: payload?.error?.message });
     throw new Error(payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`);
   }
 
@@ -1590,7 +1603,7 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
     GTS: normalizeEmailList(systemConfig?.telecastGroupRecipients?.GTS || []),
   };
 
-  const { accessToken } = await getMailAccessToken();
+  const { accessToken } = await getTelecastSendMailAccessToken(systemConfig);
   const subjectTemplate = systemConfig.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
   const bodyTemplate = systemConfig.telecastTemplateBody || 'New row detected for {{TENDER_NO}}';
   const templateStyle = getTelecastTemplateStyle(systemConfig.telecastTemplateStyle);
@@ -1616,6 +1629,14 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
     const content = renderTemplate(bodyTemplate, values);
     const htmlContent = buildTelecastEmailHtml({ values, renderedBody: content, styleKey: templateStyle.key });
 
+    telecastDebug('Sending telecast mail.', {
+      idx: index,
+      group,
+      recipients: recipients.length,
+      subject: String(subject || '').slice(0, 140),
+      sender: telecastSender,
+    });
+
     const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
       method: 'POST',
       headers: {
@@ -1638,6 +1659,10 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
       if (key) dispatchedKeys.push(key);
       const refNo = getTenderRefNo(row);
       if (refNo) dispatchedRefNos.push(refNo);
+      telecastDebug('Telecast mail sent OK.', { idx: index, group, status: graphResponse.status });
+    } else {
+      const payload = await graphResponse.json().catch(() => ({}));
+      telecastDebug('Telecast mail failed.', { idx: index, group, status: graphResponse.status, message: payload?.error?.message });
     }
 
     if (delayMs > 0 && index < rowsToSend.length - 1) {
@@ -3823,6 +3848,64 @@ app.get('/api/telecast/auth/status', verifyToken, async (req, res) => {
   }
 });
 
+const TELECAST_DEBUG = String(process.env.TELECAST_DEBUG || '').trim().toLowerCase() === 'true';
+const telecastDebug = (...args) => {
+  if (!TELECAST_DEBUG) return;
+  // Avoid logging secrets/tokens by convention.
+  console.log('[telecast.debug]', ...args);
+};
+
+const graphEnvValue = (name, fallback = '') => {
+  const value = process.env[name];
+  return typeof value === 'string' ? value.trim() : fallback;
+};
+
+const graphTenantId = () => graphEnvValue('GRAPH_TENANT_ID') || graphEnvValue('AZURE_TENANT_ID');
+const graphClientId = () => graphEnvValue('GRAPH_CLIENT_ID') || graphEnvValue('AZURE_CLIENT_ID');
+const graphClientSecret = () => graphEnvValue('GRAPH_CLIENT_SECRET') || graphEnvValue('CLIENT_SECRET') || graphEnvValue('AZURE_CLIENT_SECRET');
+
+const getTelecastSendMailAccessToken = async (systemConfig) => {
+  const mode = String(systemConfig?.telecastGraphAuthMode || 'application');
+  const hasDelegatedRt = Boolean(systemConfig?.telecastGraphRefreshTokenEnc);
+
+  if (mode === 'delegated' && hasDelegatedRt) {
+    telecastDebug('Using delegated refresh token for sendMail access token.');
+    const rt = unprotectRefreshToken(systemConfig.telecastGraphRefreshTokenEnc);
+    if (!rt) {
+      telecastDebug('Delegated refresh token decrypt failed; falling back to application token.');
+      return getMailAccessToken();
+    }
+
+    const tokenUrl = `https://login.microsoftonline.com/${graphTenantId()}/oauth2/v2.0/token`;
+    try {
+      const body = new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: rt,
+        scope: 'Mail.Send offline_access User.Read',
+        client_id: graphClientId(),
+        client_secret: graphClientSecret(),
+      });
+      const response = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        telecastDebug('Delegated token refresh failed.', { status: response.status, error: data?.error, error_description: data?.error_description });
+        return getMailAccessToken();
+      }
+      return { accessToken: data.access_token };
+    } catch (error) {
+      telecastDebug('Delegated token refresh threw.', String(error?.message || error));
+      return getMailAccessToken();
+    }
+  }
+
+  telecastDebug('Using application (client credentials) token for sendMail access token.');
+  return getMailAccessToken();
+};
+
 // Deprecated: password-grant (ROPC) breaks with MFA/expired passwords and is blocked in many tenants.
 // Use device-code flow endpoints below instead.
 app.post('/api/telecast/auth/bootstrap', verifyToken, async (req, res) => {
@@ -3850,6 +3933,44 @@ app.post('/api/telecast/auth/bootstrap', verifyToken, async (req, res) => {
     return res.json({ success: true, message: 'Telecast account connected with username/password.', mode: 'delegated' });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Failed to bootstrap telecast auth' });
+  }
+});
+
+// Env-driven delegated bootstrap (ROPC) for Telecast; avoids passing credentials from the browser.
+// Requires: TELECAST_ROPC_USERNAME, TELECAST_ROPC_PASSWORD.
+app.post('/api/telecast/auth/bootstrap-env', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'telecast_auth_write')) return;
+
+    const username = String(process.env.TELECAST_ROPC_USERNAME || '').trim().toLowerCase();
+    const password = String(process.env.TELECAST_ROPC_PASSWORD || '');
+    if (!username || !password) {
+      return res.status(400).json({
+        error: 'Missing env vars',
+        required: ['TELECAST_ROPC_USERNAME', 'TELECAST_ROPC_PASSWORD'],
+      });
+    }
+
+    telecastDebug('Bootstrap via env requested.', { username });
+    const tokenResult = await bootstrapDelegatedToken({ username, password });
+    if (!tokenResult.refreshToken) {
+      return res.status(500).json({ error: 'No refresh token returned for telecast bootstrap account.' });
+    }
+
+    const config = await getSystemConfig();
+    config.telecastGraphAuthMode = 'delegated';
+    config.telecastGraphAccountUsername = username;
+    config.telecastGraphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
+    config.telecastGraphTokenUpdatedAt = new Date();
+    config.updatedBy = req.user.email;
+    await config.save();
+
+    telecastDebug('Bootstrap via env succeeded; delegated refresh token stored.', { tokenUpdatedAt: config.telecastGraphTokenUpdatedAt });
+    return res.json({ success: true, message: 'Telecast account connected using server env credentials.', mode: 'delegated' });
+  } catch (error) {
+    const msg = String(error.message || error);
+    telecastDebug('Bootstrap via env failed.', msg);
+    return res.status(500).json({ error: msg || 'Failed to bootstrap telecast auth (env)' });
   }
 });
 
