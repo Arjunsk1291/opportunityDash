@@ -2026,26 +2026,7 @@ export default function Admin() {
 
 
   const connectTelecastWithPassword = async () => {
-    if (!token || !telecastUsername || !telecastPassword) {
-      toast.error('Username and password are required');
-      return;
-    }
-    try {
-      setConfigSaving(true);
-      const response = await fetch(API_URL + '/telecast/auth/bootstrap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-        body: JSON.stringify({ username: telecastUsername.trim(), password: telecastPassword }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || data.error || 'Failed to connect telecast account');
-      toast.success(data.message || 'Telecast connected');
-      await Promise.all([loadTelecastAuthStatus(), loadTelecastConfig()]);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to connect telecast account');
-    } finally {
-      setConfigSaving(false);
-    }
+    toast.error('Telecast ID/password connect is deprecated. Use Device Code (delegated) or Application mode (client credentials).');
   };
 
   const startTelecastDeviceCode = async () => {
@@ -3995,7 +3976,7 @@ export default function Admin() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
-                  <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={connectTelecastWithPassword} disabled={configSaving || !telecastUsername || !telecastPassword}>Connect with ID/Password</Button>
+                  <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={connectTelecastWithPassword} disabled>Connect with ID/Password (Deprecated)</Button>
                   <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={startTelecastDeviceCode} disabled={configSaving || !telecastUsername}>Start Device Code</Button>
                   <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={finishTelecastDeviceCode} disabled={configSaving || !telecastDeviceCode}>Finish</Button>
                   <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={clearTelecastAuth} disabled={configSaving}>Clear Telecast Token</Button>
