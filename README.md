@@ -1,6 +1,6 @@
-# Opportunity Dashboard
+# Avin
 
-Avenir's Opportunity Dashboard is a full-stack platform for managing tender opportunities end-to-end, including:
+Avin is a full-stack platform for managing tender opportunities end-to-end, including:
 
 - opportunity ingestion and sync from Microsoft Graph Excel
 - role-based approval workflows
