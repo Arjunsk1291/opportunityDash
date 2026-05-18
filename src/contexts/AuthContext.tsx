@@ -67,6 +67,11 @@ interface VerifyTokenResponse {
   sessionToken?: string;
   error?: string;
 }
+interface RefreshTokenResponse {
+  success: boolean;
+  sessionToken?: string;
+  error?: string;
+}
 interface CurrentUserResponse {
   email: string;
   displayName?: string;
@@ -142,23 +147,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearAuthState]);
 
   const refreshSessionToken = useCallback(async () => {
-    const username = String(user?.email || '').trim().toLowerCase();
-    if (!username) return;
-
-    const response = await fetch(API_URL + '/auth/verify-token', {
+    if (!token) return;
+    const response = await fetch(API_URL + '/auth/refresh', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username }),
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
     });
     if (!response.ok) {
       throw new Error('Session refresh failed');
     }
 
-    const data = (await response.json()) as VerifyTokenResponse;
+    const data = (await response.json()) as RefreshTokenResponse;
     if (data.sessionToken) {
       setToken(data.sessionToken);
+      window.sessionStorage.setItem('simpleAuthToken', data.sessionToken);
     }
-  }, [user?.email]);
+  }, [token]);
 
   const loginAsRole = useCallback(async (role: UserRole, emailOverride?: string) => {
     const response = await fetch(API_URL + '/auth/simple-role-login', {
@@ -211,6 +214,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     setUser(nextUser);
     setToken(data.sessionToken || null);
+    if (data.sessionToken) {
+      window.sessionStorage.setItem('simpleAuthToken', data.sessionToken);
+    }
     setAuthError(null);
     setIsPending(nextUser.status === 'pending');
   }, []);

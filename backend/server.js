@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { randomBytes, randomUUID, scrypt as nodeScrypt, timingSafeEqual } from 'crypto';
+import { randomBytes, randomUUID, scrypt as nodeScrypt, timingSafeEqual, createHash } from 'crypto';
 import jwt from 'jsonwebtoken';
 import compression from 'compression';
 import approvalDb from './approvalDb.js';
@@ -72,7 +72,7 @@ const ALLOW_LEGACY_USERNAME_AUTH = String(process.env.ALLOW_LEGACY_USERNAME_AUTH
 const EFFECTIVE_JWT_SECRET = JWT_SECRET || (IS_PROD ? '' : (String(process.env.DEV_JWT_SECRET || '').trim() || randomBytes(48).toString('hex')));
 const BOOTSTRAP_ADMIN_SECRET = String(process.env.BOOTSTRAP_ADMIN_SECRET || '').trim();
 const ALLOW_PROD_USERNAME_ALIASES = String(process.env.ALLOW_PROD_USERNAME_ALIASES || '').toLowerCase() === 'true';
-const DEFAULT_ADMIN_PASSWORD = String(process.env.DEFAULT_ADMIN_PASSWORD || '123456789');
+const DEFAULT_ADMIN_PASSWORD = String(process.env.DEFAULT_ADMIN_PASSWORD || '').trim();
 const ADMIN_USERS = String(process.env.ADMIN_USERS || '')
   .split(',')
   .map((value) => value.trim().toLowerCase())
@@ -170,6 +170,7 @@ const createRateLimiter = ({ windowMs, max, keyPrefix }) => {
 const authRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 20, keyPrefix: 'auth' });
 const privilegedRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 120, keyPrefix: 'priv' });
 const pqImportRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 8, keyPrefix: 'pq-import' });
+const passwordResetRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 10, keyPrefix: 'pwd-reset' });
 
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api/')) return next();
@@ -217,6 +218,8 @@ const createSessionToken = (user) => {
   };
   return jwt.sign(payload, secret, { expiresIn: '12h' });
 };
+
+const hashResetToken = (token) => createHash('sha256').update(String(token || '')).digest('hex');
 
 const scryptAsync = (password, salt, options) => new Promise((resolve, reject) => {
   nodeScrypt(password, salt, options.keylen, { N: options.N, r: options.r, p: options.p, maxmem: options.maxmem }, (err, derivedKey) => {
@@ -2119,29 +2122,7 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
         ...requestMeta,
         username,
       }));
-
-      const bootstrapMaster = isBootstrapMaster(username);
-      user = new AuthorizedUser({
-        email: username,
-        displayName: username,
-        role: bootstrapMaster ? 'Master' : 'Basic',
-        status: bootstrapMaster ? 'approved' : 'pending',
-      });
-      await user.save();
-
-      return res.json({
-        success: true,
-        user: {
-          email: user.email,
-          displayName: user.displayName,
-          role: user.role,
-          status: user.status,
-          assignedGroup: user.assignedGroup,
-        },
-        message: bootstrapMaster
-          ? 'Login successful as bootstrap Master user.'
-          : 'User pending approval. Please wait for Master to approve your access.',
-      });
+      return res.status(403).json({ error: 'User not authorized' });
     }
 
     if (user.status === 'rejected') {
@@ -2158,6 +2139,7 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
       await user.save();
     }
 
+    // /verify-token is intentionally NOT a passwordless login endpoint.
     return res.json({
       success: true,
       user: {
@@ -2167,8 +2149,8 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
         status: user.status,
         assignedGroup: user.assignedGroup,
       },
-      sessionToken: user.status === 'approved' ? createSessionToken(user) : null,
-      message: user.status === 'pending' ? 'User pending approval. Master will review your request.' : 'Login successful',
+      sessionToken: null,
+      message: user.status === 'pending' ? 'User pending approval. Master will review your request.' : 'User recognized',
     });
   } catch (error) {
     console.error('[auth.verify-token.failure]', JSON.stringify({
@@ -2179,6 +2161,19 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
       stack: error?.stack || null,
     }));
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/auth/refresh', authRateLimiter, verifyToken, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (DISABLE_MONGODB) return res.status(403).json({ error: 'Session refresh not available in offline mode' });
+    const user = await AuthorizedUser.findOne({ email: req.user.email });
+    if (!user) return res.status(403).json({ error: 'User not authorized' });
+    if (user.status !== 'approved') return res.status(403).json({ error: 'User not approved' });
+    return res.json({ success: true, sessionToken: createSessionToken(user) });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Authentication service error' });
   }
 });
 
@@ -2310,6 +2305,9 @@ app.post('/api/auth/simple-role-login', authRateLimiter, async (req, res) => {
 app.post('/api/auth/role-password-login', authRateLimiter, async (req, res) => {
   try {
     if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (IS_PROD || String(process.env.ENABLE_ROLE_PASSWORD_LOGIN || '').toLowerCase() !== 'true') {
+      return res.status(404).json({ error: 'Not found' });
+    }
 
     const userId = String(req.body?.userId || '').trim();
     const password = String(req.body?.password || '');
@@ -2317,7 +2315,8 @@ app.post('/api/auth/role-password-login', authRateLimiter, async (req, res) => {
       return res.status(400).json({ error: 'userId and password are required' });
     }
 
-    if (password !== '123') {
+    const roleLoginPassword = String(process.env.ROLE_PASSWORD_LOGIN_PASSWORD || '123');
+    if (password !== roleLoginPassword) {
       return res.status(403).json({ error: 'Invalid credentials' });
     }
 
@@ -2479,7 +2478,8 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const adminBypassLogin = isConfiguredAdminUsername(email) && password === DEFAULT_ADMIN_PASSWORD;
+    const adminBypassEnabled = Boolean(DEFAULT_ADMIN_PASSWORD) && DEFAULT_ADMIN_PASSWORD.length >= 12;
+    const adminBypassLogin = adminBypassEnabled && isConfiguredAdminUsername(email) && password === DEFAULT_ADMIN_PASSWORD;
 
     if (email && !email.includes('@')) {
       if (!IS_PROD) {
@@ -2537,9 +2537,9 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       await user.save();
     }
 
-    if (user.status !== 'approved') {
-      return res.status(403).json({ error: 'Account not approved for login' });
-    }
+    if (user.status === 'rejected') return res.status(403).json({ error: 'User access rejected', status: 'rejected' });
+    if (user.status === 'pending') return res.status(403).json({ error: 'User access pending approval', status: 'pending' });
+    if (user.status !== 'approved') return res.status(403).json({ error: 'Account not approved for login' });
 
     if (!user.passwordHash && !adminBypassLogin) {
       return res.status(403).json({ error: 'Password login not configured' });
@@ -2605,6 +2605,121 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
   } catch (error) {
     console.error('[auth.password-login.error]', error.message);
     res.status(500).json({ error: 'Authentication service error' });
+  }
+});
+
+const buildPasswordResetEmailHtml = ({ code, displayName = '', styleKey = 'avenir_blue' }) => {
+  const style = getTelecastTemplateStyle(styleKey);
+  const colors = style.colors;
+  const safeName = escapeHtml(displayName || '');
+  const safeCode = escapeHtml(code || '');
+
+  return `
+    <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
+      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+        <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Telecast</div>
+          <h1 style="margin:0;font-size:22px;line-height:1.2;">Password Reset Code</h1>
+          <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">Use the code below to reset your Opportunity Dashboard password. This code expires in 15 minutes.</p>
+        </div>
+        <div style="padding:24px 28px;">
+          ${safeName ? `<p style="margin:0 0 14px;font-size:14px;color:#334155;">Hello ${safeName},</p>` : ''}
+          <div style="margin:16px 0;padding:18px;border-radius:14px;background:${colors.summaryBg};border:1px solid ${colors.summaryBorder};text-align:center;">
+            <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:${colors.summaryText};opacity:0.9;margin-bottom:10px;">Reset Code</div>
+            <div style="font-size:28px;letter-spacing:0.22em;font-weight:700;color:#0f172a;">${safeCode}</div>
+          </div>
+          <p style="margin:0;font-size:13px;line-height:1.6;color:#475569;">
+            If you did not request this, you can ignore this email. For security, do not share this code with anyone.
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+app.post('/api/auth/password-reset/request', passwordResetRateLimiter, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (DISABLE_MONGODB) return res.json({ success: true });
+
+    const email = normalizeLoginEmail(req.body?.email);
+    if (!email) return res.json({ success: true });
+
+    const user = await AuthorizedUser.findOne({ email });
+    // Always respond success to avoid user enumeration.
+    if (!user || user.status !== 'approved') return res.json({ success: true });
+
+    const code = randomBytes(16).toString('hex').toUpperCase();
+    user.resetPasswordTokenHash = hashResetToken(code);
+    user.resetPasswordExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    await user.save();
+
+    const telecastSender = getTelecastSender();
+    const { accessToken } = await getTelecastSendMailAccessToken();
+    const html = buildPasswordResetEmailHtml({ code, displayName: user.displayName || user.email, styleKey: 'avenir_blue' });
+
+    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          subject: 'Opportunity Dashboard · Password Reset Code',
+          body: { contentType: 'HTML', content: html },
+          toRecipients: [{ emailAddress: { address: user.email } }],
+        },
+        saveToSentItems: 'true',
+      }),
+    });
+
+    if (!graphResponse.ok) {
+      const payload = await graphResponse.json().catch(() => ({}));
+      console.error('[auth.password-reset.request.sendMail-failed]', payload?.error?.message || graphResponse.status);
+    }
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('[auth.password-reset.request.error]', error?.message || String(error));
+    return res.json({ success: true });
+  }
+});
+
+app.post('/api/auth/password-reset/confirm', passwordResetRateLimiter, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (DISABLE_MONGODB) return res.status(403).json({ error: 'Password reset not available in offline mode' });
+
+    const email = normalizeLoginEmail(req.body?.email);
+    const code = String(req.body?.code || '').trim().toUpperCase();
+    const newPassword = String(req.body?.newPassword || '');
+    if (!email || !code || !newPassword) return res.status(400).json({ error: 'email, code, and newPassword are required' });
+
+    assertStrongPassword(newPassword);
+    const user = await AuthorizedUser.findOne({ email });
+    if (!user || user.status !== 'approved') return res.status(403).json({ error: 'Invalid reset request' });
+
+    const expiresAt = user.resetPasswordExpiresAt ? new Date(user.resetPasswordExpiresAt).getTime() : 0;
+    if (!user.resetPasswordTokenHash || !expiresAt || Date.now() > expiresAt) {
+      return res.status(403).json({ error: 'Reset code expired' });
+    }
+
+    const providedHash = hashResetToken(code);
+    if (providedHash !== user.resetPasswordTokenHash) {
+      return res.status(403).json({ error: 'Invalid reset code' });
+    }
+
+    user.passwordHash = await hashPassword(newPassword);
+    user.passwordChangedAt = new Date();
+    user.requiresPasswordChange = false;
+    user.failedLoginAttempts = 0;
+    user.accountLockedUntil = null;
+    user.lastFailedLoginAt = null;
+    user.resetPasswordTokenHash = '';
+    user.resetPasswordExpiresAt = null;
+    await user.save();
+
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ error: error?.message || 'Password reset failed' });
   }
 });
 

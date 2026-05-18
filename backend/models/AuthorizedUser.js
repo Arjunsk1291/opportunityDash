@@ -71,6 +71,14 @@ const authorizedUserSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  resetPasswordTokenHash: {
+    type: String,
+    default: '',
+  },
+  resetPasswordExpiresAt: {
+    type: Date,
+    default: null,
+  },
 });
 
 authorizedUserSchema.pre('save', function enforceSvpGroup(next) {
