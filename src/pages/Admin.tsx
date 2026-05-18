@@ -478,10 +478,8 @@ export default function Admin() {
     [allowedTabs],
   );
 
-  const telecastMailReady =
-    telecastAuthStatus.authMode === 'delegated'
-      ? Boolean(telecastAuthStatus.hasRefreshToken)
-      : Boolean(telecastAuthStatus.appConfigured && telecastAuthStatus.senderConfigured);
+  // Telecast mail auth is env-driven (server-side ROPC). UI should not handle credentials/tokens.
+  const telecastMailReady = true;
 
   useEffect(() => {
     if (canAccessPanel) {
@@ -489,7 +487,6 @@ export default function Admin() {
       loadCollectionStats();
       loadGraphConfig();
       loadGraphAuthStatus();
-      loadTelecastAuthStatus();
       loadTelecastConfig();
       loadEoiDuplicateConfig();
       loadReportingConfig();
@@ -3953,7 +3950,7 @@ export default function Admin() {
                   <Send className="h-5 w-5" />
                   Telecast
                 </CardTitle>
-                <CardDescription>Configure telecast account and automated new-row notifications.</CardDescription>
+                <CardDescription>Configure automated new-row notifications. Mail auth is server-side (ROPC via env vars).</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 sm:space-y-4 md:space-y-6">
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm md:text-base">
@@ -3961,33 +3958,7 @@ export default function Admin() {
                   <Badge className={telecastMailReady ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}>
                     {telecastMailReady ? 'Connected' : 'Not Connected'}
                   </Badge>
-                  {telecastAuthStatus.accountUsername && <span className="text-xs text-muted-foreground">({telecastAuthStatus.accountUsername})</span>}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="space-y-1 sm:space-y-2">
-                    <p className="text-xs sm:text-sm md:text-base font-medium">Telecast Account Username</p>
-                    <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" value={telecastUsername} onChange={(e) => setTelecastUsername(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
-                  </div>
-                  <div className="space-y-1 sm:space-y-2">
-                    <p className="text-xs sm:text-sm md:text-base font-medium">Telecast Account Password</p>
-                    <Input className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" type="password" value={telecastPassword} onChange={(e) => setTelecastPassword(e.target.value)} placeholder="Enter telecast account password" />
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
-                  <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={connectTelecastWithPassword} disabled>Connect with ID/Password (Deprecated)</Button>
-                  <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={startTelecastDeviceCode} disabled={configSaving || !telecastUsername}>Start Device Code</Button>
-                  <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={finishTelecastDeviceCode} disabled={configSaving || !telecastDeviceCode}>Finish</Button>
-                  <Button className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto" variant="outline" onClick={clearTelecastAuth} disabled={configSaving}>Clear Telecast Token</Button>
-                  {telecastUserCode && telecastVerificationUri ? (
-                    <div className="mt-3 rounded-xl border bg-white/60 p-3 text-xs sm:text-sm">
-                      <p className="font-semibold">Complete sign-in to connect Telecast</p>
-                      <p className="mt-1">1) Open: {telecastVerificationUri}</p>
-                      <p className="mt-1">2) Enter code: <span className="font-mono font-bold">{telecastUserCode}</span></p>
-                      <p className="mt-2 text-muted-foreground">After approving, click Finish.</p>
-                    </div>
-                  ) : null}
+                  <span className="text-xs text-muted-foreground">(ROPC env)</span>
                 </div>
               </CardContent>
             </Card>
