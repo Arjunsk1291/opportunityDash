@@ -19,6 +19,8 @@
     "helmet": "^7.2.0",
     "jsonwebtoken": "^9.0.3",
     "mongodb": "^7.0.0",
-    "mongoose": "^8.21.0"
+    "mongoose": "^8.21.0",
+    "xlsx": "^0.18.5",
+    "zod": "^3.25.76"
   }
 }

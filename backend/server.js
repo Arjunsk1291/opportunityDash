@@ -17,6 +17,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
+import PqActivity from './models/PqActivity.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import BDEngagement from './models/BDEngagement.js';
@@ -25,6 +26,8 @@ import { initializeBootSync } from './services/bootSyncService.js';
 import { buildOpportunitiesWorkbookForSpreadsheet } from './services/spreadsheetWorkbookService.js';
 import SystemConfig from './models/SystemConfig.js';
 import { encryptSecret } from './services/cryptoService.js';
+import { z } from 'zod';
+import XLSX from 'xlsx';
 import {
   Document,
   Packer,
@@ -155,6 +158,7 @@ const createRateLimiter = ({ windowMs, max, keyPrefix }) => {
 
 const authRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 20, keyPrefix: 'auth' });
 const privilegedRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 120, keyPrefix: 'priv' });
+const pqImportRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 8, keyPrefix: 'pq-import' });
 
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api/')) return next();
@@ -174,6 +178,15 @@ const isDatabaseReady = () => {
 
 const respondDatabaseUnavailable = (res) => {
   return res.status(503).json({ error: 'Database unavailable. Please try again shortly.' });
+};
+
+const clampString = (value, maxLen) => String(value || '').trim().slice(0, maxLen);
+const deriveContactPersonFromEmail = (email) => {
+  const raw = String(email || '').trim();
+  const local = raw.includes('@') ? raw.split('@')[0] : raw;
+  const cleaned = local.replace(/[._-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  return cleaned.replace(/\b\w/g, (m) => m.toUpperCase());
 };
 
 const LOCAL_AUTH_USERS = new Map();
@@ -3397,6 +3410,7 @@ const PAGE_KEYS = [
   'dashboard',
   'opportunities',
   'tender_updates',
+  'pq_activities',
   'vendor_directory',
   'clients',
   'analytics',
@@ -3413,6 +3427,7 @@ const ACTION_KEYS = [
   'opportunities_sheet_upload',
   'manual_opportunity_updates_write',
   'bd_engagements_write',
+  'pq_activities_manage',
   'approvals_proposal_head',
   'approvals_svp',
   'approvals_bulk_revert',
@@ -3436,6 +3451,7 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
   dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  pq_activities: ['Master', 'Admin'],
   vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
@@ -3451,6 +3467,7 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   opportunities_sheet_upload: ['Master', 'Admin'],
   manual_opportunity_updates_write: ['Master', 'Admin'],
   bd_engagements_write: ['Master', 'Admin', 'BDTeam'],
+  pq_activities_manage: ['Master', 'Admin'],
   approvals_proposal_head: ['Master', 'ProposalHead'],
   approvals_svp: ['Master', 'SVP'],
   approvals_bulk_revert: ['Master', 'ProposalHead'],
@@ -4759,6 +4776,287 @@ app.get('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
     res.json({ success: true, canEdit });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// --- PQ & Registration Activities ---
+const PQ_STATUS_VALUES = ['Prequalified', 'Registered', 'Registration on Process'];
+
+const normalizePqStatus = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return 'Registration on Process';
+  if (raw.includes('preq') || raw === 'prequalified') return 'Prequalified';
+  if (raw.includes('register') && !raw.includes('process') && !raw.includes('progress')) return 'Registered';
+  if (raw.includes('process') || raw.includes('progress') || raw.includes('in process') || raw.includes('inprogress')) return 'Registration on Process';
+  if (raw === 'registered') return 'Registered';
+  if (raw === 'prequalified') return 'Prequalified';
+  return 'Registration on Process';
+};
+
+const pqActivityCreateSchema = z.object({
+  sNo: z.number().int().nonnegative().optional(),
+  company: z.string().trim().min(1).max(120),
+  status: z.enum(['Prequalified', 'Registered', 'Registration on Process']).optional(),
+  registeredEmail: z.string().trim().max(200).optional().default(''),
+  userId: z.string().trim().max(200).optional().default('-'),
+  password: z.string().max(500).optional().default(''),
+  link: z.string().trim().max(800).optional().default('-'),
+  contactPerson: z.string().trim().max(120).optional().default(''),
+  renewalDate: z.union([z.string(), z.date(), z.null()]).optional().default(null),
+  notes: z.string().trim().max(1000).optional().default(''),
+});
+
+const pqActivityPatchSchema = pqActivityCreateSchema.partial().extend({
+  status: z.enum(['Prequalified', 'Registered', 'Registration on Process']).optional(),
+});
+
+const parseOptionalDate = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const mapPqActivity = (doc) => {
+  const obj = doc && typeof doc.toObject === 'function' ? doc.toObject() : doc;
+  return mapIdField(obj);
+};
+
+app.get('/api/pq-activities', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+
+    const q = clampString(req.query?.q, 200);
+    const status = clampString(req.query?.status, 64);
+    const contact = clampString(req.query?.contact, 120);
+    const filter = {};
+
+    if (status && PQ_STATUS_VALUES.includes(status)) {
+      filter.status = status;
+    }
+    if (contact) {
+      filter.contactPerson = { $regex: contact.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    }
+    if (q) {
+      filter.$or = [
+        { company: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+        { registeredEmail: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+      ];
+    }
+
+    const rows = await PqActivity.find(filter).sort({ updatedAt: -1, company: 1 }).lean();
+    res.json({ success: true, rows: rows.map(mapIdField) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to load PQ activities' });
+  }
+});
+
+app.post('/api/pq-activities', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+
+    const parsed = pqActivityCreateSchema.safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
+
+    const value = parsed.data;
+    const company = clampString(value.company, 120);
+    const registeredEmail = clampString(value.registeredEmail, 200);
+    const doc = await PqActivity.create({
+      sNo: typeof value.sNo === 'number' ? value.sNo : 0,
+      company,
+      status: value.status || 'Registration on Process',
+      registeredEmail,
+      userId: clampString(value.userId || '-', 200) || '-',
+      password: String(value.password || ''),
+      link: clampString(value.link || '-', 800) || '-',
+      contactPerson: clampString(value.contactPerson || deriveContactPersonFromEmail(registeredEmail), 120),
+      renewalDate: parseOptionalDate(value.renewalDate),
+      notes: clampString(value.notes || '', 1000),
+    });
+    res.json({ success: true, row: mapPqActivity(doc) });
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (message.includes('E11000')) return res.status(409).json({ error: 'Company already exists' });
+    res.status(500).json({ error: message || 'Failed to create PQ activity' });
+  }
+});
+
+app.patch('/api/pq-activities/:id', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const id = String(req.params.id || '').trim();
+    const parsed = pqActivityPatchSchema.safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
+
+    const existing = await PqActivity.findById(id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    const next = parsed.data || {};
+    if (typeof next.sNo === 'number') existing.sNo = next.sNo;
+    if (typeof next.company === 'string') existing.company = clampString(next.company, 120);
+    if (typeof next.status === 'string') existing.status = next.status;
+    if (typeof next.registeredEmail === 'string') existing.registeredEmail = clampString(next.registeredEmail, 200);
+    if (typeof next.userId === 'string') existing.userId = clampString(next.userId || '-', 200) || '-';
+    if (typeof next.password === 'string') existing.password = String(next.password);
+    if (typeof next.link === 'string') existing.link = clampString(next.link || '-', 800) || '-';
+    if (typeof next.contactPerson === 'string') existing.contactPerson = clampString(next.contactPerson, 120);
+    if ('renewalDate' in next) existing.renewalDate = parseOptionalDate(next.renewalDate);
+    if (typeof next.notes === 'string') existing.notes = clampString(next.notes, 1000);
+    await existing.save();
+    res.json({ success: true, row: mapPqActivity(existing) });
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (message.includes('E11000')) return res.status(409).json({ error: 'Company already exists' });
+    res.status(500).json({ error: message || 'Failed to update PQ activity' });
+  }
+});
+
+app.delete('/api/pq-activities/:id', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const id = String(req.params.id || '').trim();
+    const deleted = await PqActivity.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to delete PQ activity' });
+  }
+});
+
+app.post(
+  '/api/pq-activities/import',
+  verifyToken,
+  pqImportRateLimiter,
+  express.raw({ type: ['application/octet-stream', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'], limit: '8mb' }),
+  async (req, res) => {
+    try {
+      if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
+      if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+
+      const buffer = req.body instanceof Buffer ? req.body : Buffer.from([]);
+      if (!buffer.length) return res.status(400).json({ error: 'No file uploaded' });
+
+      const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) return res.status(400).json({ error: 'Workbook has no sheets' });
+      const sheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
+      if (!Array.isArray(rows) || rows.length < 2) return res.json({ success: true, added: 0, updated: 0 });
+
+      const headerRow = rows[0].map((h) => String(h || '').trim());
+      const normalizeHeader = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+      const headerMap = headerRow.reduce((acc, header, idx) => {
+        const key = normalizeHeader(header);
+        if (key) acc[key] = idx;
+        return acc;
+      }, {});
+
+      const colIdx = (candidates) => {
+        for (const c of candidates) {
+          const idx = headerMap[normalizeHeader(c)];
+          if (typeof idx === 'number') return idx;
+        }
+        return -1;
+      };
+
+      const idxSno = colIdx(['S.No', 'SNo', 'S No', 'S.No.']);
+      const idxCompany = colIdx(['Company']);
+      const idxStatus = colIdx(['Status']);
+      const idxEmail = colIdx(['Registered Email', 'RegisteredEmail', 'Email']);
+      const idxUserId = colIdx(['User ID (Portal)', 'User ID Portal', 'User ID', 'Portal User ID']);
+      const idxPassword = colIdx(['Password(Portal)', 'Password (Portal)', 'Portal Password', 'Password']);
+      const idxLink = colIdx(['Link(Portal)', 'Link (Portal)', 'Portal Link', 'Link', 'URL']);
+
+      if (idxCompany < 0) return res.status(400).json({ error: 'Missing Company column' });
+
+      let added = 0;
+      let updated = 0;
+
+      for (let i = 1; i < rows.length; i += 1) {
+        const row = Array.isArray(rows[i]) ? rows[i] : [];
+        const company = clampString(row[idxCompany], 120);
+        if (!company) continue;
+
+        const registeredEmail = clampString(idxEmail >= 0 ? row[idxEmail] : '', 200);
+        const status = normalizePqStatus(idxStatus >= 0 ? row[idxStatus] : '');
+        const sNo = idxSno >= 0 ? Number(String(row[idxSno] || '').trim()) : 0;
+        const userId = clampString(idxUserId >= 0 ? row[idxUserId] : '-', 200) || '-';
+        const password = String(idxPassword >= 0 ? row[idxPassword] : '');
+        const link = clampString(idxLink >= 0 ? row[idxLink] : '-', 800) || '-';
+        const contactPerson = deriveContactPersonFromEmail(registeredEmail);
+
+        const existing = await PqActivity.findOne({ company }).collation({ locale: 'en', strength: 2 });
+        if (existing) {
+          existing.sNo = Number.isFinite(sNo) ? sNo : existing.sNo;
+          existing.status = status;
+          existing.registeredEmail = registeredEmail;
+          existing.userId = userId;
+          existing.password = password;
+          existing.link = link;
+          if (!existing.contactPerson) existing.contactPerson = clampString(contactPerson, 120);
+          await existing.save();
+          updated += 1;
+        } else {
+          await PqActivity.create({
+            sNo: Number.isFinite(sNo) ? sNo : 0,
+            company,
+            status,
+            registeredEmail,
+            userId,
+            password,
+            link,
+            contactPerson: clampString(contactPerson, 120),
+            renewalDate: null,
+            notes: '',
+          });
+          added += 1;
+        }
+      }
+
+      res.json({ success: true, added, updated });
+    } catch (error) {
+      res.status(500).json({ error: error.message || 'Failed to import PQ activities' });
+    }
+  },
+);
+
+app.get('/api/pq-activities/export', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const rows = await PqActivity.find({}).sort({ company: 1 }).lean();
+
+    const data = [
+      ['S.No', 'Company', 'Status', 'Registered Email', 'Contact Person', 'User ID (Portal)', 'Password(Portal)', 'Link(Portal)', 'Renewal Date', 'Notes', 'Updated At'],
+      ...rows.map((r) => ([
+        r.sNo ?? '',
+        r.company ?? '',
+        r.status ?? '',
+        r.registeredEmail ?? '',
+        r.contactPerson ?? '',
+        r.userId ?? '',
+        r.password ?? '',
+        r.link ?? '',
+        r.renewalDate ? new Date(r.renewalDate).toISOString().slice(0, 10) : '',
+        r.notes ?? '',
+        r.updatedAt ? new Date(r.updatedAt).toISOString() : '',
+      ])),
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'PQ Activities');
+    const out = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=\"pq-activities-${new Date().toISOString().slice(0, 10)}.xlsx\"`);
+    res.send(out);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to export PQ activities' });
   }
 });
 
