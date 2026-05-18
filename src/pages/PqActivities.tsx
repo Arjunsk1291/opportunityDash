@@ -166,6 +166,9 @@ export default function PqActivities() {
     }
 
     return Array.from(seen.values()).sort((a, b) => {
+      const aNo = Number.isFinite(a.sNo) ? a.sNo : Number.MAX_SAFE_INTEGER;
+      const bNo = Number.isFinite(b.sNo) ? b.sNo : Number.MAX_SAFE_INTEGER;
+      if (aNo !== bNo) return aNo - bNo;
       const aOrder = STATUS_ORDER[a.status] ?? 99;
       const bOrder = STATUS_ORDER[b.status] ?? 99;
       if (aOrder !== bOrder) return aOrder - bOrder;
