@@ -110,6 +110,9 @@ interface TelecastAuthStatus {
   accountUsername: string;
   hasRefreshToken: boolean;
   tokenUpdatedAt?: string | null;
+  appConfigured?: boolean;
+  senderConfigured?: boolean;
+  senderEmail?: string;
 }
 
 interface TelecastTemplateStyle {
@@ -311,6 +314,9 @@ export default function Admin() {
     authMode: 'application',
     accountUsername: '',
     hasRefreshToken: false,
+    appConfigured: false,
+    senderConfigured: false,
+    senderEmail: '',
   });
   const [notificationSyncStatus, setNotificationSyncStatus] = useState<NotificationSyncStatus>({
     lastCheckedAt: null,
@@ -471,6 +477,11 @@ export default function Admin() {
     () => new Set(allowedTabs.map((tab) => tab.value)),
     [allowedTabs],
   );
+
+  const telecastMailReady =
+    telecastAuthStatus.authMode === 'delegated'
+      ? Boolean(telecastAuthStatus.hasRefreshToken)
+      : Boolean(telecastAuthStatus.appConfigured && telecastAuthStatus.senderConfigured);
 
   useEffect(() => {
     if (canAccessPanel) {
@@ -1202,6 +1213,9 @@ export default function Admin() {
         accountUsername: data.accountUsername || '',
         hasRefreshToken: !!data.hasRefreshToken,
         tokenUpdatedAt: data.tokenUpdatedAt || null,
+        appConfigured: Boolean(data.appConfigured),
+        senderConfigured: Boolean(data.senderConfigured),
+        senderEmail: data.senderEmail || '',
       });
     } catch (error) {
       console.error('Failed to load telecast auth status:', error);
@@ -3963,8 +3977,8 @@ export default function Admin() {
               <CardContent className="space-y-3 sm:space-y-4 md:space-y-6">
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm md:text-base">
                   <span>Status:</span>
-                  <Badge className={telecastAuthStatus.hasRefreshToken ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}>
-                    {telecastAuthStatus.hasRefreshToken ? 'Connected' : 'Not Connected'}
+                  <Badge className={telecastMailReady ? 'bg-success/20 text-success' : 'bg-destructive/20 text-destructive'}>
+                    {telecastMailReady ? 'Connected' : 'Not Connected'}
                   </Badge>
                   {telecastAuthStatus.accountUsername && <span className="text-xs text-muted-foreground">({telecastAuthStatus.accountUsername})</span>}
                 </div>
@@ -4186,7 +4200,7 @@ export default function Admin() {
               <CardContent className="space-y-2 sm:space-y-3 md:space-y-4">
                 <p className="text-xs sm:text-sm md:text-base font-medium">Recipient Email</p>
                 <Input type="email" className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" placeholder="name@company.com" value={telecastRecipientEmail} onChange={(e) => setTelecastRecipientEmail(e.target.value)} />
-                <Button onClick={sendTelecastTestMail} disabled={telecastSending || !telecastAuthStatus.hasRefreshToken} className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
+                <Button onClick={sendTelecastTestMail} disabled={telecastSending || !telecastMailReady} className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
                   <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${telecastSending ? 'animate-pulse' : ''}`} />
                   {telecastSending ? 'Sending...' : 'Send Template Preview'}
                 </Button>
@@ -4285,7 +4299,7 @@ export default function Admin() {
                   </Button>
                   <Button
                     onClick={sendApprovalTestMail}
-                    disabled={approvalTemplateSending || !telecastAuthStatus.hasRefreshToken || !telecastRecipientEmail}
+                    disabled={approvalTemplateSending || !telecastMailReady || !telecastRecipientEmail}
                     variant="outline"
                     className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto"
                   >
@@ -4554,7 +4568,7 @@ export default function Admin() {
                   </Button>
                   <Button
                     onClick={sendDeadlineTestMail}
-                    disabled={deadlineTestSending || !telecastAuthStatus.hasRefreshToken || !telecastRecipientEmail}
+                    disabled={deadlineTestSending || !telecastMailReady || !telecastRecipientEmail}
                     variant="outline"
                     className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto"
                   >
@@ -4695,7 +4709,7 @@ export default function Admin() {
                 </Button>
                 <Button
                   onClick={sendReportingTestMail}
-                  disabled={reportingTemplateSending || !telecastAuthStatus.hasRefreshToken || !telecastRecipientEmail}
+                  disabled={reportingTemplateSending || !telecastMailReady || !telecastRecipientEmail}
                   variant="outline"
                   className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto"
                 >

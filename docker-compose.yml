@@ -28,6 +28,7 @@ services:
       GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:-}
       GRAPH_CLIENT_SECRET: ${GRAPH_CLIENT_SECRET:-}
       GRAPH_SHEETS_SHARE_LINK: ${GRAPH_SHEETS_SHARE_LINK:-}
+      TELECAST_SENDER: ${TELECAST_SENDER:-tender-notify@avenirenergy.me}
     depends_on:
       mongo:
         condition: service_healthy

@@ -100,6 +100,7 @@ Microsoft Graph / Excel Sync:
 - `GRAPH_CLIENT_ID`
 - `GRAPH_CLIENT_SECRET`
 - `GRAPH_SHEETS_SHARE_LINK` (optional default link)
+- `TELECAST_SENDER` (optional; sender mailbox used for Graph `/sendMail`. Defaults to `tender-notify@avenirenergy.me` if unset)
 
 Optional debug flags:
 

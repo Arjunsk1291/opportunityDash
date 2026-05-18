@@ -48,6 +48,9 @@ const PORT = process.env.PORT || 3001;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
 console.log('Debug flags:', { MAIL_DEBUG: String(process.env.MAIL_DEBUG || '').toLowerCase() === 'true', NOTIFICATION_DEBUG: String(process.env.NOTIFICATION_DEBUG || '').toLowerCase() === 'true', GRAPH_TOKEN_DEBUG: String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true' });
 
+const DEFAULT_TELECAST_SENDER = 'tender-notify@avenirenergy.me';
+const getTelecastSender = () => String(process.env.TELECAST_SENDER || DEFAULT_TELECAST_SENDER).trim();
+
 const DISABLE_MONGODB = String(process.env.DISABLE_MONGODB || '').toLowerCase() === 'true';
 const JWT_SECRET = String(process.env.JWT_SECRET || process.env.SESSION_JWT_SECRET || '').trim();
 const IS_PROD = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -68,6 +71,13 @@ const isConfiguredAdminUsername = (value) => {
   if (ADMIN_USERS_SET.has(normalized)) return true;
   if (!normalized.includes('@') && ADMIN_USERS_SET.has(`${normalized}@dev.local`)) return true;
   return false;
+};
+
+const hasGraphAppCredentialsConfigured = () => {
+  const tenantId = String(process.env.GRAPH_TENANT_ID || process.env.AZURE_TENANT_ID || '').trim();
+  const clientId = String(process.env.GRAPH_CLIENT_ID || process.env.AZURE_CLIENT_ID || '').trim();
+  const clientSecret = String(process.env.GRAPH_CLIENT_SECRET || process.env.CLIENT_SECRET || process.env.AZURE_CLIENT_SECRET || '').trim();
+  return !!(tenantId && clientId && clientSecret);
 };
 
 if (IS_PROD && !JWT_SECRET) {
@@ -1164,7 +1174,8 @@ const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' })
     return { success: true, skipped: 'disabled' };
   }
 
-  if (!String(process.env.TELECAST_SENDER || '').trim()) {
+  const telecastSender = getTelecastSender();
+  if (!telecastSender) {
     return { success: true, skipped: 'telecast_sender_not_configured' };
   }
 
@@ -1195,7 +1206,7 @@ const sendApprovalAlertForOpportunity = async ({ opportunity, approvedBy = '' })
   const html = buildApprovalAlertEmailHtml({ values, renderedBody, styleKey: style.key });
   const { accessToken } = await getMailAccessToken();
 
-  const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${process.env.TELECAST_SENDER}/sendMail`, {
+  const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -1244,7 +1255,8 @@ const sendDeadlineAlertForOpportunity = async ({ opportunity, config, leadDirect
     return { success: true, skipped: 'disabled' };
   }
 
-  if (!String(process.env.TELECAST_SENDER || '').trim()) {
+  const telecastSender = getTelecastSender();
+  if (!telecastSender) {
     return { success: true, skipped: 'telecast_sender_not_configured' };
   }
 
@@ -1276,7 +1288,7 @@ const sendDeadlineAlertForOpportunity = async ({ opportunity, config, leadDirect
   const html = buildTelecastEmailHtml({ values, renderedBody, styleKey: style.key });
   const { accessToken } = await getMailAccessToken();
 
-  const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${process.env.TELECAST_SENDER}/sendMail`, {
+  const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -1327,7 +1339,8 @@ const sendBulkApprovalAlerts = async ({ opportunities = [], approvedBy = '', fil
     return { success: true, skipped: 'disabled' };
   }
 
-  if (!String(process.env.TELECAST_SENDER || '').trim()) {
+  const telecastSender = getTelecastSender();
+  if (!telecastSender) {
     return { success: true, skipped: 'telecast_sender_not_configured' };
   }
 
@@ -1378,7 +1391,7 @@ const sendBulkApprovalAlerts = async ({ opportunities = [], approvedBy = '', fil
       html = buildBulkApprovalAlertEmailHtml({ group, opportunities: groupOpps, summaryText, styleKey: style.key });
     }
 
-    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${process.env.TELECAST_SENDER}/sendMail`, {
+    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -1545,7 +1558,8 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
       dispatchedRefNos: [],
     };
   }
-  if (!String(process.env.TELECAST_SENDER || '').trim()) {
+  const telecastSender = getTelecastSender();
+  if (!telecastSender) {
     return {
       sent: 0,
       skipped: 'telecast_sender_not_configured',
@@ -1589,7 +1603,7 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
     const content = renderTemplate(bodyTemplate, values);
     const htmlContent = buildTelecastEmailHtml({ values, renderedBody: content, styleKey: templateStyle.key });
 
-    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${process.env.TELECAST_SENDER}/sendMail`, {
+    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -3776,12 +3790,16 @@ app.get('/api/telecast/auth/status', verifyToken, async (req, res) => {
     }
 
     const config = await getSystemConfig();
+    const sender = getTelecastSender();
     res.json({
       success: true,
       authMode: config.telecastGraphAuthMode || 'application',
       accountUsername: config.telecastGraphAccountUsername || '',
       hasRefreshToken: !!config.telecastGraphRefreshTokenEnc,
       tokenUpdatedAt: config.telecastGraphTokenUpdatedAt || null,
+      senderEmail: sender,
+      senderConfigured: !!sender,
+      appConfigured: hasGraphAppCredentialsConfigured(),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -4091,7 +4109,8 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can send test mail' });
     }
 
-    if (!String(process.env.TELECAST_SENDER || '').trim()) {
+    const telecastSender = getTelecastSender();
+    if (!telecastSender) {
       return res.json({ success: true, skipped: 'telecast_sender_not_configured' });
     }
 
@@ -4125,7 +4144,7 @@ app.post('/api/telecast/test-mail', verifyToken, async (req, res) => {
       renderedBody,
       styleKey: templateStyle.key,
     });
-    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${process.env.TELECAST_SENDER}/sendMail`, {
+    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -4162,7 +4181,8 @@ app.post('/api/telecast/test-deadline-mail', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can send test mail' });
     }
 
-    if (!String(process.env.TELECAST_SENDER || '').trim()) {
+    const telecastSender = getTelecastSender();
+    if (!telecastSender) {
       return res.json({ success: true, skipped: 'telecast_sender_not_configured' });
     }
 
@@ -4198,7 +4218,7 @@ app.post('/api/telecast/test-deadline-mail', verifyToken, async (req, res) => {
       renderedBody,
       styleKey: templateStyle.key,
     });
-    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${process.env.TELECAST_SENDER}/sendMail`, {
+    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -4305,7 +4325,8 @@ app.post('/api/telecast/test-approval-mail', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can send approval alert test mail' });
     }
 
-    if (!String(process.env.TELECAST_SENDER || '').trim()) {
+    const telecastSender = getTelecastSender();
+    if (!telecastSender) {
       return res.json({ success: true, skipped: 'telecast_sender_not_configured' });
     }
 
@@ -4335,7 +4356,7 @@ app.post('/api/telecast/test-approval-mail', verifyToken, async (req, res) => {
     const renderedBody = renderTemplate(bodyTemplate, values);
     const html = buildApprovalAlertEmailHtml({ values, renderedBody, styleKey: style.key });
 
-    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${process.env.TELECAST_SENDER}/sendMail`, {
+    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -4369,7 +4390,8 @@ app.post('/api/reporting/test-mail', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can send reporting test mail' });
     }
 
-    if (!String(process.env.TELECAST_SENDER || '').trim()) {
+    const telecastSender = getTelecastSender();
+    if (!telecastSender) {
       return res.json({ success: true, skipped: 'telecast_sender_not_configured' });
     }
 
@@ -4396,7 +4418,7 @@ app.post('/api/reporting/test-mail', verifyToken, async (req, res) => {
       comments: 'This is a style preview sent from Admin > Issue Reporting Template Style.',
     });
 
-    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${process.env.TELECAST_SENDER}/sendMail`, {
+    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -4459,7 +4481,8 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'No Master recipients configured' });
     }
 
-    if (!String(process.env.TELECAST_SENDER || '').trim()) {
+    const telecastSender = getTelecastSender();
+    if (!telecastSender) {
       return res.json({ success: true, skipped: 'telecast_sender_not_configured' });
     }
 
@@ -4492,7 +4515,7 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
       comments: safeComments,
     });
 
-    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${process.env.TELECAST_SENDER}/sendMail`, {
+    const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
