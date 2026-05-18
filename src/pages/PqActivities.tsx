@@ -367,7 +367,7 @@ export default function PqActivities() {
               </Button>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
               <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
                 <SelectTrigger className="bg-navytrust-elevated/40 border-white/10 text-navytrust-foreground">
                   <SelectValue placeholder="Status" />
@@ -403,15 +403,15 @@ export default function PqActivities() {
                 }}
               />
 
-              <Button variant="secondary" className="bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2" onClick={onPickImportFile} disabled={loading}>
+              <Button variant="secondary" className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2" onClick={onPickImportFile} disabled={loading}>
                 <FileUp className="h-4 w-4" aria-hidden="true" />
                 Import .xlsx
               </Button>
-              <Button variant="secondary" className="bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2" onClick={exportXlsx} disabled={loading}>
+              <Button variant="secondary" className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2" onClick={exportXlsx} disabled={loading}>
                 <FileDown className="h-4 w-4" aria-hidden="true" />
                 Export .xlsx
               </Button>
-              <Button className="bg-navytrust-primary hover:bg-navytrust-primary/90 text-white gap-2 shadow-nt-glow" onClick={openCreate}>
+              <Button className="w-full sm:w-auto bg-navytrust-primary hover:bg-navytrust-primary/90 text-white gap-2 shadow-nt-glow" onClick={openCreate}>
                 <Plus className="h-4 w-4" aria-hidden="true" />
                 Add Entry
               </Button>
@@ -874,4 +874,3 @@ export default function PqActivities() {
     </div>
   );
 }
-

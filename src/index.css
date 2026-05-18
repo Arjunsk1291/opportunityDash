@@ -88,17 +88,18 @@
     --grid-active-cell: 0 0% 100%;
 
     /* Navy Trust tokens (Avin PQ page) */
-    --nt-background: 223 62% 15%;
-    --nt-surface: 213 52% 25%;
-    --nt-elevated: 212 46% 31%;
-    --nt-primary: 208 46% 43%;
-    --nt-foreground: 210 26% 92%;
-    --nt-gold: 44 51% 54%;
-    --nt-shadow-elegant: 0 18px 40px hsl(var(--nt-background) / 0.45);
-    --nt-shadow-glow: 0 0 28px hsl(var(--nt-primary) / 0.28);
-    --nt-shadow-gold: 0 0 18px hsl(var(--nt-gold) / 0.34);
-    --nt-gradient-hero: linear-gradient(135deg, hsl(var(--nt-background)) 0%, hsl(var(--nt-primary)) 100%);
-    --nt-gradient-gold: linear-gradient(135deg, hsl(var(--nt-gold) / 0.95) 0%, hsl(var(--nt-gold) / 0.62) 100%);
+    /* Map PQ page theme onto the app theme tokens for visual consistency. */
+    --nt-background: var(--background);
+    --nt-surface: var(--card);
+    --nt-elevated: var(--secondary);
+    --nt-primary: var(--primary);
+    --nt-foreground: var(--foreground);
+    --nt-gold: var(--warning);
+    --nt-shadow-elegant: var(--shadow-lg);
+    --nt-shadow-glow: var(--shadow-glow);
+    --nt-shadow-gold: 0 0 18px hsl(var(--warning) / 0.34);
+    --nt-gradient-hero: var(--gradient-hero);
+    --nt-gradient-gold: var(--gradient-warning);
   }
 
   .dark {
@@ -140,17 +141,18 @@
     --sidebar-ring: 217 91% 60%;
 
     /* Navy Trust tokens (Avin PQ page) */
-    --nt-background: 223 62% 15%;
-    --nt-surface: 213 52% 25%;
-    --nt-elevated: 212 46% 31%;
-    --nt-primary: 208 46% 43%;
-    --nt-foreground: 210 26% 92%;
-    --nt-gold: 44 51% 54%;
-    --nt-shadow-elegant: 0 18px 40px hsl(var(--nt-background) / 0.45);
-    --nt-shadow-glow: 0 0 28px hsl(var(--nt-primary) / 0.28);
-    --nt-shadow-gold: 0 0 18px hsl(var(--nt-gold) / 0.34);
-    --nt-gradient-hero: linear-gradient(135deg, hsl(var(--nt-background)) 0%, hsl(var(--nt-primary)) 100%);
-    --nt-gradient-gold: linear-gradient(135deg, hsl(var(--nt-gold) / 0.95) 0%, hsl(var(--nt-gold) / 0.62) 100%);
+    /* Keep PQ page theme aligned with dark-mode app tokens as well. */
+    --nt-background: var(--background);
+    --nt-surface: var(--card);
+    --nt-elevated: var(--secondary);
+    --nt-primary: var(--primary);
+    --nt-foreground: var(--foreground);
+    --nt-gold: var(--warning);
+    --nt-shadow-elegant: var(--shadow-lg);
+    --nt-shadow-glow: var(--shadow-glow);
+    --nt-shadow-gold: 0 0 18px hsl(var(--warning) / 0.34);
+    --nt-gradient-hero: var(--gradient-hero);
+    --nt-gradient-gold: var(--gradient-warning);
   }
 }
 
