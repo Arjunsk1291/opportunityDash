@@ -46,6 +46,12 @@ const STATUS_OPTIONS: Array<{ value: PqStatus | 'All'; label: string }> = [
   { value: 'Registration on Process', label: 'Registration on Process' },
 ];
 
+const STATUS_ORDER: Record<PqStatus, number> = {
+  'Prequalified': 0,
+  'Registered': 1,
+  'Registration on Process': 2,
+};
+
 const pqFormSchema = z.object({
   sNo: z.coerce.number().int().nonnegative().optional().default(0),
   company: z.string().trim().min(1, 'Company is required').max(120),
@@ -125,7 +131,7 @@ export default function PqActivities() {
 
   const filteredRows = useMemo(() => {
     const normalizedQ = q.trim().toLowerCase();
-    return rows.filter((r) => {
+    const filtered = rows.filter((r) => {
       if (statusFilter !== 'All' && r.status !== statusFilter) return false;
       if (contactFilter.trim() && String(r.contactPerson || '').toLowerCase() !== contactFilter.trim().toLowerCase()) return false;
       if (!normalizedQ) return true;
@@ -134,7 +140,50 @@ export default function PqActivities() {
         || String(r.registeredEmail || '').toLowerCase().includes(normalizedQ)
       );
     });
+
+    // Deduplicate identical rows for display (keep most recently updated).
+    const seen = new Map<string, PqActivityRow>();
+    for (const row of filtered) {
+      const key = [
+        row.company,
+        row.status,
+        row.registeredEmail,
+        row.userId,
+        row.password,
+        row.link,
+        row.contactPerson,
+        row.renewalDate,
+        row.notes,
+      ].map((v) => String(v ?? '').trim()).join('|');
+      const existing = seen.get(key);
+      if (!existing) {
+        seen.set(key, row);
+        continue;
+      }
+      const existingTs = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+      const rowTs = row.updatedAt ? new Date(row.updatedAt).getTime() : 0;
+      if (rowTs >= existingTs) seen.set(key, row);
+    }
+
+    return Array.from(seen.values()).sort((a, b) => {
+      const aOrder = STATUS_ORDER[a.status] ?? 99;
+      const bOrder = STATUS_ORDER[b.status] ?? 99;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return String(a.company || '').localeCompare(String(b.company || ''), undefined, { sensitivity: 'base' });
+    });
   }, [rows, q, statusFilter, contactFilter]);
+
+  const statusBadgeClass = (status: PqStatus) => {
+    switch (status) {
+      case 'Prequalified':
+        return 'bg-warning text-warning-foreground border border-warning/20';
+      case 'Registered':
+        return 'bg-accent text-accent-foreground border border-accent/20';
+      case 'Registration on Process':
+      default:
+        return 'bg-info text-info-foreground border border-info/20';
+    }
+  };
 
   const loadRows = async () => {
     if (!token) return;
@@ -451,8 +500,8 @@ export default function PqActivities() {
                         <td className="px-4 py-3 text-navytrust-foreground/80">{row.sNo || idx + 1}</td>
                         <td className="px-4 py-3 font-medium text-navytrust-foreground">{row.company}</td>
                         <td className="px-4 py-3">
-                          <Badge className={isPreq ? 'bg-nt-gold text-slate-900 shadow-nt-gold' : 'bg-navytrust-elevated/60 text-navytrust-foreground border border-white/10'}>
-                            {isPreq && <span className="mr-2 inline-block h-2 w-2 rounded-full bg-navytrust-gold shadow-nt-gold animate-pulse" aria-hidden="true" />}
+                          <Badge className={statusBadgeClass(row.status)}>
+                            {isPreq && <span className="mr-2 inline-block h-2 w-2 rounded-full bg-warning" aria-hidden="true" />}
                             {row.status}
                           </Badge>
                         </td>
@@ -593,8 +642,8 @@ export default function PqActivities() {
                         <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Company</div>
                         <div className="mt-1 font-semibold text-navytrust-foreground truncate">{row.company}</div>
                         <div className="mt-2 flex flex-wrap gap-2 items-center">
-                          <Badge className={isPreq ? 'bg-nt-gold text-slate-900 shadow-nt-gold' : 'bg-navytrust-elevated/60 text-navytrust-foreground border border-white/10'}>
-                            {isPreq && <span className="mr-2 inline-block h-2 w-2 rounded-full bg-navytrust-gold shadow-nt-gold animate-pulse" aria-hidden="true" />}
+                          <Badge className={statusBadgeClass(row.status)}>
+                            {isPreq && <span className="mr-2 inline-block h-2 w-2 rounded-full bg-warning" aria-hidden="true" />}
                             {row.status}
                           </Badge>
                           <span className="text-xs text-navytrust-foreground/70">#{row.sNo || idx + 1}</span>
