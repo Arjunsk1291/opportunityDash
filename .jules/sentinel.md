@@ -13,5 +13,5 @@ This journal is for recording critical security learnings, vulnerability pattern
 
 ## 2025-05-14 - Helmet v7 Middleware Configuration
 **Vulnerability:** Misconfiguration of security headers when using Helmet v7+.
-**Learning:** `helmet.permissionsPolicy` is no longer a sub-option of the main `helmet()` call and must be used as a separate middleware. Using it incorrectly as an option results in the header not being set.
-**Prevention:** Always verify header presence in responses after upgrading or implementing security middleware. Use separate middleware calls for specific headers like `permissionsPolicy` or `referrerPolicy` if needed.
+**Learning:** `Permissions-Policy` is not part of the Helmet v7 core middleware. While some community packages or future versions might include it, it should be set manually or via a dedicated middleware to ensure presence. Incorrectly assuming it's a function on the `helmet` object causes runtime crashes.
+**Prevention:** Always verify the existence of specific middleware functions when working with security libraries. Use manual `res.setHeader` for headers not yet supported by standard middleware.
