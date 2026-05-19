@@ -172,9 +172,9 @@ const resolveProjectStatus = (rows: Opportunity[]) => {
   const statuses = rows.map((opp) => normalizeCanonicalStatus(getDisplayStatus(opp)));
   if (statuses.includes('AWARDED')) return 'AWARDED' as const;
   if (statuses.includes('LOST')) return 'LOST' as const;
+  if (statuses.includes('SUBMITTED')) return 'SUBMITTED' as const;
   if (statuses.includes('REGRETTED')) return 'REGRETTED' as const;
   if (statuses.some((status) => isHoldStatus(status))) return 'HOLD / CLOSED' as const;
-  if (statuses.includes('SUBMITTED')) return 'SUBMITTED' as const;
   return 'OTHER' as const;
 };
 
