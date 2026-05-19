@@ -77,10 +77,16 @@ export function deriveOpportunityStatusFields({
   // Guardrail: some sheets mistakenly store the final outcome (Lost/Awarded/etc)
   // in the "Avenir Status" column. If so, treat it as an authoritative tender result.
   const avenirLooksLikeTenderResult = normalizeTenderResultValue(sourceAvenirStatus);
+  const isTerminalTenderResult = (val) => [
+    CANONICAL_STATUS.LOST,
+    CANONICAL_STATUS.AWARDED,
+    CANONICAL_STATUS.REGRETTED,
+    CANONICAL_STATUS.HOLD_CLOSED,
+  ].includes(val);
+
   if (
-    (avenirLooksLikeTenderResult === CANONICAL_STATUS.LOST || avenirLooksLikeTenderResult === CANONICAL_STATUS.AWARDED)
-    && sourceTenderResult !== CANONICAL_STATUS.LOST
-    && sourceTenderResult !== CANONICAL_STATUS.AWARDED
+    isTerminalTenderResult(avenirLooksLikeTenderResult)
+    && !isTerminalTenderResult(sourceTenderResult)
   ) {
     sourceTenderResult = avenirLooksLikeTenderResult;
   }
@@ -102,7 +108,10 @@ export function deriveOpportunityStatusFields({
   let effectiveTenderResult = sourceTenderResult;
   let effectiveCanonicalStage = effectiveAvenirStatus || normalizeCanonicalStatus(fallbackCanonicalStage);
 
-  if (effectiveTenderResult === CANONICAL_STATUS.HOLD_CLOSED || effectiveAvenirStatus === CANONICAL_STATUS.HOLD_CLOSED) {
+  if (
+    effectiveTenderResult === CANONICAL_STATUS.HOLD_CLOSED
+    || effectiveAvenirStatus === CANONICAL_STATUS.HOLD_CLOSED
+  ) {
     effectiveCanonicalStage = CANONICAL_STATUS.HOLD_CLOSED;
   } else if (
     effectiveTenderResult === CANONICAL_STATUS.AWARDED
@@ -110,9 +119,16 @@ export function deriveOpportunityStatusFields({
     || effectiveCanonicalStage === CANONICAL_STATUS.AWARDED
   ) {
     effectiveCanonicalStage = CANONICAL_STATUS.AWARDED;
-  } else if (effectiveTenderResult === CANONICAL_STATUS.LOST) {
-    // Sheet tender result is authoritative for final outcomes.
+  } else if (
+    effectiveTenderResult === CANONICAL_STATUS.LOST
+    || effectiveAvenirStatus === CANONICAL_STATUS.LOST
+  ) {
     effectiveCanonicalStage = CANONICAL_STATUS.LOST;
+  } else if (
+    effectiveTenderResult === CANONICAL_STATUS.REGRETTED
+    || effectiveAvenirStatus === CANONICAL_STATUS.REGRETTED
+  ) {
+    effectiveCanonicalStage = CANONICAL_STATUS.REGRETTED;
   }
 
   const awardedCandidate = (
