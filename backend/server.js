@@ -148,17 +148,18 @@ app.use(helmet({
     directives: {
       ...helmet.contentSecurityPolicy.getDefaultDirectives(),
       'img-src': ["'self'", 'data:', 'https:'],
-      'script-src': ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      'script-src': ["'self'", "'unsafe-inline'"],
+      'connect-src': ["'self'", 'https:'],
     },
   },
-  hsts: IS_PROD,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  hsts: IS_PROD ? { maxAge: 31536000, preload: true } : false,
 }));
-app.use(helmet.referrerPolicy({ policy: 'strict-origin-when-cross-origin' }));
 app.use(helmet.permissionsPolicy({
   features: {
-    geolocation: ['none'],
-    microphone: ['none'],
-    camera: ['none'],
+    geolocation: [],
+    microphone: [],
+    camera: [],
   },
 }));
 
