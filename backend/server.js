@@ -18,6 +18,12 @@ import LoginLog from './models/LoginLog.js';
 import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
 import PqActivity from './models/PqActivity.js';
+import HfOffice from './models/HfOffice.js';
+import HfDiscipline from './models/HfDiscipline.js';
+import HfSalaryBand from './models/HfSalaryBand.js';
+import HfCandidate from './models/HfCandidate.js';
+import HfCvFile from './models/HfCvFile.js';
+import HfOfferLetterTemplate from './models/HfOfferLetterTemplate.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import BDEngagement from './models/BDEngagement.js';
@@ -39,6 +45,8 @@ import SystemConfig from './models/SystemConfig.js';
 import { encryptSecret } from './services/cryptoService.js';
 import { z } from 'zod';
 import XLSX from 'xlsx';
+import multer from 'multer';
+import fs from 'fs';
 import {
   Document,
   Packer,
@@ -178,6 +186,7 @@ const authRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 20, ke
 const privilegedRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 120, keyPrefix: 'priv' });
 const pqImportRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 8, keyPrefix: 'pq-import' });
 const passwordResetRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 10, keyPrefix: 'pwd-reset' });
+const hireflowRateLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 120, keyPrefix: 'hireflow' });
 
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api/')) return next();
@@ -3711,6 +3720,15 @@ const requireActionPermission = async (req, res, actionKey) => {
   return config;
 };
 
+const requireHireflowRole = (req, res) => {
+  const allowed = ['Master', 'Admin', 'SVP'].includes(String(req.user?.role || ''));
+  if (!allowed) {
+    res.status(403).json({ error: 'HireFlow access is limited to Master/Admin/SVP.' });
+    return false;
+  }
+  return true;
+};
+
 const refreshSystemConfigAlertTrackingFromSyncedOpportunities = async (config, updatedBy = '') => {
   const [keys, refs] = await Promise.all([
     SyncedOpportunity.distinct('telecastAlertedKey', { telecastAlerted: true, telecastAlertedKey: { $ne: '' } }),
@@ -4949,6 +4967,233 @@ const parseOptionalDate = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+// --- HireFlow (MongoDB) ---
+const HF_UPLOAD_ROOT = path.join(__dirname, 'uploads', 'hireflow', 'cvs');
+const ensureDir = async (dirPath) => {
+  await fs.promises.mkdir(dirPath, { recursive: true });
+};
+
+const HF_CANDIDATE_STATUS = ['new', 'reviewing', 'interview', 'offer', 'hired', 'rejected'];
+const HF_LOCATION_PREF = ['UAE', 'India', 'Either', ''];
+
+const hfOfficeSchema = z.object({
+  code: z.string().trim().min(1).max(12),
+  name: z.string().trim().min(1).max(80),
+  country: z.string().trim().min(1).max(80),
+  currency: z.string().trim().min(1).max(8),
+  active: z.boolean().optional().default(true),
+});
+
+const hfDisciplineSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(300).optional().default(''),
+  active: z.boolean().optional().default(true),
+});
+
+const hfSalaryBandSchema = z.object({
+  officeId: z.string().trim().min(1),
+  disciplineId: z.string().trim().min(1),
+  minYears: z.coerce.number().min(0),
+  maxYears: z.coerce.number().min(0),
+  grade: z.string().trim().min(1).max(30),
+  salaryMin: z.coerce.number().min(0),
+  salaryMid: z.coerce.number().min(0),
+  salaryMax: z.coerce.number().min(0),
+  currency: z.string().trim().min(1).max(8),
+  effectiveFrom: z.union([z.string(), z.date()]).optional(),
+  active: z.boolean().optional().default(true),
+});
+
+const hfCandidatePatchSchema = z.object({
+  fullName: z.string().trim().min(1).max(120).optional(),
+  email: z.string().trim().max(200).optional(),
+  phone: z.string().trim().max(80).optional(),
+  currentLocation: z.string().trim().max(120).optional(),
+  nationality: z.string().trim().max(120).optional(),
+  disciplineId: z.string().trim().optional().nullable(),
+  officeId: z.string().trim().optional().nullable(),
+  locationPreference: z.enum(['UAE', 'India', 'Either', '']).optional(),
+  yearsExperience: z.coerce.number().min(0).max(80).optional().nullable(),
+  currentEmployer: z.string().trim().max(200).optional(),
+  currentPosition: z.string().trim().max(200).optional(),
+  currentSalary: z.coerce.number().min(0).optional().nullable(),
+  expectedSalary: z.coerce.number().min(0).optional().nullable(),
+  offeredSalary: z.coerce.number().min(0).optional().nullable(),
+  currency: z.string().trim().max(8).optional(),
+  noticePeriod: z.string().trim().max(120).optional(),
+  source: z.string().trim().max(120).optional(),
+  status: z.enum(['new', 'reviewing', 'interview', 'offer', 'hired', 'rejected']).optional(),
+  assignedTo: z.string().trim().max(200).optional(),
+  notes: z.string().trim().max(4000).optional(),
+});
+
+const HF_DISCIPLINE_KEYWORDS = {
+  'Project Management': ['project manager', 'pmp', 'planning engineer', 'primavera', 'project controls'],
+  'Procurement & Supply Chain': ['procurement', 'sourcing', 'supply chain', 'buyer', 'expeditor', 'logistics'],
+  Engineering: ['engineer', 'mechanical', 'electrical', 'civil', 'instrumentation', 'rotating', 'static', 'pipeline'],
+  'Finance & Accounts': ['accountant', 'accounts', 'finance', 'auditor', 'cpa', 'ifrs', 'sap fico'],
+  HR: ['human resources', 'hr', 'talent', 'recruiter', 'payroll', 'compensation'],
+  IT: ['developer', 'software', 'it support', 'sysadmin', 'network', 'devops', 'cloud', 'frontend', 'backend'],
+  'Sales & BD': ['business development', 'sales', 'account manager', 'tender', 'proposal', 'bid'],
+  Operations: ['operations', 'plant', 'production', 'facility', 'maintenance', 'hse'],
+};
+
+const splitSections = (text) => {
+  const headings = ['experience', 'education', 'skills', 'certifications', 'languages', 'summary'];
+  const lines = String(text || '').split(/\r?\n/);
+  const sections = { other: [] };
+  let current = 'other';
+  for (const line of lines) {
+    const raw = line.trim();
+    const key = headings.find((h) => raw.toLowerCase() === h || raw.toLowerCase().startsWith(`${h}:`));
+    if (key) {
+      current = key;
+      if (!sections[current]) sections[current] = [];
+      continue;
+    }
+    if (!sections[current]) sections[current] = [];
+    sections[current].push(line);
+  }
+  return sections;
+};
+
+const parseCvText = (text) => {
+  const rawText = String(text || '').replace(/\u0000/g, '').trim();
+  const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const topLines = lines.slice(0, 8);
+
+  const emailMatch = rawText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  const email = emailMatch ? emailMatch[0].toLowerCase() : '';
+
+  const phoneMatch = rawText.match(/(\+?\d[\d\s().-]{7,}\d)/);
+  const phone = phoneMatch ? phoneMatch[1].replace(/\s+/g, ' ').trim() : '';
+
+  const nameLine = topLines.find((l) => {
+    if (/@/.test(l)) return false;
+    if ((l.match(/\d/g) || []).length >= 4) return false;
+    const words = l.split(/\s+/).filter(Boolean);
+    if (words.length < 2 || words.length > 5) return false;
+    const hasLetters = words.every((w) => /^[A-Za-z][A-Za-z'.-]*$/.test(w));
+    return hasLetters;
+  }) || '';
+
+  const fullName = nameLine
+    ? nameLine.replace(/\b\w/g, (m) => m.toUpperCase())
+    : '';
+
+  const locationLine = lines.find((l) => /\b(uae|dubai|abu dhabi|sharjah|india|mumbai|delhi|bengaluru|bangalore|chennai|hyderabad|pune)\b/i.test(l)) || '';
+  const currentLocation = locationLine ? locationLine.trim() : '';
+
+  let yearsExperience = null;
+  const yearsMatch = rawText.match(/(\d{1,2})\+?\s*years?\s*(of\s*)?experience/i);
+  if (yearsMatch) yearsExperience = Number(yearsMatch[1]);
+  if (yearsExperience == null) {
+    const yearMatches = rawText.match(/\b(19\d{2}|20\d{2})\b/g) || [];
+    const years = yearMatches.map((y) => Number(y)).filter((y) => y >= 1990 && y <= new Date().getFullYear());
+    const earliest = years.length ? Math.min(...years) : null;
+    if (earliest) yearsExperience = Math.max(0, new Date().getFullYear() - earliest);
+  }
+
+  const sections = splitSections(rawText);
+  const normalizeList = (valueLines) => String(valueLines || '')
+    .split(/\r?\n/)
+    .flatMap((l) => l.split(/[•·▪\u2022,\t]/g))
+    .map((s) => s.replace(/^\s*[-–—]\s*/, '').trim())
+    .filter(Boolean)
+    .slice(0, 80);
+
+  const skills = normalizeList((sections.skills || []).join('\n'));
+  const certifications = normalizeList((sections.certifications || []).join('\n'));
+  const education = normalizeList((sections.education || []).join('\n'));
+  const languages = normalizeList((sections.languages || []).join('\n'));
+
+  const periodRe = /((jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+)?(19\d{2}|20\d{2})\s*[-–—]\s*((jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+)?((19\d{2}|20\d{2})|present)/i;
+  const employmentHistory = [];
+  for (const line of sections.experience || []) {
+    if (periodRe.test(line)) employmentHistory.push(line.trim());
+    if (employmentHistory.length >= 20) break;
+  }
+
+  const lower = rawText.toLowerCase();
+  let disciplineGuess = '';
+  let bestScore = 0;
+  for (const [discipline, keywords] of Object.entries(HF_DISCIPLINE_KEYWORDS)) {
+    let score = 0;
+    for (const kw of keywords) if (lower.includes(kw)) score += 1;
+    if (score > bestScore) {
+      bestScore = score;
+      disciplineGuess = discipline;
+    }
+  }
+
+  const currentEmployer = employmentHistory.length ? employmentHistory[0] : '';
+  const currentPosition = '';
+
+  return {
+    fullName,
+    email,
+    phone,
+    currentLocation,
+    yearsExperience,
+    currentEmployer,
+    currentPosition,
+    skills,
+    certifications,
+    education,
+    languages,
+    employmentHistory,
+    disciplineGuess,
+    rawText,
+  };
+};
+
+const extractTextFromFile = async ({ filePath, mimeType }) => {
+  const buffer = await fs.promises.readFile(filePath);
+  const mt = String(mimeType || '').toLowerCase();
+  const ext = path.extname(filePath).toLowerCase();
+
+  if (mt.includes('pdf') || ext === '.pdf') {
+    const unpdf = await import('unpdf');
+    const result = await unpdf.extractText(buffer, { mergePages: true });
+    return String(result?.text || '');
+  }
+  if (mt.includes('word') || ext === '.docx') {
+    const mammoth = await import('mammoth');
+    const result = await mammoth.extractRawText({ buffer });
+    return String(result?.value || '');
+  }
+  if (mt.startsWith('text/') || ext === '.txt') {
+    return buffer.toString('utf8');
+  }
+  // Unsupported types -> empty text but still store file.
+  return '';
+};
+
+const ensureHireflowSeed = async () => {
+  const [officeCount, disciplineCount] = await Promise.all([
+    HfOffice.countDocuments({}),
+    HfDiscipline.countDocuments({}),
+  ]);
+  if (officeCount === 0) {
+    await HfOffice.insertMany([
+      { code: 'UAE', name: 'UAE', country: 'UAE', currency: 'AED', active: true },
+      { code: 'IND', name: 'India', country: 'India', currency: 'INR', active: true },
+    ]);
+  }
+  if (disciplineCount === 0) {
+    await HfDiscipline.insertMany([
+      { name: 'Project Management', description: '', active: true },
+      { name: 'Procurement & Supply Chain', description: '', active: true },
+      { name: 'Engineering', description: '', active: true },
+      { name: 'Finance & Accounts', description: '', active: true },
+      { name: 'HR', description: '', active: true },
+      { name: 'IT', description: '', active: true },
+      { name: 'Sales & BD', description: '', active: true },
+      { name: 'Operations', description: '', active: true },
+    ]);
+  }
+};
+
 const mapPqActivity = (doc) => {
   const obj = doc && typeof doc.toObject === 'function' ? doc.toObject() : doc;
   return mapIdField(obj);
@@ -5235,6 +5480,267 @@ app.get('/api/export-template/config', verifyToken, async (_req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// --- HireFlow API ---
+const hfUpload = multer({
+  storage: multer.diskStorage({
+    destination: async (_req, _file, cb) => {
+      try {
+        await ensureDir(path.join(__dirname, 'uploads', 'hireflow', 'tmp'));
+        cb(null, path.join(__dirname, 'uploads', 'hireflow', 'tmp'));
+      } catch (error) {
+        cb(error, path.join(__dirname, 'uploads', 'hireflow', 'tmp'));
+      }
+    },
+    filename: (_req, file, cb) => {
+      const safe = String(file.originalname || 'cv').replace(/[^a-z0-9._-]+/gi, '_').slice(0, 160);
+      cb(null, `${Date.now()}-${randomUUID()}-${safe}`);
+    },
+  }),
+  limits: { fileSize: 12 * 1024 * 1024 },
+});
+
+app.use('/api/hireflow', verifyToken, hireflowRateLimiter, async (req, res, next) => {
+  try {
+    if (!requireHireflowRole(req, res)) return;
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    await ensureHireflowSeed();
+    return next();
+  } catch (error) {
+    return res.status(500).json({ error: error?.message || 'HireFlow init failed' });
+  }
+});
+
+app.get('/api/hireflow/meta', async (_req, res) => {
+  const [offices, disciplines] = await Promise.all([
+    HfOffice.find({ active: true }).sort({ code: 1 }).lean(),
+    HfDiscipline.find({ active: true }).sort({ name: 1 }).lean(),
+  ]);
+  res.json({ success: true, offices: offices.map(mapIdField), disciplines: disciplines.map(mapIdField) });
+});
+
+app.get('/api/hireflow/candidates', async (req, res) => {
+  try {
+    const q = clampString(req.query?.q, 200);
+    const status = clampString(req.query?.status, 32);
+    const filter = {};
+    if (status && HF_CANDIDATE_STATUS.includes(status)) filter.status = status;
+    if (q) {
+      filter.$or = [
+        { fullName: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+        { email: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+        { currentEmployer: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
+      ];
+    }
+    const rows = await HfCandidate.find(filter).sort({ updatedAt: -1 }).limit(500).lean();
+    res.json({ success: true, rows: rows.map(mapIdField) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to load candidates' });
+  }
+});
+
+app.get('/api/hireflow/candidates/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const candidate = await HfCandidate.findById(id).lean();
+    if (!candidate) return res.status(404).json({ error: 'Not found' });
+    const files = await HfCvFile.find({ candidateId: candidate._id }).sort({ createdAt: -1 }).lean();
+    res.json({ success: true, candidate: mapIdField(candidate), files: files.map(mapIdField) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to load candidate' });
+  }
+});
+
+app.patch('/api/hireflow/candidates/:id', async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Write access requires Master/Admin.' });
+    const id = String(req.params.id || '').trim();
+    const parsed = hfCandidatePatchSchema.safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
+    const existing = await HfCandidate.findById(id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+
+    const next = parsed.data;
+    for (const [key, value] of Object.entries(next)) {
+      if (key === 'locationPreference' && value && !HF_LOCATION_PREF.includes(value)) continue;
+      existing[key] = value;
+    }
+    await existing.save();
+    res.json({ success: true, candidate: mapIdField(existing.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Update failed' });
+  }
+});
+
+app.post('/api/hireflow/upload', hfUpload.single('file'), async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Upload requires Master/Admin.' });
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'Missing file' });
+
+    const rawText = await extractTextFromFile({ filePath: file.path, mimeType: file.mimetype });
+    const parsed = parseCvText(rawText);
+
+    // Lookup discipline by guess (best effort).
+    let disciplineId = null;
+    if (parsed.disciplineGuess) {
+      const d = await HfDiscipline.findOne({ name: parsed.disciplineGuess }).lean();
+      if (d) disciplineId = d._id;
+    }
+
+    const candidate = await HfCandidate.create({
+      fullName: parsed.fullName || file.originalname.replace(/\.[a-z0-9]+$/i, '').slice(0, 120) || 'Unknown',
+      email: parsed.email || '',
+      phone: parsed.phone || '',
+      currentLocation: parsed.currentLocation || '',
+      disciplineId,
+      yearsExperience: typeof parsed.yearsExperience === 'number' ? parsed.yearsExperience : null,
+      currentEmployer: parsed.currentEmployer || '',
+      currentPosition: parsed.currentPosition || '',
+      status: 'new',
+      createdBy: req.user.email,
+      assignedTo: req.user.email,
+      extracted: JSON.parse(JSON.stringify(parsed || {})),
+      rawText: String(parsed.rawText || '').slice(0, 180000),
+      notes: '',
+    });
+
+    const candidateDir = path.join(HF_UPLOAD_ROOT, String(candidate._id));
+    await ensureDir(candidateDir);
+    const finalPath = path.join(candidateDir, file.filename);
+    await fs.promises.rename(file.path, finalPath);
+
+    const cv = await HfCvFile.create({
+      candidateId: candidate._id,
+      storagePath: finalPath,
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+      sizeBytes: file.size,
+      uploadedBy: req.user.email,
+    });
+
+    res.json({ success: true, candidate: mapIdField(candidate.toObject()), file: mapIdField(cv.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Upload failed' });
+  }
+});
+
+app.get('/api/hireflow/cv-files/:id/content', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const file = await HfCvFile.findById(id).lean();
+    if (!file) return res.status(404).json({ error: 'Not found' });
+    if (!file.storagePath || !String(file.storagePath).startsWith(HF_UPLOAD_ROOT)) return res.status(403).json({ error: 'Forbidden' });
+    const stat = await fs.promises.stat(file.storagePath).catch(() => null);
+    if (!stat) return res.status(404).json({ error: 'Not found' });
+    res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename=\"${String(file.fileName || 'cv').replace(/\"/g, '')}\"`);
+    fs.createReadStream(file.storagePath).pipe(res);
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to load file' });
+  }
+});
+
+app.get('/api/hireflow/offices', async (_req, res) => {
+  const rows = await HfOffice.find({}).sort({ code: 1 }).lean();
+  res.json({ success: true, rows: rows.map(mapIdField) });
+});
+
+app.post('/api/hireflow/offices', async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Write access requires Master/Admin.' });
+    const parsed = hfOfficeSchema.safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
+    const row = await HfOffice.create(parsed.data);
+    res.json({ success: true, row: mapIdField(row.toObject()) });
+  } catch (error) {
+    const msg = String(error?.message || error);
+    if (msg.includes('E11000')) return res.status(409).json({ error: 'Office code already exists' });
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.patch('/api/hireflow/offices/:id', async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Write access requires Master/Admin.' });
+    const id = String(req.params.id || '').trim();
+    const parsed = hfOfficeSchema.partial().safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
+    const row = await HfOffice.findByIdAndUpdate(id, { $set: parsed.data }, { new: true });
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, row: mapIdField(row.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Update failed' });
+  }
+});
+
+app.get('/api/hireflow/disciplines', async (_req, res) => {
+  const rows = await HfDiscipline.find({}).sort({ name: 1 }).lean();
+  res.json({ success: true, rows: rows.map(mapIdField) });
+});
+
+app.post('/api/hireflow/disciplines', async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Write access requires Master/Admin.' });
+    const parsed = hfDisciplineSchema.safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
+    const row = await HfDiscipline.create(parsed.data);
+    res.json({ success: true, row: mapIdField(row.toObject()) });
+  } catch (error) {
+    const msg = String(error?.message || error);
+    if (msg.includes('E11000')) return res.status(409).json({ error: 'Discipline already exists' });
+    res.status(500).json({ error: msg });
+  }
+});
+
+app.patch('/api/hireflow/disciplines/:id', async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Write access requires Master/Admin.' });
+    const id = String(req.params.id || '').trim();
+    const parsed = hfDisciplineSchema.partial().safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
+    const row = await HfDiscipline.findByIdAndUpdate(id, { $set: parsed.data }, { new: true });
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, row: mapIdField(row.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Update failed' });
+  }
+});
+
+app.get('/api/hireflow/salary-bands', async (req, res) => {
+  try {
+    const officeId = clampString(req.query?.officeId, 64);
+    const disciplineId = clampString(req.query?.disciplineId, 64);
+    const years = req.query?.years !== undefined ? Number(req.query.years) : null;
+    const filter = { active: true };
+    if (officeId) filter.officeId = officeId;
+    if (disciplineId) filter.disciplineId = disciplineId;
+    if (Number.isFinite(years)) {
+      filter.minYears = { $lte: years };
+      filter.maxYears = { $gte: years };
+    }
+    const rows = await HfSalaryBand.find(filter).sort({ effectiveFrom: -1 }).limit(200).lean();
+    res.json({ success: true, rows: rows.map(mapIdField) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to load bands' });
+  }
+});
+
+app.post('/api/hireflow/salary-bands', async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Write access requires Master/Admin.' });
+    const parsed = hfSalaryBandSchema.safeParse(req.body || {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
+    const row = await HfSalaryBand.create({
+      ...parsed.data,
+      effectiveFrom: parsed.data.effectiveFrom ? new Date(parsed.data.effectiveFrom) : new Date(),
+      updatedBy: req.user.email,
+    });
+    res.json({ success: true, row: mapIdField(row.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Create failed' });
   }
 });
 

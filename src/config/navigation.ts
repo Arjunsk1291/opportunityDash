@@ -15,6 +15,7 @@ export type PageKey =
   | 'master_telecast'
   | 'master_update'
   | 'master_export';
+  // NOTE: HireFlow is currently gated using existing master/admin access.
 
 export const PAGE_LABELS: Record<PageKey, string> = {
   dashboard: 'Dashboard',
