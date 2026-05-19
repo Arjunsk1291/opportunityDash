@@ -94,6 +94,13 @@ const hasGraphAppCredentialsConfigured = () => {
   return !!(tenantId && clientId && clientSecret);
 };
 
+// Ensure req.ip is the real client IP behind proxies (Render/nginx).
+if (String(process.env.TRUST_PROXY || '').trim()) {
+  app.set('trust proxy', process.env.TRUST_PROXY);
+} else if (IS_PROD) {
+  app.set('trust proxy', 1);
+}
+
 if (IS_PROD && !JWT_SECRET) {
   console.error('[startup.security] Missing JWT secret in production; refusing to start. Set `JWT_SECRET` (or `SESSION_JWT_SECRET`) to a long random value.');
   process.exit(1);
@@ -3571,6 +3578,7 @@ const ACTION_KEYS = [
   'opportunities_sheet_upload',
   'manual_opportunity_updates_write',
   'bd_engagements_write',
+  'pq_activities_view',
   'pq_activities_manage',
   'approvals_proposal_head',
   'approvals_svp',
@@ -3595,7 +3603,7 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
   dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  pq_activities: ['Master', 'Admin'],
+  pq_activities: ['Master', 'Admin', 'Basic'],
   vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
@@ -3611,6 +3619,7 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   opportunities_sheet_upload: ['Master', 'Admin'],
   manual_opportunity_updates_write: ['Master', 'Admin'],
   bd_engagements_write: ['Master', 'Admin', 'BDTeam'],
+  pq_activities_view: ['Master', 'Admin', 'Basic'],
   pq_activities_manage: ['Master', 'Admin'],
   approvals_proposal_head: ['Master', 'ProposalHead'],
   approvals_svp: ['Master', 'SVP'],
@@ -4947,19 +4956,15 @@ const mapPqActivity = (doc) => {
 
 app.get('/api/pq-activities', verifyToken, async (req, res) => {
   try {
-    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
+    if (!await requireActionPermission(req, res, 'pq_activities_view')) return;
     if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
 
     const q = clampString(req.query?.q, 200);
     const status = clampString(req.query?.status, 64);
-    const contact = clampString(req.query?.contact, 120);
     const filter = {};
 
     if (status && PQ_STATUS_VALUES.includes(status)) {
       filter.status = status;
-    }
-    if (contact) {
-      filter.contactPerson = { $regex: contact.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
     }
     if (q) {
       filter.$or = [
@@ -5149,18 +5154,17 @@ app.post(
 
 app.get('/api/pq-activities/export', verifyToken, async (req, res) => {
   try {
-    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
+    if (!await requireActionPermission(req, res, 'pq_activities_view')) return;
     if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     const rows = await PqActivity.find({}).sort({ company: 1 }).lean();
 
     const data = [
-      ['S.No', 'Company', 'Status', 'Registered Email', 'Contact Person', 'User ID (Portal)', 'Password(Portal)', 'Link(Portal)', 'Renewal Date', 'Notes', 'Updated At'],
+      ['S.No', 'Company', 'Status', 'Registered Email', 'User ID (Portal)', 'Password(Portal)', 'Link(Portal)', 'Renewal Date', 'Notes', 'Updated At'],
       ...rows.map((r) => ([
         r.sNo ?? '',
         r.company ?? '',
         r.status ?? '',
         r.registeredEmail ?? '',
-        r.contactPerson ?? '',
         r.userId ?? '',
         r.password ?? '',
         r.link ?? '',

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { CalendarIcon, Copy, Eye, EyeOff, FileDown, FileUp, Plus, Search, Trash2, Pencil } from 'lucide-react';
+import { CalendarIcon, Copy, Eye, EyeOff, FileDown, FileUp, Plus, Search, Trash2, Pencil, AlertTriangle } from 'lucide-react';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -32,7 +32,6 @@ type PqActivityRow = {
   userId: string;
   password: string;
   link: string;
-  contactPerson: string;
   renewalDate: string | null;
   notes: string;
   createdAt?: string;
@@ -60,7 +59,6 @@ const pqFormSchema = z.object({
   userId: z.string().trim().max(200).optional().default('-'),
   password: z.string().max(500).optional().default(''),
   link: z.string().trim().max(800).optional().default('-'),
-  contactPerson: z.string().trim().max(120).optional().default(''),
   renewalDate: z.date().nullable().optional().default(null),
   notes: z.string().trim().max(1000).optional().default(''),
 });
@@ -82,14 +80,13 @@ const safeUrl = (value: string) => {
 };
 
 export default function PqActivities() {
-  const { token } = useAuth();
+  const { token, canPerformAction } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [rows, setRows] = useState<PqActivityRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState<PqStatus | 'All'>('All');
-  const [contactFilter, setContactFilter] = useState('');
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [passwordVisibleFor, setPasswordVisibleFor] = useState<Record<string, boolean>>({});
@@ -110,15 +107,25 @@ export default function PqActivities() {
       userId: '-',
       password: '',
       link: '-',
-      contactPerson: '',
       renewalDate: null,
       notes: '',
     },
   });
 
-  const contacts = useMemo(() => {
-    const set = new Set(rows.map((r) => String(r.contactPerson || '').trim()).filter(Boolean));
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  const canView = canPerformAction('pq_activities_view');
+  const canWrite = canPerformAction('pq_activities_manage');
+
+  const staleCompanies = useMemo(() => {
+    const thresholdMs = 30 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    return rows
+      .map((r) => ({
+        company: r.company,
+        updatedAt: r.updatedAt || null,
+        stale: r.updatedAt ? (now - new Date(r.updatedAt).getTime()) > thresholdMs : true,
+      }))
+      .filter((x) => x.company && x.stale)
+      .sort((a, b) => a.company.localeCompare(b.company));
   }, [rows]);
 
   const stats = useMemo(() => {
@@ -133,7 +140,6 @@ export default function PqActivities() {
     const normalizedQ = q.trim().toLowerCase();
     const filtered = rows.filter((r) => {
       if (statusFilter !== 'All' && r.status !== statusFilter) return false;
-      if (contactFilter.trim() && String(r.contactPerson || '').toLowerCase() !== contactFilter.trim().toLowerCase()) return false;
       if (!normalizedQ) return true;
       return (
         String(r.company || '').toLowerCase().includes(normalizedQ)
@@ -151,7 +157,6 @@ export default function PqActivities() {
         row.userId,
         row.password,
         row.link,
-        row.contactPerson,
         row.renewalDate,
         row.notes,
       ].map((v) => String(v ?? '').trim()).join('|');
@@ -174,7 +179,7 @@ export default function PqActivities() {
       if (aOrder !== bOrder) return aOrder - bOrder;
       return String(a.company || '').localeCompare(String(b.company || ''), undefined, { sensitivity: 'base' });
     });
-  }, [rows, q, statusFilter, contactFilter]);
+  }, [rows, q, statusFilter]);
 
   const statusBadgeClass = (status: PqStatus) => {
     switch (status) {
@@ -195,7 +200,6 @@ export default function PqActivities() {
       const qs = new URLSearchParams();
       if (q.trim()) qs.set('q', q.trim());
       if (statusFilter !== 'All') qs.set('status', statusFilter);
-      if (contactFilter.trim()) qs.set('contact', contactFilter.trim());
 
       const res = await fetch(`${API_URL}/pq-activities?${qs.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -225,7 +229,6 @@ export default function PqActivities() {
       userId: '-',
       password: '',
       link: '-',
-      contactPerson: '',
       renewalDate: null,
       notes: '',
     });
@@ -242,7 +245,6 @@ export default function PqActivities() {
       userId: row.userId || '-',
       password: row.password || '',
       link: row.link || '-',
-      contactPerson: row.contactPerson || '',
       renewalDate: row.renewalDate ? new Date(row.renewalDate) : null,
       notes: row.notes || '',
     });
@@ -250,7 +252,7 @@ export default function PqActivities() {
   };
 
   const submitForm = async (values: PqFormValues) => {
-    if (!token) return;
+    if (!token || !canWrite) return;
     try {
       const payload = {
         ...values,
@@ -275,7 +277,7 @@ export default function PqActivities() {
   };
 
   const confirmDelete = async () => {
-    if (!token || !deleteTarget) return;
+    if (!token || !deleteTarget || !canWrite) return;
     setDeleting(true);
     try {
       const res = await fetch(`${API_URL}/pq-activities/${deleteTarget.id}`, {
@@ -298,7 +300,7 @@ export default function PqActivities() {
   const onPickImportFile = () => fileInputRef.current?.click();
 
   const importXlsx = async (file: File) => {
-    if (!token) return;
+    if (!token || !canWrite) return;
     if (!file.name.toLowerCase().endsWith('.xlsx')) {
       toast.error('Please select a .xlsx file');
       return;
@@ -326,7 +328,7 @@ export default function PqActivities() {
   };
 
   const exportXlsx = async () => {
-    if (!token) return;
+    if (!token || !canView) return;
     try {
       const res = await fetch(`${API_URL}/pq-activities/export`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
@@ -365,7 +367,7 @@ export default function PqActivities() {
     <div className="min-h-[calc(100vh-64px)] bg-background text-foreground">
       <div className="mx-auto max-w-7xl px-3 sm:px-6 py-6 sm:py-10">
         <header className="flex flex-col gap-2">
-          <h1 className="font-display text-2xl sm:text-3xl md:text-4xl tracking-tight">PQ &amp; Registration Activities</h1>
+          <h1 className="font-display text-2xl sm:text-3xl md:text-4xl tracking-tight">Pre-Qualification</h1>
           <p className="text-sm sm:text-base text-navytrust-foreground/80 max-w-2xl">
             Track supplier portal prequalification and registration credentials with safe, role-gated access.
           </p>
@@ -431,18 +433,6 @@ export default function PqActivities() {
                 </SelectContent>
               </Select>
 
-              <Select value={contactFilter || 'All'} onValueChange={(v) => setContactFilter(v === 'All' ? '' : v)}>
-                <SelectTrigger className="bg-navytrust-elevated/40 border-white/10 text-navytrust-foreground">
-                  <SelectValue placeholder="Contact" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="All">All contacts</SelectItem>
-                  {contacts.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
               <input
                 ref={fileInputRef}
                 type="file"
@@ -455,21 +445,33 @@ export default function PqActivities() {
                 }}
               />
 
-              <Button variant="secondary" className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2" onClick={onPickImportFile} disabled={loading}>
+              <Button variant="secondary" className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2" onClick={onPickImportFile} disabled={loading || !canWrite}>
                 <FileUp className="h-4 w-4" aria-hidden="true" />
                 Import .xlsx
               </Button>
-              <Button variant="secondary" className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2" onClick={exportXlsx} disabled={loading}>
+              <Button variant="secondary" className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2" onClick={exportXlsx} disabled={loading || !canView}>
                 <FileDown className="h-4 w-4" aria-hidden="true" />
                 Export .xlsx
               </Button>
-              <Button className="w-full sm:w-auto bg-navytrust-primary hover:bg-navytrust-primary/90 text-white gap-2 shadow-nt-glow" onClick={openCreate}>
+              <Button className="w-full sm:w-auto bg-navytrust-primary hover:bg-navytrust-primary/90 text-white gap-2 shadow-nt-glow" onClick={openCreate} disabled={!canWrite}>
                 <Plus className="h-4 w-4" aria-hidden="true" />
                 Add Entry
               </Button>
             </div>
           </div>
         </div>
+
+        {staleCompanies.length > 0 && (
+          <div className="mt-6 rounded-2xl border border-warning/25 bg-warning/10 px-4 py-3 text-sm text-navytrust-foreground flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 mt-0.5 text-warning" aria-hidden="true" />
+            <div className="min-w-0">
+              <div className="font-semibold">Notice board</div>
+              <div className="text-xs text-navytrust-foreground/80">
+                Not updated in the last 30 days: {staleCompanies.map((c) => c.company).join(', ')}.
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Desktop table */}
         <div className="hidden md:block mt-6">
@@ -481,7 +483,7 @@ export default function PqActivities() {
                   <th className="px-4 py-3 font-semibold">Company</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
                   <th className="px-4 py-3 font-semibold">Registered Email</th>
-                  <th className="px-4 py-3 font-semibold">Contact</th>
+                  <th className="px-4 py-3 font-semibold">Last Update</th>
                   <th className="px-4 py-3 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
@@ -509,13 +511,13 @@ export default function PqActivities() {
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-navytrust-foreground/90">{row.registeredEmail || '—'}</td>
-                        <td className="px-4 py-3 text-navytrust-foreground/90">{row.contactPerson || '—'}</td>
+                        <td className="px-4 py-3 text-navytrust-foreground/90">{formatIsoDate(row.updatedAt || null)}</td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex justify-end gap-2">
-                            <Button size="icon" variant="secondary" className="bg-navytrust-elevated/45 border border-white/10 hover:bg-navytrust-elevated/70" onClick={() => openEdit(row)} aria-label={`Edit ${row.company}`}>
+                            <Button size="icon" variant="secondary" className="bg-navytrust-elevated/45 border border-white/10 hover:bg-navytrust-elevated/70" onClick={() => openEdit(row)} aria-label={`Edit ${row.company}`} disabled={!canWrite}>
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            <Button size="icon" variant="destructive" className="bg-red-500/80 hover:bg-red-500" onClick={() => setDeleteTarget(row)} aria-label={`Delete ${row.company}`}>
+                            <Button size="icon" variant="destructive" className="bg-red-500/80 hover:bg-red-500" onClick={() => setDeleteTarget(row)} aria-label={`Delete ${row.company}`} disabled={!canWrite}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -601,8 +603,8 @@ export default function PqActivities() {
                               <div className="mt-1 text-navytrust-foreground">{formatIsoDate(row.renewalDate)}</div>
                             </div>
                             <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Contact</div>
-                              <div className="mt-1 text-navytrust-foreground">{row.contactPerson || '—'}</div>
+                              <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Last Update</div>
+                              <div className="mt-1 text-navytrust-foreground">{formatIsoDate(row.updatedAt || null)}</div>
                             </div>
                           </div>
                           <div>
@@ -653,16 +655,16 @@ export default function PqActivities() {
                         </div>
                       </div>
                       <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <Button size="icon" variant="secondary" className="bg-navytrust-elevated/45 border border-white/10 hover:bg-navytrust-elevated/70" onClick={() => openEdit(row)} aria-label={`Edit ${row.company}`}>
+                        <Button size="icon" variant="secondary" className="bg-navytrust-elevated/45 border border-white/10 hover:bg-navytrust-elevated/70" onClick={() => openEdit(row)} aria-label={`Edit ${row.company}`} disabled={!canWrite}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button size="icon" variant="destructive" className="bg-red-500/80 hover:bg-red-500" onClick={() => setDeleteTarget(row)} aria-label={`Delete ${row.company}`}>
+                        <Button size="icon" variant="destructive" className="bg-red-500/80 hover:bg-red-500" onClick={() => setDeleteTarget(row)} aria-label={`Delete ${row.company}`} disabled={!canWrite}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </div>
                     <div className="mt-3 text-sm text-navytrust-foreground/90 truncate">{row.registeredEmail || '—'}</div>
-                    <div className="text-xs text-navytrust-foreground/70 truncate">{row.contactPerson || '—'}</div>
+                    <div className="text-xs text-navytrust-foreground/70 truncate">Last update: {formatIsoDate(row.updatedAt || null)}</div>
                   </button>
 
                   <AnimatePresence initial={false}>
@@ -785,19 +787,6 @@ export default function PqActivities() {
                           <FormLabel>Registered Email</FormLabel>
                           <FormControl>
                             <Input type="email" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="contactPerson"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Contact Person</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

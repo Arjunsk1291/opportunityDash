@@ -11,6 +11,7 @@ export type ActionKey =
   | 'clients_write'
   | 'clients_import'
   | 'clients_seed'
+  | 'pq_activities_view'
   | 'pq_activities_manage'
   | 'users_manage'
   | 'navigation_permissions_write'
@@ -35,6 +36,7 @@ export const ACTION_LABELS: Record<ActionKey, string> = {
   clients_write: 'Create / Update Clients',
   clients_import: 'Import Clients',
   clients_seed: 'Seed Clients from Opportunities',
+  pq_activities_view: 'View Pre-Qualification Records',
   pq_activities_manage: 'Manage PQ / Registration Activities',
   users_manage: 'Manage Authorized Users',
   navigation_permissions_write: 'Save Page Visibility Rules',
@@ -60,6 +62,7 @@ export const ACTION_DESCRIPTIONS: Record<ActionKey, string> = {
   clients_write: 'Create or update client records.',
   clients_import: 'Bulk import client records.',
   clients_seed: 'Seed clients from synced opportunity data.',
+  pq_activities_view: 'Read-only access to portal pre-qualification records.',
   pq_activities_manage: 'Create, edit, delete, import, and export portal PQ/registration records (includes credentials).',
   users_manage: 'Add, approve, reject, remove, or change authorized users.',
   navigation_permissions_write: 'Persist sidebar and route visibility rules.',
@@ -85,6 +88,7 @@ export const DEFAULT_ACTION_ROLE_ACCESS: Record<ActionKey, UserRole[]> = {
   clients_write: ['Master', 'Admin', 'ProposalHead'],
   clients_import: ['Master', 'Admin'],
   clients_seed: ['Master', 'Admin'],
+  pq_activities_view: ['Master', 'Admin', 'Basic'],
   pq_activities_manage: ['Master', 'Admin'],
   users_manage: ['Master'],
   navigation_permissions_write: ['Master'],
