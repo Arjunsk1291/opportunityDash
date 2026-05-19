@@ -74,15 +74,16 @@ export function deriveOpportunityStatusFields({
   const sourceAvenirStatus = normalizeCanonicalStatus(rawAvenirStatus || fallbackAvenirStatus || fallbackCanonicalStage);
   let sourceTenderResult = normalizeTenderResultValue(rawTenderResult || fallbackTenderResult);
 
-  // Guardrail: some sheets mistakenly store the final outcome (Lost/Awarded/etc)
-  // in the "Avenir Status" column. If so, treat it as an authoritative tender result.
-  const avenirLooksLikeTenderResult = normalizeTenderResultValue(sourceAvenirStatus);
   const isTerminalTenderResult = (val) => [
     CANONICAL_STATUS.LOST,
     CANONICAL_STATUS.AWARDED,
     CANONICAL_STATUS.REGRETTED,
     CANONICAL_STATUS.HOLD_CLOSED,
-  ].includes(val);
+  ].includes(normalizeTenderResultValue(val));
+
+  // Guardrail: some sheets mistakenly store the final outcome (Lost/Awarded/etc)
+  // in the "Avenir Status" column. If so, treat it as an authoritative tender result.
+  const avenirLooksLikeTenderResult = normalizeTenderResultValue(sourceAvenirStatus);
 
   if (
     isTerminalTenderResult(avenirLooksLikeTenderResult)
@@ -91,9 +92,13 @@ export function deriveOpportunityStatusFields({
     sourceTenderResult = avenirLooksLikeTenderResult;
   }
 
+  const terminalTenderResult = normalizeTenderResultValue(sourceTenderResult);
+  const terminalAvenirStatus = normalizeTenderResultValue(sourceAvenirStatus);
+
   // EOI special-case: treat EOI as submitted unless sheet explicitly provides a final result.
   // If the sheet says LOST/AWARDED/REGRETTED/etc, that must win even if Avenir status says EOI.
-  if (sourceAvenirStatus === 'EOI' && !isTerminalTenderResult(sourceTenderResult)) {
+  // We use terminal check with normalization to ensure fuzzy matches (e.g. "LOST - TENDER") win.
+  if (sourceAvenirStatus === 'EOI' && !isTerminalTenderResult(terminalTenderResult)) {
     return {
       rawAvenirStatus: sourceAvenirStatus,
       rawTenderResult: sourceTenderResult,
@@ -104,31 +109,19 @@ export function deriveOpportunityStatusFields({
     };
   }
 
-  const effectiveAvenirStatus = normalizeTenderResultValue(sourceAvenirStatus);
+  const effectiveAvenirStatus = terminalAvenirStatus;
   let effectiveTenderResult = sourceTenderResult;
   let effectiveCanonicalStage = effectiveAvenirStatus || normalizeCanonicalStatus(fallbackCanonicalStage);
 
-  if (
-    effectiveTenderResult === CANONICAL_STATUS.HOLD_CLOSED
-    || effectiveAvenirStatus === CANONICAL_STATUS.HOLD_CLOSED
-  ) {
-    effectiveCanonicalStage = CANONICAL_STATUS.HOLD_CLOSED;
-  } else if (
-    effectiveTenderResult === CANONICAL_STATUS.AWARDED
-    || effectiveAvenirStatus === CANONICAL_STATUS.AWARDED
-    || effectiveCanonicalStage === CANONICAL_STATUS.AWARDED
-  ) {
-    effectiveCanonicalStage = CANONICAL_STATUS.AWARDED;
-  } else if (
-    effectiveTenderResult === CANONICAL_STATUS.LOST
-    || effectiveAvenirStatus === CANONICAL_STATUS.LOST
-  ) {
-    effectiveCanonicalStage = CANONICAL_STATUS.LOST;
-  } else if (
-    effectiveTenderResult === CANONICAL_STATUS.REGRETTED
-    || effectiveAvenirStatus === CANONICAL_STATUS.REGRETTED
-  ) {
-    effectiveCanonicalStage = CANONICAL_STATUS.REGRETTED;
+  // Priority: Terminal results from any source always win.
+  // This ensures "LOST" or "AWARDED" results take precedence over active states (WORKING/SUBMITTED)
+  // derived from other fields or dates.
+  if (isTerminalTenderResult(terminalTenderResult)) {
+    effectiveCanonicalStage = terminalTenderResult;
+    effectiveTenderResult = terminalTenderResult;
+  } else if (isTerminalTenderResult(terminalAvenirStatus)) {
+    effectiveCanonicalStage = terminalAvenirStatus;
+    effectiveTenderResult = terminalAvenirStatus;
   }
 
   const awardedCandidate = (
