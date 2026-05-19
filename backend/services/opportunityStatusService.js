@@ -183,7 +183,26 @@ export function applyOpportunityStatusFields(opportunity = {}) {
 }
 
 export function getEffectiveMergedStatus(item = {}) {
-  const tenderResult = normalizeCanonicalStatus(item?.tenderResult);
+  const TERMINAL_STATUSES = [
+    CANONICAL_STATUS.AWARDED,
+    CANONICAL_STATUS.LOST,
+    CANONICAL_STATUS.REGRETTED,
+    CANONICAL_STATUS.HOLD_CLOSED,
+  ];
+
+  const tenderResult = normalizeTenderResultValue(item?.tenderResult);
+  const rawTenderResult = normalizeTenderResultValue(item?.rawTenderResult);
+  const avenirStatus = normalizeCanonicalStatus(item?.avenirStatus);
+  const rawAvenirStatus = normalizeCanonicalStatus(item?.rawAvenirStatus);
+
+  // Terminal results must always win regardless of field source.
+  if (TERMINAL_STATUSES.includes(tenderResult)) return tenderResult;
+  if (TERMINAL_STATUSES.includes(rawTenderResult)) return rawTenderResult;
+  if (TERMINAL_STATUSES.includes(avenirStatus)) return avenirStatus;
+  if (TERMINAL_STATUSES.includes(rawAvenirStatus)) return rawAvenirStatus;
+
   if (tenderResult && tenderResult !== CANONICAL_STATUS.UNKNOWN) return tenderResult;
+  if (rawTenderResult && rawTenderResult !== CANONICAL_STATUS.UNKNOWN) return rawTenderResult;
+
   return normalizeCanonicalStatus(item?.avenirStatus || item?.canonicalStage || item?.status);
 }
