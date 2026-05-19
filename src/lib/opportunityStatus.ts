@@ -44,21 +44,14 @@ export const isEoiNormalizedOpportunity = (opp: Partial<Opportunity>) => (
 );
 
 export const getDisplayStatus = (opp: Partial<Opportunity>) => {
-  const TERMINAL_STATUSES = ['AWARDED', 'LOST', 'REGRETTED', 'HOLD / CLOSED'];
-
   const avenirStatus = normalizeCanonicalStatus(opp.avenirStatus);
+  if (avenirStatus === 'AWARDED') return 'AWARDED';
   const tenderResult = normalizeTenderResultLike(opp.tenderResult);
-  const rawTenderResult = normalizeTenderResultLike(opp.rawTenderResult);
-
-  // If any field indicates a terminal outcome, that outcome must win.
-  if (TERMINAL_STATUSES.includes(avenirStatus)) return avenirStatus;
-  if (tenderResult && TERMINAL_STATUSES.includes(tenderResult)) return tenderResult;
-  if (rawTenderResult && TERMINAL_STATUSES.includes(rawTenderResult)) return rawTenderResult;
-
-  // Otherwise, fallback to the current best-known status.
   if (tenderResult && tenderResult !== 'UNKNOWN') return tenderResult;
+  // Backward-compatibility: if older docs didn't persist tenderResult correctly,
+  // prefer rawTenderResult when it carries a final outcome (LOST/AWARDED/etc).
+  const rawTenderResult = normalizeTenderResultLike(opp.rawTenderResult);
   if (rawTenderResult && rawTenderResult !== 'UNKNOWN') return rawTenderResult;
-
   return normalizeCanonicalStatus(opp.avenirStatus || opp.canonicalStage || '');
 };
 
