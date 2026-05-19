@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -141,23 +142,26 @@ app.use(cors((req, callback) => {
 
 app.use(compression());
 
-// Security headers (ISO/IEC 27001 compliance)
-app.use((req, res, next) => {
-  // Prevent clickjacking (A.14.2.1)
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  // Enable XSS protection (A.14.2.1)
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  // Referrer policy (A.14.2.4)
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  // Permissions policy
-  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
-  // HSTS - strict transport security (A.14.2.2)
-  if (process.env.NODE_ENV === 'production') {
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
-  }
-  next();
-});
+// Security headers (ISO/IEC 27001 compliance) using Helmet
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      'img-src': ["'self'", 'data:', 'https:'],
+      'script-src': ["'self'", "'unsafe-inline'"],
+      'connect-src': ["'self'", 'https:'],
+    },
+  },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  hsts: IS_PROD ? { maxAge: 31536000, preload: true } : false,
+}));
+app.use(helmet.permissionsPolicy({
+  features: {
+    geolocation: [],
+    microphone: [],
+    camera: [],
+  },
+}));
 
 const createRateLimiter = ({ windowMs, max, keyPrefix }) => {
   const hits = new Map();
