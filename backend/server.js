@@ -155,13 +155,10 @@ app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   hsts: IS_PROD ? { maxAge: 31536000, preload: true } : false,
 }));
-app.use(helmet.permissionsPolicy({
-  features: {
-    geolocation: [],
-    microphone: [],
-    camera: [],
-  },
-}));
+app.use((req, res, next) => {
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+  next();
+});
 
 const createRateLimiter = ({ windowMs, max, keyPrefix }) => {
   const hits = new Map();
