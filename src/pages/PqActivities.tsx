@@ -33,6 +33,7 @@ type PqActivityRow = {
   password: string;
   link: string;
   renewalDate: string | null;
+  lastUpdateDate: string | null;
   notes: string;
   createdAt?: string;
   updatedAt?: string;
@@ -59,7 +60,7 @@ const pqFormSchema = z.object({
   userId: z.string().trim().max(200).optional().default('-'),
   password: z.string().max(500).optional().default(''),
   link: z.string().trim().max(800).optional().default('-'),
-  renewalDate: z.date().nullable().optional().default(null),
+  lastUpdateDate: z.date().nullable().optional().default(null),
   notes: z.string().trim().max(1000).optional().default(''),
 });
 
@@ -78,6 +79,8 @@ const safeUrl = (value: string) => {
   if (/^https?:\/\//i.test(raw)) return raw;
   return `https://${raw}`;
 };
+
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 export default function PqActivities() {
   const { token, canPerformAction } = useAuth();
@@ -107,7 +110,7 @@ export default function PqActivities() {
       userId: '-',
       password: '',
       link: '-',
-      renewalDate: null,
+      lastUpdateDate: new Date(),
       notes: '',
     },
   });
@@ -115,14 +118,26 @@ export default function PqActivities() {
   const canView = canPerformAction('pq_activities_view');
   const canWrite = canPerformAction('pq_activities_manage');
 
+  const getRowLastUpdateMs = (row: PqActivityRow) => {
+    const raw = row.lastUpdateDate || row.updatedAt || null;
+    if (!raw) return null;
+    const ms = new Date(raw).getTime();
+    return Number.isNaN(ms) ? null : ms;
+  };
+
+  const isRowStale = (row: PqActivityRow, nowMs = Date.now()) => {
+    const lastMs = getRowLastUpdateMs(row);
+    if (!lastMs) return true;
+    return (nowMs - lastMs) > THIRTY_DAYS_MS;
+  };
+
   const staleCompanies = useMemo(() => {
-    const thresholdMs = 30 * 24 * 60 * 60 * 1000;
     const now = Date.now();
     return rows
       .map((r) => ({
         company: r.company,
-        updatedAt: r.updatedAt || null,
-        stale: r.updatedAt ? (now - new Date(r.updatedAt).getTime()) > thresholdMs : true,
+        lastUpdateDate: r.lastUpdateDate || r.updatedAt || null,
+        stale: isRowStale(r, now),
       }))
       .filter((x) => x.company && x.stale)
       .sort((a, b) => a.company.localeCompare(b.company));
@@ -157,7 +172,7 @@ export default function PqActivities() {
         row.userId,
         row.password,
         row.link,
-        row.renewalDate,
+        row.lastUpdateDate,
         row.notes,
       ].map((v) => String(v ?? '').trim()).join('|');
       const existing = seen.get(key);
@@ -229,7 +244,7 @@ export default function PqActivities() {
       userId: '-',
       password: '',
       link: '-',
-      renewalDate: null,
+      lastUpdateDate: new Date(),
       notes: '',
     });
     setSheetOpen(true);
@@ -245,7 +260,7 @@ export default function PqActivities() {
       userId: row.userId || '-',
       password: row.password || '',
       link: row.link || '-',
-      renewalDate: row.renewalDate ? new Date(row.renewalDate) : null,
+      lastUpdateDate: row.lastUpdateDate ? new Date(row.lastUpdateDate) : (row.updatedAt ? new Date(row.updatedAt) : null),
       notes: row.notes || '',
     });
     setSheetOpen(true);
@@ -254,9 +269,19 @@ export default function PqActivities() {
   const submitForm = async (values: PqFormValues) => {
     if (!token || !canWrite) return;
     try {
+      let nextLastUpdateDate = values.lastUpdateDate ? new Date(values.lastUpdateDate) : null;
+      if (editing) {
+        const notesChanged = String(values.notes || '') !== String(editing.notes || '');
+        if (notesChanged) {
+          const bump = window.confirm('You updated Notes. Change Last Update date to today?');
+          if (bump) nextLastUpdateDate = new Date();
+        }
+      } else {
+        nextLastUpdateDate = new Date();
+      }
       const payload = {
         ...values,
-        renewalDate: values.renewalDate ? values.renewalDate.toISOString() : null,
+        lastUpdateDate: nextLastUpdateDate ? nextLastUpdateDate.toISOString() : null,
       };
 
       const url = editing ? `${API_URL}/pq-activities/${editing.id}` : `${API_URL}/pq-activities`;
@@ -373,6 +398,27 @@ export default function PqActivities() {
           </p>
         </header>
 
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            className="bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2"
+            onClick={() => setQ('Avenir')}
+          >
+            <span className="text-xs font-semibold tracking-wide">Avenir</span>
+            <Badge className="bg-navytrust-primary/20 text-navytrust-foreground border border-white/10">Bookmark</Badge>
+          </Button>
+          <Button
+            type="button"
+            className="bg-navytrust-primary hover:bg-navytrust-primary/90 text-white gap-2 shadow-nt-glow"
+            onClick={openCreate}
+            disabled={!canWrite}
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Add Company
+          </Button>
+        </div>
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-6">
           <Card className="rounded-2xl bg-navytrust-surface/40 backdrop-blur border-white/10 shadow-elegant">
             <CardHeader className="pb-2">
@@ -484,6 +530,7 @@ export default function PqActivities() {
                   <th className="px-4 py-3 font-semibold">Status</th>
                   <th className="px-4 py-3 font-semibold">Registered Email</th>
                   <th className="px-4 py-3 font-semibold">Last Update</th>
+                  <th className="px-4 py-3 font-semibold">Notes</th>
                   <th className="px-4 py-3 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
@@ -511,7 +558,15 @@ export default function PqActivities() {
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-navytrust-foreground/90">{row.registeredEmail || '—'}</td>
-                        <td className="px-4 py-3 text-navytrust-foreground/90">{formatIsoDate(row.updatedAt || null)}</td>
+                        <td className="px-4 py-3 text-navytrust-foreground/90">
+                          <div className="flex items-center gap-2">
+                            <span>{formatIsoDate(row.lastUpdateDate || row.updatedAt || null)}</span>
+                            {isRowStale(row) && (
+                              <Badge className="bg-warning/20 text-warning border border-warning/30">Reminder</Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-navytrust-foreground/80 max-w-[320px] truncate">{row.notes || '—'}</td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex justify-end gap-2">
                             <Button size="icon" variant="secondary" className="bg-navytrust-elevated/45 border border-white/10 hover:bg-navytrust-elevated/70" onClick={() => openEdit(row)} aria-label={`Edit ${row.company}`} disabled={!canWrite}>
@@ -599,8 +654,13 @@ export default function PqActivities() {
                         <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-4 space-y-3">
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Renewal Date</div>
-                              <div className="mt-1 text-navytrust-foreground">{formatIsoDate(row.renewalDate)}</div>
+                              <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Last Update</div>
+                              <div className="mt-1 flex items-center gap-2 text-navytrust-foreground">
+                                <span>{formatIsoDate(row.lastUpdateDate || row.updatedAt || null)}</span>
+                                {isRowStale(row) && (
+                                  <Badge className="bg-warning/20 text-warning border border-warning/30">Reminder</Badge>
+                                )}
+                              </div>
                             </div>
                             <div>
                               <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Last Update</div>
@@ -664,7 +724,7 @@ export default function PqActivities() {
                       </div>
                     </div>
                     <div className="mt-3 text-sm text-navytrust-foreground/90 truncate">{row.registeredEmail || '—'}</div>
-                    <div className="text-xs text-navytrust-foreground/70 truncate">Last update: {formatIsoDate(row.updatedAt || null)}</div>
+                    <div className="text-xs text-navytrust-foreground/70 truncate">Last update: {formatIsoDate(row.lastUpdateDate || row.updatedAt || null)}</div>
                   </button>
 
                   <AnimatePresence initial={false}>
@@ -701,8 +761,8 @@ export default function PqActivities() {
                             <div className="font-mono text-sm text-navytrust-foreground">{passwordVisibleFor[row.id] ? (row.password || '—') : (row.password ? '••••••••' : '—')}</div>
                           </div>
                           <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-3 space-y-1">
-                            <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Renewal</div>
-                            <div className="text-sm text-navytrust-foreground">{formatIsoDate(row.renewalDate)}</div>
+                            <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Last Update</div>
+                            <div className="text-sm text-navytrust-foreground">{formatIsoDate(row.lastUpdateDate || row.updatedAt || null)}</div>
                           </div>
                           <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-3 space-y-1">
                             <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Notes</div>
@@ -839,10 +899,10 @@ export default function PqActivities() {
                     />
                     <FormField
                       control={form.control}
-                      name="renewalDate"
+                      name="lastUpdateDate"
                       render={({ field }) => (
                         <FormItem className="flex flex-col">
-                          <FormLabel>Renewal Date</FormLabel>
+                          <FormLabel>Last Update Date</FormLabel>
                           <Popover>
                             <PopoverTrigger asChild>
                               <Button

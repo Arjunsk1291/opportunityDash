@@ -4953,6 +4953,7 @@ const pqActivityCreateSchema = z.object({
   link: z.string().trim().max(800).optional().default('-'),
   contactPerson: z.string().trim().max(120).optional().default(''),
   renewalDate: z.union([z.string(), z.date(), z.null()]).optional().default(null),
+  lastUpdateDate: z.union([z.string(), z.date(), z.null()]).optional().default(null),
   notes: z.string().trim().max(1000).optional().default(''),
 });
 
@@ -5218,7 +5219,7 @@ app.get('/api/pq-activities', verifyToken, async (req, res) => {
       ];
     }
 
-    const rows = await PqActivity.find(filter).sort({ updatedAt: -1, company: 1 }).lean();
+    const rows = await PqActivity.find(filter).sort({ lastUpdateDate: -1, updatedAt: -1, company: 1 }).lean();
     res.json({ success: true, rows: rows.map(mapIdField) });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to load PQ activities' });
@@ -5246,6 +5247,7 @@ app.post('/api/pq-activities', verifyToken, async (req, res) => {
       link: clampString(value.link || '-', 800) || '-',
       contactPerson: clampString(value.contactPerson || deriveContactPersonFromEmail(registeredEmail), 120),
       renewalDate: parseOptionalDate(value.renewalDate),
+      lastUpdateDate: parseOptionalDate(value.lastUpdateDate),
       notes: clampString(value.notes || '', 1000),
     });
     res.json({ success: true, row: mapPqActivity(doc) });
@@ -5277,6 +5279,7 @@ app.patch('/api/pq-activities/:id', verifyToken, async (req, res) => {
     if (typeof next.link === 'string') existing.link = clampString(next.link || '-', 800) || '-';
     if (typeof next.contactPerson === 'string') existing.contactPerson = clampString(next.contactPerson, 120);
     if ('renewalDate' in next) existing.renewalDate = parseOptionalDate(next.renewalDate);
+    if ('lastUpdateDate' in next) existing.lastUpdateDate = parseOptionalDate(next.lastUpdateDate);
     if (typeof next.notes === 'string') existing.notes = clampString(next.notes, 1000);
     await existing.save();
     res.json({ success: true, row: mapPqActivity(existing) });

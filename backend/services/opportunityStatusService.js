@@ -72,7 +72,18 @@ export function deriveOpportunityStatusFields({
   tenderStatusRemark = '',
 } = {}) {
   const sourceAvenirStatus = normalizeCanonicalStatus(rawAvenirStatus || fallbackAvenirStatus || fallbackCanonicalStage);
-  const sourceTenderResult = normalizeTenderResultValue(rawTenderResult || fallbackTenderResult);
+  let sourceTenderResult = normalizeTenderResultValue(rawTenderResult || fallbackTenderResult);
+
+  // Guardrail: some sheets mistakenly store the final outcome (Lost/Awarded/etc)
+  // in the "Avenir Status" column. If so, treat it as an authoritative tender result.
+  const avenirLooksLikeTenderResult = normalizeTenderResultValue(sourceAvenirStatus);
+  if (
+    (avenirLooksLikeTenderResult === CANONICAL_STATUS.LOST || avenirLooksLikeTenderResult === CANONICAL_STATUS.AWARDED)
+    && sourceTenderResult !== CANONICAL_STATUS.LOST
+    && sourceTenderResult !== CANONICAL_STATUS.AWARDED
+  ) {
+    sourceTenderResult = avenirLooksLikeTenderResult;
+  }
 
   // EOI special-case: treat EOI as submitted unless sheet explicitly provides a final result.
   // If the sheet says LOST/AWARDED, that must win even if Avenir status says EOI.
