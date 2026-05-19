@@ -119,7 +119,9 @@ export default function PqActivities() {
   const canWrite = canPerformAction('pq_activities_manage');
 
   const getRowLastUpdateMs = (row: PqActivityRow) => {
-    const raw = row.lastUpdateDate || row.updatedAt || null;
+    // Notice-board reminder should be driven by the explicit "Last Update Date"
+    // field, not by Mongo's updatedAt (which changes on any edit/import).
+    const raw = row.lastUpdateDate || null;
     if (!raw) return null;
     const ms = new Date(raw).getTime();
     return Number.isNaN(ms) ? null : ms;
