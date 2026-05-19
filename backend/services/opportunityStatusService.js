@@ -92,8 +92,8 @@ export function deriveOpportunityStatusFields({
   }
 
   // EOI special-case: treat EOI as submitted unless sheet explicitly provides a final result.
-  // If the sheet says LOST/AWARDED, that must win even if Avenir status says EOI.
-  if (sourceAvenirStatus === 'EOI' && sourceTenderResult !== CANONICAL_STATUS.LOST && sourceTenderResult !== CANONICAL_STATUS.AWARDED) {
+  // If the sheet says LOST/AWARDED/REGRETTED/etc, that must win even if Avenir status says EOI.
+  if (sourceAvenirStatus === 'EOI' && !isTerminalTenderResult(sourceTenderResult)) {
     return {
       rawAvenirStatus: sourceAvenirStatus,
       rawTenderResult: sourceTenderResult,
@@ -104,7 +104,7 @@ export function deriveOpportunityStatusFields({
     };
   }
 
-  const effectiveAvenirStatus = sourceAvenirStatus;
+  const effectiveAvenirStatus = normalizeTenderResultValue(sourceAvenirStatus);
   let effectiveTenderResult = sourceTenderResult;
   let effectiveCanonicalStage = effectiveAvenirStatus || normalizeCanonicalStatus(fallbackCanonicalStage);
 
@@ -192,8 +192,8 @@ export function getEffectiveMergedStatus(item = {}) {
 
   const tenderResult = normalizeTenderResultValue(item?.tenderResult);
   const rawTenderResult = normalizeTenderResultValue(item?.rawTenderResult);
-  const avenirStatus = normalizeCanonicalStatus(item?.avenirStatus);
-  const rawAvenirStatus = normalizeCanonicalStatus(item?.rawAvenirStatus);
+  const avenirStatus = normalizeTenderResultValue(item?.avenirStatus);
+  const rawAvenirStatus = normalizeTenderResultValue(item?.rawAvenirStatus);
 
   // Terminal results must always win regardless of field source.
   if (TERMINAL_STATUSES.includes(tenderResult)) return tenderResult;

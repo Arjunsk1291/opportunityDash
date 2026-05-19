@@ -46,16 +46,17 @@ export const isEoiNormalizedOpportunity = (opp: Partial<Opportunity>) => (
 export const getDisplayStatus = (opp: Partial<Opportunity>) => {
   const TERMINAL_STATUSES = ['AWARDED', 'LOST', 'REGRETTED', 'HOLD / CLOSED'];
 
-  const avenirStatus = normalizeCanonicalStatus(opp.avenirStatus);
-  const rawAvenirStatus = normalizeCanonicalStatus(opp.rawAvenirStatus);
+  const avenirStatus = normalizeTenderResultLike(opp.avenirStatus);
+  const rawAvenirStatus = normalizeTenderResultLike(opp.rawAvenirStatus);
   const tenderResult = normalizeTenderResultLike(opp.tenderResult);
   const rawTenderResult = normalizeTenderResultLike(opp.rawTenderResult);
 
   // If any field indicates a terminal outcome, that outcome must win.
-  // We check rawAvenirStatus as well because older syncs might have incorrectly
-  // derived 'SUBMITTED' in avenirStatus even if raw was 'LOST'.
-  if (TERMINAL_STATUSES.includes(avenirStatus)) return avenirStatus;
-  if (TERMINAL_STATUSES.includes(rawAvenirStatus)) return rawAvenirStatus;
+  // We use normalizeTenderResultLike for all fields to catch variants (e.g. "LOST - TENDER").
+  // We check raw fields because older syncs might have incorrectly derived 'SUBMITTED'
+  // in derived fields even if raw was terminal.
+  if (avenirStatus && TERMINAL_STATUSES.includes(avenirStatus)) return avenirStatus;
+  if (rawAvenirStatus && TERMINAL_STATUSES.includes(rawAvenirStatus)) return rawAvenirStatus;
   if (tenderResult && TERMINAL_STATUSES.includes(tenderResult)) return tenderResult;
   if (rawTenderResult && TERMINAL_STATUSES.includes(rawTenderResult)) return rawTenderResult;
 
