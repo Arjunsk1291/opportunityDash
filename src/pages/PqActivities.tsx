@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { CalendarIcon, Copy, Eye, EyeOff, FileDown, FileUp, Plus, Search, Trash2, Pencil, AlertTriangle } from 'lucide-react';
+import { CalendarIcon, Copy, Eye, EyeOff, FileDown, FileUp, Plus, Search, Trash2, Pencil, AlertTriangle, FileText } from 'lucide-react';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,9 @@ import { Calendar } from '@/components/ui/calendar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { withPerf } from '@/lib/perfLogger';
+import { Progress } from '@/components/ui/progress';
+import { useProgressLoader } from '@/lib/useProgressLoader';
+import { downloadWorkbook } from '@/lib/excelWorkbook';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -99,6 +102,7 @@ export default function PqActivities() {
 
   const [rows, setRows] = useState<PqActivityRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const loadProgress = useProgressLoader(loading);
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState<PqStatus | 'All'>('All');
 
@@ -400,6 +404,41 @@ export default function PqActivities() {
     }
   };
 
+  const downloadTemplate = async () => {
+    try {
+      setLoading(true);
+      const ExcelJS = await import('exceljs');
+      const headers = [
+        'S.No',
+        'Company',
+        'Status',
+        'Registered Email',
+        'User ID (Portal)',
+        'Password(Portal)',
+        'Link(Portal)',
+      ];
+      const sample = {
+        'S.No': 1,
+        Company: 'Sample Company LLC',
+        Status: 'Registration on Process',
+        'Registered Email': 'ops@example.com',
+        'User ID (Portal)': 'username',
+        'Password(Portal)': 'password',
+        'Link(Portal)': 'https://portal.example.com',
+      };
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('PQ Activities');
+      worksheet.addRow(headers);
+      worksheet.addRow(headers.map((h) => (sample as Record<string, unknown>)[h] ?? ''));
+      await downloadWorkbook(workbook as unknown as Parameters<typeof downloadWorkbook>[0], `pq-activities-template-${activeTenant}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success('Template downloaded.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to download template');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const togglePasswordVisibility = (id: string) => {
     setPasswordVisibleFor((prev) => ({ ...prev, [id]: !prev[id] }));
   };
@@ -478,8 +517,14 @@ export default function PqActivities() {
         </div>
 
         <>
-        <div className="mt-6 rounded-2xl bg-navytrust-surface/35 backdrop-blur border border-white/10 shadow-elegant p-3 sm:p-4">
-          <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+	        <div className="mt-6 rounded-2xl bg-navytrust-surface/35 backdrop-blur border border-white/10 shadow-elegant p-3 sm:p-4">
+	          {loading && (
+	            <div className="mb-3">
+	              <Progress value={loadProgress} className="h-2" />
+	              <div className="mt-1 text-xs text-navytrust-foreground/70">Working… {loadProgress}%</div>
+	            </div>
+	          )}
+	          <div className="flex flex-col lg:flex-row lg:items-center gap-3">
             <div className="flex-1 flex items-center gap-2">
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-navytrust-foreground/70" aria-hidden="true" />
@@ -491,9 +536,9 @@ export default function PqActivities() {
                   aria-label="Search company or email"
                 />
               </div>
-              <Button variant="secondary" className="bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70" onClick={loadRows} disabled={loading}>
-                Refresh
-              </Button>
+	              <Button variant="secondary" className="bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70" onClick={() => loadRows('refresh_click')} disabled={loading}>
+	                Refresh
+	              </Button>
             </div>
 
             <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
@@ -1048,3 +1093,12 @@ export default function PqActivities() {
     </div>
   );
 }
+	              <Button
+	                variant="secondary"
+	                className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2"
+	                onClick={downloadTemplate}
+	                disabled={loading}
+	              >
+	                <FileText className="h-4 w-4" aria-hidden="true" />
+	                Template .xlsx
+	              </Button>

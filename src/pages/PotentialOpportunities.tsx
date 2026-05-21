@@ -14,6 +14,8 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToMatrix } from '@/lib/excelWorkbook';
 import { perfLog, withPerf } from '@/lib/perfLogger';
+import { Progress } from '@/components/ui/progress';
+import { useProgressLoader } from '@/lib/useProgressLoader';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -76,6 +78,7 @@ export default function PotentialOpportunities() {
 
   const [rows, setRows] = useState<PotentialRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const loadProgress = useProgressLoader(loading);
   const [q, setQ] = useState('');
   type TabKey = 'grid' | 'excel' | 'search' | 'manual';
   const [activeTab, setActiveTab] = useState<TabKey>('grid');
@@ -84,6 +87,8 @@ export default function PotentialOpportunities() {
   const [editing, setEditing] = useState<PotentialRow | null>(null);
   const [extrasText, setExtrasText] = useState('{}');
   const [newColumnName, setNewColumnName] = useState('');
+  const [pageIndex, setPageIndex] = useState(0);
+  const pageSize = 50;
 
   useEffect(() => {
     // Only fetch heavy opportunities dataset if/when the user needs "Advanced Search".
@@ -108,6 +113,7 @@ export default function PotentialOpportunities() {
         }),
       );
       setRows(Array.isArray(data.rows) ? data.rows : []);
+      setPageIndex(0);
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -129,6 +135,11 @@ export default function PotentialOpportunities() {
 
   const rowsByRef = useMemo(() => new Map(rows.map((r) => [normalizeRef(r.opportunityRefNo), r])), [rows]);
   const extrasKeys = useMemo(() => getExtrasKeys(rows), [rows]);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pagedRows = useMemo(() => {
+    const start = pageIndex * pageSize;
+    return rows.slice(start, start + pageSize);
+  }, [pageIndex, rows]);
 
   const openEdit = (row: PotentialRow) => {
     setEditing(row);
@@ -225,20 +236,11 @@ export default function PotentialOpportunities() {
   const [manualRef, setManualRef] = useState('');
   const [manualExtras, setManualExtras] = useState('{}');
 
-  const updateExtrasCell = async (row: PotentialRow, key: string, value: string) => {
-    if (!token) return;
-    if (!canWrite) return;
-    const next = { ...(row.extras || {}), [key]: value };
-    try {
-      await fetchJson(`${API_URL}/potential-opportunities/${row.id}/extras`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ extras: next }),
-      });
-      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, extras: next } : r)));
-    } catch (error) {
-      toast.error((error as Error).message);
-    }
+  const renderCellValue = (value: unknown) => {
+    const raw = value === null || value === undefined ? '' : String(value);
+    if (!raw) return <span className="text-muted-foreground">—</span>;
+    if (raw.length <= 40) return raw;
+    return `${raw.slice(0, 37)}…`;
   };
 
   return (
@@ -278,6 +280,13 @@ export default function PotentialOpportunities() {
           </Button>
         </div>
       </div>
+
+      {loading && (
+        <div className="rounded-2xl border bg-card p-3">
+          <Progress value={loadProgress} className="h-2" />
+          <div className="mt-1 text-xs text-muted-foreground">Working… {loadProgress}%</div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card className="rounded-2xl bg-gradient-to-br from-primary/15 via-background to-background border-primary/20">
@@ -365,7 +374,7 @@ export default function PotentialOpportunities() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => (
+                {pagedRows.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.opportunityRefNo}</TableCell>
                     <TableCell>{r.opportunity?.tenderName || <span className="text-muted-foreground">—</span>}</TableCell>
@@ -373,16 +382,7 @@ export default function PotentialOpportunities() {
                     <TableCell>{r.opportunity?.internalLead || <span className="text-muted-foreground">—</span>}</TableCell>
                     {extrasKeys.map((k) => (
                       <TableCell key={`${r.id}:${k}`}>
-                        <Input
-                          className="h-8"
-                          value={String((r.extras || {})[k] ?? '')}
-                          disabled={!canWrite}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, extras: { ...(x.extras || {}), [k]: v } } : x)));
-                          }}
-                          onBlur={(e) => void updateExtrasCell(r, k, e.target.value)}
-                        />
+                        {renderCellValue((r.extras || {})[k])}
                       </TableCell>
                     ))}
                     <TableCell>
@@ -422,6 +422,20 @@ export default function PotentialOpportunities() {
               </TableBody>
             </Table>
           </div>
+
+          {rows.length > pageSize && (
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm text-muted-foreground">
+                Showing {pageIndex * pageSize + 1}-{Math.min((pageIndex + 1) * pageSize, rows.length)} of {rows.length}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPageIndex(0)} disabled={pageIndex === 0}>First</Button>
+                <Button variant="outline" size="sm" onClick={() => setPageIndex((p) => Math.max(0, p - 1))} disabled={pageIndex === 0}>Prev</Button>
+                <Button variant="outline" size="sm" onClick={() => setPageIndex((p) => Math.min(pageCount - 1, p + 1))} disabled={pageIndex >= pageCount - 1}>Next</Button>
+                <Button variant="outline" size="sm" onClick={() => setPageIndex(pageCount - 1)} disabled={pageIndex >= pageCount - 1}>Last</Button>
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="excel" className="space-y-3">
