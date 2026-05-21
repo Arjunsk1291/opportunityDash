@@ -37,6 +37,8 @@ type FormState = {
   groupClassification: string;
   dateTenderReceived: string;
   tenderPlannedSubmissionDate: string;
+  tenderResult: string;
+  tenderStatusRemark: string;
   internalLead: string;
   opportunityValue: string;
   avenirStatus: string;
@@ -107,6 +109,8 @@ const EMPTY_FORM: FormState = {
   groupClassification: '',
   dateTenderReceived: '',
   tenderPlannedSubmissionDate: '',
+  tenderResult: '',
+  tenderStatusRemark: '',
   internalLead: '',
   opportunityValue: '',
   avenirStatus: '',
@@ -121,6 +125,8 @@ const LABELS: Record<keyof FormState, string> = {
   groupClassification: 'Group',
   dateTenderReceived: 'RFP Received',
   tenderPlannedSubmissionDate: 'Submission',
+  tenderResult: 'Tender Result',
+  tenderStatusRemark: 'Tender Status',
   internalLead: 'Lead',
   opportunityValue: 'Value',
   avenirStatus: 'Status',
@@ -141,6 +147,9 @@ const FORM_BACKED_HEADERS = new Set([
   'TENDER DUE DATE',
   'TENDER VALUE',
   'AVENIR STATUS',
+  'TENDER RESULT',
+  'TENDER STATUS -',
+  'TENDER STATUS',
   'ADNOC RFT NO',
 ].map(NORMALIZE_HEADER));
 
@@ -428,6 +437,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         groupClassification: ['gds/ges', 'group', 'vertical', 'group classification'],
         dateTenderReceived: ['date tender recd', 'date tender received', 'rfp received', 'date received'],
         tenderPlannedSubmissionDate: ['tender due date', 'tender due  date', 'submission', 'planned submission', 'submission date'],
+        tenderResult: ['tender result', 'result', 'outcome', 'final result', 'tender outcome'],
+        tenderStatusRemark: ['tender status -', 'tender status-', 'tender status'],
         internalLead: ['assigned person', 'lead', 'internal lead'],
         opportunityValue: ['tender value', 'value', 'opportunity value'],
         avenirStatus: ['avenir status', 'status'],
@@ -504,6 +515,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
           groupClassification: getText(row, 'groupClassification'),
           dateTenderReceived: getText(row, 'dateTenderReceived'),
           tenderPlannedSubmissionDate: getText(row, 'tenderPlannedSubmissionDate'),
+          tenderResult: getText(row, 'tenderResult'),
+          tenderStatusRemark: getText(row, 'tenderStatusRemark'),
           internalLead: getText(row, 'internalLead'),
           opportunityValue: getText(row, 'opportunityValue'),
           avenirStatus: getText(row, 'avenirStatus'),
@@ -531,6 +544,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
           isSame(existing.opportunityClassification, row.opportunityClassification) &&
           isSame(existing.dateTenderReceived, row.dateTenderReceived) &&
           isSame(existing.tenderPlannedSubmissionDate, row.tenderPlannedSubmissionDate) &&
+          isSame(existing.tenderResult, row.tenderResult) &&
+          isSame(existing.tenderStatusRemark, row.tenderStatusRemark) &&
           isSame(existing.avenirStatus, row.avenirStatus) &&
           isSame(existing.adnocRftNo, row.adnocRftNo) &&
           isSame(String(existing.opportunityValue ?? ''), row.opportunityValue)

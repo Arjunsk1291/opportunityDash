@@ -6007,6 +6007,9 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
       'opportunityClassification',
       'dateTenderReceived',
       'tenderPlannedSubmissionDate',
+      'tenderResult',
+      'rawTenderResult',
+      'tenderStatusRemark',
       'opportunityValue',
       'avenirStatus',
     ]);
@@ -6023,6 +6026,9 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
         dateTenderReceived: String(req.body?.dateTenderReceived || '').trim(),
         tenderPlannedSubmissionDate: String(req.body?.tenderPlannedSubmissionDate || '').trim(),
         avenirStatus: String(req.body?.avenirStatus || '').trim(),
+        tenderResult: String(req.body?.tenderResult || '').trim(),
+        rawTenderResult: String(req.body?.rawTenderResult || req.body?.tenderResult || '').trim(),
+        tenderStatusRemark: String(req.body?.tenderStatusRemark || '').trim(),
       };
 
       const valueRaw = req.body?.opportunityValue;
