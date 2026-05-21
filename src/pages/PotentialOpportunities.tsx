@@ -376,12 +376,12 @@ export default function PotentialOpportunities() {
               <TableBody>
                 {pagedRows.map((r) => (
                   <TableRow key={r.id}>
-                    <TableCell className="font-medium">{r.opportunityRefNo}</TableCell>
-                    <TableCell>{r.opportunity?.tenderName || <span className="text-muted-foreground">—</span>}</TableCell>
-                    <TableCell>{r.opportunity?.clientName || <span className="text-muted-foreground">—</span>}</TableCell>
-                    <TableCell>{r.opportunity?.internalLead || <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell className="font-medium whitespace-normal break-words">{r.opportunityRefNo}</TableCell>
+                    <TableCell className="whitespace-normal break-words">{r.opportunity?.tenderName || <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell className="whitespace-normal break-words">{r.opportunity?.clientName || <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell className="whitespace-normal break-words">{r.opportunity?.internalLead || <span className="text-muted-foreground">—</span>}</TableCell>
                     {extrasKeys.map((k) => (
-                      <TableCell key={`${r.id}:${k}`}>
+                      <TableCell key={`${r.id}:${k}`} className="whitespace-normal break-words">
                         {renderCellValue((r.extras || {})[k])}
                       </TableCell>
                     ))}
