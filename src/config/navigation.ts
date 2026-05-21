@@ -20,7 +20,7 @@ export type PageKey =
 export const PAGE_LABELS: Record<PageKey, string> = {
   dashboard: 'Dashboard',
   opportunities: 'Opportunities',
-  tender_updates: 'Tender Updates Tracker',
+  tender_updates: 'Potential Opportunities',
   pq_activities: 'Pre-Qualification',
   vendor_directory: 'Partners',
   clients: 'Clients',
@@ -61,7 +61,7 @@ export const DEFAULT_PAGE_ROLE_ACCESS: Record<PageKey, string[]> = {
 export const NAV_ITEMS = [
   { title: 'Dashboard', url: '/', pageKey: 'dashboard' as const, icon: LayoutDashboard, section: 'main' as const },
   { title: 'Opportunities', url: '/opportunities', pageKey: 'opportunities' as const, icon: FileText, section: 'main' as const },
-  { title: 'Tender Updates', url: '/tender-updates', pageKey: 'tender_updates' as const, icon: Sparkles, section: 'main' as const },
+  { title: 'Potential Opportunities', url: '/potential-opportunities', pageKey: 'tender_updates' as const, icon: Sparkles, section: 'main' as const },
   { title: 'Pre-Qualification', url: '/pq-activities', pageKey: 'pq_activities' as const, icon: FileText, section: 'main' as const },
   { title: 'Partners', url: '/vendors', pageKey: 'vendor_directory' as const, icon: Building2, section: 'main' as const },
   { title: 'Clients', url: '/clients', pageKey: 'clients' as const, icon: Building2, section: 'main' as const },

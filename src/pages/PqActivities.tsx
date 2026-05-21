@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -130,25 +130,25 @@ export default function PqActivities() {
   const canView = canPerformAction('pq_activities_view');
   const canWrite = canPerformAction('pq_activities_manage');
 
-  const getRowLastUpdateMs = (row: PqActivityRow) => {
+  const getRowLastUpdateMs = useCallback((row: PqActivityRow) => {
     // Notice-board reminder should be driven by the explicit "Last Update Date"
     // field, not by Mongo's updatedAt (which changes on any edit/import).
     const raw = row.lastUpdateDate || null;
     if (!raw) return null;
     const ms = new Date(raw).getTime();
     return Number.isNaN(ms) ? null : ms;
-  };
+  }, []);
 
-  const isRowStale = (row: PqActivityRow, nowMs = Date.now()) => {
+  const isRowStale = useCallback((row: PqActivityRow, nowMs = Date.now()) => {
     const lastMs = getRowLastUpdateMs(row);
     if (!lastMs) return true;
     return (nowMs - lastMs) > THIRTY_DAYS_MS;
-  };
+  }, [getRowLastUpdateMs]);
 
   const staleRows = useMemo(() => {
     const now = Date.now();
     return rows.filter((row) => isRowStale(row, now));
-  }, [rows]);
+  }, [isRowStale, rows]);
 
   const stats = useMemo(() => {
     const total = rows.length;
@@ -203,7 +203,7 @@ export default function PqActivities() {
       if (aOrder !== bOrder) return aOrder - bOrder;
       return String(a.company || '').localeCompare(String(b.company || ''), undefined, { sensitivity: 'base' });
     });
-  }, [rows, q, statusFilter, showStaleOnly]);
+  }, [isRowStale, q, rows, showStaleOnly, statusFilter]);
 
   useEffect(() => {
     setExpandedId(null);
@@ -417,9 +417,19 @@ export default function PqActivities() {
 
         <div className="mt-5">
           <Tabs value={activeTenant} onValueChange={(v) => setActiveTenant(v as PqTenantKey)}>
-            <TabsList className="bg-navytrust-elevated/40 border border-white/10 flex flex-wrap h-auto">
+            <TabsList className="bg-navytrust-elevated/40 border border-white/10 flex flex-wrap h-auto p-2 gap-2">
               {PQ_TENANTS.map((t) => (
-                <TabsTrigger key={t.key} value={t.key} className="text-xs">
+                <TabsTrigger
+                  key={t.key}
+                  value={t.key}
+                  className={[
+                    'text-xs sm:text-sm px-4 py-2 rounded-xl border border-white/10',
+                    'bg-navytrust-surface/30 text-navytrust-foreground/85 hover:bg-navytrust-surface/45',
+                    'data-[state=active]:bg-navytrust-surface/70 data-[state=active]:text-navytrust-foreground',
+                    'data-[state=active]:shadow-nt-gold data-[state=active]:border-navytrust-gold/40',
+                    'transition-colors',
+                  ].join(' ')}
+                >
                   {t.label}
                 </TabsTrigger>
               ))}

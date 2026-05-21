@@ -92,7 +92,7 @@ const parseBDEngagementDate = (value: string) => {
     const dt = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
     return Number.isNaN(dt.getTime()) ? null : dt;
   }
-  const dmy = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+  const dmy = raw.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
   if (dmy) {
     const year = dmy[3].length === 2 ? Number(`20${dmy[3]}`) : Number(dmy[3]);
     const dt = new Date(year, Number(dmy[2]) - 1, Number(dmy[1]));
@@ -148,7 +148,8 @@ const formatPrettyDate = (value: string) => {
   const parsed = parseBDEngagementDate(value);
   if (!parsed) return value;
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  // Display as DD/MM/YY (en-GB) for the sheet table column.
+  return parsed.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
 };
 
 const buildFormFromRow = (row: BDEngagement): FormState => ({
@@ -697,7 +698,7 @@ const BDEngagements = () => {
     });
 
     return sorted;
-  }, [leadFilter, meetingTypeFilter, reportFilter, rows, search, sortField, sortOrder, statusFilter]);
+  }, [dateSourceMode, leadFilter, meetingTypeFilter, reportFilter, rows, search, sortField, sortOrder, statusFilter]);
 
   const stats = useMemo(() => {
     const totalEngagements = rows.length;

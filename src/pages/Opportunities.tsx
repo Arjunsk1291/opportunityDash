@@ -483,10 +483,10 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
 
       if (columnIndex.opportunityRefNo === undefined) throw new Error('Could not find a "Tender no / Ref no" column.');
 
-      const getText = (row: unknown[], key: keyof FormState) => {
+      const getCellText = (excelRow: { getCell: (idx: number) => { value: unknown } }, key: keyof FormState) => {
         const idx = columnIndex[key];
         if (idx === undefined) return '';
-        const raw = row[idx as number];
+        const raw = excelRow.getCell(idx).value ?? '';
         if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw.toISOString().slice(0, 10);
         return String(raw ?? '').trim();
       };
@@ -497,30 +497,25 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       const parsed: FormState[] = [];
       for (let rowIndex = headerRowIndex + 1; rowIndex <= maxRows; rowIndex += 1) {
         const excelRow = worksheet.getRow(rowIndex);
-        const row: unknown[] = [];
-        for (let col = 1; col <= maxColumns; col += 1) {
-          row[col] = excelRow.getCell(col).value ?? '';
-        }
-
-        const opportunityRefNo = getText(row, 'opportunityRefNo');
-        const tenderName = getText(row, 'tenderName');
-        const clientName = getText(row, 'clientName');
+        const opportunityRefNo = getCellText(excelRow, 'opportunityRefNo');
+        const tenderName = getCellText(excelRow, 'tenderName');
+        const clientName = getCellText(excelRow, 'clientName');
         if (!opportunityRefNo && !tenderName && !clientName) continue;
 
         parsed.push({
           opportunityRefNo,
           tenderName,
-          opportunityClassification: getText(row, 'opportunityClassification'),
+          opportunityClassification: getCellText(excelRow, 'opportunityClassification'),
           clientName,
-          groupClassification: getText(row, 'groupClassification'),
-          dateTenderReceived: getText(row, 'dateTenderReceived'),
-          tenderPlannedSubmissionDate: getText(row, 'tenderPlannedSubmissionDate'),
-          tenderResult: getText(row, 'tenderResult'),
-          tenderStatusRemark: getText(row, 'tenderStatusRemark'),
-          internalLead: getText(row, 'internalLead'),
-          opportunityValue: getText(row, 'opportunityValue'),
-          avenirStatus: getText(row, 'avenirStatus'),
-          adnocRftNo: getText(row, 'adnocRftNo'),
+          groupClassification: getCellText(excelRow, 'groupClassification'),
+          dateTenderReceived: getCellText(excelRow, 'dateTenderReceived'),
+          tenderPlannedSubmissionDate: getCellText(excelRow, 'tenderPlannedSubmissionDate'),
+          tenderResult: getCellText(excelRow, 'tenderResult'),
+          tenderStatusRemark: getCellText(excelRow, 'tenderStatusRemark'),
+          internalLead: getCellText(excelRow, 'internalLead'),
+          opportunityValue: getCellText(excelRow, 'opportunityValue'),
+          avenirStatus: getCellText(excelRow, 'avenirStatus'),
+          adnocRftNo: getCellText(excelRow, 'adnocRftNo'),
         });
       }
       console.timeEnd('[opportunities.sheetUpload] parseRows');
@@ -634,6 +629,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
 
   useEffect(() => {
     loadConflicts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, canEdit]);
 
   useEffect(() => {

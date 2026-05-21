@@ -19,6 +19,7 @@ import LoginLog from './models/LoginLog.js';
 import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
 import PqActivity from './models/PqActivity.js';
+import PotentialOpportunity from './models/PotentialOpportunity.js';
 import HfOffice from './models/HfOffice.js';
 import HfDiscipline from './models/HfDiscipline.js';
 import HfSalaryBand from './models/HfSalaryBand.js';
@@ -4746,6 +4747,138 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('[api.opportunities.get.error]', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// --- Potential Opportunities (separate extras store; does not modify SyncedOpportunity schema) ---
+app.get('/api/potential-opportunities', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'opportunities_view')) return;
+    const q = String(req.query?.q || '').trim().toLowerCase();
+    const onlyPotential = String(req.query?.onlyPotential || 'true').toLowerCase() !== 'false';
+
+    const marked = await PotentialOpportunity.find(
+      onlyPotential ? { isPotential: true } : {},
+      { opportunityRefNo: 1, isPotential: 1, extras: 1, updatedBy: 1, updatedAt: 1, createdAt: 1 }
+    ).lean();
+
+    const refNos = marked.map((m) => String(m.opportunityRefNo || '').trim()).filter(Boolean);
+    const opps = refNos.length
+      ? await SyncedOpportunity.find({ opportunityRefNo: { $in: refNos } }, { rawGoogleData: 0 }).lean()
+      : [];
+    const oppByRef = new Map(opps.map((o) => [String(o.opportunityRefNo || '').trim().toLowerCase(), mapIdField(o)]));
+
+    const rows = marked
+      .map((m) => {
+        const ref = String(m.opportunityRefNo || '').trim();
+        const opp = oppByRef.get(ref.toLowerCase()) || null;
+        return {
+          id: String(m._id),
+          opportunityRefNo: ref,
+          isPotential: Boolean(m.isPotential),
+          extras: m.extras || {},
+          updatedBy: String(m.updatedBy || ''),
+          updatedAt: m.updatedAt,
+          createdAt: m.createdAt,
+          opportunity: opp,
+        };
+      })
+      .filter((row) => {
+        if (!q) return true;
+        const blob = [
+          row.opportunityRefNo,
+          row.opportunity?.tenderName,
+          row.opportunity?.clientName,
+          row.opportunity?.internalLead,
+        ].filter(Boolean).join(' ').toLowerCase();
+        return blob.includes(q);
+      });
+
+    res.json({ success: true, rows });
+  } catch (error) {
+    console.error('[api.potential-opportunities.get.error]', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+app.post('/api/potential-opportunities/mark', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'opportunities_write')) return;
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const opportunityRefNo = String(payload?.opportunityRefNo || '').trim();
+    const isPotential = payload?.isPotential === undefined ? true : Boolean(payload?.isPotential);
+    if (!opportunityRefNo) return res.status(400).json({ error: 'opportunityRefNo is required' });
+    const updatedBy = String(req.user?.email || req.user?.name || '').trim();
+    const doc = await PotentialOpportunity.findOneAndUpdate(
+      { opportunityRefNo },
+      { $set: { opportunityRefNo, isPotential, updatedBy }, $setOnInsert: { extras: {} } },
+      { upsert: true, new: true, collation: { locale: 'en', strength: 2 } }
+    ).lean();
+    res.json({ success: true, row: { id: String(doc._id), ...doc } });
+  } catch (error) {
+    console.error('[api.potential-opportunities.mark.error]', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+app.put('/api/potential-opportunities/:id/extras', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'opportunities_write')) return;
+    const id = String(req.params?.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const extras = payload?.extras && typeof payload.extras === 'object' ? payload.extras : {};
+    const updatedBy = String(req.user?.email || req.user?.name || '').trim();
+    const updated = await PotentialOpportunity.findByIdAndUpdate(
+      id,
+      { $set: { extras, updatedBy } },
+      { new: true }
+    ).lean();
+    if (!updated) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, row: { id: String(updated._id), ...updated } });
+  } catch (error) {
+    console.error('[api.potential-opportunities.extras.error]', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+app.post('/api/potential-opportunities/import', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'opportunities_write')) return;
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) return res.status(400).json({ error: 'No rows provided' });
+
+    const updatedBy = String(req.user?.email || req.user?.name || '').trim();
+    const ops = [];
+    const normalizeRef = (value) => String(value || '').trim();
+    rows.forEach((input) => {
+      const opportunityRefNo = normalizeRef(input?.opportunityRefNo || input?.refNo || input?.tenderNo);
+      if (!opportunityRefNo) return;
+      const extras = input?.extras && typeof input.extras === 'object' ? input.extras : {};
+      ops.push({
+        updateOne: {
+          filter: { opportunityRefNo },
+          update: {
+            $set: { opportunityRefNo, isPotential: true, extras, updatedBy },
+            $setOnInsert: { createdAt: new Date() },
+          },
+          upsert: true,
+          collation: { locale: 'en', strength: 2 },
+        },
+      });
+    });
+
+    if (!ops.length) return res.json({ success: true, upserted: 0, modified: 0, touched: 0 });
+    const result = await PotentialOpportunity.bulkWrite(ops, { ordered: false });
+    res.json({
+      success: true,
+      upserted: Number(result?.upsertedCount || 0),
+      modified: Number(result?.modifiedCount || 0),
+      touched: ops.length,
+    });
+  } catch (error) {
+    console.error('[api.potential-opportunities.import.error]', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
 
