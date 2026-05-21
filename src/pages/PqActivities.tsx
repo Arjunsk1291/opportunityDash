@@ -19,6 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
+import { withPerf } from '@/lib/perfLogger';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -221,7 +222,7 @@ export default function PqActivities() {
     }
   };
 
-  const loadRows = async () => {
+  const loadRows = async (reason: string) => {
     if (!token) return;
     setLoading(true);
     try {
@@ -230,12 +231,19 @@ export default function PqActivities() {
       if (q.trim()) qs.set('q', q.trim());
       if (statusFilter !== 'All') qs.set('status', statusFilter);
 
-      const res = await fetch(`${API_URL}/pq-activities?${qs.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Failed to load PQ activities');
-      setRows(Array.isArray(data.rows) ? data.rows : []);
+      const data = await withPerf(
+        'pq.activities.load',
+        { reason, tenant: activeTenant, q: q.trim(), status: statusFilter, route: window.location.pathname },
+        async () => {
+          const res = await fetch(`${API_URL}/pq-activities?${qs.toString()}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const parsed = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(parsed.error || 'Failed to load PQ activities');
+          return parsed as { rows?: unknown };
+        },
+      );
+      setRows(Array.isArray((data as { rows?: unknown }).rows) ? (data as { rows: PqActivityRow[] }).rows : []);
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -244,7 +252,7 @@ export default function PqActivities() {
   };
 
   useEffect(() => {
-    loadRows();
+    void loadRows('tenant_or_mount');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, activeTenant]);
 
@@ -312,7 +320,7 @@ export default function PqActivities() {
       if (!res.ok) throw new Error(data.error || 'Save failed');
       toast.success(editing ? 'Entry updated' : 'Entry created');
       setSheetOpen(false);
-      await loadRows();
+      await loadRows('save_create');
     } catch (error) {
       toast.error((error as Error).message);
     }
@@ -331,7 +339,7 @@ export default function PqActivities() {
       toast.success('Entry deleted');
       setDeleteTarget(null);
       if (expandedId === deleteTarget.id) setExpandedId(null);
-      await loadRows();
+      await loadRows('save_update');
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -361,7 +369,7 @@ export default function PqActivities() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Import failed');
       toast.success(`Imported: added ${data.added || 0}, updated ${data.updated || 0}`);
-      await loadRows();
+      await loadRows('delete_row');
     } catch (error) {
       toast.error((error as Error).message);
     } finally {

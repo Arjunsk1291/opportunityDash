@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToMatrix } from '@/lib/excelWorkbook';
+import { perfLog, withPerf } from '@/lib/perfLogger';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -89,18 +90,23 @@ export default function PotentialOpportunities() {
     if (activeTab !== 'search') return;
     if (!token) return;
     if (Array.isArray(opportunities) && opportunities.length) return;
+    perfLog('potential.opportunities.ensure_opps_load', { reason: 'tab_search_opened', route: window.location.pathname });
     void refreshData({ background: false }).catch(() => {});
   }, [activeTab, opportunities, refreshData, token]);
 
-  const load = async () => {
+  const load = async (reason: string) => {
     if (!token) return;
     setLoading(true);
     try {
       const qs = new URLSearchParams();
       if (q.trim()) qs.set('q', q.trim());
-      const data = await fetchJson<{ success: boolean; rows: PotentialRow[] }>(`${API_URL}/potential-opportunities?${qs.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const data = await withPerf(
+        'potential.opportunities.load',
+        { reason, q: q.trim(), route: window.location.pathname },
+        () => fetchJson<{ success: boolean; rows: PotentialRow[] }>(`${API_URL}/potential-opportunities?${qs.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      );
       setRows(Array.isArray(data.rows) ? data.rows : []);
     } catch (error) {
       toast.error((error as Error).message);
@@ -110,7 +116,7 @@ export default function PotentialOpportunities() {
   };
 
   useEffect(() => {
-    load();
+    void load('initial_mount');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -200,7 +206,7 @@ export default function PotentialOpportunities() {
         body: JSON.stringify({ rows: payloadRows }),
       });
       toast.success(`Imported ${result.touched} rows (new ${result.upserted}, updated ${result.modified}).`);
-      await load();
+      await load('excel_import_completed');
     } catch (error) {
       toast.error((error as Error).message);
     }
@@ -248,7 +254,7 @@ export default function PotentialOpportunities() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load('refresh_click')} disabled={loading}>
             Refresh
           </Button>
           <input
@@ -312,11 +318,11 @@ export default function PotentialOpportunities() {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') void load();
+                  if (e.key === 'Enter') void load('search_enter');
                 }}
               />
             </div>
-            <Button variant="outline" onClick={() => load()} disabled={loading}>
+            <Button variant="outline" onClick={() => load('search_apply_click')} disabled={loading}>
               <Wand2 className="mr-2 h-4 w-4" />
               Apply
             </Button>
@@ -475,7 +481,7 @@ export default function PotentialOpportunities() {
                                   if (!ref) return;
                                   await markPotential(ref, true);
                                   toast.success('Marked as potential.');
-                                  await load();
+                                  await load('advanced_search_added');
                                 } catch (error) {
                                   toast.error((error as Error).message);
                                 }
@@ -531,7 +537,7 @@ export default function PotentialOpportunities() {
                       toast.success('Added.');
                       setManualRef('');
                       setManualExtras('{}');
-                      await load();
+                      await load('manual_entry_added');
                     } catch (error) {
                       toast.error((error as Error).message);
                     }
