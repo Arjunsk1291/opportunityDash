@@ -23,6 +23,7 @@ const bdEngagementSchema = new mongoose.Schema(
 );
 
 bdEngagementSchema.index({ ref: 1, date: 1, clientName: 1 });
+bdEngagementSchema.index({ createdAt: -1 });
 
 export default mongoose.model('BDEngagement', bdEngagementSchema);
 

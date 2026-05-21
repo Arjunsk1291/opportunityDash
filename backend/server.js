@@ -5470,9 +5470,7 @@ app.post(
 
       if (idxCompany < 0) return res.status(400).json({ error: 'Missing Company column' });
 
-      let added = 0;
-      let updated = 0;
-
+      const ops = [];
       for (let i = 1; i < rows.length; i += 1) {
         const row = Array.isArray(rows[i]) ? rows[i] : [];
         const company = clampString(row[idxCompany], 120);
@@ -5480,39 +5478,50 @@ app.post(
 
         const registeredEmail = clampString(idxEmail >= 0 ? row[idxEmail] : '', 200);
         const status = normalizePqStatus(idxStatus >= 0 ? row[idxStatus] : '');
-        const sNo = idxSno >= 0 ? Number(String(row[idxSno] || '').trim()) : 0;
+        const sNoRaw = idxSno >= 0 ? Number(String(row[idxSno] || '').trim()) : NaN;
         const userId = clampString(idxUserId >= 0 ? row[idxUserId] : '-', 200) || '-';
         const password = String(idxPassword >= 0 ? row[idxPassword] : '');
         const link = clampString(idxLink >= 0 ? row[idxLink] : '-', 800) || '-';
         const contactPerson = deriveContactPersonFromEmail(registeredEmail);
 
-        const existing = await PqActivity.findOne({ tenant, company }).collation({ locale: 'en', strength: 2 });
-        if (existing) {
-          existing.sNo = Number.isFinite(sNo) ? sNo : existing.sNo;
-          existing.status = status;
-          existing.registeredEmail = registeredEmail;
-          existing.userId = userId;
-          existing.password = password;
-          existing.link = link;
-          if (!existing.contactPerson) existing.contactPerson = clampString(contactPerson, 120);
-          await existing.save();
-          updated += 1;
-        } else {
-          await PqActivity.create({
-            tenant,
-            sNo: Number.isFinite(sNo) ? sNo : 0,
-            company,
+        const updateDoc = {
+          $set: {
             status,
             registeredEmail,
             userId,
             password,
             link,
+          },
+          $setOnInsert: {
             contactPerson: clampString(contactPerson, 120),
             renewalDate: null,
             notes: '',
-          });
-          added += 1;
+          },
+        };
+
+        if (Number.isFinite(sNoRaw)) {
+          updateDoc.$set.sNo = sNoRaw;
+        } else {
+          updateDoc.$setOnInsert.sNo = 0;
         }
+
+        ops.push({
+          updateOne: {
+            filter: { tenant, company },
+            update: updateDoc,
+            upsert: true,
+            collation: { locale: 'en', strength: 2 },
+          },
+        });
+      }
+
+      let added = 0;
+      let updated = 0;
+      if (ops.length > 0) {
+        // Use bulkWrite for O(1) database trip instead of O(N) loop
+        const result = await PqActivity.bulkWrite(ops, { ordered: false });
+        added = result.upsertedCount;
+        updated = result.matchedCount;
       }
 
       res.json({ success: true, added, updated });

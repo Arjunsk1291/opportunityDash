@@ -27,6 +27,7 @@ const pqActivitySchema = new mongoose.Schema(
 );
 
 pqActivitySchema.index({ tenant: 1, company: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } });
+pqActivitySchema.index({ tenant: 1, lastUpdateDate: -1, updatedAt: -1, company: 1 });
 pqActivitySchema.index({ tenant: 1, company: 'text', registeredEmail: 'text' });
 
 export default mongoose.model('PqActivity', pqActivitySchema);
