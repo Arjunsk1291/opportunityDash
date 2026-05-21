@@ -3712,6 +3712,8 @@ const getActionPermissions = async () => {
 
 const requireActionPermission = async (req, res, actionKey) => {
   const { config, permissions, emailPermissions } = await getActionPermissions();
+  // Master is the supreme role: always allowed to perform any action.
+  if (String(req.user?.role || '') === 'Master') return config;
   const allowedRoles = permissions[actionKey] || [];
   const allowedEmails = emailPermissions[actionKey] || [];
   const userEmail = String(req.user?.email || '').trim().toLowerCase();
