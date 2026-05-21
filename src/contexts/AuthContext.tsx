@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
 import { DEFAULT_PAGE_ROLE_ACCESS, PageKey } from '@/config/navigation';
 import { ActionKey, DEFAULT_ACTION_ROLE_ACCESS } from '@/config/actionPermissions';
@@ -432,6 +433,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const canPerformAction = useCallback((actionKey: ActionKey) => {
     if (!user || user.status !== 'approved') return false;
+    // Master is the supreme role: always allowed to perform any action (frontend gating).
+    if (user.role === 'Master') return true;
     const allowedRoles = actionPermissions[actionKey] || [];
     const allowedEmails = actionEmailPermissions[actionKey] || [];
     const email = String(user.email || '').trim().toLowerCase();

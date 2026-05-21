@@ -1,6 +1,8 @@
 import type { UserRole } from '@/contexts/AuthContext';
 
 export type ActionKey =
+  | 'opportunities_view'
+  | 'opportunities_write'
   | 'opportunities_sync'
   | 'approvals_proposal_head'
   | 'approvals_svp'
@@ -26,6 +28,8 @@ export type ActionKey =
   | 'logs_cleanup';
 
 export const ACTION_LABELS: Record<ActionKey, string> = {
+  opportunities_view: 'View Opportunities Data',
+  opportunities_write: 'Write Opportunities Data',
   opportunities_sync: 'Sync Opportunities to MongoDB',
   approvals_proposal_head: 'Tender Manager Approval Writes',
   approvals_svp: 'SVP Approval Writes',
@@ -52,6 +56,8 @@ export const ACTION_LABELS: Record<ActionKey, string> = {
 };
 
 export const ACTION_DESCRIPTIONS: Record<ActionKey, string> = {
+  opportunities_view: 'Read access to opportunities-derived modules (e.g., Potential Opportunities list).',
+  opportunities_write: 'Write access to opportunities-derived modules (mark potential, manage extras, etc.).',
   opportunities_sync: 'Manual sync and dashboard auto-sync that write synced rows into MongoDB.',
   approvals_proposal_head: 'Writes proposal-head approval state into MongoDB.',
   approvals_svp: 'Writes SVP approval state into MongoDB.',
@@ -78,6 +84,8 @@ export const ACTION_DESCRIPTIONS: Record<ActionKey, string> = {
 };
 
 export const DEFAULT_ACTION_ROLE_ACCESS: Record<ActionKey, UserRole[]> = {
+  opportunities_view: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  opportunities_write: ['Master', 'Admin', 'ProposalHead', 'SVP'],
   opportunities_sync: ['Master', 'Admin'],
   approvals_proposal_head: ['Master', 'ProposalHead'],
   approvals_svp: ['Master', 'SVP'],

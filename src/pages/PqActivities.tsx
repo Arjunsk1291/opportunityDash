@@ -369,7 +369,7 @@ export default function PqActivities() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Import failed');
       toast.success(`Imported: added ${data.added || 0}, updated ${data.updated || 0}`);
-      await loadRows('delete_row');
+      await loadRows('import_rows');
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
