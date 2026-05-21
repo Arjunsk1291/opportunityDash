@@ -198,7 +198,18 @@ const DEFAULT_MAPPING = {
   lead: ['Assigned Person'],
   value: ['Tender value', 'TENDER VALUE ', 'TENDER VALUE (AED)', 'VALUE', 'PROJECT VALUE', 'ESTIMATED VALUE', 'TENDER AMOUNT', 'AMOUNT'],
   avenirStatus: ['AVENIR STATUS'],
-  tenderResult: ['TENDER RESULT'],
+  // TENDER RESULT header varies a lot across client workbooks; keep this tolerant.
+  tenderResult: [
+    'TENDER RESULT',
+    'TENDER RESULTS',
+    'RESULT',
+    'OUTCOME',
+    'FINAL RESULT',
+    'TENDER OUTCOME',
+    'STATUS (RESULT)',
+    'STATUS RESULT',
+    'RESULT (TENDER)',
+  ],
   groupClassification: ['GDS/GES', 'GROUP'],
   // Keep these tolerant: client sheets use many variants for this field.
   remarksReason: [
