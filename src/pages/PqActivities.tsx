@@ -87,13 +87,31 @@ const safeUrl = (value: string) => {
 };
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-const PQ_TENANTS = [
-  { key: 'avenir_abudhabi', label: 'Avenir (Abu Dhabi)' },
-  { key: 'avenir_india', label: 'AVENIR (India)' },
-  { key: 'bcts_dubai', label: 'BCTS (Dubai)' },
-  { key: 'bcts_abudhabi', label: 'BCTS (Abu Dhabi)' },
-  { key: 'avenir_energy', label: 'AVENIR ENERGY' },
+const PQ_TENANT_GROUPS = [
+  {
+    key: 'avenir',
+    label: 'Avenir',
+    tenants: [
+      { key: 'avenir_abudhabi', label: 'Abu Dhabi' },
+      { key: 'avenir_india', label: 'India' },
+      { key: 'avenir_energy', label: 'Energy' },
+    ],
+  },
+  {
+    key: 'bcts',
+    label: 'BCTS',
+    tenants: [
+      { key: 'bcts_dubai', label: 'Dubai' },
+      { key: 'bcts_abudhabi', label: 'Abu Dhabi' },
+    ],
+  },
+  {
+    key: 'other',
+    label: 'Others',
+    tenants: [],
+  },
 ] as const;
+const PQ_TENANTS = PQ_TENANT_GROUPS.flatMap((g) => g.tenants);
 type PqTenantKey = typeof PQ_TENANTS[number]['key'];
 
 export default function PqActivities() {
@@ -464,23 +482,36 @@ export default function PqActivities() {
 
         <div className="mt-5">
           <Tabs value={activeTenant} onValueChange={(v) => setActiveTenant(v as PqTenantKey)}>
-            <TabsList className="bg-navytrust-elevated/40 border border-white/10 flex flex-wrap h-auto p-2 gap-2">
-              {PQ_TENANTS.map((t) => (
-                <TabsTrigger
-                  key={t.key}
-                  value={t.key}
-                  className={[
-                    'text-xs sm:text-sm px-4 py-2 rounded-xl border border-white/10',
-                    'bg-navytrust-surface/30 text-navytrust-foreground/85 hover:bg-navytrust-surface/45',
-                    'data-[state=active]:bg-navytrust-surface/70 data-[state=active]:text-navytrust-foreground',
-                    'data-[state=active]:shadow-nt-gold data-[state=active]:border-navytrust-gold/40',
-                    'transition-colors',
-                  ].join(' ')}
-                >
-                  {t.label}
-                </TabsTrigger>
+            <div className="space-y-2">
+              {PQ_TENANT_GROUPS.map((group) => (
+                <div key={group.key} className="space-y-2">
+                  <div className="text-xs uppercase tracking-[0.24em] text-navytrust-foreground/60 px-1">
+                    {group.label}
+                  </div>
+                  <TabsList className="bg-navytrust-elevated/40 border border-white/10 flex flex-wrap h-auto p-2 gap-2">
+                    {group.tenants.length ? group.tenants.map((t) => (
+                      <TabsTrigger
+                        key={t.key}
+                        value={t.key}
+                        className={[
+                          'text-xs sm:text-sm px-4 py-2 rounded-xl border border-white/10',
+                          'bg-navytrust-surface/30 text-navytrust-foreground/85 hover:bg-navytrust-surface/45',
+                          'data-[state=active]:bg-navytrust-surface/70 data-[state=active]:text-navytrust-foreground',
+                          'data-[state=active]:shadow-nt-gold data-[state=active]:border-navytrust-gold/40',
+                          'transition-colors',
+                        ].join(' ')}
+                      >
+                        {t.label}
+                      </TabsTrigger>
+                    )) : (
+                      <div className="text-xs text-navytrust-foreground/60 px-3 py-2">
+                        No folders configured yet.
+                      </div>
+                    )}
+                  </TabsList>
+                </div>
               ))}
-            </TabsList>
+            </div>
             <TabsContent value={activeTenant}>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-6">

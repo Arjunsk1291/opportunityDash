@@ -5039,9 +5039,28 @@ app.get('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
 // --- PQ & Registration Activities ---
 const PQ_STATUS_VALUES = ['Prequalified', 'Registered', 'Registration on Process'];
 const PQ_TENANTS = ['avenir_abudhabi', 'avenir_india', 'bcts_dubai', 'bcts_abudhabi', 'avenir_energy'];
+const PQ_TENANT_ALIASES = {
+  avenir_abudhabi: ['avenir_abudhabi', 'avenir', 'avenir_abudhabi ', 'avenir-abu-dhabi', 'avenir_abudhabi'],
+  avenir_india: ['avenir_india', 'avenir india', 'avenir_ind', 'india', 'avenir_india '],
+  bcts_dubai: ['bcts_dubai', 'bcts dubai', 'bcts', 'dubai', 'bcts_dubai '],
+  bcts_abudhabi: ['bcts_abudhabi', 'bcts abu dhabi', 'bcts_abudhabi ', 'bcts-abu-dhabi'],
+  avenir_energy: ['avenir_energy', 'avenir energy', 'energy', 'avenir_energy '],
+};
+
 const normalizePqTenant = (value) => {
   const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return 'avenir_abudhabi';
+  for (const canonical of PQ_TENANTS) {
+    const aliases = PQ_TENANT_ALIASES[canonical] || [];
+    if (aliases.some((a) => String(a).trim().toLowerCase() === raw)) return canonical;
+  }
   return PQ_TENANTS.includes(raw) ? raw : 'avenir_abudhabi';
+};
+
+const pqTenantAliases = (canonicalTenant) => {
+  const canonical = normalizePqTenant(canonicalTenant);
+  const aliases = PQ_TENANT_ALIASES[canonical] || [canonical];
+  return Array.from(new Set(aliases.map((a) => String(a).trim()).filter(Boolean)));
 };
 
 const normalizePqStatus = (value) => {
@@ -5323,7 +5342,7 @@ app.get('/api/pq-activities', verifyToken, async (req, res) => {
     const tenant = normalizePqTenant(req.query?.tenant);
     const filter = {};
 
-    filter.tenant = tenant;
+    filter.tenant = { $in: pqTenantAliases(tenant) };
     if (status && PQ_STATUS_VALUES.includes(status)) {
       filter.status = status;
     }
