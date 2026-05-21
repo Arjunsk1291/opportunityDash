@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { CalendarIcon, Copy, Eye, EyeOff, FileDown, FileUp, Plus, Search, Trash2, Pencil, AlertTriangle } from 'lucide-react';
+import { CalendarIcon, Copy, Eye, EyeOff, FileDown, FileUp, Plus, Search, Trash2, Pencil, AlertTriangle, Building2, ListChecks } from 'lucide-react';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -96,6 +97,11 @@ export default function PqActivities() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<PqActivityRow | null>(null);
+  const [activeTab, setActiveTab] = useState<'entries' | 'bulk'>('entries');
+  const [showStaleOnly, setShowStaleOnly] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkPreview, setBulkPreview] = useState<Array<Partial<PqActivityRow> & { _line: number; _error?: string }>>([]);
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<PqActivityRow | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -133,16 +139,9 @@ export default function PqActivities() {
     return (nowMs - lastMs) > THIRTY_DAYS_MS;
   };
 
-  const staleCompanies = useMemo(() => {
+  const staleRows = useMemo(() => {
     const now = Date.now();
-    return rows
-      .map((r) => ({
-        company: r.company,
-        lastUpdateDate: r.lastUpdateDate || r.updatedAt || null,
-        stale: isRowStale(r, now),
-      }))
-      .filter((x) => x.company && x.stale)
-      .sort((a, b) => a.company.localeCompare(b.company));
+    return rows.filter((row) => isRowStale(row, now));
   }, [rows]);
 
   const stats = useMemo(() => {
@@ -154,8 +153,10 @@ export default function PqActivities() {
   }, [rows]);
 
   const filteredRows = useMemo(() => {
+    const now = Date.now();
     const normalizedQ = q.trim().toLowerCase();
     const filtered = rows.filter((r) => {
+      if (showStaleOnly && !isRowStale(r, now)) return false;
       if (statusFilter !== 'All' && r.status !== statusFilter) return false;
       if (!normalizedQ) return true;
       return (
@@ -196,7 +197,51 @@ export default function PqActivities() {
       if (aOrder !== bOrder) return aOrder - bOrder;
       return String(a.company || '').localeCompare(String(b.company || ''), undefined, { sensitivity: 'base' });
     });
-  }, [rows, q, statusFilter]);
+  }, [rows, q, statusFilter, showStaleOnly]);
+
+  const parseBulkText = (input: string) => {
+    const lines = String(input || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'));
+
+    return lines.map((line, idx) => {
+      const parts = line.includes('\t') ? line.split('\t') : line.split(',');
+      const [companyRaw, statusRaw, emailRaw, userIdRaw, passwordRaw, linkRaw, lastUpdateRaw, notesRaw] = parts.map((p) => String(p ?? '').trim());
+      const company = companyRaw;
+      if (!company) return { _line: idx + 1, _error: 'Missing company name' };
+
+      const statusCandidate = statusRaw as PqStatus;
+      const status: PqStatus = (['Prequalified', 'Registered', 'Registration on Process'] as const).includes(statusCandidate)
+        ? statusCandidate
+        : 'Registration on Process';
+
+      const lastUpdateDate = lastUpdateRaw
+        ? (() => {
+          const d = new Date(lastUpdateRaw);
+          return Number.isNaN(d.getTime()) ? null : d.toISOString();
+        })()
+        : null;
+
+      return {
+        _line: idx + 1,
+        company,
+        status,
+        registeredEmail: emailRaw || '',
+        userId: userIdRaw || '-',
+        password: passwordRaw || '',
+        link: linkRaw || '-',
+        lastUpdateDate,
+        notes: notesRaw || '',
+      };
+    });
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'bulk') return;
+    setBulkPreview(parseBulkText(bulkText));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bulkText, activeTab]);
 
   const statusBadgeClass = (status: PqStatus) => {
     switch (status) {
@@ -303,6 +348,49 @@ export default function PqActivities() {
     }
   };
 
+  const commitBulkAdd = async () => {
+    if (!token || !canWrite) return;
+    const preview = parseBulkText(bulkText);
+    const valid = preview.filter((row) => !row._error) as Array<Partial<PqActivityRow> & { _line: number }>;
+    if (valid.length === 0) {
+      toast.error('No valid rows to add.');
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      let created = 0;
+      for (const row of valid) {
+        const payload = {
+          company: row.company,
+          status: row.status,
+          registeredEmail: row.registeredEmail || '',
+          userId: row.userId || '-',
+          password: row.password || '',
+          link: row.link || '-',
+          lastUpdateDate: row.lastUpdateDate || null,
+          notes: row.notes || '',
+        };
+        const res = await fetch(`${API_URL}/pq-activities`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(`Line ${row._line}: ${data?.error || 'Create failed'}`);
+        created += 1;
+      }
+      toast.success(`Added ${created} compan${created === 1 ? 'y' : 'ies'}.`);
+      setBulkText('');
+      setBulkPreview([]);
+      setActiveTab('entries');
+      await loadRows();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   const confirmDelete = async () => {
     if (!token || !deleteTarget || !canWrite) return;
     setDeleting(true);
@@ -400,27 +488,23 @@ export default function PqActivities() {
           </p>
         </header>
 
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            className="bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2"
-            onClick={() => setQ('Avenir')}
-          >
-            <span className="text-xs font-semibold tracking-wide">Avenir</span>
-            <Badge className="bg-navytrust-primary/20 text-navytrust-foreground border border-white/10">Bookmark</Badge>
-          </Button>
-          <Button
-            type="button"
-            className="bg-navytrust-primary hover:bg-navytrust-primary/90 text-white gap-2 shadow-nt-glow"
-            onClick={openCreate}
-            disabled={!canWrite}
-          >
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Add Company
-          </Button>
+        <div className="mt-5">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+            <TabsList className="bg-navytrust-elevated/40 border border-white/10">
+              <TabsTrigger value="entries" className="gap-2">
+                <ListChecks className="h-4 w-4" aria-hidden="true" />
+                Entries
+              </TabsTrigger>
+              <TabsTrigger value="bulk" className="gap-2">
+                <Building2 className="h-4 w-4" aria-hidden="true" />
+                Add Companies (Bulk)
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
+        {activeTab === 'entries' ? (
+        <>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-6">
           <Card className="rounded-2xl bg-navytrust-surface/40 backdrop-blur border-white/10 shadow-elegant">
             <CardHeader className="pb-2">
@@ -450,7 +534,80 @@ export default function PqActivities() {
             <CardContent className="text-2xl font-semibold">{stats.inProcess}</CardContent>
           </Card>
         </div>
+        </>
+        ) : (
+          <div className="mt-6 rounded-2xl bg-navytrust-surface/35 backdrop-blur border border-white/10 shadow-elegant p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-lg font-semibold text-navytrust-foreground">Add Companies (Bulk)</div>
+                <div className="text-xs text-navytrust-foreground/70 mt-1">
+                  Paste one company per line. Columns (comma or tab): company, status, email, userId, password, link, lastUpdateDate, notes.
+                </div>
+              </div>
+              <Button
+                type="button"
+                className="bg-navytrust-primary hover:bg-navytrust-primary/90 text-white shadow-nt-glow"
+                onClick={commitBulkAdd}
+                disabled={!canWrite || bulkSaving}
+              >
+                {bulkSaving ? 'Saving…' : 'Create'}
+              </Button>
+            </div>
 
+            <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <Textarea
+                  value={bulkText}
+                  onChange={(e) => setBulkText(e.target.value)}
+                  className="min-h-[260px] bg-navytrust-elevated/30 border-white/10 text-navytrust-foreground"
+                  placeholder={"Acme Co, Registered, buyer@acme.com, buyer, pass123, https://portal.example.com, 2026-01-15, renewal pending\nAnother Co, Registration on Process"}
+                />
+                <div className="mt-2 text-xs text-navytrust-foreground/70">
+                  Tip: use “Import .xlsx” in Entries for large structured imports.
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-navytrust-elevated/20 overflow-hidden">
+                <div className="px-4 py-3 border-b border-white/10 text-sm font-semibold text-navytrust-foreground">
+                  Preview ({bulkPreview.filter((r) => !r._error).length} valid / {bulkPreview.length} total)
+                </div>
+                <div className="max-h-[320px] overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-navytrust-elevated/25">
+                      <tr className="text-left text-navytrust-foreground/80">
+                        <th className="px-3 py-2 w-12">#</th>
+                        <th className="px-3 py-2">Company</th>
+                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2">Last Update</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkPreview.slice(0, 50).map((row) => (
+                        <tr key={row._line} className="border-t border-white/10">
+                          <td className="px-3 py-2 text-navytrust-foreground/70">{row._line}</td>
+                          <td className="px-3 py-2">
+                            <div className="text-navytrust-foreground">{row.company || '—'}</div>
+                            {row._error && <div className="text-xs text-warning">{row._error}</div>}
+                          </td>
+                          <td className="px-3 py-2 text-navytrust-foreground/90">{String(row.status || '—')}</td>
+                          <td className="px-3 py-2 text-navytrust-foreground/70">{formatIsoDate((row as any).lastUpdateDate || null)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {bulkPreview.length > 50 && (
+                  <div className="px-4 py-2 text-xs text-navytrust-foreground/70 border-t border-white/10">
+                    Showing first 50 lines.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'entries' && (
+        <>
         <div className="mt-6 rounded-2xl bg-navytrust-surface/35 backdrop-blur border border-white/10 shadow-elegant p-3 sm:p-4">
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
             <div className="flex-1 flex items-center gap-2">
@@ -509,17 +666,60 @@ export default function PqActivities() {
           </div>
         </div>
 
-        {staleCompanies.length > 0 && (
-          <div className="mt-6 rounded-2xl border border-warning/25 bg-warning/10 px-4 py-3 text-sm text-navytrust-foreground flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 mt-0.5 text-warning" aria-hidden="true" />
-            <div className="min-w-0">
-              <div className="font-semibold">Notice board</div>
-              <div className="text-xs text-navytrust-foreground/80">
-                Not updated in the last 30 days: {staleCompanies.map((c) => c.company).join(', ')}.
+        <div className="mt-6">
+          <Card className="rounded-2xl bg-navytrust-surface/40 backdrop-blur border border-warning/25 shadow-elegant">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <CardTitle className="text-xs tracking-[0.24em] uppercase text-navytrust-foreground/70 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-warning" aria-hidden="true" />
+                    Notice Board
+                  </CardTitle>
+                  <div className="mt-1 text-2xl font-semibold text-navytrust-foreground">
+                    {staleRows.length}
+                    <span className="ml-2 text-sm font-normal text-navytrust-foreground/70">not updated in 30+ days</span>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70"
+                  onClick={() => setShowStaleOnly((v) => !v)}
+                >
+                  {showStaleOnly ? 'Show all' : 'View stale'}
+                </Button>
               </div>
-            </div>
-          </div>
-        )}
+            </CardHeader>
+            {staleRows.length > 0 && (
+              <CardContent className="pt-0">
+                <div className="text-xs text-navytrust-foreground/70 mb-2">Top stale companies</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {staleRows.slice(0, 8).map((row) => (
+                    <button
+                      key={row.id}
+                      type="button"
+                      className="rounded-xl border border-white/10 bg-navytrust-elevated/30 hover:bg-navytrust-elevated/45 px-3 py-2 text-left"
+                      onClick={() => {
+                        setQ(row.company || '');
+                        setExpandedId(row.id);
+                      }}
+                    >
+                      <div className="font-medium text-navytrust-foreground truncate">{row.company || '—'}</div>
+                      <div className="text-xs text-navytrust-foreground/70">
+                        Last update: {formatIsoDate(row.lastUpdateDate || null)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                {staleRows.length > 8 && (
+                  <div className="mt-3 text-xs text-navytrust-foreground/70">
+                    +{staleRows.length - 8} more (use “View stale” to filter the table)
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
+        </div>
 
         {/* Desktop table */}
         <div className="hidden md:block mt-6">
@@ -779,6 +979,8 @@ export default function PqActivities() {
             })}
           </AnimatePresence>
         </div>
+        </>
+        )}
 
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetContent side="right" className="w-full sm:max-w-xl pointer-events-auto">
