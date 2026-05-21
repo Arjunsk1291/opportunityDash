@@ -441,26 +441,7 @@ export function OpportunitiesTable({
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const canSync = Boolean(token) && canPerformAction('opportunities_sync');
-      if (canSync) {
-        const response = await fetch(API_URL + '/opportunities/sync-graph', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: 'Bearer ' + token,
-          },
-        });
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload?.error || 'Sync failed');
-        }
-        const newRowsCount = Number(payload?.newRowsCount || 0);
-        if (newRowsCount > 0) {
-          toast.success(`Sync complete. ${newRowsCount} new row${newRowsCount === 1 ? '' : 's'} detected.`);
-        } else {
-          toast.message('Sync complete. No new rows detected.');
-        }
-      }
+      // Graph sync removed. Refresh reads MongoDB, which is now updated only via Opportunities uploads/manual entry.
       await Promise.all([refreshApprovals(), refreshData()]);
     } catch (error) {
       toast.error((error as Error).message || 'Refresh failed');

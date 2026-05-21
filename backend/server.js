@@ -331,7 +331,7 @@ mongoose.connect(MONGODB_URI)
   })
   .then(async () => {
     await initializeBootSync();
-    await scheduleGraphAutoSync();
+    // Graph auto-sync removed: MongoDB is updated only via Opportunities page upload/manual entry.
     scheduleDailyNotificationCheck();
   })
   .catch(err => {
@@ -4712,54 +4712,21 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
 });
 
 app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
-
-    const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
-    res.json({
-      success: true,
-      count: syncResult.insertedCount,
-      syncedCount: syncResult.insertedCount,
-      newRowsCount: syncResult.newRowsCount,
-      newRowSignatures: syncResult.newRowSignatures,
-      statusWarningsCount: Array.isArray(syncResult.statusWarnings) ? syncResult.statusWarnings.length : 0,
-      statusWarnings: Array.isArray(syncResult.statusWarnings) ? syncResult.statusWarnings.slice(0, 50) : [],
-    });
-  } catch (error) {
-    res.status(500).json(toApiError(error, 'GRAPH_SYNC_FAILED'));
-  }
+  // Graph sync removed: MongoDB is now updated only via Opportunities page uploads/manual entry.
+  res.status(410).json({ error: 'Graph sync has been disabled. Use Opportunities upload as the source of truth.' });
 });
 
 app.post('/api/opportunities/sync-graph/auto', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
-
-    const syncResult = await syncFromConfiguredGraph({ source: 'auto_endpoint' });
-    res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
-  } catch (error) {
-    res.status(500).json(toApiError(error, 'GRAPH_AUTOSYNC_FAILED'));
-  }
+  res.status(410).json({ error: 'Graph sync has been disabled. Use Opportunities upload as the source of truth.' });
 });
 
 // Backward-compatible aliases
 app.post('/api/opportunities/sync-sheets', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
-    const syncResult = await syncFromConfiguredGraph({ source: 'manual_sync' });
-    res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
-  } catch (error) {
-    res.status(500).json(toApiError(error, 'GRAPH_SYNC_FAILED'));
-  }
+  res.status(410).json({ error: 'Graph sync has been disabled. Use Opportunities upload as the source of truth.' });
 });
 
 app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'opportunities_sync')) return;
-    const syncResult = await syncFromConfiguredGraph({ source: 'auto_endpoint_legacy' });
-    res.json({ success: true, count: syncResult.insertedCount, syncedCount: syncResult.insertedCount, newRowsCount: syncResult.newRowsCount, newRowSignatures: syncResult.newRowSignatures });
-  } catch (error) {
-    res.status(500).json(toApiError(error, 'GRAPH_AUTOSYNC_FAILED'));
-  }
+  res.status(410).json({ error: 'Graph sync has been disabled. Use Opportunities upload as the source of truth.' });
 });
 
 app.get('/api/opportunities', verifyToken, async (req, res) => {
