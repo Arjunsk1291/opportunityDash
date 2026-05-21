@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FileUp, Plus, Search, Sparkles, Wand2 } from 'lucide-react';
+import { FileDown, FileUp, Plus, Search, Sparkles, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
+import ExcelJS from 'exceljs';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
@@ -12,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToMatrix } from '@/lib/excelWorkbook';
+import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToMatrix } from '@/lib/excelWorkbook';
 import { perfLog, withPerf } from '@/lib/perfLogger';
 import { Progress } from '@/components/ui/progress';
 import { useProgressLoader } from '@/lib/useProgressLoader';
@@ -236,6 +237,23 @@ export default function PotentialOpportunities() {
   const [manualRef, setManualRef] = useState('');
   const [manualExtras, setManualExtras] = useState('{}');
 
+  const downloadTemplate = async () => {
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Potential Opportunities');
+      sheet.addRow(['Opportunity Ref No', 'Notes (optional)']);
+      sheet.addRow(['AVR-0001', 'Example row']);
+      sheet.getRow(1).font = { bold: true };
+      sheet.columns = [
+        { width: 22 },
+        { width: 40 },
+      ];
+      await downloadWorkbook(workbook, `potential-opportunities-template-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to download template');
+    }
+  };
+
   const renderCellValue = (value: unknown) => {
     const raw = value === null || value === undefined ? '' : String(value);
     if (!raw) return <span className="text-muted-foreground">—</span>;
@@ -258,6 +276,10 @@ export default function PotentialOpportunities() {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => load('refresh_click')} disabled={loading}>
             Refresh
+          </Button>
+          <Button variant="outline" onClick={() => void downloadTemplate()} disabled={loading}>
+            <FileDown className="mr-2 h-4 w-4" />
+            Download Template
           </Button>
           <input
             ref={fileInputRef}
