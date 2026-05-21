@@ -4899,6 +4899,11 @@ app.get('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
 
 // --- PQ & Registration Activities ---
 const PQ_STATUS_VALUES = ['Prequalified', 'Registered', 'Registration on Process'];
+const PQ_TENANTS = ['avenir_abudhabi', 'avenir_india', 'bcts_dubai', 'bcts_abudhabi', 'avenir_energy'];
+const normalizePqTenant = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  return PQ_TENANTS.includes(raw) ? raw : 'avenir_abudhabi';
+};
 
 const normalizePqStatus = (value) => {
   const raw = String(value || '').trim().toLowerCase();
@@ -4912,6 +4917,7 @@ const normalizePqStatus = (value) => {
 };
 
 const pqActivityCreateSchema = z.object({
+  tenant: z.enum(['avenir_abudhabi', 'avenir_india', 'bcts_dubai', 'bcts_abudhabi', 'avenir_energy']).optional(),
   sNo: z.number().int().nonnegative().optional(),
   company: z.string().trim().min(1).max(120),
   status: z.enum(['Prequalified', 'Registered', 'Registration on Process']).optional(),
@@ -5175,8 +5181,10 @@ app.get('/api/pq-activities', verifyToken, async (req, res) => {
 
     const q = clampString(req.query?.q, 200);
     const status = clampString(req.query?.status, 64);
+    const tenant = normalizePqTenant(req.query?.tenant);
     const filter = {};
 
+    filter.tenant = tenant;
     if (status && PQ_STATUS_VALUES.includes(status)) {
       filter.status = status;
     }
@@ -5203,9 +5211,11 @@ app.post('/api/pq-activities', verifyToken, async (req, res) => {
     if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
 
     const value = parsed.data;
+    const tenant = normalizePqTenant(value.tenant);
     const company = clampString(value.company, 120);
     const registeredEmail = clampString(value.registeredEmail, 200);
     const doc = await PqActivity.create({
+      tenant,
       sNo: typeof value.sNo === 'number' ? value.sNo : 0,
       company,
       status: value.status || 'Registration on Process',
@@ -5231,11 +5241,13 @@ app.patch('/api/pq-activities/:id', verifyToken, async (req, res) => {
     if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
     if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     const id = String(req.params.id || '').trim();
+    const tenant = normalizePqTenant(req.query?.tenant);
     const parsed = pqActivityPatchSchema.safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
 
     const existing = await PqActivity.findById(id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
+    if (normalizePqTenant(existing.tenant) !== tenant) return res.status(404).json({ error: 'Not found' });
 
     const next = parsed.data || {};
     if (typeof next.sNo === 'number') existing.sNo = next.sNo;
@@ -5263,7 +5275,8 @@ app.delete('/api/pq-activities/:id', verifyToken, async (req, res) => {
     if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
     if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     const id = String(req.params.id || '').trim();
-    const deleted = await PqActivity.findByIdAndDelete(id);
+    const tenant = normalizePqTenant(req.query?.tenant);
+    const deleted = await PqActivity.findOneAndDelete({ _id: id, tenant });
     if (!deleted) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });
   } catch (error) {
@@ -5280,6 +5293,7 @@ app.post(
     try {
       if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
       if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+      const tenant = normalizePqTenant(req.query?.tenant);
 
       const buffer = req.body instanceof Buffer ? req.body : Buffer.from([]);
       if (!buffer.length) return res.status(400).json({ error: 'No file uploaded' });
@@ -5333,7 +5347,7 @@ app.post(
         const link = clampString(idxLink >= 0 ? row[idxLink] : '-', 800) || '-';
         const contactPerson = deriveContactPersonFromEmail(registeredEmail);
 
-        const existing = await PqActivity.findOne({ company }).collation({ locale: 'en', strength: 2 });
+        const existing = await PqActivity.findOne({ tenant, company }).collation({ locale: 'en', strength: 2 });
         if (existing) {
           existing.sNo = Number.isFinite(sNo) ? sNo : existing.sNo;
           existing.status = status;
@@ -5346,6 +5360,7 @@ app.post(
           updated += 1;
         } else {
           await PqActivity.create({
+            tenant,
             sNo: Number.isFinite(sNo) ? sNo : 0,
             company,
             status,
@@ -5372,7 +5387,8 @@ app.get('/api/pq-activities/export', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'pq_activities_view')) return;
     if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
-    const rows = await PqActivity.find({}).sort({ company: 1 }).lean();
+    const tenant = normalizePqTenant(req.query?.tenant);
+    const rows = await PqActivity.find({ tenant }).sort({ company: 1 }).lean();
 
     const data = [
       ['S.No', 'Company', 'Status', 'Registered Email', 'User ID (Portal)', 'Password(Portal)', 'Link(Portal)', 'Renewal Date', 'Notes', 'Updated At'],
@@ -5396,7 +5412,7 @@ app.get('/api/pq-activities/export', verifyToken, async (req, res) => {
     const out = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=\"pq-activities-${new Date().toISOString().slice(0, 10)}.xlsx\"`);
+    res.setHeader('Content-Disposition', `attachment; filename=\"pq-activities-${tenant}-${new Date().toISOString().slice(0, 10)}.xlsx\"`);
     res.send(out);
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to export PQ activities' });

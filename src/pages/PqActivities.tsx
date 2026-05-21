@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { CalendarIcon, Copy, Eye, EyeOff, FileDown, FileUp, Plus, Search, Trash2, Pencil, AlertTriangle, Building2, ListChecks } from 'lucide-react';
+import { CalendarIcon, Copy, Eye, EyeOff, FileDown, FileUp, Plus, Search, Trash2, Pencil, AlertTriangle } from 'lucide-react';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,7 @@ type PqStatus = 'Prequalified' | 'Registered' | 'Registration on Process';
 
 type PqActivityRow = {
   id: string;
+  tenant?: string;
   sNo: number;
   company: string;
   status: PqStatus;
@@ -82,6 +83,14 @@ const safeUrl = (value: string) => {
 };
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const PQ_TENANTS = [
+  { key: 'avenir_abudhabi', label: 'Avenir (Abu Dhabi)' },
+  { key: 'avenir_india', label: 'AVENIR (India)' },
+  { key: 'bcts_dubai', label: 'BCTS (Dubai)' },
+  { key: 'bcts_abudhabi', label: 'BCTS (Abu Dhabi)' },
+  { key: 'avenir_energy', label: 'AVENIR ENERGY' },
+] as const;
+type PqTenantKey = typeof PQ_TENANTS[number]['key'];
 
 export default function PqActivities() {
   const { token, canPerformAction } = useAuth();
@@ -97,11 +106,8 @@ export default function PqActivities() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<PqActivityRow | null>(null);
-  const [activeTab, setActiveTab] = useState<'entries' | 'bulk'>('entries');
+  const [activeTenant, setActiveTenant] = useState<PqTenantKey>('avenir_abudhabi');
   const [showStaleOnly, setShowStaleOnly] = useState(false);
-  const [bulkText, setBulkText] = useState('');
-  const [bulkPreview, setBulkPreview] = useState<Array<Partial<PqActivityRow> & { _line: number; _error?: string }>>([]);
-  const [bulkSaving, setBulkSaving] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<PqActivityRow | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -199,49 +205,9 @@ export default function PqActivities() {
     });
   }, [rows, q, statusFilter, showStaleOnly]);
 
-  const parseBulkText = (input: string) => {
-    const lines = String(input || '')
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith('#'));
-
-    return lines.map((line, idx) => {
-      const parts = line.includes('\t') ? line.split('\t') : line.split(',');
-      const [companyRaw, statusRaw, emailRaw, userIdRaw, passwordRaw, linkRaw, lastUpdateRaw, notesRaw] = parts.map((p) => String(p ?? '').trim());
-      const company = companyRaw;
-      if (!company) return { _line: idx + 1, _error: 'Missing company name' };
-
-      const statusCandidate = statusRaw as PqStatus;
-      const status: PqStatus = (['Prequalified', 'Registered', 'Registration on Process'] as const).includes(statusCandidate)
-        ? statusCandidate
-        : 'Registration on Process';
-
-      const lastUpdateDate = lastUpdateRaw
-        ? (() => {
-          const d = new Date(lastUpdateRaw);
-          return Number.isNaN(d.getTime()) ? null : d.toISOString();
-        })()
-        : null;
-
-      return {
-        _line: idx + 1,
-        company,
-        status,
-        registeredEmail: emailRaw || '',
-        userId: userIdRaw || '-',
-        password: passwordRaw || '',
-        link: linkRaw || '-',
-        lastUpdateDate,
-        notes: notesRaw || '',
-      };
-    });
-  };
-
   useEffect(() => {
-    if (activeTab !== 'bulk') return;
-    setBulkPreview(parseBulkText(bulkText));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bulkText, activeTab]);
+    setExpandedId(null);
+  }, [activeTenant]);
 
   const statusBadgeClass = (status: PqStatus) => {
     switch (status) {
@@ -260,6 +226,7 @@ export default function PqActivities() {
     setLoading(true);
     try {
       const qs = new URLSearchParams();
+      qs.set('tenant', activeTenant);
       if (q.trim()) qs.set('q', q.trim());
       if (statusFilter !== 'All') qs.set('status', statusFilter);
 
@@ -279,7 +246,7 @@ export default function PqActivities() {
   useEffect(() => {
     loadRows();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, activeTenant]);
 
   const openCreate = () => {
     setEditing(null);
@@ -327,11 +294,14 @@ export default function PqActivities() {
         nextLastUpdateDate = new Date();
       }
       const payload = {
+        tenant: activeTenant,
         ...values,
         lastUpdateDate: nextLastUpdateDate ? nextLastUpdateDate.toISOString() : null,
       };
 
-      const url = editing ? `${API_URL}/pq-activities/${editing.id}` : `${API_URL}/pq-activities`;
+      const url = editing
+        ? `${API_URL}/pq-activities/${editing.id}?tenant=${encodeURIComponent(activeTenant)}`
+        : `${API_URL}/pq-activities`;
       const method = editing ? 'PATCH' : 'POST';
       const res = await fetch(url, {
         method,
@@ -348,54 +318,11 @@ export default function PqActivities() {
     }
   };
 
-  const commitBulkAdd = async () => {
-    if (!token || !canWrite) return;
-    const preview = parseBulkText(bulkText);
-    const valid = preview.filter((row) => !row._error) as Array<Partial<PqActivityRow> & { _line: number }>;
-    if (valid.length === 0) {
-      toast.error('No valid rows to add.');
-      return;
-    }
-    setBulkSaving(true);
-    try {
-      let created = 0;
-      for (const row of valid) {
-        const payload = {
-          company: row.company,
-          status: row.status,
-          registeredEmail: row.registeredEmail || '',
-          userId: row.userId || '-',
-          password: row.password || '',
-          link: row.link || '-',
-          lastUpdateDate: row.lastUpdateDate || null,
-          notes: row.notes || '',
-        };
-        const res = await fetch(`${API_URL}/pq-activities`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(`Line ${row._line}: ${data?.error || 'Create failed'}`);
-        created += 1;
-      }
-      toast.success(`Added ${created} compan${created === 1 ? 'y' : 'ies'}.`);
-      setBulkText('');
-      setBulkPreview([]);
-      setActiveTab('entries');
-      await loadRows();
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setBulkSaving(false);
-    }
-  };
-
   const confirmDelete = async () => {
     if (!token || !deleteTarget || !canWrite) return;
     setDeleting(true);
     try {
-      const res = await fetch(`${API_URL}/pq-activities/${deleteTarget.id}`, {
+      const res = await fetch(`${API_URL}/pq-activities/${deleteTarget.id}?tenant=${encodeURIComponent(activeTenant)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -423,7 +350,7 @@ export default function PqActivities() {
     try {
       setLoading(true);
       const body = await file.arrayBuffer();
-      const res = await fetch(`${API_URL}/pq-activities/import`, {
+      const res = await fetch(`${API_URL}/pq-activities/import?tenant=${encodeURIComponent(activeTenant)}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -445,7 +372,7 @@ export default function PqActivities() {
   const exportXlsx = async () => {
     if (!token || !canView) return;
     try {
-      const res = await fetch(`${API_URL}/pq-activities/export`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_URL}/pq-activities/export?tenant=${encodeURIComponent(activeTenant)}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Export failed');
@@ -454,7 +381,7 @@ export default function PqActivities() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `pq-activities-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.download = `pq-activities-${activeTenant}-${new Date().toISOString().slice(0, 10)}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -489,22 +416,16 @@ export default function PqActivities() {
         </header>
 
         <div className="mt-5">
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-            <TabsList className="bg-navytrust-elevated/40 border border-white/10">
-              <TabsTrigger value="entries" className="gap-2">
-                <ListChecks className="h-4 w-4" aria-hidden="true" />
-                Entries
-              </TabsTrigger>
-              <TabsTrigger value="bulk" className="gap-2">
-                <Building2 className="h-4 w-4" aria-hidden="true" />
-                Add Companies (Bulk)
-              </TabsTrigger>
+          <Tabs value={activeTenant} onValueChange={(v) => setActiveTenant(v as PqTenantKey)}>
+            <TabsList className="bg-navytrust-elevated/40 border border-white/10 flex flex-wrap h-auto">
+              {PQ_TENANTS.map((t) => (
+                <TabsTrigger key={t.key} value={t.key} className="text-xs">
+                  {t.label}
+                </TabsTrigger>
+              ))}
             </TabsList>
-          </Tabs>
-        </div>
+            <TabsContent value={activeTenant}>
 
-        {activeTab === 'entries' ? (
-        <>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-6">
           <Card className="rounded-2xl bg-navytrust-surface/40 backdrop-blur border-white/10 shadow-elegant">
             <CardHeader className="pb-2">
@@ -534,79 +455,10 @@ export default function PqActivities() {
             <CardContent className="text-2xl font-semibold">{stats.inProcess}</CardContent>
           </Card>
         </div>
-        </>
-        ) : (
-          <div className="mt-6 rounded-2xl bg-navytrust-surface/35 backdrop-blur border border-white/10 shadow-elegant p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-lg font-semibold text-navytrust-foreground">Add Companies (Bulk)</div>
-                <div className="text-xs text-navytrust-foreground/70 mt-1">
-                  Paste one company per line. Columns (comma or tab): company, status, email, userId, password, link, lastUpdateDate, notes.
-                </div>
-              </div>
-              <Button
-                type="button"
-                className="bg-navytrust-primary hover:bg-navytrust-primary/90 text-white shadow-nt-glow"
-                onClick={commitBulkAdd}
-                disabled={!canWrite || bulkSaving}
-              >
-                {bulkSaving ? 'Saving…' : 'Create'}
-              </Button>
-            </div>
+            </TabsContent>
+          </Tabs>
+        </div>
 
-            <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div>
-                <Textarea
-                  value={bulkText}
-                  onChange={(e) => setBulkText(e.target.value)}
-                  className="min-h-[260px] bg-navytrust-elevated/30 border-white/10 text-navytrust-foreground"
-                  placeholder={"Acme Co, Registered, buyer@acme.com, buyer, pass123, https://portal.example.com, 2026-01-15, renewal pending\nAnother Co, Registration on Process"}
-                />
-                <div className="mt-2 text-xs text-navytrust-foreground/70">
-                  Tip: use “Import .xlsx” in Entries for large structured imports.
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-navytrust-elevated/20 overflow-hidden">
-                <div className="px-4 py-3 border-b border-white/10 text-sm font-semibold text-navytrust-foreground">
-                  Preview ({bulkPreview.filter((r) => !r._error).length} valid / {bulkPreview.length} total)
-                </div>
-                <div className="max-h-[320px] overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-navytrust-elevated/25">
-                      <tr className="text-left text-navytrust-foreground/80">
-                        <th className="px-3 py-2 w-12">#</th>
-                        <th className="px-3 py-2">Company</th>
-                        <th className="px-3 py-2">Status</th>
-                        <th className="px-3 py-2">Last Update</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bulkPreview.slice(0, 50).map((row) => (
-                        <tr key={row._line} className="border-t border-white/10">
-                          <td className="px-3 py-2 text-navytrust-foreground/70">{row._line}</td>
-                          <td className="px-3 py-2">
-                            <div className="text-navytrust-foreground">{row.company || '—'}</div>
-                            {row._error && <div className="text-xs text-warning">{row._error}</div>}
-                          </td>
-                          <td className="px-3 py-2 text-navytrust-foreground/90">{String(row.status || '—')}</td>
-                          <td className="px-3 py-2 text-navytrust-foreground/70">{formatIsoDate((row as any).lastUpdateDate || null)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {bulkPreview.length > 50 && (
-                  <div className="px-4 py-2 text-xs text-navytrust-foreground/70 border-t border-white/10">
-                    Showing first 50 lines.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'entries' && (
         <>
         <div className="mt-6 rounded-2xl bg-navytrust-surface/35 backdrop-blur border border-white/10 shadow-elegant p-3 sm:p-4">
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
@@ -627,7 +479,7 @@ export default function PqActivities() {
             </div>
 
             <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
-              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as PqStatus | 'All')}>
                 <SelectTrigger className="bg-navytrust-elevated/40 border-white/10 text-navytrust-foreground">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
@@ -980,7 +832,6 @@ export default function PqActivities() {
           </AnimatePresence>
         </div>
         </>
-        )}
 
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetContent side="right" className="w-full sm:max-w-xl pointer-events-auto">
