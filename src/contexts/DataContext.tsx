@@ -1,7 +1,9 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useCallback, ReactNode, useRef } from 'react';
 import { Opportunity } from '@/data/opportunityData';
 import { isSubmissionWithinDays } from '@/lib/submissionDate';
 import { useAuth } from '@/contexts/AuthContext';
+import { EAGER_OPPORTUNITY_ROUTES } from '@/contexts/dataContextConfig';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const LIVE_REFRESH_INTERVAL = 5 * 60 * 1000;
@@ -293,7 +295,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [isAuthLoading, token]);
 
   React.useEffect(() => {
-    refreshData();
+    const route = typeof window !== 'undefined' ? window.location.pathname : '';
+    // Avoid a heavy opportunities fetch on pages that don't need it.
+    // Those pages can still warm-load from session cache, and fetch on-demand when required.
+    if (EAGER_OPPORTUNITY_ROUTES.has(route)) {
+      refreshData();
+      return;
+    }
+    // Light hydration: try cache once so KPIs/search can be instant without network.
+    void refreshData({ background: true }).catch(() => {});
   }, [refreshData]);
 
   React.useEffect(() => {

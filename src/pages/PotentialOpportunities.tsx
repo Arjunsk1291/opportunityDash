@@ -68,7 +68,7 @@ const getExtrasKeys = (source: PotentialRow[]) => {
 
 export default function PotentialOpportunities() {
   const { token, canPerformAction } = useAuth();
-  const { opportunities } = useData();
+  const { opportunities, refreshData } = useData();
   const canWrite = Boolean(canPerformAction?.('opportunities_write'));
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -83,6 +83,14 @@ export default function PotentialOpportunities() {
   const [editing, setEditing] = useState<PotentialRow | null>(null);
   const [extrasText, setExtrasText] = useState('{}');
   const [newColumnName, setNewColumnName] = useState('');
+
+  useEffect(() => {
+    // Only fetch heavy opportunities dataset if/when the user needs "Advanced Search".
+    if (activeTab !== 'search') return;
+    if (!token) return;
+    if (Array.isArray(opportunities) && opportunities.length) return;
+    void refreshData({ background: false }).catch(() => {});
+  }, [activeTab, opportunities, refreshData, token]);
 
   const load = async () => {
     if (!token) return;

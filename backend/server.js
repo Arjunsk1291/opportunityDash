@@ -3585,6 +3585,8 @@ const PAGE_KEYS = [
 ];
 const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'BDTeam'];
 const ACTION_KEYS = [
+  'opportunities_view',
+  'opportunities_write',
   'opportunities_sync',
   'opportunities_sheet_upload',
   'manual_opportunity_updates_write',
@@ -3626,6 +3628,8 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
   master_telecast: ['Master', 'Admin'],
 };
 const DEFAULT_ACTION_ROLE_ACCESS = {
+  opportunities_view: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  opportunities_write: ['Master', 'Admin', 'ProposalHead', 'SVP'],
   opportunities_sync: ['Master', 'Admin'],
   opportunities_sheet_upload: ['Master', 'Admin'],
   manual_opportunity_updates_write: ['Master', 'Admin'],
