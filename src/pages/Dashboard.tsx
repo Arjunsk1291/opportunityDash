@@ -1051,7 +1051,6 @@ const Dashboard = () => {
   };
 
   const handleFunnelClick = (stage: string) => {
-    console.log('🔗 Funnel clicked:', stage);
     setFilters((prevFilters) => ({
       ...prevFilters,
       statuses: [stage],

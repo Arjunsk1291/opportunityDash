@@ -75,7 +75,6 @@ async function main() {
   }
 
   await mongoose.connect(MONGODB_URI);
-  console.log('[seed.dev-users] Connected to MongoDB');
 
   const passwordHash = await hashPassword(PASSWORD);
   const sanity = await verifyPassword(PASSWORD, passwordHash);
@@ -104,10 +103,7 @@ async function main() {
     upserts += 1;
   }
 
-  console.log(`[seed.dev-users] Upserted ${upserts} users. Password for all roles is "${PASSWORD}".`);
-  console.log('[seed.dev-users] Emails:');
   for (const { role } of roles) {
-    console.log(`- ${role}: ${toEmail(role)}`);
   }
 
   await mongoose.disconnect();

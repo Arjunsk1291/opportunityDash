@@ -18,7 +18,7 @@ import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
 import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
-import PqActivity from './models/PqActivity.js';
+import PqActivity, { getPqModel } from './models/PqActivity.js';
 import PotentialOpportunity from './models/PotentialOpportunity.js';
 import HfOffice from './models/HfOffice.js';
 import HfDiscipline from './models/HfDiscipline.js';
@@ -70,7 +70,6 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
-console.log('Debug flags:', { MAIL_DEBUG: String(process.env.MAIL_DEBUG || '').toLowerCase() === 'true', NOTIFICATION_DEBUG: String(process.env.NOTIFICATION_DEBUG || '').toLowerCase() === 'true', GRAPH_TOKEN_DEBUG: String(process.env.GRAPH_TOKEN_DEBUG || '').toLowerCase() === 'true' });
 
 const DEFAULT_TELECAST_SENDER = 'tender-notify@avenirenergy.me';
 const getTelecastSender = () => String(process.env.TELECAST_SENDER || DEFAULT_TELECAST_SENDER).trim();
@@ -325,10 +324,8 @@ app.get('/api/auth/msal-config', (_req, res) => {
   });
 });
 
-console.log('[mongo.connect.start]', JSON.stringify({ uriConfigured: Boolean(MONGODB_URI), timestamp: new Date().toISOString() }));
 mongoose.connect(MONGODB_URI)
   .then(() => {
-    console.log('[mongo.connect.success]', JSON.stringify({ timestamp: new Date().toISOString() }));
   })
   .then(async () => {
     await initializeBootSync();
@@ -1903,7 +1900,7 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
 
   await systemConfig.save();
 
-  console.log('[sync.new-row-detection]', JSON.stringify({
+  console.log(JSON.stringify({
     source,
     checkedAt: now.toISOString(),
     eligibleRows: uniqueCurrentSignatures.length,
@@ -1946,7 +1943,6 @@ let syncInFlightPromise = null;
 
 const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   if (syncInFlightPromise) {
-    console.log('[sync.lock.waiting]', JSON.stringify({ source, timestamp: new Date().toISOString() }));
     return syncInFlightPromise;
   }
 
@@ -1977,11 +1973,9 @@ const scheduleGraphAutoSync = async () => {
       try {
         const liveConfig = await getGraphConfig();
         if (!liveConfig.driveId || !liveConfig.fileId || !liveConfig.worksheetName) {
-          console.log('ℹ️ AUTO-SYNC skipped: Graph config incomplete.');
           return;
         }
         const syncResult = await syncFromConfiguredGraph({ source: 'auto_interval' });
-        console.log(`✅ AUTO-SYNC completed (${syncResult.insertedCount} records, ${syncResult.newRowsCount} new rows)`);
       } catch (error) {
         console.error('❌ AUTO-SYNC failed:', error.message);
       } finally {
@@ -1989,7 +1983,6 @@ const scheduleGraphAutoSync = async () => {
       }
     }, intervalMinutes * 60 * 1000);
 
-    console.log(`⏱️ Graph auto-sync scheduler active: every ${intervalMinutes} minute(s).`);
   } catch (error) {
     console.error('Failed to schedule graph auto-sync:', error.message);
   }
@@ -2017,7 +2010,7 @@ const scheduleDailyNotificationCheck = () => {
       const syncResult = await syncFromConfiguredGraph({ source: 'hourly_notification' });
       const deadlineResult = await sendDeadlineAlerts();
       const runKey = new Date().toISOString();
-      console.log('[notification.daily-check.success]', JSON.stringify({
+      console.log(JSON.stringify({
         runKey,
         insertedCount: syncResult.insertedCount,
         newRowsCount: syncResult.newRowsCount,
@@ -2035,7 +2028,6 @@ const scheduleDailyNotificationCheck = () => {
     }
   }, 60 * 1000);
 
-  console.log('⏰ Notification check scheduler active (hourly, 24/7).');
 };
 
 const getUsernameFromRequest = (req) => {
@@ -2299,7 +2291,6 @@ app.post('/api/auth/simple-role-login', authRateLimiter, async (req, res) => {
     });
     await loginLog.save();
 
-    console.log(`[auth.role-login.success] email=${email} role=${role} ip=${req.ip}`);
 
     res.json({
       success: true,
@@ -2400,7 +2391,6 @@ app.post('/api/auth/role-password-login', authRateLimiter, async (req, res) => {
     });
     await loginLog.save();
 
-    console.log(`[auth.role-password-login.success] email=${email} role=${role} ip=${req.ip}`);
 
     res.json({
       success: true,
@@ -2606,7 +2596,6 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
     });
     await loginLog.save();
 
-    console.log(`[auth.password-login.success] email=${email} role=${user.role} ip=${req.ip}`);
 
     res.json({
       success: true,
@@ -3983,7 +3972,6 @@ const TELECAST_DEBUG = String(process.env.TELECAST_DEBUG || '').trim().toLowerCa
 const telecastDebug = (...args) => {
   if (!TELECAST_DEBUG) return;
   // Avoid logging secrets/tokens by convention.
-  console.log('[telecast.debug]', ...args);
 };
 
 const graphEnvValue = (name, fallback = '') => {
@@ -5353,7 +5341,7 @@ app.get('/api/pq-activities', verifyToken, async (req, res) => {
       ];
     }
 
-    const rows = await PqActivity.find(filter).sort({ lastUpdateDate: -1, updatedAt: -1, company: 1 }).lean();
+    const rows = await getPqModel(tenant).find(filter).sort({ lastUpdateDate: -1, updatedAt: -1, company: 1 }).lean();
     res.json({ success: true, rows: rows.map(mapIdField) });
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to load PQ activities' });
@@ -5372,7 +5360,7 @@ app.post('/api/pq-activities', verifyToken, async (req, res) => {
     const tenant = normalizePqTenant(value.tenant);
     const company = clampString(value.company, 120);
     const registeredEmail = clampString(value.registeredEmail, 200);
-    const doc = await PqActivity.create({
+    const doc = await getPqModel(tenant).create({
       tenant,
       sNo: typeof value.sNo === 'number' ? value.sNo : 0,
       company,
@@ -5403,7 +5391,7 @@ app.patch('/api/pq-activities/:id', verifyToken, async (req, res) => {
     const parsed = pqActivityPatchSchema.safeParse(req.body || {});
     if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
 
-    const existing = await PqActivity.findById(id);
+    const existing = await getPqModel(tenant).findById(id);
     if (!existing) return res.status(404).json({ error: 'Not found' });
     if (normalizePqTenant(existing.tenant) !== tenant) return res.status(404).json({ error: 'Not found' });
 
@@ -5434,7 +5422,7 @@ app.delete('/api/pq-activities/:id', verifyToken, async (req, res) => {
     if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     const id = String(req.params.id || '').trim();
     const tenant = normalizePqTenant(req.query?.tenant);
-    const deleted = await PqActivity.findOneAndDelete({ _id: id, tenant });
+    const deleted = await getPqModel(tenant).findOneAndDelete({ _id: id, tenant });
     if (!deleted) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });
   } catch (error) {
@@ -5538,7 +5526,7 @@ app.post(
       let updated = 0;
       if (ops.length > 0) {
         // Use bulkWrite for O(1) database trip instead of O(N) loop
-        const result = await PqActivity.bulkWrite(ops, { ordered: false });
+        const result = await getPqModel(tenant).bulkWrite(ops, { ordered: false });
         added = result.upsertedCount;
         updated = result.matchedCount;
       }
@@ -5555,7 +5543,7 @@ app.get('/api/pq-activities/export', verifyToken, async (req, res) => {
     if (!await requireActionPermission(req, res, 'pq_activities_view')) return;
     if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     const tenant = normalizePqTenant(req.query?.tenant);
-    const rows = await PqActivity.find({ tenant }).sort({ company: 1 }).lean();
+    const rows = await getPqModel(tenant).find({ tenant }).sort({ company: 1 }).lean();
 
     const data = [
       ['S.No', 'Company', 'Status', 'Registered Email', 'User ID (Portal)', 'Password(Portal)', 'Link(Portal)', 'Renewal Date', 'Notes', 'Updated At'],
@@ -6766,5 +6754,4 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log('✅ Server running on http://localhost:' + PORT);
 });

@@ -281,12 +281,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const [sheetUploadCommitProgress, setSheetUploadCommitProgress] = useState<{ stage: string; pct: number } | null>(null);
 
   const logManualFlow = (flowId: string, stage: string, details: Record<string, unknown> = {}) => {
-    console.log('[opportunities.manual-flow]', {
-      flowId,
-      stage,
-      timestamp: new Date().toISOString(),
-      ...details,
-    });
+    // Hidden diagnostics
   };
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
@@ -351,6 +346,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       groupClassification: String(opp.groupClassification || ''),
       dateTenderReceived: String(opp.dateTenderReceived || ''),
       tenderPlannedSubmissionDate: String(opp.tenderPlannedSubmissionDate || ''),
+      tenderResult: String(opp.tenderResult || ''),
+      tenderStatusRemark: String(opp.tenderStatusRemark || ''),
       internalLead: String(opp.internalLead || ''),
       opportunityValue: opp.opportunityValue !== null && opp.opportunityValue !== undefined ? String(opp.opportunityValue) : '',
       avenirStatus: String(opp.avenirStatus || ''),
@@ -412,12 +409,9 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       setSheetUploadMeta(null);
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 
-      console.time('[opportunities.sheetUpload] total');
       setSheetUploadProgress({ stage: 'Loading workbook…', pct: 20 });
       const buffer = await file.arrayBuffer();
-      console.time('[opportunities.sheetUpload] workbookLoad');
       const workbook = await loadWorkbookFromArrayBuffer(buffer);
-      console.timeEnd('[opportunities.sheetUpload] workbookLoad');
       const worksheet = getFirstWorksheet(workbook);
       if (!worksheet) throw new Error('No worksheet found in uploaded file.');
 
@@ -458,7 +452,6 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         return score;
       };
 
-      console.time('[opportunities.sheetUpload] headerDetect');
       let headerRowIndex = 1;
       let bestScore = -1;
       for (let rowIndex = 1; rowIndex <= maxScanRows; rowIndex += 1) {
@@ -468,7 +461,6 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
           headerRowIndex = rowIndex;
         }
       }
-      console.timeEnd('[opportunities.sheetUpload] headerDetect');
 
       const headerRow = worksheet.getRow(headerRowIndex);
       const normalizedHeader: string[] = [];
@@ -491,7 +483,6 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         return String(raw ?? '').trim();
       };
 
-      console.time('[opportunities.sheetUpload] parseRows');
       setSheetUploadProgress({ stage: 'Parsing rows…', pct: 55 });
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
       const parsed: FormState[] = [];
@@ -518,9 +509,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
           adnocRftNo: getCellText(excelRow, 'adnocRftNo'),
         });
       }
-      console.timeEnd('[opportunities.sheetUpload] parseRows');
 
-      console.time('[opportunities.sheetUpload] diff');
       setSheetUploadProgress({ stage: 'Diffing…', pct: 80 });
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
       const normalizeRef = (value: string) => String(value || '').trim().toLowerCase();
@@ -561,17 +550,6 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       setSheetUploadMeta({ created: created.length, updated: updated.length });
       setSheetUploadOpen(true);
       setSheetUploadProgress({ stage: 'Ready', pct: 100 });
-      console.timeEnd('[opportunities.sheetUpload] diff');
-      console.log('[opportunities.sheetUpload] done', {
-        file: file.name,
-        bytes: file.size,
-        parsedRows: parsed.length,
-        created: created.length,
-        updated: updated.length,
-        unchanged: unchanged.length,
-        totalMs: Math.round(performance.now() - totalStart),
-      });
-      console.timeEnd('[opportunities.sheetUpload] total');
     } catch (error) {
       console.error('[opportunities.sheet-upload.error]', error);
       toast.error((error as Error).message || 'Failed to parse uploaded sheet.');
@@ -610,11 +588,10 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       const touched = Array.isArray(data?.rows) ? data.rows : [];
       if (touched.length) {
         upsertOpportunities(touched);
-        console.log('[opportunities.sheetUpload] upserted', { rows: touched.length });
       }
+      setSheetUploadRows([]);
       setSheetUploadCommitProgress({ stage: 'Finalizing…', pct: 95 });
       setSheetUploadOpen(false);
-      setSheetUploadRows([]);
       setSheetUploadMeta(null);
       // Lightweight sync in background to ensure derived fields stay consistent.
       void refreshData({ background: true }).catch(() => {});
@@ -701,11 +678,18 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         overwriteCount: Number(data?.overwriteCount || 0),
         backendTiming: data?.timing || null,
       });
-      toast.success(editorMode === 'new' ? 'New row added.' : 'Row updated.');
+      toast.success(editorMode === "new" ? "New row added." : "Row updated.");
       setConfirmOpen(false);
       setEditorOpen(false);
       setPreviewDiffs([]);
-      // Do not block the user on expensive re-fetches. Kick these off in background.
+
+      // Optimistically update the UI if possible
+      if (data?.row || (data?.rows && data.rows[0])) {
+         const updatedRow = data.row || data.rows[0];
+         upsertOpportunities([updatedRow]);
+      }
+
+      // Refresh data in background to ensure everything is in sync
       void (async () => {
         const refreshStartedAt = performance.now();
         await refreshData({ background: true, force: true });

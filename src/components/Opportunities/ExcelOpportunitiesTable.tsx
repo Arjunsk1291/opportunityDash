@@ -533,17 +533,6 @@ export function ExcelOpportunitiesTable({
     const baseIds = rows.map((r) => String(r.id || r.__tempId || ''));
     const uniqueBaseIds = new Set(baseIds);
     const duplicateBaseIdCount = baseIds.length - uniqueBaseIds.size;
-    console.log('[excel.table.diag]', {
-      rowsProp: data.length,
-      rowsRenderedProp: rows.length,
-      gridRowsCount,
-      uniqueBaseIds: uniqueBaseIds.size,
-      duplicateBaseIdCount,
-      pageSize,
-      showAllRows,
-      isEditing,
-      allowEdit,
-    });
   }, [allowEdit, apiRef, data.length, isEditing, pageSize, rows.length, showAllRows]);
 
   useEffect(() => {
@@ -565,15 +554,7 @@ export function ExcelOpportunitiesTable({
   }, [rows.length, rowHeight]);
 
   const logVisibleCount = (reason: string) => {
-    const gridRowsCount = apiRef.current?.getRowsCount?.() ?? null;
-    console.log('[excel.table.rows]', {
-      reason,
-      rowsProp: data.length,
-      rowsRenderedProp: rows.length,
-      gridRowsCount,
-      pageSize,
-      showAllRows,
-    });
+    // Hidden diagnostics
   };
 
   const logVisibleRange = (reason: string) => {
@@ -591,18 +572,6 @@ export function ExcelOpportunitiesTable({
     const clientHeight = virtualScroller?.clientHeight ?? null;
     const maxScrollTop = scrollHeight !== null && clientHeight !== null ? Math.max(0, scrollHeight - clientHeight) : null;
 
-    console.log('[excel.table.visibleRange]', {
-      reason,
-      scrollTop: scroll.top || 0,
-      viewportHeight,
-      rowHeight: rowH,
-      approxFirstRowIndex1Based: first + 1,
-      approxLastRowIndex1Based: last === null ? null : last + 1,
-      gridRowsCount,
-      scrollHeight,
-      clientHeight,
-      maxScrollTop,
-    });
   };
 
   useEffect(() => {

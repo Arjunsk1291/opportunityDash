@@ -20,9 +20,22 @@ export function useProgressLoader(active: boolean, options: Options = {}) {
     if (active) {
       wasActiveRef.current = true;
       setPct((prev) => (prev > 0 ? prev : startAt));
+      const startTime = Date.now();
+      let warned = false;
       const id = window.setInterval(() => {
         setPct((prev) => {
-          if (prev >= capAt) return prev;
+          if (prev >= 98) return prev;
+          if (prev >= capAt) {
+            if (!warned && Date.now() - startTime > 5000) {
+              console.warn(`[useProgressLoader] Progress stayed ≥${capAt}% for longer than 5s.`, {
+                options,
+                route: window.location.pathname
+              });
+              warned = true;
+            }
+            // Continue very slowly past capAt up to 98
+            return Math.min(prev + 0.1, 98);
+          }
           const next = prev + Math.max(1, Math.round((capAt - prev) * 0.08));
           return Math.min(next, capAt);
         });
@@ -38,7 +51,7 @@ export function useProgressLoader(active: boolean, options: Options = {}) {
       wasActiveRef.current = false;
     }, 350);
     return () => window.clearTimeout(doneId);
-  }, [active, capAt, startAt, stepMs]);
+  }, [active, capAt, startAt, stepMs, options]);
 
   return pct;
 }

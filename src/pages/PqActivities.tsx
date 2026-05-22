@@ -115,7 +115,7 @@ const PQ_TENANTS = PQ_TENANT_GROUPS.flatMap((g) => g.tenants);
 type PqTenantKey = typeof PQ_TENANTS[number]['key'];
 
 export default function PqActivities() {
-  const { token, canPerformAction } = useAuth();
+  const { token, canPerformAction, isMaster } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [rows, setRows] = useState<PqActivityRow[]>([]);
@@ -482,29 +482,37 @@ export default function PqActivities() {
 
         <div className="mt-5">
           <Tabs value={activeTenant} onValueChange={(v) => setActiveTenant(v as PqTenantKey)}>
-            <div className="space-y-2">
-              {PQ_TENANT_GROUPS.map((group) => (
-                <div key={group.key} className="space-y-2">
-                  <div className="text-xs uppercase tracking-[0.24em] text-navytrust-foreground/60 px-1">
-                    {group.label}
+            <div className="space-y-6">
+              {PQ_TENANT_GROUPS.filter(g => g.key !== 'other' || isMaster).map((group) => (
+                <div key={group.key} className="relative p-6 rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur-xl shadow-2xl overflow-hidden group">
+                  <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                    <div className="text-sm font-black uppercase tracking-[0.3em] text-primary/80">
+                      {group.label}
+                    </div>
+                    {group.key === 'other' && isMaster && (
+                      <Button variant="ghost" size="sm" className="h-7 text-[10px] uppercase tracking-widest rounded-full border border-white/10">
+                        Manage Categories
+                      </Button>
+                    )}
                   </div>
-                  <TabsList className="bg-navytrust-elevated/40 border border-white/10 flex flex-wrap h-auto p-2 gap-2">
+                  <TabsList className="relative bg-transparent h-auto p-0 flex flex-wrap gap-3">
                     {group.tenants.length ? group.tenants.map((t) => (
                       <TabsTrigger
                         key={t.key}
                         value={t.key}
                         className={[
-                          'text-xs sm:text-sm px-4 py-2 rounded-xl border border-white/10',
-                          'bg-navytrust-surface/30 text-navytrust-foreground/85 hover:bg-navytrust-surface/45',
-                          'data-[state=active]:bg-navytrust-surface/70 data-[state=active]:text-navytrust-foreground',
-                          'data-[state=active]:shadow-nt-gold data-[state=active]:border-navytrust-gold/40',
-                          'transition-colors',
+                          'text-xs sm:text-sm px-6 py-3 rounded-2xl border-2 border-white/5',
+                          'bg-navytrust-surface/20 text-navytrust-foreground/70 hover:bg-navytrust-surface/40 hover:text-white hover:border-white/10',
+                          'data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:border-primary',
+                          'data-[state=active]:shadow-[0_0_20px_rgba(var(--primary),0.3)]',
+                          'transition-all duration-300 font-bold',
                         ].join(' ')}
                       >
                         {t.label}
                       </TabsTrigger>
                     )) : (
-                      <div className="text-xs text-navytrust-foreground/60 px-3 py-2">
+                      <div className="text-xs text-navytrust-foreground/40 italic px-1">
                         No folders configured yet.
                       </div>
                     )}

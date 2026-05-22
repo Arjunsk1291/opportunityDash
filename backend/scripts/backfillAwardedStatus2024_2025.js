@@ -83,7 +83,6 @@ async function runRollback() {
   }).lean();
 
   if (!logs.length) {
-    console.log(`No change logs found for batch ${rollbackBatchId}`);
     return;
   }
 
@@ -106,12 +105,10 @@ async function runRollback() {
   });
 
   if (!rollbackOps.length) {
-    console.log(`No rollback operations generated for batch ${rollbackBatchId}`);
     return;
   }
 
   await SyncedOpportunity.bulkWrite(rollbackOps, { ordered: false });
-  console.log(`Rollback applied for batch ${rollbackBatchId}. Rows reverted: ${rollbackOps.length}`);
 }
 
 async function runBackfill() {
@@ -127,7 +124,6 @@ async function runBackfill() {
     })
     .filter(Boolean);
 
-  console.log(`Scanned ${opportunities.length} rows. Target-year rows: ${candidates.length}. Changed rows: ${changes.length}.`);
   if (!changes.length) return;
 
   const preview = changes.slice(0, 20).map((entry) => ({
@@ -138,7 +134,6 @@ async function runBackfill() {
   console.table(preview);
 
   if (!applyMode) {
-    console.log('Dry run complete. Re-run with --apply to persist changes.');
     return;
   }
 
@@ -186,9 +181,6 @@ async function runBackfill() {
     await OpportunityChangeLog.insertMany(logDocs, { ordered: false });
   }
 
-  console.log(`Applied status backfill for ${changes.length} rows.`);
-  console.log(`Rollback batch id: ${batchId}`);
-  console.log(`Rollback command: node scripts/backfillAwardedStatus2024_2025.js --rollback-batch ${batchId}`);
 }
 
 async function main() {
