@@ -8,11 +8,9 @@ export async function initializeBootSync() {
   try {
     const config = await GraphSyncConfig.findOne().lean();
     if (!config?.driveId || !config?.fileId || !config?.worksheetName) {
-      console.log('ℹ️  BOOT SYNC skipped: Graph Excel config not set yet.');
       return { success: false, message: 'Graph config missing, boot sync skipped' };
     }
 
-    console.log('🚀 BOOT SYNC: syncing from Microsoft Graph Excel...');
 
     const syncPayload = await syncTendersFromGraph(config);
     const tenders = Array.isArray(syncPayload)

@@ -377,21 +377,13 @@ const Clients = () => {
     }
     setIsImporting(true);
     try {
-      console.log('[clients.import] start', {
-        fileName: file.name,
-        sizeBytes: file.size,
-        type: file.type,
-        timestamp: new Date().toISOString(),
-      });
       const text = await file.text();
       const rows = parseCsv(text);
-      console.log('[clients.import] csv-parsed', { rows: rows.length });
       if (rows.length < 2) {
         toast.error('No rows found in the CSV file');
         return;
       }
       const inputs = mapCsvRows(rows).filter((row) => row.companyName.trim());
-      console.log('[clients.import] mapped-inputs', { totalMapped: inputs.length });
       if (!inputs.length) {
         toast.error('CSV headers are missing or no valid client rows found');
         return;
@@ -401,7 +393,6 @@ const Clients = () => {
       const updated = Number((result as { updated?: number })?.updated || 0);
       const summary = { attempted: inputs.length, created, updated, at: new Date().toISOString() };
       setLastImportSummary(summary);
-      console.log('[clients.import] completed', summary);
       toast.success(`Imported ${inputs.length} rows (created ${created}, updated ${updated})`);
       setIsImportOpen(false);
     } catch (err) {
@@ -533,9 +524,7 @@ const Clients = () => {
                     disabled={isImporting}
                     onClick={async () => {
                       try {
-                        console.log('[clients.import] verify-refresh.start', { timestamp: new Date().toISOString() });
                         await refreshClients();
-                        console.log('[clients.import] verify-refresh.done', { clientsCount: clients.length, timestamp: new Date().toISOString() });
                         toast.success('Client list refreshed from server');
                       } catch (error) {
                         console.error('[clients.import] verify-refresh.error', error);

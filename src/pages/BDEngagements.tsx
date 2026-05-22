@@ -256,17 +256,7 @@ const BDEngagements = () => {
   };
 
   const logDateDiagnostics = (source: string, inputRows: BDEngagement[]) => {
-    const invalidDateRows = inputRows.filter((row) => !toIsoDate(row.date));
-    const invalidLastContactRows = inputRows.filter((row) => !toIsoDate(row.lastContact));
-    console.log('[bd.dates.diagnostics]', {
-      source,
-      totalRows: inputRows.length,
-      invalidDateCount: invalidDateRows.length,
-      invalidLastContactCount: invalidLastContactRows.length,
-      invalidDateRefs: invalidDateRows.slice(0, 20).map((row) => row.ref),
-      invalidLastContactRefs: invalidLastContactRows.slice(0, 20).map((row) => row.ref),
-      timestamp: new Date().toISOString(),
-    });
+    // Hidden diagnostics
   };
 
   const persistBulkAccess = (emails: string[]) => {

@@ -6,7 +6,7 @@ export const PQ_TENANTS = [
   'bcts_dubai',
   'bcts_abudhabi',
   'avenir_energy',
-] ;
+];
 
 const pqActivitySchema = new mongoose.Schema(
   {
@@ -23,11 +23,39 @@ const pqActivitySchema = new mongoose.Schema(
     lastUpdateDate: { type: Date, default: null },
     notes: { type: String, default: '', trim: true, maxlength: 1000 },
   },
-  { timestamps: true, collection: 'pq_activities' },
+  { timestamps: true },
 );
 
-pqActivitySchema.index({ tenant: 1, company: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } });
-pqActivitySchema.index({ tenant: 1, lastUpdateDate: -1, updatedAt: -1, company: 1 });
-pqActivitySchema.index({ tenant: 1, company: 'text', registeredEmail: 'text' });
+// We don't set a hardcoded collection here anymore.
+// The factory function below will handle it.
 
-export default mongoose.model('PqActivity', pqActivitySchema);
+const models = {};
+
+export const getPqModel = (tenant) => {
+  const normalized = String(tenant || 'avenir_abudhabi').toLowerCase();
+
+  const collectionMap = {
+    avenir_abudhabi: 'Avenir_abudhabi_PQ',
+    avenir_india: 'Avenir_india_PQ',
+    bcts_dubai: 'BCTS_DUBAI_PQ',
+    bcts_abudhabi: 'BCTS_ABUDHABII_PQ',
+    avenir_energy: 'AVENIR_ENERGY_PQ',
+  };
+
+  const collectionName = collectionMap[normalized] || 'pq_activities_others';
+  const modelName = `PqActivity_${collectionName}`;
+
+  if (models[modelName]) return models[modelName];
+
+  const schema = pqActivitySchema.clone();
+  schema.index({ tenant: 1, company: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } });
+  schema.index({ tenant: 1, lastUpdateDate: -1, updatedAt: -1, company: 1 });
+  schema.index({ tenant: 1, company: 'text', registeredEmail: 'text' });
+
+  models[modelName] = mongoose.model(modelName, schema, collectionName);
+  return models[modelName];
+};
+
+// Keep default export for backward compatibility if needed,
+// but it's better to use getPqModel(tenant)
+export default mongoose.model('PqActivity', pqActivitySchema, 'pq_activities');

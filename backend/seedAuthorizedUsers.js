@@ -27,18 +27,14 @@ const authorizedUsers = [
 async function seedUsers() {
   try {
     await mongoose.connect(MONGODB_URI);
-    console.log('✅ Connected to MongoDB');
 
     // Clear existing users
     await AuthorizedUser.deleteMany({});
-    console.log('🗑️ Cleared existing authorized users');
 
     // Insert new users
     const result = await AuthorizedUser.insertMany(authorizedUsers);
-    console.log('✅ Seeded ' + result.length + ' authorized users');
 
     result.forEach(user => {
-      console.log('  ✅ ' + user.email + ' (' + user.role + ')');
     });
 
     process.exit(0);

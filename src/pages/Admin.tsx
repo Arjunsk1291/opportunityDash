@@ -437,7 +437,6 @@ export default function Admin() {
       const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
       const elapsedMs = Math.round(performance.now() - startedAt);
       setLiveActionStatus({ name: actionName, percent: safePercent, detail, startedAt });
-      console.log(`[admin.progress] ${actionName} | ${safePercent}% | ${detail} | ${elapsedMs}ms`);
     };
 
     console.time(`[admin.action] ${actionName}`);
@@ -655,7 +654,6 @@ export default function Admin() {
 
       const data = await response.json();
       setUsers(data);
-      console.log('✅ Loaded', data.length, 'authorized users');
     } catch (error) {
       console.error('❌ Error loading users:', error);
       setMessage({ type: 'error', text: 'Failed to load users: ' + (error as Error).message });

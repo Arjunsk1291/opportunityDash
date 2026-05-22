@@ -106,7 +106,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
             setLastSyncTime(new Date(ts));
             setIsLoading(false);
             hasLoadedOnceRef.current = true;
-            console.log(`⚡ Warm-loaded ${rows.length} opportunities from session cache (age=${Math.round(ageMs / 1000)}s)`);
           }
         }
       } catch {
@@ -128,7 +127,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const route = typeof window !== 'undefined' ? window.location.pathname : 'unknown';
       const trigger = isBackground ? 'background' : 'foreground';
       try {
-        console.log(`🔄 Loading opportunities from MongoDB... route=${route} trigger=${trigger}`);
         const fetchStart = performance.now();
         const response = await fetch(url, {
           method: 'GET',
@@ -146,7 +144,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const parseStart = performance.now();
         const data = await response.json();
         const parseEnd = performance.now();
-        console.log('✅ Loaded ' + data.length + ' opportunities from MongoDB');
         
         // ✅ Filter out opportunities with empty opportunityRefNo / hidden groups
         const filterStart = performance.now();
@@ -187,13 +184,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
             .sort((a, b) => b[1] - a[1])
             .slice(0, 12)
             .map(([group, count]) => ({ group, count }));
-          console.log('⚠️ Opportunities filtered before UI render', {
-            rowsRaw: rawRecords.length,
-            rowsKept: validData.length,
-            dropped: rawRecords.length - validData.length,
-            drops,
-            topGroups,
-          });
         }
         
         const stateStart = performance.now();
@@ -227,7 +217,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const encodedBodySize = resourceEntry?.encodedBodySize ?? 0;
         const decodedBodySize = resourceEntry?.decodedBodySize ?? 0;
 
-        console.log(`⏱️ Opportunities load time: total=${totalMs}ms (network=${fetchMs}ms, processing=${processingMs}ms)`);
         const detailPayload = {
           route,
           trigger,
@@ -262,8 +251,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
             },
           },
         };
-        console.log('[perf.opportunities.detail]', detailPayload);
-        console.log('[perf.opportunities.detail.json]', JSON.stringify(detailPayload));
         setLastSyncTime(new Date());
         setError(null);
         hasLoadedOnceRef.current = true;

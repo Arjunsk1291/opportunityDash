@@ -4,7 +4,7 @@ export function perfLog(event: string, payload: PerfLogPayload = {}) {
   const ts = new Date().toISOString();
   const safeEvent = String(event || 'event').trim();
   try {
-    console.log(`[perf] ${ts} ${safeEvent}`, payload);
+    // No-op
   } catch {
     // ignore
   }

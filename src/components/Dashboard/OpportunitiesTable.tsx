@@ -246,8 +246,8 @@ export function OpportunitiesTable({
 
   const isSheetPreset = columnPreset === 'sheet';
   const postBidColumnClass = responsiveMode === 'dashboard'
-    ? 'hidden min-[1750px]:table-cell'
-    : 'hidden 2xl:table-cell';
+    ? 'table-cell'
+    : 'table-cell';
   const densityStyle = TABLE_DENSITY_STYLES[1];
   const cellPaddingClass = densityStyle.cell;
   const tableTextClass = densityStyle.text;

@@ -133,7 +133,6 @@ function RoutePerfLogger() {
     const path = location.pathname;
     const onNextFrame = () => {
       const frameMs = Math.round(performance.now() - startedAt);
-      console.log('[perf.route]', { path, frameMs, timestamp: new Date().toISOString() });
     };
     const raf = window.requestAnimationFrame(onNextFrame);
     return () => window.cancelAnimationFrame(raf);
