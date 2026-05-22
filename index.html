@@ -24,6 +24,12 @@
 
   <body>
     <div id="root"></div>
+    <script>
+      // Defensive shim: ensure `downloadTemplate` exists as a true global binding.
+      // Some legacy/minified bundles may call `downloadTemplate()` directly.
+      window.downloadTemplate = window.downloadTemplate || function () {};
+      var downloadTemplate = window.downloadTemplate;
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
