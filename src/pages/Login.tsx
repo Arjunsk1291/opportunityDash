@@ -544,31 +544,6 @@ export default function Login() {
           </div>
         )}
       </div>
-
-      {/* Footer */}
-      <div className="mt-12 max-w-md text-center">
-        <p className="text-xs text-slate-300 mb-3">
-          Security & Compliance Features:
-        </p>
-        <div className="grid grid-cols-2 gap-3 text-xs">
-          <div className="rounded-lg bg-white/5 p-2 border border-white/10 backdrop-blur">
-            <p className="font-semibold text-slate-100">ISO/IEC 27001</p>
-            <p className="text-slate-300">Aligned controls</p>
-          </div>
-          <div className="rounded-lg bg-white/5 p-2 border border-white/10 backdrop-blur">
-            <p className="font-semibold text-slate-100">Rate Limited</p>
-            <p className="text-slate-300">Abuse resistant</p>
-          </div>
-          <div className="rounded-lg bg-white/5 p-2 border border-white/10 backdrop-blur">
-            <p className="font-semibold text-slate-100">Encrypted</p>
-            <p className="text-slate-300">Tokens + secrets</p>
-          </div>
-          <div className="rounded-lg bg-white/5 p-2 border border-white/10 backdrop-blur">
-            <p className="font-semibold text-slate-100">JWT Sessions</p>
-            <p className="text-slate-300">Signed + refresh</p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
