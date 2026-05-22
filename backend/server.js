@@ -566,12 +566,38 @@ const toApiError = (error, fallbackCode = 'SERVER_ERROR') => {
   };
 };
 
-const getGraphConfig = async () => {
-  let config = await GraphSyncConfig.findOne();
-  if (!config) {
-    config = await GraphSyncConfig.create({});
+const CONFIG_CACHE_TTL_MS = Number(process.env.CONFIG_CACHE_TTL_MS || 30_000);
+const graphConfigCache = {
+  value: null,
+  expiresAt: 0,
+  inFlight: null,
+};
+
+const getGraphConfig = async (options = {}) => {
+  const force = Boolean(options.force);
+  const now = Date.now();
+  if (!force && graphConfigCache.value && graphConfigCache.expiresAt > now) {
+    return graphConfigCache.value;
   }
-  return config;
+  if (!force && graphConfigCache.inFlight) {
+    return graphConfigCache.inFlight;
+  }
+  graphConfigCache.inFlight = (async () => {
+    let config = await GraphSyncConfig.findOne();
+    if (!config) config = await GraphSyncConfig.create({});
+    graphConfigCache.value = config;
+    graphConfigCache.expiresAt = Date.now() + CONFIG_CACHE_TTL_MS;
+    return config;
+  })().finally(() => {
+    graphConfigCache.inFlight = null;
+  });
+  return graphConfigCache.inFlight;
+};
+
+const invalidateGraphConfigCache = () => {
+  graphConfigCache.value = null;
+  graphConfigCache.expiresAt = 0;
+  graphConfigCache.inFlight = null;
 };
 
 const REQUIRED_NEW_ROW_COLUMNS = ['YEAR', 'TENDER NO', 'TENDER NAME', 'CLIENT', 'GDS/GES', 'TENDER TYPE', 'DATE TENDER RECD'];
@@ -3784,10 +3810,37 @@ const sanitizeActionEmailAccess = (input = {}) => {
   return normalized;
 };
 
-const getSystemConfig = async () => {
-  let config = await SystemConfig.findOne();
-  if (!config) config = await SystemConfig.create({});
-  return config;
+const systemConfigCache = {
+  value: null,
+  expiresAt: 0,
+  inFlight: null,
+};
+
+const getSystemConfig = async (options = {}) => {
+  const force = Boolean(options.force);
+  const now = Date.now();
+  if (!force && systemConfigCache.value && systemConfigCache.expiresAt > now) {
+    return systemConfigCache.value;
+  }
+  if (!force && systemConfigCache.inFlight) {
+    return systemConfigCache.inFlight;
+  }
+  systemConfigCache.inFlight = (async () => {
+    let config = await SystemConfig.findOne();
+    if (!config) config = await SystemConfig.create({});
+    systemConfigCache.value = config;
+    systemConfigCache.expiresAt = Date.now() + CONFIG_CACHE_TTL_MS;
+    return config;
+  })().finally(() => {
+    systemConfigCache.inFlight = null;
+  });
+  return systemConfigCache.inFlight;
+};
+
+const invalidateSystemConfigCache = () => {
+  systemConfigCache.value = null;
+  systemConfigCache.expiresAt = 0;
+  systemConfigCache.inFlight = null;
 };
 
 const getActionPermissions = async () => {

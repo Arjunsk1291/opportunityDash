@@ -106,6 +106,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
             setLastSyncTime(new Date(ts));
             setIsLoading(false);
             hasLoadedOnceRef.current = true;
+            // Treat cache hydration as a "recent refresh" so non-eager pages don't immediately
+            // trigger a heavy network fetch on first mount.
+            lastSuccessfulRefreshAtRef.current = Date.now();
           }
         }
       } catch {
