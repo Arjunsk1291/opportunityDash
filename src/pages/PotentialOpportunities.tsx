@@ -124,6 +124,8 @@ export default function PotentialOpportunities() {
   const [editExtraPairs, setEditExtraPairs] = useState<Array<{ key: string; value: string }>>([]);
   const [editSowLink, setEditSowLink] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsRow, setDetailsRow] = useState<PotentialRow | null>(null);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -222,6 +224,11 @@ export default function PotentialOpportunities() {
     setEditSowLink(getExtrasSowLink(rest));
     setEditExtraPairs(toExtraPairs(rest));
     setEditOpen(true);
+  };
+
+  const openDetails = (row: PotentialRow) => {
+    setDetailsRow(row);
+    setDetailsOpen(true);
   };
 
   const saveEdit = async () => {
@@ -394,6 +401,7 @@ export default function PotentialOpportunities() {
                    "group relative rounded-3xl border-2 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 overflow-hidden",
                    selectedIds.has(r.id) ? "border-primary bg-primary/5 shadow-inner" : "border-border/50 bg-card/50 backdrop-blur-sm"
                  )}
+                 onClick={() => openDetails(r)}
                >
                  <div className={cn(
                    "absolute inset-x-0 top-0 h-24 opacity-80",
@@ -456,13 +464,13 @@ export default function PotentialOpportunities() {
                            variant="ghost"
                            size="sm"
                            className="h-7 px-2 rounded-full"
-                           onClick={(e) => {
-                             e.stopPropagation();
-                             if (looksLikeUrl(sowLink)) window.open(sowLink, '_blank', 'noopener,noreferrer');
-                           }}
-                         >
-                           <ExternalLink className="h-3.5 w-3.5 mr-1" /> Open
-                         </Button>
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (looksLikeUrl(sowLink)) window.open(sowLink, '_blank', 'noopener,noreferrer');
+                            }}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5 mr-1" /> Open
+                          </Button>
                        </div>
                      )}
                    </div>
@@ -488,15 +496,32 @@ export default function PotentialOpportunities() {
                       Updated {r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : '—'}
                    </div>
                    <div className="flex gap-1">
-                     <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-full hover:bg-primary/10 hover:text-primary" disabled={!isMaster} onClick={() => openEdit(r)}>
-                        <Edit2 className="h-4 w-4" />
-                     </Button>
-                     <Button variant="ghost" size="sm" className="h-8 w-8 p-0 rounded-full hover:bg-destructive/10 hover:text-destructive" disabled={!canWrite} onClick={async () => {
-                        if (confirm("Remove?")) {
-                          await markPotential(r.opportunityRefNo, false);
-                          setRows(prev => prev.filter(x => x.id !== r.id));
-                        }
-                     }}>
+                     {isMaster && (
+                       <Button
+                         variant="ghost"
+                         size="sm"
+                         className="h-8 w-8 p-0 rounded-full hover:bg-primary/10 hover:text-primary"
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           openEdit(r);
+                         }}
+                       >
+                         <Edit2 className="h-4 w-4" />
+                       </Button>
+                     )}
+                     <Button
+                       variant="ghost"
+                       size="sm"
+                       className="h-8 w-8 p-0 rounded-full hover:bg-destructive/10 hover:text-destructive"
+                       disabled={!canWrite}
+                       onClick={async (e) => {
+                         e.stopPropagation();
+                         if (confirm("Remove?")) {
+                           await markPotential(r.opportunityRefNo, false);
+                           setRows(prev => prev.filter(x => x.id !== r.id));
+                         }
+                       }}
+                     >
                         <Trash2 className="h-4 w-4" />
                      </Button>
                    </div>
@@ -681,6 +706,161 @@ export default function PotentialOpportunities() {
             </Button>
             <Button className="rounded-2xl" onClick={() => setPreviewOpen(false)}>Close</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="sm:max-w-5xl rounded-[2.75rem] border-0 shadow-2xl overflow-hidden p-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95">
+          {(() => {
+            const row = detailsRow;
+            if (!row) return null;
+            const opp = row.opportunity || opportunitiesByRef.get(normalizeRef(row.opportunityRefNo)) || null;
+            const tenderTitle = (opp?.tenderName && String(opp.tenderName).trim())
+              ? String(opp.tenderName).trim()
+              : (getExtrasTenderName(row.extras) || '').trim() || `Tender ${row.opportunityRefNo}`;
+            const clientTitle = (opp?.clientName && String(opp.clientName).trim())
+              ? String(opp.clientName).trim()
+              : String((row.extras as Record<string, unknown>)?.Client || (row.extras as Record<string, unknown>)?.CLIENT || '').trim() || 'Private Client';
+            const vertical = String(opp?.groupClassification || row.opportunity?.groupClassification || 'Other');
+            const sowLink = getExtrasSowLink(row.extras);
+            const extraPairs = toExtraPairs(row.extras || {});
+            return (
+              <div className="relative">
+                <div className={cn(
+                  "absolute inset-x-0 top-0 h-48 opacity-90",
+                  vertical === 'GTS' ? "bg-gradient-to-br from-cyan-500/35 via-transparent to-transparent" :
+                  vertical === 'GDS' ? "bg-gradient-to-br from-fuchsia-500/35 via-transparent to-transparent" :
+                  vertical === 'GES' ? "bg-gradient-to-br from-emerald-500/35 via-transparent to-transparent" :
+                  "bg-gradient-to-br from-slate-500/25 via-transparent to-transparent"
+                )} />
+                <div className="relative p-8 pb-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="font-mono text-[10px]">{row.opportunityRefNo}</Badge>
+                        <Badge className={cn(
+                          "uppercase text-[10px] font-bold tracking-tighter",
+                          vertical === 'GTS' ? "bg-cyan-500/10 text-cyan-700 border-cyan-200" :
+                          vertical === 'GDS' ? "bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-200" :
+                          vertical === 'GES' ? "bg-emerald-500/10 text-emerald-700 border-emerald-200" : "bg-slate-500/10 text-slate-700 border-slate-200"
+                        )}>
+                          {vertical || 'Other'}
+                        </Badge>
+                      </div>
+                      <h2 className="text-2xl md:text-3xl font-black tracking-tight leading-tight">
+                        {tenderTitle}
+                      </h2>
+                      <div className="text-sm text-muted-foreground">
+                        <span className="font-semibold text-foreground">{clientTitle}</span>
+                        {opp?.internalLead ? <span className="ml-2 text-xs">• Lead: {String(opp.internalLead)}</span> : null}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {sowLink && (
+                        <>
+                          <Button
+                            variant="outline"
+                            className="rounded-full"
+                            onClick={() => {
+                              setEditing(row);
+                              setEditSowLink(sowLink);
+                              setPreviewOpen(true);
+                            }}
+                          >
+                            <Eye className="h-4 w-4 mr-2" /> Preview SOW
+                          </Button>
+                          <Button
+                            variant="outline"
+                            className="rounded-full"
+                            onClick={() => {
+                              if (looksLikeUrl(sowLink)) window.open(sowLink, '_blank', 'noopener,noreferrer');
+                            }}
+                          >
+                            <ExternalLink className="h-4 w-4 mr-2" /> Open
+                          </Button>
+                        </>
+                      )}
+                      {isMaster && (
+                        <Button className="rounded-full" onClick={() => openEdit(row)}>
+                          <Edit2 className="h-4 w-4 mr-2" /> Edit
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="px-8 pb-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="lg:col-span-2 space-y-4">
+                    <div className="rounded-3xl border bg-background/60 backdrop-blur p-6">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Overview</div>
+                      <div className="mt-2 text-sm leading-relaxed text-foreground/90">
+                        {row.extras?.overview ? String(row.extras.overview) : 'No overview provided yet.'}
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl border bg-background/60 backdrop-blur p-6">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Extras</div>
+                        {extraPairs.length > 0 ? (
+                          <Badge variant="secondary" className="rounded-full text-[10px]">{extraPairs.length} fields</Badge>
+                        ) : null}
+                      </div>
+                      {extraPairs.length === 0 ? (
+                        <div className="mt-3 text-sm text-muted-foreground">No extra fields yet.</div>
+                      ) : (
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {extraPairs.map((p) => (
+                            <div key={p.key} className="rounded-2xl border bg-background/40 p-3">
+                              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground line-clamp-1">{p.key}</div>
+                              <div className="mt-1 text-sm font-semibold text-foreground/90 break-words">{p.value}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="rounded-3xl border bg-background/60 backdrop-blur p-6">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Quick Actions</div>
+                      <div className="mt-4 grid grid-cols-1 gap-2">
+                        <Button
+                          variant="outline"
+                          className="justify-start rounded-2xl"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(row.opportunityRefNo).catch(() => {});
+                            toast.success('Ref copied.');
+                          }}
+                        >
+                          <Wand2 className="h-4 w-4 mr-2" /> Copy Ref
+                        </Button>
+                        {sowLink && looksLikeUrl(sowLink) && (
+                          <Button
+                            variant="outline"
+                            className="justify-start rounded-2xl"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(sowLink).catch(() => {});
+                              toast.success('SOW link copied.');
+                            }}
+                          >
+                            <LinkIcon className="h-4 w-4 mr-2" /> Copy SOW Link
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl border bg-background/60 backdrop-blur p-6">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Activity</div>
+                      <div className="mt-2 text-sm text-muted-foreground">
+                        Updated {row.updatedAt ? new Date(row.updatedAt).toLocaleString() : '—'}
+                      </div>
+                      {row.updatedBy ? <div className="mt-1 text-sm text-muted-foreground">By {row.updatedBy}</div> : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
