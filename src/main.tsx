@@ -9,9 +9,22 @@ import "./index.css";
 if (typeof window !== "undefined") {
   const w = window as unknown as { downloadTemplate?: () => void };
   if (typeof w.downloadTemplate !== "function") {
-    w.downloadTemplate = () => {
+    const fn = () => {
       // Intentionally empty.
     };
+    // Set as a global-object property.
+    w.downloadTemplate = fn;
+    // Also define it via `globalThis` to maximize compatibility with
+    // identifier lookups in different bundling/runtime contexts.
+    try {
+      Object.defineProperty(globalThis, "downloadTemplate", {
+        value: fn,
+        writable: true,
+        configurable: true,
+      });
+    } catch {
+      // ignore
+    }
   }
 }
 
