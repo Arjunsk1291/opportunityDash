@@ -68,6 +68,23 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config();
 const app = express();
+const DIAG_LOGS = String(process.env.DIAG_LOGS || '').toLowerCase() === '1' || String(process.env.DIAG_LOGS || '').toLowerCase() === 'true';
+
+const safeJson = (value) => {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '"[unserializable]"';
+  }
+};
+
+const clampLog = (value, max = 800) => {
+  const str = typeof value === 'string' ? value : safeJson(value);
+  if (str.length <= max) return str;
+  return `${str.slice(0, max)}…`;
+};
+
+let DIAG_REQ_SEQ = 0;
 const PORT = process.env.PORT || 3001;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
 
@@ -158,6 +175,44 @@ app.use(helmet({
 app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
   next();
+});
+
+app.use((req, res, next) => {
+  if (!DIAG_LOGS) return next();
+  if (!req.path.startsWith('/api/')) return next();
+
+  const reqId = `${Date.now().toString(36)}-${(++DIAG_REQ_SEQ).toString(36)}`;
+  const startedAt = process.hrtime.bigint();
+
+  res.setHeader('X-Diag-Req-Id', reqId);
+
+  const startLog = {
+    tag: 'DIAG_REQ_START',
+    reqId,
+    ts: new Date().toISOString(),
+    method: req.method,
+    path: req.path,
+    query: req.query || {},
+    contentLength: req.headers['content-length'] || null,
+    userAgent: req.headers['user-agent'] || null,
+  };
+  console.log(`[diag] ${clampLog(startLog)}`);
+
+  res.on('finish', () => {
+    const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+    const finishLog = {
+      tag: 'DIAG_REQ_FINISH',
+      reqId,
+      ts: new Date().toISOString(),
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      elapsedMs: Math.round(elapsedMs * 100) / 100,
+    };
+    console.log(`[diag] ${clampLog(finishLog)}`);
+  });
+
+  return next();
 });
 
 const createRateLimiter = ({ windowMs, max, keyPrefix }) => {
@@ -324,8 +379,56 @@ app.get('/api/auth/msal-config', (_req, res) => {
   });
 });
 
-mongoose.connect(MONGODB_URI)
+mongoose.connect(MONGODB_URI, { monitorCommands: DIAG_LOGS })
   .then(() => {
+    if (!DIAG_LOGS) return;
+    try {
+      const client = mongoose.connection.getClient();
+      const startedAtByRequestId = new Map();
+
+      client.on('commandStarted', (event) => {
+        const key = event.requestId;
+        startedAtByRequestId.set(key, process.hrtime.bigint());
+        console.log(`[diag] ${clampLog({
+          tag: 'DIAG_MONGO_START',
+          ts: new Date().toISOString(),
+          requestId: event.requestId,
+          db: event.databaseName,
+          commandName: event.commandName,
+          command: event.command ? { ...event.command, lsid: undefined, $db: undefined } : undefined,
+        })}`);
+      });
+
+      client.on('commandSucceeded', (event) => {
+        const startedAt = startedAtByRequestId.get(event.requestId);
+        startedAtByRequestId.delete(event.requestId);
+        const elapsedMs = startedAt ? Number(process.hrtime.bigint() - startedAt) / 1e6 : null;
+        console.log(`[diag] ${clampLog({
+          tag: 'DIAG_MONGO_OK',
+          ts: new Date().toISOString(),
+          requestId: event.requestId,
+          commandName: event.commandName,
+          elapsedMs: elapsedMs != null ? Math.round(elapsedMs * 100) / 100 : null,
+          reply: event.reply ? { ok: event.reply.ok, n: event.reply.n, nModified: event.reply.nModified } : undefined,
+        })}`);
+      });
+
+      client.on('commandFailed', (event) => {
+        const startedAt = startedAtByRequestId.get(event.requestId);
+        startedAtByRequestId.delete(event.requestId);
+        const elapsedMs = startedAt ? Number(process.hrtime.bigint() - startedAt) / 1e6 : null;
+        console.log(`[diag] ${clampLog({
+          tag: 'DIAG_MONGO_FAIL',
+          ts: new Date().toISOString(),
+          requestId: event.requestId,
+          commandName: event.commandName,
+          elapsedMs: elapsedMs != null ? Math.round(elapsedMs * 100) / 100 : null,
+          failure: { name: event.failure?.name, message: event.failure?.message },
+        })}`);
+      });
+    } catch (err) {
+      console.error('[diag.mongo.hooks.error]', err);
+    }
   })
   .then(async () => {
     await initializeBootSync();

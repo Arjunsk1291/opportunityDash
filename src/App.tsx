@@ -30,6 +30,7 @@ import { CssBaseline } from "@mui/material";
 import { StyledEngineProvider, ThemeProvider } from "@mui/material/styles";
 import { muiTheme } from "@/theme/muiTheme";
 import { Skeleton } from "@/components/ui/skeleton";
+import { diag } from "@/lib/diagnostics";
 
 const queryClient = new QueryClient();
 
@@ -131,8 +132,14 @@ function RoutePerfLogger() {
   React.useEffect(() => {
     const startedAt = performance.now();
     const path = location.pathname;
+    diag.navStart(path);
     const onNextFrame = () => {
       const frameMs = Math.round(performance.now() - startedAt);
+      diag.navPaint(path);
+      if (diag.enabled) {
+        // eslint-disable-next-line no-console
+        console.log('[diag] hint: run `diagFinish()` in the browser console after the page finishes loading to print the full report.');
+      }
     };
     const raf = window.requestAnimationFrame(onNextFrame);
     return () => window.cancelAnimationFrame(raf);

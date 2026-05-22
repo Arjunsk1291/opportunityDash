@@ -80,6 +80,24 @@ Default local URLs:
 - frontend: `http://localhost:8080`
 - backend: `http://localhost:3001`
 
+## Diagnostics (Slow Page Loads)
+
+Opt-in logs to help determine whether page load delays are coming from MongoDB, the backend API, network, or the frontend.
+
+- Frontend (browser console): route navigation + every `fetch()` timing, plus a finish command.
+- Backend (server logs): every `/api/*` request start/finish timing, plus Mongo command start/success/failure timing.
+
+Enable:
+
+- Frontend: set `VITE_DIAG_LOGS=true` (e.g., in `.env.local`)
+- Backend: set `DIAG_LOGS=true` (e.g., in `backend/.env.local`)
+
+Capture a report (per page):
+
+1. Open the page and wait until the UI settles.
+2. In DevTools console, run: `diagFinish()`
+3. Copy/paste all `[diag]` lines (browser + backend logs) for analysis.
+
 ## Backend Environment Variables
 
 Set these in `backend/.env` (or your deployment environment):

@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { diag } from "@/lib/diagnostics";
 
 // Defensive shim: some deployments/bundles may reference a global `downloadTemplate()`.
 // Provide a safe no-op so the app doesn't crash with a ReferenceError.
@@ -27,6 +28,10 @@ if (typeof window !== "undefined") {
     }
   }
 }
+
+// Opt-in diagnostics: route + fetch timing logs and a finish command `diagFinish()`.
+diag.installFetchPatch();
+diag.installFinishCommand();
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
