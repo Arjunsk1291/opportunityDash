@@ -567,7 +567,7 @@ export default function PqActivities() {
                   aria-label="Search company or email"
                 />
               </div>
-	              <Button variant="secondary" className="bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70" onClick={() => loadRows('refresh_click')} disabled={loading}>
+	              <Button variant="secondary" className="bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70" onClick={() => loadRows('refresh_click')} loading={loading}>
 	                Refresh
 	              </Button>
             </div>
@@ -596,13 +596,22 @@ export default function PqActivities() {
                 }}
               />
 
-              <Button variant="secondary" className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2" onClick={onPickImportFile} disabled={loading || !canWrite}>
+              <Button variant="secondary" className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2" onClick={onPickImportFile} loading={loading} disabled={!canWrite}>
                 <FileUp className="h-4 w-4" aria-hidden="true" />
                 Import .xlsx
               </Button>
-              <Button variant="secondary" className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2" onClick={exportXlsx} disabled={loading || !canView}>
+              <Button variant="secondary" className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2" onClick={exportXlsx} loading={loading} disabled={!canView}>
                 <FileDown className="h-4 w-4" aria-hidden="true" />
                 Export .xlsx
+              </Button>
+              <Button
+                variant="secondary"
+                className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2"
+                onClick={downloadTemplate}
+                loading={loading}
+              >
+                <FileText className="h-4 w-4" aria-hidden="true" />
+                Template .xlsx
               </Button>
               <Button className="w-full sm:w-auto bg-navytrust-primary hover:bg-navytrust-primary/90 text-white gap-2 shadow-nt-glow" onClick={openCreate} disabled={!canWrite}>
                 <Plus className="h-4 w-4" aria-hidden="true" />
@@ -1124,12 +1133,3 @@ export default function PqActivities() {
     </div>
   );
 }
-	              <Button
-	                variant="secondary"
-	                className="w-full sm:w-auto bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70 gap-2"
-	                onClick={downloadTemplate}
-	                disabled={loading}
-	              >
-	                <FileText className="h-4 w-4" aria-hidden="true" />
-	                Template .xlsx
-	              </Button>

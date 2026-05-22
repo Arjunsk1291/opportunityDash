@@ -24,11 +24,11 @@ export function RefreshButton({
       variant={variant}
       size={size}
       onClick={handleRefresh}
-      disabled={isLoading}
+      loading={isLoading}
       title={lastSyncTime ? `Last synced: ${lastSyncTime.toLocaleString()}` : 'Not synced yet'}
     >
-      <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''} ${showLabel ? 'mr-2' : ''}`} />
-      {showLabel && (isLoading ? 'Syncing...' : 'Refresh Data')}
+      {!isLoading && <RefreshCw className={`h-4 w-4 ${showLabel ? 'mr-2' : ''}`} />}
+      {showLabel && 'Refresh Data'}
     </Button>
   );
 }

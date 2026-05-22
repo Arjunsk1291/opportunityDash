@@ -2704,7 +2704,7 @@ export default function Admin() {
                   Selected: {postBidAllowedEmails.length}
                 </div>
                 {isMaster && (
-                  <Button onClick={savePostBidConfig} disabled={postBidSaving}>
+                  <Button onClick={savePostBidConfig} loading={postBidSaving}>
                     Save Post-Bid Assignees
                   </Button>
                 )}
@@ -2808,10 +2808,10 @@ export default function Admin() {
                         variant="outline"
                         size="sm"
                         onClick={loadUsers}
-                        disabled={loading}
+                        loading={loading}
                         className="gap-2"
                       >
-                        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                        {!loading && <RefreshCw className="h-4 w-4" />}
                         Refresh
                       </Button>
                     </TooltipTrigger>
@@ -3489,7 +3489,7 @@ export default function Admin() {
                   <p className="text-xs text-muted-foreground">
                     These defaults apply to dashboard Excel exports and are stored in MongoDB.
                   </p>
-                  <Button onClick={saveExportTemplateConfig} disabled={!canManageExportTemplate || exportTemplateSaving}>
+                  <Button onClick={saveExportTemplateConfig} loading={exportTemplateSaving} disabled={!canManageExportTemplate}>
                     Save Export Template
                   </Button>
                 </div>
@@ -3665,8 +3665,8 @@ export default function Admin() {
                     <Button variant="outline" onClick={previewHeaderRows} disabled={!graphConfig.driveId || !graphConfig.fileId || !graphConfig.worksheetName || configSaving}>
                       Preview Rows
                     </Button>
-                    <Button onClick={saveGraphConfig} disabled={configSaving}>
-                      {configSaving ? 'Saving...' : 'Save Graph Config'}
+                    <Button onClick={saveGraphConfig} loading={configSaving}>
+                      Save Graph Config
                     </Button>
                   </div>
                 </div>
@@ -3732,12 +3732,12 @@ export default function Admin() {
                   <div className="grid gap-2">
                     <Button 
                       onClick={syncFromGraphExcel}
-                      disabled={syncLoading}
+                      loading={syncLoading}
                       size="lg"
                       className="w-full gap-2"
                     >
-                      <Download className={`h-4 w-4 ${syncLoading ? 'animate-spin' : ''}`} />
-                      {syncLoading ? 'Syncing...' : 'Sync from Graph Excel'}
+                      {!syncLoading && <Download className="h-4 w-4" />}
+                      Sync from Graph Excel
                     </Button>
                     <Button
                       onClick={forceRefreshNotificationSync}
@@ -3832,8 +3832,8 @@ export default function Admin() {
                     onCheckedChange={(checked) => setShowConvertedEoiRowsDefault(Boolean(checked))}
                   />
                 </div>
-                <Button onClick={saveEoiDuplicateConfig} disabled={eoiDuplicateConfigSaving || configSaving}>
-                  {eoiDuplicateConfigSaving ? 'Saving...' : 'Save EOI Duplicate Visibility'}
+                <Button onClick={saveEoiDuplicateConfig} loading={eoiDuplicateConfigSaving || configSaving}>
+                  Save EOI Duplicate Visibility
                 </Button>
               </CardContent>
             </Card>
@@ -4067,7 +4067,7 @@ export default function Admin() {
                   <p className="font-semibold mb-1">Supported keywords (exact):</p>
                   <p>{(telecastKeywords.length ? telecastKeywords : ['{{TENDER_NO}}','{{TENDER_NAME}}','{{CLIENT}}','{{GROUP}}','{{TENDER_TYPE}}','{{DATE_TENDER_RECD}}','{{SUBMISSION_DATE}}','{{YEAR}}','{{LEAD}}','{{OPPORTUNITY_ID}}','{{COMMENTS}}']).join(', ')}</p>
                 </div>
-                <Button onClick={saveTelecastConfig} disabled={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">Save Template & Recipients</Button>
+                <Button onClick={saveTelecastConfig} loading={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">Save Template & Recipients</Button>
               </CardContent>
             </Card>
 
@@ -4079,9 +4079,8 @@ export default function Admin() {
               <CardContent className="space-y-2 sm:space-y-3 md:space-y-4">
                 <p className="text-xs sm:text-sm md:text-base font-medium">Recipient Email</p>
                 <Input type="email" className="h-9 sm:h-10 md:h-11 text-xs sm:text-sm md:text-base" placeholder="name@company.com" value={telecastRecipientEmail} onChange={(e) => setTelecastRecipientEmail(e.target.value)} />
-                <Button onClick={sendTelecastTestMail} disabled={telecastSending || !telecastMailReady} className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
-                  <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${telecastSending ? 'animate-pulse' : ''}`} />
-                  {telecastSending ? 'Sending...' : 'Send Template Preview'}
+                <Button onClick={sendTelecastTestMail} loading={telecastSending} disabled={!telecastMailReady} className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
+                  Send Template Preview
                 </Button>
               </CardContent>
             </Card>
@@ -4173,17 +4172,17 @@ export default function Admin() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <Button onClick={saveTelecastConfig} disabled={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
+                  <Button onClick={saveTelecastConfig} loading={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
                     Save Approval Alert
                   </Button>
                   <Button
                     onClick={sendApprovalTestMail}
-                    disabled={approvalTemplateSending || !telecastMailReady || !telecastRecipientEmail}
+                    loading={approvalTemplateSending}
+                    disabled={!telecastMailReady || !telecastRecipientEmail}
                     variant="outline"
                     className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto"
                   >
-                    <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${approvalTemplateSending ? 'animate-pulse' : ''}`} />
-                    {approvalTemplateSending ? 'Sending...' : 'Send Approval Template Preview'}
+                    Send Approval Template Preview
                   </Button>
                 </div>
               </CardContent>
@@ -4279,7 +4278,7 @@ export default function Admin() {
                   <div className="p-5 text-sm text-slate-600 whitespace-pre-line">{awardPreviewBody}</div>
                 </div>
 
-                <Button onClick={saveTelecastConfig} disabled={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
+                <Button onClick={saveTelecastConfig} loading={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
                   Save Award Alert
                 </Button>
               </CardContent>
@@ -4442,25 +4441,25 @@ export default function Admin() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <Button onClick={saveTelecastConfig} disabled={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
+                  <Button onClick={saveTelecastConfig} loading={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
                     Save Deadline Alert
                   </Button>
                   <Button
                     onClick={sendDeadlineTestMail}
-                    disabled={deadlineTestSending || !telecastMailReady || !telecastRecipientEmail}
+                    loading={deadlineTestSending}
+                    disabled={!telecastMailReady || !telecastRecipientEmail}
                     variant="outline"
                     className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto"
                   >
-                    <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${deadlineTestSending ? 'animate-pulse' : ''}`} />
-                    {deadlineTestSending ? 'Sending...' : 'Send Deadline Template Preview'}
+                    Send Deadline Template Preview
                   </Button>
                   <Button
                     onClick={loadDeadlineStatus}
                     variant="ghost"
                     className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto"
-                    disabled={deadlineStatusLoading}
+                    loading={deadlineStatusLoading}
                   >
-                    {deadlineStatusLoading ? 'Refreshing...' : 'Refresh Deadline Status'}
+                    Refresh Deadline Status
                   </Button>
                 </div>
 
@@ -4583,17 +4582,17 @@ export default function Admin() {
                   </div>
                 </div>
 
-                <Button onClick={saveReportingConfig} disabled={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
+                <Button onClick={saveReportingConfig} loading={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
                   Save Issue Reporting Style
                 </Button>
                 <Button
                   onClick={sendReportingTestMail}
-                  disabled={reportingTemplateSending || !telecastMailReady || !telecastRecipientEmail}
+                  loading={reportingTemplateSending}
+                  disabled={!telecastMailReady || !telecastRecipientEmail}
                   variant="outline"
                   className="gap-2 sm:gap-3 h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto"
                 >
-                  <Send className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${reportingTemplateSending ? 'animate-pulse' : ''}`} />
-                  {reportingTemplateSending ? 'Sending...' : 'Send Issue Template Preview'}
+                  Send Issue Template Preview
                 </Button>
               </CardContent>
             </Card>

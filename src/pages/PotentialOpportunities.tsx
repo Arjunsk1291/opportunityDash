@@ -274,10 +274,10 @@ export default function PotentialOpportunities() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => load('refresh_click')} disabled={loading}>
+          <Button variant="outline" onClick={() => load('refresh_click')} loading={loading}>
             Refresh
           </Button>
-          <Button variant="outline" onClick={() => void downloadTemplate()} disabled={loading}>
+          <Button variant="outline" onClick={() => void downloadTemplate()} loading={loading}>
             <FileDown className="mr-2 h-4 w-4" />
             Download Template
           </Button>
@@ -353,7 +353,7 @@ export default function PotentialOpportunities() {
                 }}
               />
             </div>
-            <Button variant="outline" onClick={() => load('search_apply_click')} disabled={loading}>
+            <Button variant="outline" onClick={() => load('search_apply_click')} loading={loading}>
               <Wand2 className="mr-2 h-4 w-4" />
               Apply
             </Button>
