@@ -56,6 +56,21 @@ const getExtrasSowLink = (extras: Record<string, unknown> | null | undefined) =>
 };
 
 const looksLikeUrl = (value: string) => /^https?:\/\//i.test(String(value || '').trim());
+const isSharePointOrOneDriveUrl = (value: string) => {
+  const url = String(value || '').trim();
+  return /sharepoint\.com/i.test(url) || /onedrive\.live\.com/i.test(url) || /my\.sharepoint\.com/i.test(url);
+};
+
+const toSowPreviewUrl = (value: string) => {
+  const raw = String(value || '').trim();
+  if (!looksLikeUrl(raw)) return '';
+  // Many SharePoint/OneDrive share links block iframe embedding due to CSP/X-Frame-Options.
+  // Using Office Apps viewer works for many public/accessible links without storing anything locally.
+  if (isSharePointOrOneDriveUrl(raw)) {
+    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(raw)}`;
+  }
+  return raw;
+};
 
 type OpportunityLite = {
   id?: string;
@@ -642,7 +657,7 @@ export default function PotentialOpportunities() {
                 <iframe
                   title="SOW Preview"
                   className="w-full h-full"
-                  src={editSowLink}
+                  src={toSowPreviewUrl(editSowLink)}
                   sandbox="allow-scripts allow-same-origin allow-popups"
                 />
               </div>
