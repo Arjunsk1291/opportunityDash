@@ -515,8 +515,8 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
             <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" onClick={handleExport} disabled={!exportableData.length || !selectedColumnIds.length || isExporting}>
-              {isExporting ? 'Exporting...' : 'Export selected columns'}
+            <Button type="button" onClick={handleExport} loading={isExporting} disabled={!exportableData.length || !selectedColumnIds.length}>
+              Export selected columns
             </Button>
           </DialogFooter>
         </DialogContent>

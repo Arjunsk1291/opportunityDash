@@ -56,7 +56,7 @@ const parseReportDate = (value?: string | null) => {
     return Number.isNaN(parsedIso.getTime()) ? null : parsedIso;
   }
 
-  const hasExplicitYear = /\b(19|20)\d{2}\b/.test(raw) || /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(raw);
+  const hasExplicitYear = /\b(19|20)\d{2}\b/.test(raw) || /^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/.test(raw);
   if (!hasExplicitYear) return null;
 
   const parsed = new Date(raw);
@@ -617,6 +617,7 @@ footer {
 
 export function ReportButton({ data, filters }: ReportButtonProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [durationKey, setDurationKey] = useState<ReportDurationKey>('90d');
   const { token } = useAuth();
 
@@ -640,6 +641,7 @@ export function ReportButton({ data, filters }: ReportButtonProps) {
   const handleExportWord = async () => {
     try {
       if (!token) throw new Error('Missing session token');
+      setIsExporting(true);
       const response = await fetch(`${API_BASE_URL}/generate-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
@@ -662,6 +664,8 @@ export function ReportButton({ data, filters }: ReportButtonProps) {
     } catch (error) {
       console.error('Error generating Word document:', error);
       alert('Failed to generate Word document. Please try again.');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -720,8 +724,7 @@ export function ReportButton({ data, filters }: ReportButtonProps) {
               <FileText className="mr-2 h-4 w-4" />
               HTML Report
             </Button>
-            <Button type="button" onClick={handleExportWord} disabled={!reportData.length}>
-              <Download className="mr-2 h-4 w-4" />
+            <Button type="button" onClick={handleExportWord} loading={isExporting} disabled={!reportData.length}>
               Word Report
             </Button>
           </DialogFooter>

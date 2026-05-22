@@ -2,6 +2,7 @@ import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import MuiButton from "@mui/material/Button";
+import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -35,13 +36,22 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  loading?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, loading = false, disabled, children, ...props }, ref) => {
     if (asChild) {
       const Comp = Slot;
-      return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+      return (
+        <Comp
+          className={cn(buttonVariants({ variant, size, className }))}
+          ref={ref}
+          {...props}
+        >
+          {children}
+        </Comp>
+      );
     }
 
     return (
@@ -53,8 +63,12 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         color="inherit"
         variant="text"
         sx={{ minWidth: 0, padding: 0, lineHeight: "inherit" }}
+        disabled={loading || disabled}
         {...props}
-      />
+      >
+        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        {children}
+      </MuiButton>
     );
   },
 );

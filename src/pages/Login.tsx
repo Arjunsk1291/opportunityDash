@@ -350,18 +350,12 @@ export default function Login() {
             <div className="space-y-3 pt-4">
               <Button
                 onClick={handlePasswordLogin}
-                disabled={formState.loading || !formState.email || !formState.password}
+                loading={formState.loading}
+                disabled={!formState.email || !formState.password}
                 className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-400 hover:to-indigo-400 text-white shadow-[0_12px_40px_rgba(59,130,246,0.25)]"
                 size="lg"
               >
-                {formState.loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Signing in...
-                  </>
-                ) : (
-                  'Sign In'
-                )}
+                Sign In
               </Button>
 
               <Button
@@ -411,18 +405,12 @@ export default function Login() {
             <div className="space-y-3 pt-2">
               <Button
                 onClick={handleResetRequest}
-                disabled={formState.loading || !formState.resetEmail}
+                loading={formState.loading}
+                disabled={!formState.resetEmail}
                 className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-400 hover:to-indigo-400 text-white shadow-[0_12px_40px_rgba(59,130,246,0.25)]"
                 size="lg"
               >
-                {formState.loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Sending...
-                  </>
-                ) : (
-                  'Send reset code'
-                )}
+                Send reset code
               </Button>
               <Button
                 onClick={() => { setAuthMode('password-login'); setFormState(prev => ({ ...prev, error: null, successMessage: null })); }}
@@ -508,18 +496,12 @@ export default function Login() {
             <div className="space-y-3 pt-2">
               <Button
                 onClick={handleResetConfirm}
-                disabled={formState.loading || !formState.resetEmail || !formState.resetCode || !formState.resetPassword}
+                loading={formState.loading}
+                disabled={!formState.resetEmail || !formState.resetCode || !formState.resetPassword}
                 className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-400 hover:to-indigo-400 text-white shadow-[0_12px_40px_rgba(59,130,246,0.25)]"
                 size="lg"
               >
-                {formState.loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Updating...
-                  </>
-                ) : (
-                  'Update password'
-                )}
+                Update password
               </Button>
               <div className="grid grid-cols-2 gap-3">
                 <Button

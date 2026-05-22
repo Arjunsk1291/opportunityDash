@@ -834,20 +834,21 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
                 type="button"
                 variant="outline"
                 onClick={() => document.getElementById('opportunities-sheet-upload')?.click()}
-                disabled={sheetUploadLoading || sheetUploadSaving}
+                loading={sheetUploadLoading}
+                disabled={sheetUploadSaving}
               >
-                {sheetUploadLoading
-                  ? (sheetUploadProgress ? `${sheetUploadProgress.stage} ${Math.round(sheetUploadProgress.pct)}%` : 'Parsing…')
-                  : 'Upload Sheet'}
+                Upload Sheet
               </Button>
               {sheetUploadLoading && sheetUploadProgress ? (
-                <div className="hidden sm:flex items-center gap-2 pl-1">
-                  <div className="h-2 w-40 overflow-hidden rounded-full bg-muted">
+                <div className="hidden sm:flex items-center gap-2 pl-3 text-xs text-muted-foreground border-l border-border ml-1">
+                  <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
                     <div
-                      className="h-full bg-primary transition-[width] duration-200"
+                      className="h-full bg-teal-500 transition-[width] duration-200"
                       style={{ width: `${Math.max(2, Math.min(100, sheetUploadProgress.pct))}%` }}
                     />
                   </div>
+                  <span className="font-medium">{sheetUploadProgress.stage}</span>
+                  <span className="tabular-nums opacity-70">{Math.round(sheetUploadProgress.pct)}%</span>
                 </div>
               ) : null}
             </>
@@ -971,22 +972,21 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
               Cancel
             </Button>
             {sheetUploadSaving && sheetUploadCommitProgress ? (
-              <div className="mr-2 flex items-center gap-2 text-xs text-muted-foreground">
-                <div className="h-2 w-40 overflow-hidden rounded-full bg-muted">
+              <div className="mr-4 flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="h-1.5 w-40 overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full bg-primary transition-[width] duration-200"
+                    className="h-full bg-teal-500 transition-[width] duration-200"
                     style={{ width: `${Math.max(2, Math.min(100, sheetUploadCommitProgress.pct))}%` }}
                   />
                 </div>
-                <span className="tabular-nums">
-                  {sheetUploadCommitProgress.stage} {Math.round(sheetUploadCommitProgress.pct)}%
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-foreground">{sheetUploadCommitProgress.stage}</span>
+                  <span className="tabular-nums opacity-70">{Math.round(sheetUploadCommitProgress.pct)}%</span>
+                </div>
               </div>
             ) : null}
-            <Button type="button" onClick={commitSheetUpload} disabled={sheetUploadSaving || !sheetUploadRows.length}>
-              {sheetUploadSaving
-                ? (sheetUploadCommitProgress ? `${sheetUploadCommitProgress.stage}` : 'Saving…')
-                : `Save ${sheetUploadRows.length} Row${sheetUploadRows.length === 1 ? '' : 's'}`}
+            <Button type="button" onClick={commitSheetUpload} loading={sheetUploadSaving} disabled={!sheetUploadRows.length}>
+              Save {sheetUploadRows.length} Row{sheetUploadRows.length === 1 ? '' : 's'}
             </Button>
           </div>
         </DialogContent>
@@ -1138,13 +1138,9 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
                 <Button
                   type="button"
                   onClick={handlePreviewAndSave}
-                  disabled={saving || previewing}
-                  className={cn(
-                    'relative overflow-hidden',
-                    (saving || previewing) ? 'animate-pulse' : '',
-                  )}
+                  loading={saving || previewing}
                 >
-                  {previewing ? 'Previewing...' : saving ? 'Saving...' : (editorMode === 'new' ? 'Create Row' : 'Preview Update')}
+                  {editorMode === 'new' ? 'Create' : 'Preview'}
                 </Button>
               </div>
             </div>
@@ -1181,7 +1177,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
             >
               Cancel
             </Button>
-            <Button type="button" onClick={() => saveEntry(true)} disabled={saving}>{saving ? 'Saving...' : 'Confirm Save'}</Button>
+            <Button type="button" onClick={() => saveEntry(true)} loading={saving}>Confirm Save</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1214,16 +1210,18 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
                           size="sm"
                           variant="outline"
                           onClick={() => resolveFieldConflict(field.id, 'keep_existing')}
-                          disabled={Boolean(resolvingConflictId)}
+                          loading={resolvingConflictId === field.id}
+                          disabled={Boolean(resolvingConflictId && resolvingConflictId !== field.id)}
                         >
-                          {resolvingConflictId === field.id ? 'Applying...' : 'Keep Existing'}
+                          Keep Existing
                         </Button>
                         <Button
                           type="button"
                           size="sm"
                           variant="destructive"
                           onClick={() => resolveFieldConflict(field.id, 'use_sheet')}
-                          disabled={Boolean(resolvingConflictId)}
+                          loading={resolvingConflictId === field.id}
+                          disabled={Boolean(resolvingConflictId && resolvingConflictId !== field.id)}
                         >
                           Use Sheet
                         </Button>

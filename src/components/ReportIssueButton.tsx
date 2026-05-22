@@ -207,9 +207,9 @@ export function ReportIssueButton({ authToken, reporter, page }: ReportIssueButt
           </div>
 
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={!canSubmit || submitting}>
-              {submitting ? 'Sending...' : 'Send Report'}
+            <Button variant="secondary" onClick={() => setOpen(false)} disabled={submitting}>Cancel</Button>
+            <Button onClick={handleSubmit} loading={submitting} disabled={!canSubmit}>
+              Send Report
             </Button>
           </DialogFooter>
         </DialogContent>

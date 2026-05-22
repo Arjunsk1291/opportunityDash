@@ -238,6 +238,9 @@ const BDEngagements = () => {
   const [uploadPreviewWarnings, setUploadPreviewWarnings] = useState<string[]>([]);
   const [uploadPreviewProcessedCount, setUploadPreviewProcessedCount] = useState(0);
   const [uploadPreviewImporting, setUploadPreviewImporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<BDEngagement | null>(null);
   const [clearDbOpen, setClearDbOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<BDEngagement | null>(null);
@@ -864,6 +867,7 @@ const BDEngagements = () => {
       toast.error('Missing auth token');
       return;
     }
+    setSaving(true);
     try {
       if (editingRow?._id || editingRow?.id) {
         const response = await fetch(`${API_URL}/bd-engagements/${editingRow._id || editingRow.id}`, {
@@ -885,6 +889,8 @@ const BDEngagements = () => {
       setDialogOpen(false);
     } catch (error) {
       toast.error((error as Error).message || 'Failed to save engagement');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -893,6 +899,7 @@ const BDEngagements = () => {
       toast.error('Missing auth token');
       return;
     }
+    setClearing(true);
     try {
       const response = await fetch(`${API_URL}/bd-engagements/clear`, {
         method: 'POST',
@@ -908,6 +915,8 @@ const BDEngagements = () => {
       toast.success('BD engagements cleared from DB.');
     } catch (error) {
       toast.error((error as Error).message || 'Failed to clear BD engagements');
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -917,6 +926,7 @@ const BDEngagements = () => {
       toast.error('Missing auth token');
       return;
     }
+    setDeleting(true);
     try {
       const targetId = (deleteTarget as unknown as { _id?: string })._id || deleteTarget.id;
       const response = await fetch(`${API_URL}/bd-engagements/${targetId}`, {
@@ -932,6 +942,8 @@ const BDEngagements = () => {
       setDeleteTarget(null);
     } catch (error) {
       toast.error((error as Error).message || 'Failed to delete engagement');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -1508,7 +1520,7 @@ const BDEngagements = () => {
             ) : null}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
             {editingRow && (
               <Button
                 type="button"
@@ -1517,11 +1529,12 @@ const BDEngagements = () => {
                   setDialogOpen(false);
                   setDeleteTarget(editingRow);
                 }}
+                disabled={saving}
               >
                 Delete
               </Button>
             )}
-            <Button type="button" onClick={saveRow}>Save Engagement</Button>
+            <Button type="button" onClick={saveRow} loading={saving}>Save Engagement</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1685,8 +1698,8 @@ const BDEngagements = () => {
           )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setUploadPreviewOpen(false)} disabled={uploadPreviewImporting}>Cancel</Button>
-            <Button type="button" onClick={confirmBulkUploadPreview} disabled={!uploadPreviewRows.length || uploadPreviewImporting}>
-              {uploadPreviewImporting ? 'Importing...' : `Import ${uploadPreviewRows.length} Row${uploadPreviewRows.length === 1 ? '' : 's'}`}
+            <Button type="button" onClick={confirmBulkUploadPreview} loading={uploadPreviewImporting} disabled={!uploadPreviewRows.length}>
+              Import {uploadPreviewRows.length} Row{uploadPreviewRows.length === 1 ? '' : 's'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1782,8 +1795,10 @@ const BDEngagements = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={deleteRow}>Delete</AlertDialogAction>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={deleteRow} disabled={deleting}>
+              {deleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -1797,12 +1812,13 @@ const BDEngagements = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={clearing}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={resetSeedData}
+              disabled={clearing}
             >
-              Clear DB
+              {clearing ? 'Clearing...' : 'Clear DB'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
