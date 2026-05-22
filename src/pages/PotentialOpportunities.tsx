@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileDown, FileUp, Plus, Search, Sparkles, Wand2, Edit2, Trash2, CheckCircle2, LayoutGrid, List as ListIcon, X } from 'lucide-react';
+import { FileDown, FileUp, Plus, Search, Sparkles, Wand2, Edit2, Trash2, CheckCircle2, LayoutGrid, List as ListIcon, X, ExternalLink, Eye, Link as LinkIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import ExcelJS from 'exceljs';
 
@@ -36,6 +36,26 @@ type PotentialRow = {
 };
 
 const normalizeRef = (v: string) => String(v || '').trim().toLowerCase();
+const normalizeExtraKey = (v: string) => String(v || '').trim();
+const normalizeExtraKeySlug = (v: string) => normalizeExtraKey(v).toLowerCase().replace(/\s+/g, ' ').trim();
+
+const getExtrasTenderName = (extras: Record<string, unknown> | null | undefined) => {
+  if (!extras) return '';
+  const entries = Object.entries(extras);
+  const found = entries.find(([k]) => ['tender name', 'tendername', 'tender'].includes(normalizeExtraKeySlug(k)));
+  const value = found ? found[1] : '';
+  return String(value || '').trim();
+};
+
+const getExtrasSowLink = (extras: Record<string, unknown> | null | undefined) => {
+  if (!extras) return '';
+  const entries = Object.entries(extras);
+  const found = entries.find(([k]) => ['sow link', 'sow', 'scope of work link', 'scope of work', 'sowlink'].includes(normalizeExtraKeySlug(k)));
+  const value = found ? found[1] : '';
+  return String(value || '').trim();
+};
+
+const looksLikeUrl = (value: string) => /^https?:\/\//i.test(String(value || '').trim());
 
 type OpportunityLite = {
   id?: string;
@@ -86,7 +106,9 @@ export default function PotentialOpportunities() {
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<PotentialRow | null>(null);
   const [editOverview, setEditOverview] = useState('');
-  const [editExtras, setEditExtras] = useState<Record<string, unknown>>({});
+  const [editExtraPairs, setEditExtraPairs] = useState<Array<{ key: string; value: string }>>([]);
+  const [editSowLink, setEditSowLink] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -142,6 +164,38 @@ export default function PotentialOpportunities() {
     return { total, gts, gds, ges };
   }, [rows]);
 
+  const opportunitiesByRef = useMemo(() => {
+    const map = new Map<string, OpportunityLite>();
+    (opportunities || []).forEach((opp) => {
+      const ref = normalizeRef(String((opp as unknown as { opportunityRefNo?: string })?.opportunityRefNo || ''));
+      if (!ref) return;
+      map.set(ref, opp as unknown as OpportunityLite);
+    });
+    return map;
+  }, [opportunities]);
+
+  const toExtraPairs = (extras: Record<string, unknown>) => {
+    const pairs = Object.entries(extras || {})
+      .filter(([k]) => normalizeExtraKeySlug(k) !== 'overview')
+      .filter(([_, v]) => v !== null && v !== undefined && String(v).trim() !== '')
+      .map(([k, v]) => ({ key: String(k), value: String(v ?? '') }));
+    // Keep SOW link editable via its dedicated field, but also preserve it in pairs if user added a custom key.
+    return pairs
+      .filter((p) => !['sow link', 'sow', 'scope of work link', 'scope of work', 'sowlink'].includes(normalizeExtraKeySlug(p.key)));
+  };
+
+  const pairsToExtras = (pairs: Array<{ key: string; value: string }>) => {
+    const out: Record<string, unknown> = {};
+    pairs.forEach((p) => {
+      const key = normalizeExtraKey(p.key);
+      if (!key) return;
+      const value = String(p.value ?? '').trim();
+      if (!value) return;
+      out[key] = value;
+    });
+    return out;
+  };
+
   const openEdit = (row: PotentialRow) => {
     if (!isMaster) {
        toast.error("Only Master users can edit.");
@@ -150,14 +204,19 @@ export default function PotentialOpportunities() {
     setEditing(row);
     setEditOverview(row.extras?.overview || '');
     const { overview, ...rest } = row.extras || {};
-    setEditExtras(rest);
+    setEditSowLink(getExtrasSowLink(rest));
+    setEditExtraPairs(toExtraPairs(rest));
     setEditOpen(true);
   };
 
   const saveEdit = async () => {
     if (!token || !editing) return;
     try {
-      const nextExtras = { ...editExtras, overview: editOverview };
+      const nextExtras = {
+        ...pairsToExtras(editExtraPairs),
+        ...(editSowLink.trim() ? { 'SOW Link': editSowLink.trim() } : {}),
+        overview: editOverview,
+      };
       const data = await fetchJson<{ success: boolean; row: MarkRow }>(`${API_URL}/potential-opportunities/${editing.id}/extras`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -300,6 +359,20 @@ export default function PotentialOpportunities() {
         <TabsContent value="cards" className="mt-6">
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
              {filteredRows.map(r => (
+               (() => {
+                 const opp = r.opportunity || opportunitiesByRef.get(normalizeRef(r.opportunityRefNo)) || null;
+                 const tenderTitle = (opp?.tenderName && String(opp.tenderName).trim())
+                   ? String(opp.tenderName).trim()
+                   : (getExtrasTenderName(r.extras) || '').trim() || `Tender ${r.opportunityRefNo}`;
+                 const clientTitle = (opp?.clientName && String(opp.clientName).trim())
+                   ? String(opp.clientName).trim()
+                   : String((r.extras as Record<string, unknown>)?.Client || (r.extras as Record<string, unknown>)?.CLIENT || '').trim() || 'Private Client';
+                 const vertical = String(opp?.groupClassification || r.opportunity?.groupClassification || 'Other');
+                 const sowLink = getExtrasSowLink(r.extras);
+                 const extraPairs = toExtraPairs(r.extras || {});
+                 const topExtras = extraPairs.slice(0, 4);
+                 const moreCount = Math.max(0, extraPairs.length - topExtras.length);
+                 return (
                <Card
                  key={r.id}
                  className={cn(
@@ -307,6 +380,13 @@ export default function PotentialOpportunities() {
                    selectedIds.has(r.id) ? "border-primary bg-primary/5 shadow-inner" : "border-border/50 bg-card/50 backdrop-blur-sm"
                  )}
                >
+                 <div className={cn(
+                   "absolute inset-x-0 top-0 h-24 opacity-80",
+                   vertical === 'GTS' ? "bg-gradient-to-br from-cyan-500/25 via-transparent to-transparent" :
+                   vertical === 'GDS' ? "bg-gradient-to-br from-fuchsia-500/25 via-transparent to-transparent" :
+                   vertical === 'GES' ? "bg-gradient-to-br from-emerald-500/25 via-transparent to-transparent" :
+                   "bg-gradient-to-br from-slate-500/20 via-transparent to-transparent"
+                 )} />
                  <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button variant="ghost" size="icon" className="rounded-full bg-background/80" onClick={(e) => { e.stopPropagation(); toggleSelect(r.id); }}>
                        {selectedIds.has(r.id) ? <CheckCircle2 className="h-5 w-5 text-primary" /> : <div className="h-5 w-5 rounded-full border-2" />}
@@ -317,20 +397,20 @@ export default function PotentialOpportunities() {
                      <Badge variant="outline" className="font-mono text-[10px]">{r.opportunityRefNo}</Badge>
                      <Badge className={cn(
                        "uppercase text-[10px] font-bold tracking-tighter",
-                       r.opportunity?.groupClassification === 'GTS' ? "bg-cyan-500/10 text-cyan-600 border-cyan-200" :
-                       r.opportunity?.groupClassification === 'GDS' ? "bg-fuchsia-500/10 text-fuchsia-600 border-fuchsia-200" :
-                       r.opportunity?.groupClassification === 'GES' ? "bg-emerald-500/10 text-emerald-600 border-emerald-200" : "bg-slate-500/10 text-slate-600 border-slate-200"
+                       vertical === 'GTS' ? "bg-cyan-500/10 text-cyan-600 border-cyan-200" :
+                       vertical === 'GDS' ? "bg-fuchsia-500/10 text-fuchsia-600 border-fuchsia-200" :
+                       vertical === 'GES' ? "bg-emerald-500/10 text-emerald-600 border-emerald-200" : "bg-slate-500/10 text-slate-600 border-slate-200"
                      )}>
-                       {r.opportunity?.groupClassification || 'Other'}
+                       {vertical || 'Other'}
                      </Badge>
                    </div>
                    <CardTitle className="text-lg font-bold leading-tight mt-2 line-clamp-2 min-h-[3rem]">
-                     {r.opportunity?.tenderName || 'Untitled Tender'}
+                     {tenderTitle}
                    </CardTitle>
                  </CardHeader>
                  <CardContent className="space-y-4">
                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span className="font-medium text-foreground">{r.opportunity?.clientName || 'Private Client'}</span>
+                      <span className="font-medium text-foreground">{clientTitle}</span>
                    </div>
                    <div className="p-3 rounded-2xl bg-muted/30 border border-border/50">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Overview</p>
@@ -338,12 +418,53 @@ export default function PotentialOpportunities() {
                         {r.extras?.overview || "No overview provided for this opportunity yet."}
                       </p>
                    </div>
-                   {Object.keys(r.extras || {}).filter(k => k !== 'overview').length > 0 && (
-                     <div className="flex flex-wrap gap-1">
-                        {Object.keys(r.extras).filter(k => k !== 'overview').slice(0, 3).map(k => (
-                          <Badge key={k} variant="secondary" className="text-[9px] py-0">{k}: {String(r.extras[k]).slice(0, 10)}</Badge>
-                        ))}
-                        {Object.keys(r.extras).length > 3 && <span className="text-[10px] text-muted-foreground">+{Object.keys(r.extras).length - 4} more</span>}
+                   <div className="flex flex-wrap gap-2">
+                     {sowLink && (
+                       <div className="flex items-center gap-2">
+                         <Badge variant="secondary" className="text-[10px] py-0.5 rounded-full gap-1">
+                           <LinkIcon className="h-3 w-3" /> SOW
+                         </Badge>
+                         <Button
+                           variant="ghost"
+                           size="sm"
+                           className="h-7 px-2 rounded-full"
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             setEditing(r);
+                             setEditSowLink(sowLink);
+                             setPreviewOpen(true);
+                           }}
+                         >
+                           <Eye className="h-3.5 w-3.5 mr-1" /> Preview
+                         </Button>
+                         <Button
+                           variant="ghost"
+                           size="sm"
+                           className="h-7 px-2 rounded-full"
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             if (looksLikeUrl(sowLink)) window.open(sowLink, '_blank', 'noopener,noreferrer');
+                           }}
+                         >
+                           <ExternalLink className="h-3.5 w-3.5 mr-1" /> Open
+                         </Button>
+                       </div>
+                     )}
+                   </div>
+
+                   {topExtras.length > 0 && (
+                     <div className="grid grid-cols-2 gap-2">
+                       {topExtras.map((p) => (
+                         <div key={p.key} className="rounded-2xl border bg-background/40 p-2">
+                           <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground line-clamp-1">{p.key}</div>
+                           <div className="text-xs font-medium text-foreground/90 line-clamp-2">{p.value}</div>
+                         </div>
+                       ))}
+                       {moreCount > 0 && (
+                         <div className="rounded-2xl border border-dashed bg-background/20 p-2 flex items-center justify-center">
+                           <span className="text-xs text-muted-foreground">+{moreCount} more</span>
+                         </div>
+                       )}
                      </div>
                    )}
                  </CardContent>
@@ -366,6 +487,8 @@ export default function PotentialOpportunities() {
                    </div>
                  </CardFooter>
                </Card>
+                 );
+               })()
              ))}
            </div>
         </TabsContent>
@@ -414,22 +537,134 @@ export default function PotentialOpportunities() {
                />
             </div>
             <div className="space-y-2">
-               <Label className="text-xs font-bold uppercase tracking-widest ml-1">Extras (JSON)</Label>
-               <Textarea
-                 className="min-h-[180px] font-mono text-xs rounded-2xl bg-muted/30 border-2 border-transparent focus-visible:border-primary transition-all p-4"
-                 value={JSON.stringify(editExtras, null, 2)}
-                 onChange={e => {
-                   try {
-                     const parsed = JSON.parse(e.target.value);
-                     setEditExtras(parsed);
-                   } catch { /* typing */ }
-                 }}
-               />
+              <Label className="text-xs font-bold uppercase tracking-widest ml-1">SOW Link</Label>
+              <div className="flex gap-2">
+                <Input
+                  className="rounded-2xl bg-muted/30 border-2 border-transparent focus-visible:border-primary transition-all"
+                  placeholder="Paste a OneDrive/SharePoint PDF link…"
+                  value={editSowLink}
+                  onChange={(e) => setEditSowLink(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-2xl"
+                  onClick={() => setPreviewOpen(true)}
+                  disabled={!looksLikeUrl(editSowLink)}
+                >
+                  <Eye className="h-4 w-4 mr-2" /> Preview
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Stored in extras as <span className="font-mono">SOW Link</span>.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold uppercase tracking-widest ml-1">Extras</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full"
+                  onClick={() => setEditExtraPairs((prev) => [...prev, { key: '', value: '' }])}
+                >
+                  <Plus className="h-4 w-4 mr-2" /> Add Field
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {editExtraPairs.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+                    No extra fields yet. Add a field to store details like bid stage, notes, deadlines, etc.
+                  </div>
+                ) : (
+                  editExtraPairs.map((pair, idx) => (
+                    <div key={idx} className="grid grid-cols-12 gap-2 items-start">
+                      <div className="col-span-5">
+                        <Input
+                          className="rounded-2xl bg-muted/30 border-2 border-transparent focus-visible:border-primary transition-all"
+                          placeholder="Field name (e.g. Submission Date)"
+                          value={pair.key}
+                          onChange={(e) => {
+                            const key = e.target.value;
+                            setEditExtraPairs((prev) => prev.map((p, i) => (i === idx ? { ...p, key } : p)));
+                          }}
+                        />
+                      </div>
+                      <div className="col-span-6">
+                        <Input
+                          className="rounded-2xl bg-muted/30 border-2 border-transparent focus-visible:border-primary transition-all"
+                          placeholder="Value"
+                          value={pair.value}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setEditExtraPairs((prev) => prev.map((p, i) => (i === idx ? { ...p, value } : p)));
+                          }}
+                        />
+                      </div>
+                      <div className="col-span-1 flex justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="rounded-full hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => setEditExtraPairs((prev) => prev.filter((_, i) => i !== idx))}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
           <DialogFooter className="mt-8 gap-2">
             <Button variant="ghost" className="rounded-2xl px-6" onClick={() => setEditOpen(false)}>Cancel</Button>
             <Button className="rounded-2xl px-8 bg-primary hover:shadow-lg hover:shadow-primary/20 transition-all" onClick={saveEdit}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="sm:max-w-5xl h-[80vh] rounded-3xl overflow-hidden p-0">
+          <DialogHeader className="p-6 pb-2">
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-5 w-5" />
+              SOW Preview
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground font-mono break-all">{editSowLink || getExtrasSowLink(editing?.extras)}</p>
+          </DialogHeader>
+          <div className="px-6 pb-6 h-full">
+            {looksLikeUrl(editSowLink || '') ? (
+              <div className="h-full rounded-2xl border overflow-hidden bg-muted/20">
+                <iframe
+                  title="SOW Preview"
+                  className="w-full h-full"
+                  src={editSowLink}
+                  sandbox="allow-scripts allow-same-origin allow-popups"
+                />
+              </div>
+            ) : (
+              <div className="h-full rounded-2xl border border-dashed flex items-center justify-center text-sm text-muted-foreground">
+                Paste a valid URL to preview.
+              </div>
+            )}
+          </div>
+          <DialogFooter className="p-6 pt-0 gap-2">
+            <Button
+              variant="outline"
+              className="rounded-2xl"
+              onClick={() => {
+                const link = editSowLink || '';
+                if (looksLikeUrl(link)) window.open(link, '_blank', 'noopener,noreferrer');
+              }}
+              disabled={!looksLikeUrl(editSowLink || '')}
+            >
+              <ExternalLink className="h-4 w-4 mr-2" /> Open in new tab
+            </Button>
+            <Button className="rounded-2xl" onClick={() => setPreviewOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
