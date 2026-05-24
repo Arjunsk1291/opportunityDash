@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
-import { Eye, EyeOff, AlertCircle, CheckCircle, Loader2, Lock, Mail, KeyRound, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, AlertCircle, CheckCircle, Loader2, Lock, Mail, KeyRound, ArrowLeft, ShieldCheck, Sparkles, Zap } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -215,334 +216,414 @@ export default function Login() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-slate-300">Loading...</p>
-        </div>
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center gap-6"
+        >
+          <div className="relative">
+            <div className="absolute inset-0 bg-primary/20 blur-2xl rounded-full animate-pulse" />
+            <Loader2 className="h-12 w-12 animate-spin text-primary relative z-10" />
+          </div>
+          <p className="text-slate-400 font-medium tracking-wide animate-pulse">Initializing Security Session...</p>
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex flex-col items-center justify-center px-4 py-8">
-      {/* Animated background */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-24 -left-24 h-80 w-80 rounded-full bg-blue-500/20 blur-3xl animate-[pulse_6s_ease-in-out_infinite]" />
-        <div className="absolute top-1/3 -right-28 h-96 w-96 rounded-full bg-indigo-500/15 blur-3xl animate-[pulse_7s_ease-in-out_infinite]" />
-        <div className="absolute -bottom-24 left-1/3 h-96 w-96 rounded-full bg-cyan-400/10 blur-3xl animate-[pulse_8s_ease-in-out_infinite]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_55%)]" />
-      </div>
-      {/* Main Card */}
-      <div className="w-full max-w-md">
-        {/* Header with Logo */}
-        <div className="mb-8 text-center">
-          <div className="flex justify-center mb-6">
-            <div className="rounded-2xl bg-white/5 border border-white/10 px-4 py-3 backdrop-blur">
-              <img src={logo} alt="Avenir Engineering" className="h-10 w-auto" />
-            </div>
-          </div>
-          <h1 className="text-2xl font-bold text-white mb-2">
-            {authMode === 'success' ? 'Welcome' : authMode === 'reset-request' || authMode === 'reset-confirm' ? 'Reset Password' : 'Opportunity Dashboard'}
-          </h1>
-          <p className="text-sm text-slate-300">
-            {authMode === 'success' 
-              ? 'Redirecting to dashboard...'
-              : authMode === 'reset-request'
-                ? 'Enter your approved email to receive a reset code'
-                : authMode === 'reset-confirm'
-                  ? 'Enter the reset code and your new password'
-                  : 'Sign in to access your opportunities'}
-          </p>
+    <div className="min-h-screen flex flex-col lg:flex-row bg-background overflow-x-hidden">
+      {/* Brand Panel (Left) */}
+      <div className="hidden lg:flex lg:w-1/2 bg-slate-950 relative overflow-hidden items-center justify-center p-16">
+        {/* Animated Background Elements */}
+        <div className="absolute inset-0 z-0">
+          <motion.div
+            animate={{
+              scale: [1, 1.2, 1],
+              rotate: [0, 90, 0],
+              opacity: [0.1, 0.2, 0.1],
+            }}
+            transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+            className="absolute -top-1/4 -left-1/4 w-full h-full bg-blue-600/30 blur-[120px] rounded-full"
+          />
+          <motion.div
+            animate={{
+              scale: [1.2, 1, 1.2],
+              rotate: [90, 0, 90],
+              opacity: [0.1, 0.15, 0.1],
+            }}
+            transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+            className="absolute -bottom-1/4 -right-1/4 w-full h-full bg-indigo-600/20 blur-[120px] rounded-full"
+          />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(2,6,23,0.8)_100%)]" />
+          <div className="absolute inset-0 opacity-[0.03] [background-image:radial-gradient(circle,white_1px,transparent_1px)] [background-size:32px_32px]" />
         </div>
 
-        {/* Error Alert */}
-        {formState.error && (
-          <Alert className="mb-6 border-red-500/30 bg-red-500/10 text-red-50" role="alert">
-            <AlertCircle className="h-4 w-4 text-red-300" />
-            <AlertDescription className="text-xs text-red-100 ml-2">
-              {formState.error}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Success Alert */}
-        {formState.successMessage && authMode === 'success' && (
-          <Alert className="mb-6 border-emerald-500/30 bg-emerald-500/10 text-emerald-50">
-            <CheckCircle className="h-4 w-4 text-emerald-300" />
-            <AlertDescription className="text-xs text-emerald-100 ml-2">
-              {formState.successMessage}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {(formState.successMessage && (authMode === 'reset-request' || authMode === 'reset-confirm' || authMode === 'password-login')) && authMode !== 'success' && (
-          <Alert className="mb-6 border-white/10 bg-white/5 text-white">
-            <CheckCircle className="h-4 w-4 text-emerald-300" />
-            <AlertDescription className="text-xs text-slate-200 ml-2">
-              {formState.successMessage}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Password Login */}
-        {authMode === 'password-login' && (
-          <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-5 shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
-            <div className="space-y-2">
-              <label htmlFor="email" className="text-xs font-medium text-slate-200">
-                Email
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-300 pointer-events-none" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="name@avenirenergy.me"
-                  value={formState.email}
-                  onChange={(e) =>
-                    setFormState(prev => ({ ...prev, email: e.target.value, error: null, successMessage: null }))
-                  }
-                  onKeyDown={handleKeyDown}
-                  disabled={formState.loading}
-                  className="pl-10 text-sm bg-white/5 border-white/10 text-white placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-blue-400/60"
-                  autoComplete="username"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="password" className="text-xs font-medium text-slate-200">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-300 pointer-events-none" />
-                <Input
-                  id="password"
-                  type={formState.showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
-                  value={formState.password}
-                  onChange={(e) =>
-                    setFormState(prev => ({ ...prev, password: e.target.value, error: null, successMessage: null }))
-                  }
-                  onKeyDown={handleKeyDown}
-                  disabled={formState.loading}
-                  className="pl-10 pr-10 text-sm bg-white/5 border-white/10 text-white placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-blue-400/60"
-                  autoComplete="current-password"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setFormState(prev => ({ ...prev, showPassword: !prev.showPassword }))}
-                  className="absolute right-3 top-3 text-slate-300 hover:text-white"
-                  aria-label={formState.showPassword ? 'Hide password' : 'Show password'}
-                  disabled={formState.loading}
-                >
-                  {formState.showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-4">
-              <Button
-                onClick={handlePasswordLogin}
-                loading={formState.loading}
-                disabled={!formState.email || !formState.password}
-                className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-400 hover:to-indigo-400 text-white shadow-[0_12px_40px_rgba(59,130,246,0.25)]"
-                size="lg"
-              >
-                Sign In
-              </Button>
-
-              <Button
-                onClick={() => setFormState(prev => ({ ...prev, email: '', password: '', error: null, successMessage: null }))}
-                disabled={formState.loading}
-                variant="outline"
-                className="w-full border-white/15 bg-white/5 text-slate-100 hover:bg-white/10 hover:text-white"
-              >
-                Clear
-              </Button>
-
-              <Button
-                onClick={() => { setAuthMode('reset-request'); setFormState(prev => ({ ...prev, error: null, successMessage: null, resetEmail: prev.email || prev.resetEmail })); }}
-                disabled={formState.loading}
-                variant="ghost"
-                className="w-full text-slate-200 hover:text-white hover:bg-white/5"
-              >
-                <KeyRound className="h-4 w-4 mr-2" />
-                Reset password
-              </Button>
-            </div>
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.2 }}
+          className="relative z-10 max-w-lg text-center"
+        >
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-md mb-8">
+            <ShieldCheck className="h-4 w-4 text-blue-400" />
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-100/70">Enterprise Grade Security</span>
           </div>
-        )}
 
-        {/* Reset request */}
-        {authMode === 'reset-request' && (
-          <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-5 shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
-            <div className="space-y-2">
-              <label htmlFor="resetEmail" className="text-xs font-medium text-slate-200">Email</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-300 pointer-events-none" />
-                <Input
-                  id="resetEmail"
-                  type="email"
-                  placeholder="name@avenirenergy.me"
-                  value={formState.resetEmail}
-                  onChange={(e) => setFormState(prev => ({ ...prev, resetEmail: e.target.value, error: null, successMessage: null }))}
-                  onKeyDown={handleKeyDown}
-                  disabled={formState.loading}
-                  className="pl-10 text-sm bg-white/5 border-white/10 text-white placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-blue-400/60"
-                  autoComplete="email"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <Button
-                onClick={handleResetRequest}
-                loading={formState.loading}
-                disabled={!formState.resetEmail}
-                className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-400 hover:to-indigo-400 text-white shadow-[0_12px_40px_rgba(59,130,246,0.25)]"
-                size="lg"
-              >
-                Send reset code
-              </Button>
-              <Button
-                onClick={() => { setAuthMode('password-login'); setFormState(prev => ({ ...prev, error: null, successMessage: null })); }}
-                disabled={formState.loading}
-                variant="ghost"
-                className="w-full text-slate-200 hover:text-white hover:bg-white/5"
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to sign in
-              </Button>
-            </div>
+          <div className="flex justify-center mb-10">
+             <div className="p-6 rounded-[2.5rem] bg-white/5 border border-white/10 backdrop-blur-xl shadow-2xl">
+               <img src={logo} alt="Avenir" className="h-16 w-auto" />
+             </div>
           </div>
-        )}
 
-        {/* Reset confirm */}
-        {authMode === 'reset-confirm' && (
-          <div className="space-y-4 rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-5 shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
-            <div className="space-y-2">
-              <label htmlFor="resetEmail2" className="text-xs font-medium text-slate-200">Email</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-300 pointer-events-none" />
-                <Input
-                  id="resetEmail2"
-                  type="email"
-                  value={formState.resetEmail}
-                  onChange={(e) => setFormState(prev => ({ ...prev, resetEmail: e.target.value, error: null, successMessage: null }))}
-                  onKeyDown={handleKeyDown}
-                  disabled={formState.loading}
-                  className="pl-10 text-sm bg-white/5 border-white/10 text-white placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-blue-400/60"
-                  autoComplete="email"
-                  required
-                />
-              </div>
-            </div>
+          <h2 className="text-4xl xl:text-5xl font-black text-white leading-tight mb-6">
+            Intelligent Opportunity <br/>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">Management Ecosystem</span>
+          </h2>
 
-            <div className="space-y-2">
-              <label htmlFor="resetCode" className="text-xs font-medium text-slate-200">Reset code</label>
-              <div className="relative">
-                <KeyRound className="absolute left-3 top-3 h-4 w-4 text-slate-300 pointer-events-none" />
-                <Input
-                  id="resetCode"
-                  type="text"
-                  placeholder="Enter the code from email"
-                  value={formState.resetCode}
-                  onChange={(e) => setFormState(prev => ({ ...prev, resetCode: e.target.value, error: null, successMessage: null }))}
-                  onKeyDown={handleKeyDown}
-                  disabled={formState.loading}
-                  className="pl-10 text-sm bg-white/5 border-white/10 text-white placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-blue-400/60 tracking-widest"
-                  autoComplete="one-time-code"
-                  required
-                />
-              </div>
-            </div>
+          <p className="text-lg text-slate-400 font-medium leading-relaxed mb-12">
+            Streamline your sales pipeline with real-time analytics, automated workflows, and executive-level business intelligence.
+          </p>
 
-            <div className="space-y-2">
-              <label htmlFor="resetPassword" className="text-xs font-medium text-slate-200">New password</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-300 pointer-events-none" />
-                <Input
-                  id="resetPassword"
-                  type={formState.showPassword ? 'text' : 'password'}
-                  placeholder="Create a strong password"
-                  value={formState.resetPassword}
-                  onChange={(e) => setFormState(prev => ({ ...prev, resetPassword: e.target.value, error: null, successMessage: null }))}
-                  onKeyDown={handleKeyDown}
-                  disabled={formState.loading}
-                  className="pl-10 pr-10 text-sm bg-white/5 border-white/10 text-white placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-blue-400/60"
-                  autoComplete="new-password"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setFormState(prev => ({ ...prev, showPassword: !prev.showPassword }))}
-                  className="absolute right-3 top-3 text-slate-300 hover:text-white"
-                  aria-label={formState.showPassword ? 'Hide password' : 'Show password'}
-                  disabled={formState.loading}
-                >
-                  {formState.showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <Button
-                onClick={handleResetConfirm}
-                loading={formState.loading}
-                disabled={!formState.resetEmail || !formState.resetCode || !formState.resetPassword}
-                className="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-400 hover:to-indigo-400 text-white shadow-[0_12px_40px_rgba(59,130,246,0.25)]"
-                size="lg"
-              >
-                Update password
-              </Button>
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  onClick={handleResetRequest}
-                  disabled={formState.loading || !formState.resetEmail}
-                  variant="outline"
-                  className="border-white/15 bg-white/5 text-slate-100 hover:bg-white/10 hover:text-white"
-                >
-                  Resend code
-                </Button>
-                <Button
-                  onClick={() => { setAuthMode('password-login'); setFormState(prev => ({ ...prev, error: null, successMessage: null })); }}
-                  disabled={formState.loading}
-                  variant="outline"
-                  className="border-white/15 bg-white/5 text-slate-100 hover:bg-white/10 hover:text-white"
-                >
-                  Back to sign in
-                </Button>
-              </div>
-            </div>
+          <div className="grid grid-cols-3 gap-6">
+             {[
+               { icon: Zap, label: 'Real-time Sync', color: 'text-amber-400' },
+               { icon: Sparkles, label: 'AI Analytics', color: 'text-blue-400' },
+               { icon: ShieldCheck, label: 'ISO Certified', color: 'text-emerald-400' }
+             ].map((feat, i) => (
+               <motion.div
+                 key={feat.label}
+                 initial={{ opacity: 0, scale: 0.8 }}
+                 animate={{ opacity: 1, scale: 1 }}
+                 transition={{ delay: 0.5 + (i * 0.1) }}
+                 className="flex flex-col items-center gap-3"
+               >
+                 <div className="p-3 rounded-2xl bg-white/5 border border-white/10">
+                   <feat.icon className={cn("h-5 w-5", feat.color)} />
+                 </div>
+                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{feat.label}</span>
+               </motion.div>
+             ))}
           </div>
-        )}
+        </motion.div>
+      </div>
 
-        {/* Success State */}
-        {authMode === 'success' && (
-          <div className="text-center space-y-4">
-            <div className="flex justify-center">
-              <div className="rounded-full bg-emerald-500/10 border border-emerald-500/30 p-3">
-                <CheckCircle className="h-6 w-6 text-emerald-300" />
+      {/* Form Panel (Right) */}
+      <div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-12 lg:p-24 relative">
+        <div className="lg:hidden absolute top-8 left-8">
+           <img src={logo} alt="Avenir" className="h-8 w-auto grayscale brightness-0 dark:invert" />
+        </div>
+
+        <div className="w-full max-w-[420px]">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={authMode}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+            >
+              <div className="mb-10">
+                <h1 className="text-3xl font-black tracking-tight text-foreground mb-3">
+                  {authMode === 'success' ? 'Welcome Back' : authMode.includes('reset') ? 'Account Recovery' : 'Portal Access'}
+                </h1>
+                <p className="text-muted-foreground font-medium">
+                  {authMode === 'password-login' && 'Please authenticate to proceed to your dashboard.'}
+                  {authMode === 'reset-request' && 'Enter your verified email to receive a secure recovery code.'}
+                  {authMode === 'reset-confirm' && 'Submit the recovery code and your new secure credentials.'}
+                  {authMode === 'success' && 'Authentication successful. Redirecting...'}
+                </p>
               </div>
-            </div>
-            <p className="text-sm text-slate-200">
-              Redirecting to dashboard...
-            </p>
-            <div className="animate-pulse flex justify-center gap-1">
-              <div className="h-2 w-2 bg-slate-400 rounded-full"></div>
-              <div className="h-2 w-2 bg-slate-200 rounded-full"></div>
-              <div className="h-2 w-2 bg-slate-400 rounded-full"></div>
-            </div>
-          </div>
-        )}
+
+              {/* Status Notifications */}
+              <AnimatePresence>
+                {formState.error && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mb-6 overflow-hidden">
+                    <Alert variant="destructive" className="rounded-2xl border-destructive/20 bg-destructive/5">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="font-semibold text-xs ml-2">{formState.error}</AlertDescription>
+                    </Alert>
+                  </motion.div>
+                )}
+
+                {formState.successMessage && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mb-6 overflow-hidden">
+                    <Alert className="rounded-2xl border-emerald-500/20 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle className="h-4 w-4" />
+                      <AlertDescription className="font-semibold text-xs ml-2">{formState.successMessage}</AlertDescription>
+                    </Alert>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Password Login Form */}
+              {authMode === 'password-login' && (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); handlePasswordLogin(); }}
+                  className="space-y-5"
+                >
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.1em] text-muted-foreground ml-1">Work Email</label>
+                    <div className="relative group">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                      <Input
+                        type="email"
+                        placeholder="name@avenirenergy.me"
+                        value={formState.email}
+                        onChange={(e) => setFormState(prev => ({ ...prev, email: e.target.value, error: null, successMessage: null }))}
+                        disabled={formState.loading}
+                        className="pl-12 h-14 rounded-2xl bg-muted/40 border-transparent focus:bg-background focus:border-primary/30 transition-all text-base"
+                        autoComplete="username"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center px-1">
+                      <label className="text-xs font-bold uppercase tracking-[0.1em] text-muted-foreground">Credentials</label>
+                      <button
+                        type="button"
+                        onClick={() => { setAuthMode('reset-request'); setFormState(prev => ({ ...prev, error: null, successMessage: null, resetEmail: prev.email || prev.resetEmail })); }}
+                        className="text-xs font-bold text-primary hover:underline"
+                        tabIndex={-1}
+                      >
+                        Forgot?
+                      </button>
+                    </div>
+                    <div className="relative group">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                      <Input
+                        type={formState.showPassword ? 'text' : 'password'}
+                        placeholder="••••••••"
+                        value={formState.password}
+                        onChange={(e) => setFormState(prev => ({ ...prev, password: e.target.value, error: null, successMessage: null }))}
+                        disabled={formState.loading}
+                        className="pl-12 pr-12 h-14 rounded-2xl bg-muted/40 border-transparent focus:bg-background focus:border-primary/30 transition-all text-base"
+                        autoComplete="current-password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormState(prev => ({ ...prev, showPassword: !prev.showPassword }))}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        disabled={formState.loading}
+                      >
+                        {formState.showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 space-y-4">
+                    <Button
+                      type="submit"
+                      loading={formState.loading}
+                      disabled={!formState.email || !formState.password}
+                      className="w-full h-14 rounded-2xl text-base font-bold shadow-xl shadow-primary/10 hover:shadow-2xl hover:shadow-primary/20 transition-all"
+                    >
+                      Authenticate
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setFormState(prev => ({ ...prev, email: '', password: '', error: null, successMessage: null }))}
+                      disabled={formState.loading}
+                      className="w-full h-12 rounded-2xl text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                    >
+                      Clear form
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              {/* Reset Request Form */}
+              {authMode === 'reset-request' && (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); handleResetRequest(); }}
+                  className="space-y-6"
+                >
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.1em] text-muted-foreground ml-1 text-left block">Work Email</label>
+                    <div className="relative group">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                      <Input
+                        type="email"
+                        placeholder="name@avenirenergy.me"
+                        value={formState.resetEmail}
+                        onChange={(e) => setFormState(prev => ({ ...prev, resetEmail: e.target.value, error: null, successMessage: null }))}
+                        disabled={formState.loading}
+                        className="pl-12 h-14 rounded-2xl bg-muted/40 border-transparent focus:bg-background focus:border-primary/30 transition-all"
+                        autoComplete="email"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <Button
+                      type="submit"
+                      loading={formState.loading}
+                      disabled={!formState.resetEmail}
+                      className="w-full h-14 rounded-2xl text-base font-bold"
+                    >
+                      Send Verification Code
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => { setAuthMode('password-login'); setFormState(prev => ({ ...prev, error: null, successMessage: null })); }}
+                      disabled={formState.loading}
+                      variant="ghost"
+                      className="w-full h-12 rounded-2xl text-muted-foreground"
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Back to sign in
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              {/* Reset Confirm Form */}
+              {authMode === 'reset-confirm' && (
+                <form
+                   onSubmit={(e) => { e.preventDefault(); handleResetConfirm(); }}
+                   className="space-y-5"
+                >
+                   <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.1em] text-muted-foreground ml-1 block">Account</label>
+                    <div className="relative group">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                      <Input
+                        type="email"
+                        value={formState.resetEmail}
+                        onChange={(e) => setFormState(prev => ({ ...prev, resetEmail: e.target.value, error: null, successMessage: null }))}
+                        disabled={formState.loading}
+                        className="pl-12 h-14 rounded-2xl bg-muted/40 border-transparent focus:bg-background focus:border-primary/30 transition-all"
+                        autoComplete="email"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.1em] text-muted-foreground ml-1 block">Recovery Code</label>
+                    <div className="relative group">
+                      <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                      <Input
+                        type="text"
+                        placeholder="ENTER-CODE"
+                        value={formState.resetCode}
+                        onChange={(e) => setFormState(prev => ({ ...prev, resetCode: e.target.value, error: null, successMessage: null }))}
+                        disabled={formState.loading}
+                        className="pl-12 h-14 rounded-2xl bg-muted/40 border-transparent focus:bg-background focus:border-primary/30 transition-all tracking-[0.2em] font-mono"
+                        autoComplete="one-time-code"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-[0.1em] text-muted-foreground ml-1 block">New Password</label>
+                    <div className="relative group">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                      <Input
+                        type={formState.showPassword ? 'text' : 'password'}
+                        placeholder="New secure password"
+                        value={formState.resetPassword}
+                        onChange={(e) => setFormState(prev => ({ ...prev, resetPassword: e.target.value, error: null, successMessage: null }))}
+                        disabled={formState.loading}
+                        className="pl-12 pr-12 h-14 rounded-2xl bg-muted/40 border-transparent focus:bg-background focus:border-primary/30 transition-all"
+                        autoComplete="new-password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormState(prev => ({ ...prev, showPassword: !prev.showPassword }))}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        disabled={formState.loading}
+                      >
+                        {formState.showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 space-y-4">
+                    <Button
+                      type="submit"
+                      loading={formState.loading}
+                      disabled={!formState.resetEmail || !formState.resetCode || !formState.resetPassword}
+                      className="w-full h-14 rounded-2xl text-base font-bold shadow-xl shadow-primary/10"
+                    >
+                      Update Credentials
+                    </Button>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Button
+                        type="button"
+                        onClick={handleResetRequest}
+                        disabled={formState.loading || !formState.resetEmail}
+                        variant="outline"
+                        className="h-12 rounded-2xl border-border/50"
+                      >
+                        Resend Code
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => { setAuthMode('password-login'); setFormState(prev => ({ ...prev, error: null, successMessage: null })); }}
+                        disabled={formState.loading}
+                        variant="outline"
+                        className="h-12 rounded-2xl border-border/50"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                </form>
+              )}
+
+              {/* Success Animation */}
+              {authMode === 'success' && (
+                <div className="text-center py-12 space-y-8">
+                  <motion.div
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: "spring", damping: 12 }}
+                    className="flex justify-center"
+                  >
+                    <div className="w-24 h-24 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center relative">
+                      <motion.div
+                        animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.2, 0.1] }}
+                        transition={{ duration: 2, repeat: Infinity }}
+                        className="absolute inset-0 bg-emerald-500 rounded-full blur-xl"
+                      />
+                      <CheckCircle className="h-12 w-12 text-emerald-500 relative z-10" />
+                    </div>
+                  </motion.div>
+                  <div className="space-y-2">
+                    <p className="text-xl font-bold text-foreground">Secure Session Established</p>
+                    <p className="text-muted-foreground font-medium">Provisioning workspace environment...</p>
+                  </div>
+                  <div className="flex justify-center gap-1.5 pt-4">
+                    {[0, 1, 2].map((i) => (
+                      <motion.div
+                        key={i}
+                        animate={{ opacity: [0.3, 1, 0.3] }}
+                        transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
+                        className="h-2 w-2 bg-primary rounded-full"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
+
+          <footer className="mt-20 text-center">
+             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">
+               © {new Date().getFullYear()} Avenir Engineering · All Rights Reserved
+             </p>
+          </footer>
+        </div>
       </div>
     </div>
   );

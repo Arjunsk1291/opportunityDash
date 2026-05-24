@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileDown, FileUp, Plus, Search, Sparkles, Wand2, Edit2, Trash2, CheckCircle2, LayoutGrid, List as ListIcon, X, ExternalLink, Eye, Link as LinkIcon } from 'lucide-react';
+import { FileDown, FileUp, Plus, Search, Sparkles, Wand2, Edit2, Trash2, CheckCircle2, LayoutGrid, List as ListIcon, X, ExternalLink, Eye, Link as LinkIcon, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import ExcelJS from 'exceljs';
 
@@ -17,6 +18,7 @@ import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, works
 import { perfLog, withPerf } from '@/lib/perfLogger';
 import { Progress } from '@/components/ui/progress';
 import { useProgressLoader } from '@/lib/useProgressLoader';
+import { useAsyncAction } from '@/hooks/useAsyncAction';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 
@@ -67,6 +69,8 @@ const toSowPreviewUrl = (value: string) => {
   // Many SharePoint/OneDrive share links block iframe embedding due to CSP/X-Frame-Options.
   // Using Office Apps viewer works for many public/accessible links without storing anything locally.
   if (isSharePointOrOneDriveUrl(raw)) {
+    // If it's already an embed link, don't double-wrap
+    if (raw.includes('embed.aspx')) return raw;
     return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(raw)}`;
   }
   return raw;
@@ -113,6 +117,73 @@ export default function PotentialOpportunities() {
   const [rows, setRows] = useState<PotentialRow[]>([]);
   const [loading, setLoading] = useState(false);
   const loadProgress = useProgressLoader(loading, { capAt: 92 });
+
+  const { execute: executeImport, isLoading: importing, progress: importProgress } = useAsyncAction({
+    action: async (file: File) => {
+      const buffer = await file.arrayBuffer();
+      const workbook = await loadWorkbookFromArrayBuffer(buffer);
+      const worksheet = getFirstWorksheet(workbook);
+      if (!worksheet) throw new Error('No worksheet.');
+      const matrix = worksheetToMatrix(worksheet, { maxRows: MAX_UPLOAD_ROWS });
+      const header = matrix[0].map(h => String(h || '').trim().toLowerCase());
+      const refIdx = header.findIndex(h => ['opportunity ref no', 'ref no'].includes(h));
+      if (refIdx < 0) throw new Error('Missing ref column.');
+
+      const payload = matrix.slice(1).map(r => {
+        const ref = String(r[refIdx] || '').trim();
+        if (!ref) return null;
+        const extras: Record<string, unknown> = {};
+        header.forEach((h, i) => { if (i !== refIdx && h) extras[matrix[0][i]] = r[i] || ''; });
+        return { opportunityRefNo: ref, extras };
+      }).filter(Boolean);
+
+      return fetchJson(`${API_URL}/potential-opportunities/import`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: payload }),
+      });
+    },
+    successMessage: 'Opportunities imported successfully.',
+    onSuccess: () => load('import_complete')
+  });
+
+  const { execute: executeSave, isLoading: saving, progress: saveProgress } = useAsyncAction({
+    action: async () => {
+      if (!editing) return;
+      const nextExtras = {
+        ...pairsToExtras(editExtraPairs),
+        ...(editSowLink.trim() ? { 'SOW Link': editSowLink.trim() } : {}),
+        overview: editOverview,
+      };
+      const data = await fetchJson<{ success: boolean; row: MarkRow }>(`${API_URL}/potential-opportunities/${editing.id}/extras`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ extras: nextExtras }),
+      });
+      setRows((prev) => prev.map((r) => (r.id === editing.id ? { ...r, extras: (data.row.extras || {}) as PotentialRow['extras'], updatedAt: data.row.updatedAt } : r)));
+      setEditOpen(false);
+      setEditing(null);
+    },
+    successMessage: 'Details updated.'
+  });
+
+  const { execute: executeBulkRemove, isLoading: removing, progress: removeProgress } = useAsyncAction({
+    action: async () => {
+      for (const id of selectedIds) {
+        const row = rows.find(r => r.id === id);
+        if (row) {
+          await fetchJson(`${API_URL}/potential-opportunities/mark`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ opportunityRefNo: row.opportunityRefNo, isPotential: false }),
+          });
+        }
+      }
+      setRows(prev => prev.filter(r => !selectedIds.has(r.id)));
+      setSelectedIds(new Set());
+    },
+    successMessage: (res) => `Successfully removed ${selectedIds.size} items.`
+  });
   const [q, setQ] = useState('');
   type TabKey = 'cards' | 'grid' | 'excel' | 'search' | 'manual';
   const [activeTab, setActiveTab] = useState<TabKey>('cards');
@@ -231,58 +302,11 @@ export default function PotentialOpportunities() {
     setDetailsOpen(true);
   };
 
-  const saveEdit = async () => {
-    if (!token || !editing) return;
-    try {
-      const nextExtras = {
-        ...pairsToExtras(editExtraPairs),
-        ...(editSowLink.trim() ? { 'SOW Link': editSowLink.trim() } : {}),
-        overview: editOverview,
-      };
-      const data = await fetchJson<{ success: boolean; row: MarkRow }>(`${API_URL}/potential-opportunities/${editing.id}/extras`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ extras: nextExtras }),
-      });
-      toast.success('Saved.');
-      setEditOpen(false);
-      setEditing(null);
-      setRows((prev) => prev.map((r) => (r.id === editing.id ? { ...r, extras: (data.row.extras || {}) as PotentialRow['extras'], updatedAt: data.row.updatedAt } : r)));
-    } catch (error) {
-      toast.error((error as Error).message);
-    }
-  };
-
   const toggleSelect = (id: string) => {
     const next = new Set(selectedIds);
     if (next.has(id)) next.delete(id);
     else next.add(id);
     setSelectedIds(next);
-  };
-
-  const handleBulkRemove = async () => {
-    if (!canWrite || !selectedIds.size) return;
-    if (!confirm(`Remove ${selectedIds.size} items from potential list?`)) return;
-    try {
-      setLoading(true);
-      for (const id of selectedIds) {
-        const row = rows.find(r => r.id === id);
-        if (row) {
-          await fetchJson(`${API_URL}/potential-opportunities/mark`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ opportunityRefNo: row.opportunityRefNo, isPotential: false }),
-          });
-        }
-      }
-      toast.success(`Removed ${selectedIds.size} items.`);
-      setRows(prev => prev.filter(r => !selectedIds.has(r.id)));
-      setSelectedIds(new Set());
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setLoading(false);
-    }
   };
 
   const markPotential = async (opportunityRefNo: string, isPotential: boolean) => {
@@ -293,37 +317,6 @@ export default function PotentialOpportunities() {
       body: JSON.stringify({ opportunityRefNo, isPotential }),
     });
     return data.row || null;
-  };
-
-  const handleExcelUpload = async (file: File) => {
-    if (!token) return;
-    try {
-      if (!canWrite) throw new Error('Permission denied.');
-      const buffer = await file.arrayBuffer();
-      const workbook = await loadWorkbookFromArrayBuffer(buffer);
-      const worksheet = getFirstWorksheet(workbook);
-      if (!worksheet) throw new Error('No worksheet.');
-      const matrix = worksheetToMatrix(worksheet, { maxRows: MAX_UPLOAD_ROWS });
-      const header = matrix[0].map(h => String(h || '').trim().toLowerCase());
-      const refIdx = header.findIndex(h => ['opportunity ref no', 'ref no'].includes(h));
-      if (refIdx < 0) throw new Error('Missing ref column.');
-
-      const payload = matrix.slice(1).map(r => {
-        const ref = String(r[refIdx] || '').trim();
-        if (!ref) return null;
-        const extras: Record<string, unknown> = {};
-        header.forEach((h, i) => { if (i !== refIdx && h) extras[matrix[0][i]] = r[i] || ''; });
-        return { opportunityRefNo: ref, extras };
-      }).filter(Boolean);
-
-      await fetchJson(`${API_URL}/potential-opportunities/import`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: payload }),
-      });
-      toast.success('Imported.');
-      await load('import_complete');
-    } catch (error) { toast.error(error.message); }
   };
 
   return (
@@ -340,17 +333,24 @@ export default function PotentialOpportunities() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => load('refresh')} loading={loading}>Refresh</Button>
-          <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={e => { if (e.target.files?.[0]) handleExcelUpload(e.target.files[0]); }} />
-          <Button variant="default" onClick={() => fileInputRef.current?.click()} disabled={!canWrite}>
+          <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={e => { if (e.target.files?.[0]) executeImport(e.target.files[0]); }} />
+          <Button variant="default" onClick={() => fileInputRef.current?.click()} disabled={!canWrite} loading={importing}>
             <FileUp className="mr-2 h-4 w-4" /> Import Excel
           </Button>
         </div>
       </div>
 
-      {loading && (
-        <div className="rounded-2xl border bg-card p-3">
-          <Progress value={loadProgress} className="h-2" />
-          <div className="mt-1 text-xs text-muted-foreground">Loading… {loadProgress}%</div>
+      {(loading || importing) && (
+        <div className="rounded-2xl border bg-card p-3 shadow-sm animate-in fade-in slide-in-from-top-2">
+          <Progress value={importing ? importProgress : loadProgress} className="h-2" />
+          <div className="mt-2 flex justify-between items-center px-1">
+             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                {importing ? 'Processing Data Pipeline' : 'Fetching Opportunities'}
+             </div>
+             <div className="text-[10px] font-black text-primary">
+                {importing ? importProgress : loadProgress}%
+             </div>
+          </div>
         </div>
       )}
 
@@ -543,11 +543,11 @@ export default function PotentialOpportunities() {
               </div>
               <div className="h-6 w-px bg-background/20" />
               <div className="flex gap-2">
-                 <Button variant="ghost" size="sm" className="text-background hover:bg-white/10 rounded-full" onClick={() => setSelectedIds(new Set())}>
+                 <Button variant="ghost" size="sm" className="text-background hover:bg-white/10 rounded-full" onClick={() => setSelectedIds(new Set())} disabled={removing}>
                     Clear
                  </Button>
-                 <Button variant="destructive" size="sm" className="rounded-full px-6" onClick={handleBulkRemove}>
-                    Remove Selected
+                 <Button variant="destructive" size="sm" className="rounded-full px-6" onClick={() => { if(confirm(`Remove ${selectedIds.size} items?`)) executeBulkRemove(); }} loading={removing}>
+                    {removing ? `Removing (${removeProgress}%)` : 'Remove Selected'}
                  </Button>
               </div>
               <Button variant="ghost" size="icon" className="text-background hover:bg-white/10 rounded-full h-8 w-8" onClick={() => setSelectedIds(new Set())}>
@@ -558,29 +558,29 @@ export default function PotentialOpportunities() {
       )}
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-2xl rounded-[2.5rem] border-0 shadow-2xl overflow-hidden">
-          <DialogHeader className="bg-primary/5 p-8 -m-6 mb-4">
-            <DialogTitle className="text-2xl font-black tracking-tight flex items-center gap-3">
-              <Edit2 className="h-6 w-6 text-primary" />
+        <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[90vh] rounded-[2rem] sm:rounded-[2.5rem] border-0 shadow-2xl overflow-hidden p-0 flex flex-col">
+          <DialogHeader className="bg-primary/5 p-6 sm:p-8 shrink-0">
+            <DialogTitle className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-3 text-foreground">
+              <Edit2 className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
               Edit Potential Detail
             </DialogTitle>
-            <p className="text-muted-foreground font-mono text-xs mt-1">{editing?.opportunityRefNo}</p>
+            <p className="text-muted-foreground font-mono text-[10px] sm:text-xs mt-1">{editing?.opportunityRefNo}</p>
           </DialogHeader>
-          <div className="space-y-6 px-2">
+          <div className="flex-1 overflow-y-auto p-6 sm:p-8 pt-4 sm:pt-6 space-y-6">
             <div className="space-y-2">
-               <Label className="text-xs font-bold uppercase tracking-widest ml-1">Opportunity Overview</Label>
+               <Label className="text-[10px] sm:text-xs font-bold uppercase tracking-widest ml-1 text-muted-foreground">Opportunity Overview</Label>
                <Textarea
-                 className="min-h-[120px] rounded-2xl bg-muted/30 border-2 border-transparent focus-visible:border-primary transition-all p-4 resize-none"
+                 className="min-h-[120px] rounded-2xl bg-muted/30 border-2 border-transparent focus-visible:border-primary transition-all p-4 resize-none text-sm"
                  placeholder="Provide a high-level overview or summary of this potential lead..."
                  value={editOverview}
                  onChange={e => setEditOverview(e.target.value)}
                />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase tracking-widest ml-1">SOW Link</Label>
+              <Label className="text-[10px] sm:text-xs font-bold uppercase tracking-widest ml-1 text-muted-foreground">SOW Link</Label>
               <div className="flex gap-2">
                 <Input
-                  className="rounded-2xl bg-muted/30 border-2 border-transparent focus-visible:border-primary transition-all"
+                  className="rounded-2xl bg-muted/30 border-2 border-transparent focus-visible:border-primary transition-all text-sm"
                   placeholder="Paste a OneDrive/SharePoint PDF link…"
                   value={editSowLink}
                   onChange={(e) => setEditSowLink(e.target.value)}
@@ -588,43 +588,43 @@ export default function PotentialOpportunities() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="rounded-2xl"
+                  className="rounded-2xl hidden sm:flex"
                   onClick={() => setPreviewOpen(true)}
                   disabled={!looksLikeUrl(editSowLink)}
                 >
                   <Eye className="h-4 w-4 mr-2" /> Preview
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-[10px] sm:text-xs text-muted-foreground">
                 Stored in extras as <span className="font-mono">SOW Link</span>.
               </p>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-bold uppercase tracking-widest ml-1">Extras</Label>
+                <Label className="text-[10px] sm:text-xs font-bold uppercase tracking-widest ml-1 text-muted-foreground">Extras</Label>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="rounded-full"
+                  className="rounded-full h-8 text-xs"
                   onClick={() => setEditExtraPairs((prev) => [...prev, { key: '', value: '' }])}
                 >
-                  <Plus className="h-4 w-4 mr-2" /> Add Field
+                  <Plus className="h-3 w-3 mr-2 text-primary" /> Add Field
                 </Button>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {editExtraPairs.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">
+                  <div className="rounded-2xl border border-dashed p-4 text-center text-sm text-muted-foreground">
                     No extra fields yet. Add a field to store details like bid stage, notes, deadlines, etc.
                   </div>
                 ) : (
                   editExtraPairs.map((pair, idx) => (
-                    <div key={idx} className="grid grid-cols-12 gap-2 items-start">
-                      <div className="col-span-5">
+                    <div key={idx} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start">
+                      <div className="sm:col-span-5">
                         <Input
-                          className="rounded-2xl bg-muted/30 border-2 border-transparent focus-visible:border-primary transition-all"
-                          placeholder="Field name (e.g. Submission Date)"
+                          className="rounded-xl bg-muted/30 border-2 border-transparent focus-visible:border-primary transition-all text-sm"
+                          placeholder="Field name (e.g. Stage)"
                           value={pair.key}
                           onChange={(e) => {
                             const key = e.target.value;
@@ -632,9 +632,9 @@ export default function PotentialOpportunities() {
                           }}
                         />
                       </div>
-                      <div className="col-span-6">
+                      <div className="sm:col-span-6">
                         <Input
-                          className="rounded-2xl bg-muted/30 border-2 border-transparent focus-visible:border-primary transition-all"
+                          className="rounded-xl bg-muted/30 border-2 border-transparent focus-visible:border-primary transition-all text-sm"
                           placeholder="Value"
                           value={pair.value}
                           onChange={(e) => {
@@ -643,12 +643,12 @@ export default function PotentialOpportunities() {
                           }}
                         />
                       </div>
-                      <div className="col-span-1 flex justify-end">
+                      <div className="sm:col-span-1 flex justify-end">
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="rounded-full hover:bg-destructive/10 hover:text-destructive"
+                          className="rounded-full hover:bg-destructive/10 hover:text-destructive h-9 w-9"
                           onClick={() => setEditExtraPairs((prev) => prev.filter((_, i) => i !== idx))}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -660,57 +660,96 @@ export default function PotentialOpportunities() {
               </div>
             </div>
           </div>
-          <DialogFooter className="mt-8 gap-2">
-            <Button variant="ghost" className="rounded-2xl px-6" onClick={() => setEditOpen(false)}>Cancel</Button>
-            <Button className="rounded-2xl px-8 bg-primary hover:shadow-lg hover:shadow-primary/20 transition-all" onClick={saveEdit}>Save Changes</Button>
+          <DialogFooter className="p-6 sm:p-8 pt-4 sm:pt-4 border-t shrink-0 flex flex-row justify-end gap-3">
+            <Button variant="ghost" className="rounded-xl px-6" onClick={() => setEditOpen(false)} disabled={saving}>Cancel</Button>
+            <Button className="rounded-xl px-8 bg-primary hover:shadow-lg hover:shadow-primary/20 transition-all" onClick={() => executeSave()} loading={saving}>
+               {saving ? `Saving (${saveProgress}%)` : 'Save Changes'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="sm:max-w-5xl h-[80vh] rounded-3xl overflow-hidden p-0">
-          <DialogHeader className="p-6 pb-2">
-            <DialogTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              SOW Preview
-            </DialogTitle>
-            <p className="text-xs text-muted-foreground font-mono break-all">{editSowLink || getExtrasSowLink(editing?.extras)}</p>
+        <DialogContent className="max-w-[95vw] sm:max-w-5xl h-[85vh] sm:h-[80vh] rounded-3xl overflow-hidden p-0 flex flex-col">
+          <DialogHeader className="p-6 pb-3 border-b shrink-0">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <DialogTitle className="flex items-center gap-2 text-lg">
+                  <Eye className="h-5 w-5 text-primary" />
+                  SOW Preview
+                </DialogTitle>
+                <p className="text-[10px] sm:text-xs text-muted-foreground font-mono truncate mt-1">{editSowLink || getExtrasSowLink(editing?.extras)}</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="hidden sm:flex rounded-full"
+                onClick={() => {
+                  const link = editSowLink || '';
+                  if (looksLikeUrl(link)) window.open(link, '_blank', 'noopener,noreferrer');
+                }}
+              >
+                <ExternalLink className="h-3.5 w-3.5 mr-2" /> Open External
+              </Button>
+            </div>
           </DialogHeader>
-          <div className="px-6 pb-6 h-full">
+          <div className="flex-1 min-h-0 relative bg-muted/5">
             {looksLikeUrl(editSowLink || '') ? (
-              <div className="h-full rounded-2xl border overflow-hidden bg-muted/20">
-                <iframe
-                  title="SOW Preview"
-                  className="w-full h-full"
-                  src={toSowPreviewUrl(editSowLink)}
-                  sandbox="allow-scripts allow-same-origin allow-popups"
-                />
+              <div className="absolute inset-0 flex flex-col">
+                <div className="flex-1">
+                  <iframe
+                    title="SOW Preview"
+                    className="w-full h-full border-0"
+                    src={toSowPreviewUrl(editSowLink)}
+                    sandbox="allow-scripts allow-same-origin allow-popups"
+                  />
+                </div>
+                <div className="bg-background/80 backdrop-blur-sm border-t p-3 flex items-center justify-center gap-3">
+                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">
+                    Iframe preview restricted by some providers. If blank, use the external link.
+                  </p>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-[10px] sm:text-xs"
+                    onClick={() => {
+                      const link = editSowLink || '';
+                      if (looksLikeUrl(link)) window.open(link, '_blank', 'noopener,noreferrer');
+                    }}
+                  >
+                    Open in new tab
+                  </Button>
+                </div>
               </div>
             ) : (
-              <div className="h-full rounded-2xl border border-dashed flex items-center justify-center text-sm text-muted-foreground">
-                Paste a valid URL to preview.
+              <div className="h-full flex items-center justify-center p-8 text-center text-sm text-muted-foreground">
+                No valid URL provided for preview.
               </div>
             )}
           </div>
-          <DialogFooter className="p-6 pt-0 gap-2">
-            <Button
-              variant="outline"
-              className="rounded-2xl"
-              onClick={() => {
-                const link = editSowLink || '';
-                if (looksLikeUrl(link)) window.open(link, '_blank', 'noopener,noreferrer');
-              }}
-              disabled={!looksLikeUrl(editSowLink || '')}
-            >
-              <ExternalLink className="h-4 w-4 mr-2" /> Open in new tab
-            </Button>
-            <Button className="rounded-2xl" onClick={() => setPreviewOpen(false)}>Close</Button>
+          <DialogFooter className="p-4 sm:p-6 pt-2 sm:pt-2 border-t shrink-0 flex items-center justify-between sm:justify-end gap-2">
+            <Button variant="ghost" className="sm:hidden" onClick={() => setPreviewOpen(false)}>Close</Button>
+            <div className="flex gap-2">
+               <Button
+                variant="outline"
+                className="rounded-xl flex sm:hidden"
+                onClick={() => {
+                  const link = editSowLink || '';
+                  if (looksLikeUrl(link)) window.open(link, '_blank', 'noopener,noreferrer');
+                }}
+              >
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+              <Button className="rounded-xl px-8" onClick={() => setPreviewOpen(false)}>Done</Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      <AnimatePresence>
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="sm:max-w-5xl rounded-[2.75rem] border-0 shadow-2xl overflow-hidden p-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95">
+        <DialogContent className="max-w-[95vw] sm:max-w-5xl h-[85vh] rounded-[2rem] sm:rounded-[2.75rem] border-0 shadow-2xl overflow-hidden p-0 flex flex-col">
           {(() => {
             const row = detailsRow;
             if (!row) return null;
@@ -725,7 +764,12 @@ export default function PotentialOpportunities() {
             const sowLink = getExtrasSowLink(row.extras);
             const extraPairs = toExtraPairs(row.extras || {});
             return (
-              <div className="relative">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                className="relative flex-1 flex flex-col min-h-0"
+              >
                 <div className={cn(
                   "absolute inset-x-0 top-0 h-48 opacity-90",
                   vertical === 'GTS' ? "bg-gradient-to-br from-cyan-500/35 via-transparent to-transparent" :
@@ -733,9 +777,9 @@ export default function PotentialOpportunities() {
                   vertical === 'GES' ? "bg-gradient-to-br from-emerald-500/35 via-transparent to-transparent" :
                   "bg-gradient-to-br from-slate-500/25 via-transparent to-transparent"
                 )} />
-                <div className="relative p-8 pb-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-2">
+                <div className="relative p-6 sm:p-8 pb-4 shrink-0">
+                  <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
+                    <div className="space-y-2 min-w-0">
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="font-mono text-[10px]">{row.opportunityRefNo}</Badge>
                         <Badge className={cn(
@@ -747,17 +791,17 @@ export default function PotentialOpportunities() {
                           {vertical || 'Other'}
                         </Badge>
                       </div>
-                      <h2 className="text-2xl md:text-3xl font-black tracking-tight leading-tight">
+                      <h2 className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight leading-tight truncate sm:whitespace-normal sm:line-clamp-2">
                         {tenderTitle}
                       </h2>
-                      <div className="text-sm text-muted-foreground">
-                        <span className="font-semibold text-foreground">{clientTitle}</span>
-                        {opp?.internalLead ? <span className="ml-2 text-xs">• Lead: {String(opp.internalLead)}</span> : null}
+                      <div className="text-sm text-muted-foreground flex items-center gap-2 overflow-hidden">
+                        <span className="font-semibold text-foreground truncate">{clientTitle}</span>
+                        {opp?.internalLead ? <span className="shrink-0 text-xs">• Lead: {String(opp.internalLead)}</span> : null}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 self-end sm:self-start">
                       {sowLink && (
-                        <>
+                        <div className="hidden sm:flex gap-2">
                           <Button
                             variant="outline"
                             className="rounded-full"
@@ -767,7 +811,7 @@ export default function PotentialOpportunities() {
                               setPreviewOpen(true);
                             }}
                           >
-                            <Eye className="h-4 w-4 mr-2" /> Preview SOW
+                            <Eye className="h-4 w-4 mr-2" /> Preview
                           </Button>
                           <Button
                             variant="outline"
@@ -778,10 +822,10 @@ export default function PotentialOpportunities() {
                           >
                             <ExternalLink className="h-4 w-4 mr-2" /> Open
                           </Button>
-                        </>
+                        </div>
                       )}
                       {isMaster && (
-                        <Button className="rounded-full" onClick={() => openEdit(row)}>
+                        <Button className="rounded-full px-6" onClick={() => openEdit(row)}>
                           <Edit2 className="h-4 w-4 mr-2" /> Edit
                         </Button>
                       )}
@@ -789,80 +833,120 @@ export default function PotentialOpportunities() {
                   </div>
                 </div>
 
-                <div className="px-8 pb-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="lg:col-span-2 space-y-4">
-                    <div className="rounded-3xl border bg-background/60 backdrop-blur p-6">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Overview</div>
-                      <div className="mt-2 text-sm leading-relaxed text-foreground/90">
-                        {row.extras?.overview ? String(row.extras.overview) : 'No overview provided yet.'}
-                      </div>
-                    </div>
-
-                    <div className="rounded-3xl border bg-background/60 backdrop-blur p-6">
-                      <div className="flex items-center justify-between">
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Extras</div>
-                        {extraPairs.length > 0 ? (
-                          <Badge variant="secondary" className="rounded-full text-[10px]">{extraPairs.length} fields</Badge>
-                        ) : null}
-                      </div>
-                      {extraPairs.length === 0 ? (
-                        <div className="mt-3 text-sm text-muted-foreground">No extra fields yet.</div>
-                      ) : (
-                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {extraPairs.map((p) => (
-                            <div key={p.key} className="rounded-2xl border bg-background/40 p-3">
-                              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground line-clamp-1">{p.key}</div>
-                              <div className="mt-1 text-sm font-semibold text-foreground/90 break-words">{p.value}</div>
-                            </div>
-                          ))}
+                <div className="flex-1 overflow-y-auto px-6 sm:px-8 pb-20 sm:pb-8">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-2">
+                    <div className="lg:col-span-2 space-y-4">
+                      <div className="rounded-3xl border bg-background/60 backdrop-blur p-5 sm:p-6 shadow-sm">
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                           <LayoutGrid className="h-3 w-3" /> Overview
                         </div>
-                      )}
-                    </div>
-                  </div>
+                        <div className="mt-3 text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">
+                          {row.extras?.overview ? String(row.extras.overview) : 'No overview provided yet.'}
+                        </div>
+                      </div>
 
-                  <div className="space-y-4">
-                    <div className="rounded-3xl border bg-background/60 backdrop-blur p-6">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Quick Actions</div>
-                      <div className="mt-4 grid grid-cols-1 gap-2">
-                        <Button
-                          variant="outline"
-                          className="justify-start rounded-2xl"
-                          onClick={() => {
-                            navigator.clipboard?.writeText(row.opportunityRefNo).catch(() => {});
-                            toast.success('Ref copied.');
-                          }}
-                        >
-                          <Wand2 className="h-4 w-4 mr-2" /> Copy Ref
-                        </Button>
-                        {sowLink && looksLikeUrl(sowLink) && (
-                          <Button
-                            variant="outline"
-                            className="justify-start rounded-2xl"
-                            onClick={() => {
-                              navigator.clipboard?.writeText(sowLink).catch(() => {});
-                              toast.success('SOW link copied.');
-                            }}
-                          >
-                            <LinkIcon className="h-4 w-4 mr-2" /> Copy SOW Link
-                          </Button>
+                      <div className="rounded-3xl border bg-background/60 backdrop-blur p-5 sm:p-6 shadow-sm">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                             <Plus className="h-3 w-3" /> Extras
+                          </div>
+                          {extraPairs.length > 0 ? (
+                            <Badge variant="secondary" className="rounded-full text-[10px] px-2">{extraPairs.length} fields</Badge>
+                          ) : null}
+                        </div>
+                        {extraPairs.length === 0 ? (
+                          <div className="text-sm text-muted-foreground italic">No extra fields yet.</div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {extraPairs.map((p) => (
+                              <div key={p.key} className="rounded-2xl border bg-background/40 p-3 flex flex-col gap-1">
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground line-clamp-1 opacity-70">{p.key}</div>
+                                <div className="text-sm font-semibold text-foreground/90 break-words">{p.value}</div>
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </div>
 
-                    <div className="rounded-3xl border bg-background/60 backdrop-blur p-6">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Activity</div>
-                      <div className="mt-2 text-sm text-muted-foreground">
-                        Updated {row.updatedAt ? new Date(row.updatedAt).toLocaleString() : '—'}
+                    <div className="space-y-4">
+                      <div className="rounded-3xl border bg-background/60 backdrop-blur p-6 shadow-sm">
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-4">Quick Actions</div>
+                        <div className="grid grid-cols-1 gap-2">
+                          <Button
+                            variant="outline"
+                            className="justify-start rounded-2xl h-11"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(row.opportunityRefNo).catch(() => {});
+                              toast.success('Ref copied.');
+                            }}
+                          >
+                            <Wand2 className="h-4 w-4 mr-2 text-primary" /> Copy Ref
+                          </Button>
+                          {sowLink && looksLikeUrl(sowLink) && (
+                            <>
+                            <Button
+                              variant="outline"
+                              className="justify-start rounded-2xl h-11"
+                              onClick={() => {
+                                navigator.clipboard?.writeText(sowLink).catch(() => {});
+                                toast.success('SOW link copied.');
+                              }}
+                            >
+                              <LinkIcon className="h-4 w-4 mr-2 text-primary" /> Copy Link
+                            </Button>
+                            <Button
+                              variant="outline"
+                              className="sm:hidden justify-start rounded-2xl h-11"
+                              onClick={() => {
+                                setEditing(row);
+                                setEditSowLink(sowLink);
+                                setPreviewOpen(true);
+                              }}
+                            >
+                              <Eye className="h-4 w-4 mr-2 text-primary" /> Preview SOW
+                            </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      {row.updatedBy ? <div className="mt-1 text-sm text-muted-foreground">By {row.updatedBy}</div> : null}
+
+                      <div className="rounded-3xl border bg-background/60 backdrop-blur p-6 shadow-sm">
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">Activity Log</div>
+                        <div className="space-y-1">
+                          <div className="text-xs text-muted-foreground flex justify-between">
+                            <span>Updated</span>
+                            <span className="font-medium text-foreground">{row.updatedAt ? new Date(row.updatedAt).toLocaleDateString() : '—'}</span>
+                          </div>
+                          {row.updatedBy && (
+                            <div className="text-xs text-muted-foreground flex justify-between">
+                              <span>By</span>
+                              <span className="font-medium text-foreground truncate ml-4">{row.updatedBy}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+
+                <div className="absolute bottom-0 inset-x-0 p-4 sm:p-6 bg-background/80 backdrop-blur-md border-t flex justify-between items-center sm:hidden">
+                   <Button variant="ghost" className="rounded-xl" onClick={() => setDetailsOpen(false)}>Close</Button>
+                   <div className="flex gap-2">
+                     {sowLink && (
+                       <Button variant="outline" size="icon" className="rounded-xl h-10 w-10" onClick={() => { if (looksLikeUrl(sowLink)) window.open(sowLink, '_blank'); }}>
+                         <ExternalLink className="h-4 w-4" />
+                       </Button>
+                     )}
+                     <Button className="rounded-xl px-6" onClick={() => setDetailsOpen(false)}>Done</Button>
+                   </div>
+                </div>
+              </motion.div>
             );
           })()}
         </DialogContent>
       </Dialog>
+      </AnimatePresence>
     </div>
   );
 }

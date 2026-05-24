@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, Sankey } from 'recharts';
-import { AlertTriangle, BarChart3, BriefcaseBusiness, Building2, CalendarDays, Database, FileCheck2, Plus, Search, Upload, Users } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell } from 'recharts';
+import { AlertTriangle, BarChart3, BriefcaseBusiness, Building2, CalendarDays, Database, FileCheck2, Plus, Search, Upload, Users, TrendingUp, Handshake, Target, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -725,22 +725,6 @@ const BDEngagements = () => {
       .map(([name, value]) => ({ name, value }));
   }, [rows]);
 
-  const pipelineData = useMemo(() => ({
-    nodes: [
-      { name: 'Engagements' },
-      { name: 'Reports Submitted' },
-      { name: 'No Report Yet' },
-      { name: 'Leads Generated' },
-      { name: 'Follow-Ups Planned' },
-    ],
-    links: [
-      { source: 0, target: 1, value: rows.filter((row) => row.reportSubmitted).length },
-      { source: 0, target: 2, value: rows.filter((row) => !row.reportSubmitted).length },
-      { source: 1, target: 3, value: rows.filter((row) => row.reportSubmitted && row.leadGenerated).length },
-      { source: 2, target: 3, value: rows.filter((row) => !row.reportSubmitted && row.leadGenerated).length },
-      { source: 3, target: 4, value: rows.filter((row) => row.leadGenerated && row.nextSteps.trim()).length },
-    ].filter((link) => link.value > 0),
-  }), [rows]);
 
   const topClients = useMemo(() => {
     const grouped = rows.reduce<Record<string, number>>((acc, row) => {
@@ -939,38 +923,38 @@ const BDEngagements = () => {
 
   const statCards = [
     {
-      label: 'Total Engagements',
+      label: 'Active Engagements',
       value: stats.totalEngagements,
-      icon: BriefcaseBusiness,
-      accent: 'from-teal-400/40 to-cyan-400/5',
+      icon: TrendingUp,
+      accent: 'from-blue-500/20 to-indigo-500/5',
       rows: rows,
     },
     {
-      label: 'Total Leads',
-      value: stats.totalLeads,
-      icon: Users,
-      accent: 'from-violet-400/40 to-indigo-400/5',
-      rows: rows.filter((row) => row.leadGenerated),
-    },
-    {
-      label: 'Lead Conversion Rate',
-      value: `${stats.leadConversionRate.toFixed(1)}%`,
-      icon: BarChart3,
-      accent: 'from-emerald-400/40 to-teal-400/5',
-      rows: rows.filter((row) => row.leadGenerated),
-    },
-    {
-      label: 'Clients Contacted',
+      label: 'Unique Clients',
       value: stats.clientsContacted,
-      icon: Building2,
-      accent: 'from-amber-400/40 to-orange-400/5',
+      icon: Handshake,
+      accent: 'from-emerald-500/20 to-teal-500/5',
       rows: rows,
     },
     {
-      label: 'Reports Submitted',
+      label: 'Lead Generation',
+      value: stats.totalLeads,
+      icon: Target,
+      accent: 'from-amber-500/20 to-orange-500/5',
+      rows: rows.filter((row) => row.leadGenerated),
+    },
+    {
+      label: 'Conversion Rate',
+      value: `${stats.leadConversionRate.toFixed(1)}%`,
+      icon: Zap,
+      accent: 'from-violet-500/20 to-fuchsia-500/5',
+      rows: rows.filter((row) => row.leadGenerated),
+    },
+    {
+      label: 'Reports Ready',
       value: stats.reportsSubmitted,
       icon: FileCheck2,
-      accent: 'from-sky-400/40 to-blue-400/5',
+      accent: 'from-sky-500/20 to-cyan-500/5',
       rows: rows.filter((row) => row.reportSubmitted),
     },
   ];
@@ -1106,28 +1090,7 @@ const BDEngagements = () => {
             </Card>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-            <Card className="border-border bg-card text-card-foreground">
-              <CardHeader>
-                <CardTitle>Lead Pipeline</CardTitle>
-              </CardHeader>
-              <CardContent className="h-[320px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <Sankey
-                    data={pipelineData}
-                    nodePadding={28}
-                    nodeWidth={18}
-                    iterations={32}
-                    margin={{ top: 16, right: 120, bottom: 16, left: 16 }}
-                    link={{ fill: chartLinkFill, fillOpacity: 0.22 }}
-                    node={{ fill: chartNodeFill, stroke: chartNodeStroke, strokeWidth: 1.25 }}
-                  >
-                    <Tooltip contentStyle={chartTooltipStyle} />
-                  </Sankey>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
+          <div className="grid gap-6 xl:grid-cols-1">
             <Card className="border-border bg-card text-card-foreground">
               <CardHeader>
                 <CardTitle>Top Clients by Engagement Count</CardTitle>

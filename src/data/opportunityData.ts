@@ -357,8 +357,12 @@ export function getClientData(data: Opportunity[]) {
   const clientStats: Record<string, { count: number; value: number }> = {};
   
   data.forEach(o => {
-    const name = String(o.clientName || '').trim();
-    if (!name) return;
+    const rawName = String(o.clientName || '').trim();
+    if (!rawName) return;
+
+    // Group all ADNOC variants into a single "ADNOC" canonical entry
+    const name = rawName.toUpperCase().includes('ADNOC') ? 'ADNOC' : rawName;
+
     if (!clientStats[name]) {
       clientStats[name] = { count: 0, value: 0 };
     }
@@ -370,8 +374,7 @@ export function getClientData(data: Opportunity[]) {
   
   return Object.entries(clientStats)
     .map(([name, stats]) => ({ name, ...stats }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 10);
+    .sort((a, b) => b.value - a.value);
 }
 
 export function calculateDataHealth(data: Opportunity[]) {

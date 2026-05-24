@@ -379,6 +379,10 @@ app.get('/api/auth/msal-config', (_req, res) => {
   });
 });
 
+if (DISABLE_MONGODB) {
+  console.log('[startup] MongoDB disabled via environment variable.');
+  initializeBootSync().catch(err => console.error('[startup.bootsync.error]', err));
+} else {
 mongoose.connect(MONGODB_URI, { monitorCommands: DIAG_LOGS })
   .then(() => {
     if (!DIAG_LOGS) return;
@@ -443,6 +447,7 @@ mongoose.connect(MONGODB_URI, { monitorCommands: DIAG_LOGS })
       stack: err?.stack || null,
     }));
   });
+}
 
 const mapIdField = (doc) => {
   if (!doc) return doc;
@@ -2299,6 +2304,121 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
       message: error?.message || String(error),
       stack: error?.stack || null,
     }));
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/clients/duplicates', verifyToken, async (req, res) => {
+  try {
+    if (!req.user || !['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const clients = await Client.find().lean();
+
+    const normalize = (name) => {
+      return String(name || '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '')
+        .replace(/\b(llc|ltd|pjsc|corp|inc|plc)\b/g, '')
+        .trim();
+    };
+
+    const clusters = [];
+    const processed = new Set();
+
+    for (let i = 0; i < clients.length; i++) {
+      const c1 = clients[i];
+      if (processed.has(c1._id.toString())) continue;
+
+      const cluster = [c1];
+      const n1 = normalize(c1.companyName);
+      if (!n1) continue;
+
+      for (let j = i + 1; j < clients.length; j++) {
+        const c2 = clients[j];
+        if (processed.has(c2._id.toString())) continue;
+
+        const n2 = normalize(c2.companyName);
+        if (!n2) continue;
+
+        // Simple similarity: exact match after normalization OR token overlap
+        const tokens1 = new Set(n1.split(' '));
+        const tokens2 = new Set(n2.split(' '));
+        const intersection = new Set([...tokens1].filter(x => tokens2.has(x)));
+
+        let isMatch = n1 === n2;
+        if (!isMatch && n1.length > 3 && n2.length > 3) {
+          const overlapRatio = intersection.size / Math.max(tokens1.size, tokens2.size);
+          if (overlapRatio > 0.7) isMatch = true;
+        }
+
+        if (isMatch) {
+          cluster.push(c2);
+        }
+      }
+
+      if (cluster.length > 1) {
+        cluster.forEach(c => processed.add(c._id.toString()));
+        clusters.push({
+          id: randomUUID(),
+          members: cluster.map(mapIdField),
+          suggestedName: cluster[0].companyName,
+        });
+      }
+    }
+
+    res.json({ success: true, clusters });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/clients/merge', verifyToken, async (req, res) => {
+  try {
+    if (!req.user || !['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const { targetId, memberIds, companyName } = req.body;
+    if (!targetId || !memberIds || !memberIds.length) {
+      return res.status(400).json({ error: 'targetId and memberIds are required' });
+    }
+
+    const members = await Client.find({ _id: { $in: memberIds } });
+    const target = await Client.findById(targetId);
+    if (!target) return res.status(404).json({ error: 'Target client not found' });
+
+    let mergedContacts = [...target.contacts];
+    let mergedGroup = target.group;
+
+    for (const member of members) {
+      if (member._id.toString() === targetId) continue;
+      mergedContacts = mergeContacts(mergedContacts, member.contacts);
+      if (!mergedGroup && member.group) mergedGroup = member.group;
+    }
+
+    // Update target
+    target.companyName = companyName || target.companyName;
+    target.companyKey = normalizeCompanyKey(target.companyName);
+    target.contacts = mergedContacts;
+    target.group = mergedGroup;
+    await target.save();
+
+    // Update references in SyncedOpportunity
+    const memberNames = members.map(m => m.companyName);
+    await SyncedOpportunity.updateMany(
+      { clientName: { $in: memberNames } },
+      { $set: { clientName: target.companyName } }
+    );
+
+    // Delete merged members
+    const toDelete = memberIds.filter(id => id !== targetId);
+    if (toDelete.length) {
+      await Client.deleteMany({ _id: { $in: toDelete } });
+    }
+
+    res.json({ success: true, message: `Merged ${members.length} clients into ${target.companyName}` });
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });

@@ -1093,7 +1093,7 @@ const Dashboard = () => {
     {
       label: 'Regretted',
       value: groupedBuckets.regretted.groups.length,
-      tone: 'text-slate-700',
+      tone: 'text-muted-foreground',
       glow: 'analytics-kpi-glow-amber',
       icon: ThumbsDown,
       type: 'regretted' as const,
@@ -1246,7 +1246,7 @@ const Dashboard = () => {
                   <div className="relative z-10 flex items-start justify-between p-5">
                     <div className="space-y-1.5">
                       <p className="dash-label">{card.label}</p>
-                      <div className="mt-2 analytics-kpi-number flex items-center gap-2 text-slate-950">
+                      <div className="mt-2 analytics-kpi-number flex items-center gap-2 text-foreground">
                         <span>{card.value}</span>
                       </div>
                     </div>
@@ -1254,7 +1254,7 @@ const Dashboard = () => {
                       {isMaster ? (
                         <button
                           type="button"
-                          className="rounded-lg border border-slate-200 bg-white/80 p-1 text-slate-500 hover:text-slate-900"
+                          className="rounded-lg border border-slate-200 bg-background/80 p-1 text-muted-foreground hover:text-foreground"
                           aria-label={`Diagnose omitted rows for ${card.label}`}
                           onClick={(e) => {
                             e.preventDefault();
@@ -1267,7 +1267,7 @@ const Dashboard = () => {
                           <Info className="h-4 w-4" />
                         </button>
                       ) : null}
-                      <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
+                      <div className={`rounded-2xl border border-white/70 bg-background/80 p-2.5 shadow-sm ${card.tone}`}>
                         <card.icon className="h-5 w-5" />
                       </div>
                     </div>
@@ -1294,7 +1294,7 @@ const Dashboard = () => {
                   <div className="relative z-10 flex items-start justify-between p-5">
                     <div className="space-y-1.5">
                       <p className="dash-label">{card.label}</p>
-                      <div className="mt-2 analytics-kpi-number flex items-center gap-2 text-slate-950">
+                      <div className="mt-2 analytics-kpi-number flex items-center gap-2 text-foreground">
                         <span>{card.value}</span>
                       </div>
                     </div>
@@ -1302,7 +1302,7 @@ const Dashboard = () => {
                       {isMaster ? (
                         <button
                           type="button"
-                          className="rounded-lg border border-slate-200 bg-white/80 p-1 text-slate-500 hover:text-slate-900"
+                          className="rounded-lg border border-slate-200 bg-background/80 p-1 text-muted-foreground hover:text-foreground"
                           aria-label={`Diagnose omitted rows for ${card.label}`}
                           onClick={(e) => {
                             e.preventDefault();
@@ -1315,7 +1315,7 @@ const Dashboard = () => {
                           <Info className="h-4 w-4" />
                         </button>
                       ) : null}
-                      <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
+                      <div className={`rounded-2xl border border-white/70 bg-background/80 p-2.5 shadow-sm ${card.tone}`}>
                         <card.icon className="h-5 w-5" />
                       </div>
                     </div>
@@ -1347,19 +1347,19 @@ const Dashboard = () => {
           >
             <div className="relative z-10 flex items-start justify-between p-5">
               <div className="space-y-1.5">
-                <p className={card.emphasizeValue ? 'dash-label text-slate-600' : 'dash-label'}>{card.label}</p>
-                <div className={`mt-2 analytics-kpi-number flex items-center gap-2 ${card.emphasizeValue ? 'text-slate-950 text-5xl font-black tracking-tight leading-none' : 'text-slate-950'}`}>
+                <p className={card.emphasizeValue ? 'dash-label text-muted-foreground' : 'dash-label'}>{card.label}</p>
+                <div className={`mt-2 analytics-kpi-number flex items-center gap-2 ${card.emphasizeValue ? 'text-foreground text-5xl font-black tracking-tight leading-none' : 'text-foreground'}`}>
                   {card.valuePrefix === 'aed' ? <img src={aedSymbol} alt="AED" className="h-7 w-7" /> : null}
                   <span>{card.displayValue || card.value}</span>
                 </div>
                 {card.secondaryDisplayValue ? (
-                  <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                  <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                     {card.secondaryValuePrefix === 'aed' ? <img src={aedSymbol} alt="AED" className="h-3.5 w-3.5 opacity-70" /> : null}
                     <span>{card.secondaryDisplayValue}</span>
                   </div>
                 ) : null}
                 {card.meta ? (
-                  <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
                     {card.meta.map((item) => (
                       <span key={item.label} className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5">
                         <span className={`h-2 w-2 rounded-full ${item.tone}`} />
@@ -1368,13 +1368,13 @@ const Dashboard = () => {
                     ))}
                   </div>
                 ) : null}
-                {card.chip ? <p className="pt-1 text-[11px] text-slate-500">{card.chip}</p> : null}
+                {card.chip ? <p className="pt-1 text-[11px] text-muted-foreground">{card.chip}</p> : null}
               </div>
               <div className="flex flex-col items-end gap-2">
                 {isMaster ? (
                   <button
                     type="button"
-                    className="rounded-lg border border-slate-200 bg-white/80 p-1 text-slate-500 hover:text-slate-900"
+                    className="rounded-lg border border-slate-200 bg-background/80 p-1 text-muted-foreground hover:text-foreground"
                     aria-label={`Diagnose omitted rows for ${card.label}`}
                     onClick={(e) => {
                       e.preventDefault();
@@ -1385,7 +1385,7 @@ const Dashboard = () => {
                     <Info className="h-4 w-4" />
                   </button>
                 ) : null}
-                <div className={`rounded-2xl border border-white/70 bg-white/80 p-2.5 shadow-sm ${card.tone}`}>
+                <div className={`rounded-2xl border border-white/70 bg-background/80 p-2.5 shadow-sm ${card.tone}`}>
                   <card.icon className="h-5 w-5" />
                 </div>
               </div>
