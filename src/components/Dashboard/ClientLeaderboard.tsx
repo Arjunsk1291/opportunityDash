@@ -3,6 +3,7 @@ import { Progress } from '@/components/ui/progress';
 import { Building2, ListOrdered, CircleDollarSign } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import React from 'react';
+import { useCurrency } from '@/contexts/CurrencyContext';
 
 interface ClientData {
   name: string;
@@ -17,12 +18,7 @@ interface ClientLeaderboardProps {
 
 export function ClientLeaderboard({ data, onClientClick }: ClientLeaderboardProps) {
   const [sortBy, setSortBy] = React.useState<'value' | 'count'>('value');
-
-  const formatCurrency = (value: number) => {
-    if (value >= 1000000) return 'AED ' + (value / 1000000).toFixed(1) + 'M';
-    if (value >= 1000) return 'AED ' + (value / 1000).toFixed(0) + 'K';
-    return 'AED ' + value;
-  };
+  const { formatCurrency } = useCurrency();
 
   const topClients = React.useMemo(() => {
     return [...data]
@@ -96,4 +92,3 @@ export function ClientLeaderboard({ data, onClientClick }: ClientLeaderboardProp
     </Card>
   );
 }
-

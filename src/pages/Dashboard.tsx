@@ -1462,10 +1462,19 @@ const Dashboard = () => {
         <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
         <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
         <ClientLeaderboard data={clientData} onClientClick={(client) => {
-          setFilters((prevFilters) => ({
-            ...prevFilters,
-            clients: [client],
-          }));
+          setFilters((prevFilters) => {
+            if (client === 'ADNOC') {
+              return {
+                ...prevFilters,
+                search: 'ADNOC',
+                clients: [],
+              };
+            }
+            return {
+              ...prevFilters,
+              clients: [client],
+            };
+          });
         }} />
       </div>
 
