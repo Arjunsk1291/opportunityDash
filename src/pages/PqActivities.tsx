@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { withPerf } from '@/lib/perfLogger';
 import { Progress } from '@/components/ui/progress';
@@ -34,13 +35,16 @@ type PqActivityRow = {
   sNo: number;
   company: string;
   status: PqStatus;
+  workgroup?: string;
   registeredEmail: string;
   userId: string;
   password: string;
   link: string;
+  imageLink?: string;
   renewalDate: string | null;
   lastUpdateDate: string | null;
   notes: string;
+  enquiries?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -62,12 +66,15 @@ const pqFormSchema = z.object({
   sNo: z.coerce.number().int().nonnegative().optional().default(0),
   company: z.string().trim().min(1, 'Company is required').max(120),
   status: z.enum(['Prequalified', 'Registered', 'Registration on Process']).default('Registration on Process'),
+  workgroup: z.string().trim().max(120).optional().default(''),
   registeredEmail: z.string().trim().max(200).optional().default(''),
   userId: z.string().trim().max(200).optional().default('-'),
   password: z.string().max(500).optional().default(''),
   link: z.string().trim().max(800).optional().default('-'),
+  imageLink: z.string().trim().max(1200).optional().default(''),
   lastUpdateDate: z.date().nullable().optional().default(null),
   notes: z.string().trim().max(1000).optional().default(''),
+  enquiries: z.string().trim().max(2000).optional().default(''),
 });
 
 type PqFormValues = z.infer<typeof pqFormSchema>;
@@ -87,32 +94,16 @@ const safeUrl = (value: string) => {
 };
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-const PQ_TENANT_GROUPS = [
-  {
-    key: 'avenir',
-    label: 'Avenir',
-    tenants: [
-      { key: 'avenir_abudhabi', label: 'Abu Dhabi' },
-      { key: 'avenir_india', label: 'India' },
-      { key: 'avenir_energy', label: 'Energy' },
-    ],
-  },
-  {
-    key: 'bcts',
-    label: 'BCTS',
-    tenants: [
-      { key: 'bcts_dubai', label: 'Dubai' },
-      { key: 'bcts_abudhabi', label: 'Abu Dhabi' },
-    ],
-  },
-  {
-    key: 'other',
-    label: 'Others',
-    tenants: [],
-  },
+const PQ_TENANTS = [
+  { key: 'avenir_abudhabi', brand: 'Avenir', location: 'Abu Dhabi' },
+  { key: 'avenir_india', brand: 'Avenir', location: 'India' },
+  { key: 'avenir_energy', brand: 'Avenir', location: 'Energy' },
+  { key: 'bcts_dubai', brand: 'BCTS', location: 'Dubai' },
+  { key: 'bcts_abudhabi', brand: 'BCTS', location: 'Abu Dhabi' },
 ] as const;
-const PQ_TENANTS = PQ_TENANT_GROUPS.flatMap((g) => g.tenants);
 type PqTenantKey = typeof PQ_TENANTS[number]['key'];
+
+const getTenantLogoPath = (tenant: PqTenantKey) => `/pq-logos/${tenant}/logo.png`;
 
 export default function PqActivities() {
   const { token, canPerformAction, isMaster } = useAuth();
@@ -124,8 +115,8 @@ export default function PqActivities() {
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState<PqStatus | 'All'>('All');
 
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [passwordVisibleFor, setPasswordVisibleFor] = useState<Record<string, boolean>>({});
+  const [detailRow, setDetailRow] = useState<PqActivityRow | null>(null);
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<PqActivityRow | null>(null);
@@ -141,12 +132,15 @@ export default function PqActivities() {
       sNo: 0,
       company: '',
       status: 'Registration on Process',
+      workgroup: '',
       registeredEmail: '',
       userId: '-',
       password: '',
       link: '-',
+      imageLink: '',
       lastUpdateDate: new Date(),
       notes: '',
+      enquiries: '',
     },
   });
 
@@ -184,15 +178,17 @@ export default function PqActivities() {
   const filteredRows = useMemo(() => {
     const now = Date.now();
     const normalizedQ = q.trim().toLowerCase();
-    const filtered = rows.filter((r) => {
-      if (showStaleOnly && !isRowStale(r, now)) return false;
-      if (statusFilter !== 'All' && r.status !== statusFilter) return false;
-      if (!normalizedQ) return true;
-      return (
-        String(r.company || '').toLowerCase().includes(normalizedQ)
-        || String(r.registeredEmail || '').toLowerCase().includes(normalizedQ)
-      );
-    });
+      const filtered = rows.filter((r) => {
+        if (showStaleOnly && !isRowStale(r, now)) return false;
+        if (statusFilter !== 'All' && r.status !== statusFilter) return false;
+        if (!normalizedQ) return true;
+        return (
+          String(r.company || '').toLowerCase().includes(normalizedQ)
+          || String(r.workgroup || '').toLowerCase().includes(normalizedQ)
+          || String(r.registeredEmail || '').toLowerCase().includes(normalizedQ)
+          || String(r.enquiries || '').toLowerCase().includes(normalizedQ)
+        );
+      });
 
     // Deduplicate identical rows for display (keep most recently updated).
     const seen = new Map<string, PqActivityRow>();
@@ -200,12 +196,15 @@ export default function PqActivities() {
       const key = [
         row.company,
         row.status,
+        row.workgroup,
         row.registeredEmail,
         row.userId,
         row.password,
         row.link,
+        row.imageLink,
         row.lastUpdateDate,
         row.notes,
+        row.enquiries,
       ].map((v) => String(v ?? '').trim()).join('|');
       const existing = seen.get(key);
       if (!existing) {
@@ -284,12 +283,15 @@ export default function PqActivities() {
       sNo: 0,
       company: '',
       status: 'Registration on Process',
+      workgroup: '',
       registeredEmail: '',
       userId: '-',
       password: '',
       link: '-',
+      imageLink: '',
       lastUpdateDate: new Date(),
       notes: '',
+      enquiries: '',
     });
     setSheetOpen(true);
   };
@@ -300,12 +302,15 @@ export default function PqActivities() {
       sNo: row.sNo ?? 0,
       company: row.company || '',
       status: row.status || 'Registration on Process',
+      workgroup: row.workgroup || '',
       registeredEmail: row.registeredEmail || '',
       userId: row.userId || '-',
       password: row.password || '',
       link: row.link || '-',
+      imageLink: row.imageLink || '',
       lastUpdateDate: row.lastUpdateDate ? new Date(row.lastUpdateDate) : (row.updatedAt ? new Date(row.updatedAt) : null),
       notes: row.notes || '',
+      enquiries: row.enquiries || '',
     });
     setSheetOpen(true);
   };
@@ -360,7 +365,6 @@ export default function PqActivities() {
       if (!res.ok) throw new Error(data.error || 'Delete failed');
       toast.success('Entry deleted');
       setDeleteTarget(null);
-      if (expandedId === deleteTarget.id) setExpandedId(null);
       await loadRows('save_update');
     } catch (error) {
       toast.error((error as Error).message);
@@ -430,19 +434,25 @@ export default function PqActivities() {
         'S.No',
         'Company',
         'Status',
+        'Workgroup',
         'Registered Email',
         'User ID (Portal)',
         'Password(Portal)',
         'Link(Portal)',
+        'Image Link',
+        'Enquiries',
       ];
       const sample = {
         'S.No': 1,
         Company: 'Sample Company LLC',
         Status: 'Registration on Process',
+        Workgroup: 'Procurement',
         'Registered Email': 'ops@example.com',
         'User ID (Portal)': 'username',
         'Password(Portal)': 'password',
         'Link(Portal)': 'https://portal.example.com',
+        'Image Link': 'https://example.com/logo.png',
+        Enquiries: 'Notes / enquiries for this company',
       };
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('PQ Activities');
@@ -482,44 +492,34 @@ export default function PqActivities() {
 
         <div className="mt-5">
           <Tabs value={activeTenant} onValueChange={(v) => setActiveTenant(v as PqTenantKey)}>
-            <div className="space-y-6">
-              {PQ_TENANT_GROUPS.filter(g => g.key !== 'other' || isMaster).map((group) => (
-                <div key={group.key} className="relative p-6 rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur-xl shadow-2xl overflow-hidden group">
-                  <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                  <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                    <div className="text-sm font-black uppercase tracking-[0.3em] text-primary/80">
-                      {group.label}
-                    </div>
-                    {group.key === 'other' && isMaster && (
-                      <Button variant="ghost" size="sm" className="h-7 text-[10px] uppercase tracking-widest rounded-full border border-white/10">
-                        Manage Categories
-                      </Button>
-                    )}
-                  </div>
-                  <TabsList className="relative bg-transparent h-auto p-0 flex flex-wrap gap-3">
-                    {group.tenants.length ? group.tenants.map((t) => (
-                      <TabsTrigger
-                        key={t.key}
-                        value={t.key}
-                        className={[
-                          'text-xs sm:text-sm px-6 py-3 rounded-2xl border-2 border-white/5',
-                          'bg-navytrust-surface/20 text-navytrust-foreground/70 hover:bg-navytrust-surface/40 hover:text-white hover:border-white/10',
-                          'data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:border-primary',
-                          'data-[state=active]:shadow-[0_0_20px_rgba(var(--primary),0.3)]',
-                          'transition-all duration-300 font-bold',
-                        ].join(' ')}
-                      >
-                        {t.label}
-                      </TabsTrigger>
-                    )) : (
-                      <div className="text-xs text-navytrust-foreground/40 italic px-1">
-                        No folders configured yet.
+            <TabsList className="bg-transparent p-0 h-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {PQ_TENANTS.map((tenant) => (
+                  <TabsTrigger
+                    key={tenant.key}
+                    value={tenant.key}
+                    className="h-auto p-0 rounded-[1.75rem] border border-white/10 bg-white/5 hover:bg-white/10 data-[state=active]:border-primary data-[state=active]:bg-primary/10 transition-all"
+                  >
+                    <div className="w-full p-5 flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-2xl bg-navytrust-elevated/40 border border-white/10 overflow-hidden flex items-center justify-center">
+                        <img
+                          src={getTenantLogoPath(tenant.key)}
+                          alt={`${tenant.brand} ${tenant.location}`}
+                          className="h-10 w-10 object-contain"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
                       </div>
-                    )}
-                  </TabsList>
-                </div>
-              ))}
-            </div>
+                      <div className="min-w-0 text-left">
+                        <div className="text-xs font-black uppercase tracking-[0.3em] text-primary/80">{tenant.brand}</div>
+                        <div className="mt-1 text-base font-bold text-navytrust-foreground truncate">{tenant.location}</div>
+                      </div>
+                    </div>
+                  </TabsTrigger>
+                ))}
+              </div>
+            </TabsList>
             <TabsContent value={activeTenant}>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-6">
@@ -564,16 +564,16 @@ export default function PqActivities() {
 	            </div>
 	          )}
 	          <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-            <div className="flex-1 flex items-center gap-2">
-              <div className="relative w-full">
+	            <div className="flex-1 flex items-center gap-2">
+	              <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-navytrust-foreground/70" aria-hidden="true" />
-                <Input
-                  className="pl-9 bg-navytrust-elevated/40 border-white/10 text-navytrust-foreground placeholder:text-navytrust-foreground/60"
-                  placeholder="Search company or email…"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  aria-label="Search company or email"
-                />
+	                <Input
+	                  className="pl-9 bg-navytrust-elevated/40 border-white/10 text-navytrust-foreground placeholder:text-navytrust-foreground/60"
+	                  placeholder="Search company, workgroup, email, enquiries…"
+	                  value={q}
+	                  onChange={(e) => setQ(e.target.value)}
+	                  aria-label="Search company, workgroup, email, enquiries"
+	                />
               </div>
 	              <Button variant="secondary" className="bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70" onClick={() => loadRows('refresh_click')} loading={loading}>
 	                Refresh
@@ -664,7 +664,7 @@ export default function PqActivities() {
                       className="rounded-xl border border-white/10 bg-navytrust-elevated/30 hover:bg-navytrust-elevated/45 px-3 py-2 text-left"
                       onClick={() => {
                         setQ(row.company || '');
-                        setExpandedId(row.id);
+                        setDetailRow(row);
                       }}
                     >
                       <div className="font-medium text-navytrust-foreground truncate">{row.company || '—'}</div>
@@ -689,31 +689,31 @@ export default function PqActivities() {
           <div className="rounded-2xl border border-white/10 bg-navytrust-surface/25 backdrop-blur shadow-elegant overflow-hidden">
             <table className="w-full text-sm" aria-label="PQ activities table">
               <thead className="bg-navytrust-elevated/35">
-                <tr className="text-left text-navytrust-foreground/80">
-                  <th className="px-4 py-3 font-semibold">#</th>
-                  <th className="px-4 py-3 font-semibold">Company</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold">Registered Email</th>
-                  <th className="px-4 py-3 font-semibold">Last Update</th>
-                  <th className="px-4 py-3 font-semibold">Notes</th>
-                  <th className="px-4 py-3 font-semibold text-right">Actions</th>
-                </tr>
+	                <tr className="text-left text-navytrust-foreground/80">
+	                  <th className="px-4 py-3 font-semibold">#</th>
+	                  <th className="px-4 py-3 font-semibold">Company</th>
+	                  <th className="px-4 py-3 font-semibold">Status</th>
+	                  <th className="px-4 py-3 font-semibold">Workgroup</th>
+	                  <th className="px-4 py-3 font-semibold">Last Update</th>
+	                  <th className="px-4 py-3 font-semibold">Notes</th>
+	                  <th className="px-4 py-3 font-semibold">Enquiries</th>
+	                  <th className="px-4 py-3 font-semibold text-right">Actions</th>
+	                </tr>
               </thead>
               <tbody>
                 <AnimatePresence initial={false}>
-                  {filteredRows.map((row, idx) => {
-                    const expanded = expandedId === row.id;
-                    const isPreq = row.status === 'Prequalified';
-                    return (
+	                  {filteredRows.map((row, idx) => {
+	                    const isPreq = row.status === 'Prequalified';
+	                    return (
                       <motion.tr
                         key={row.id}
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 6 }}
-                        transition={{ duration: 0.18, delay: Math.min(idx * 0.012, 0.12) }}
-                        className="border-t border-white/10 hover:bg-white/5 cursor-pointer"
-                        onClick={() => setExpandedId((cur) => (cur === row.id ? null : row.id))}
-                      >
+	                        transition={{ duration: 0.18, delay: Math.min(idx * 0.012, 0.12) }}
+	                        className="border-t border-white/10 hover:bg-white/5 cursor-pointer"
+	                        onClick={() => setDetailRow(row)}
+	                      >
                         <td className="px-4 py-3 text-navytrust-foreground/80">{row.sNo || idx + 1}</td>
                         <td className="px-4 py-3 font-medium text-navytrust-foreground">{row.company}</td>
                         <td className="px-4 py-3">
@@ -722,7 +722,7 @@ export default function PqActivities() {
                             {row.status}
                           </Badge>
                         </td>
-                        <td className="px-4 py-3 text-navytrust-foreground/90">{row.registeredEmail || '—'}</td>
+	                        <td className="px-4 py-3 text-navytrust-foreground/90">{row.workgroup || '—'}</td>
                         <td className="px-4 py-3 text-navytrust-foreground/90">
                           <div className="flex items-center gap-2">
                             <span>{formatIsoDate(row.lastUpdateDate || row.updatedAt || null)}</span>
@@ -731,7 +731,8 @@ export default function PqActivities() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-navytrust-foreground/80 max-w-[320px] truncate">{row.notes || '—'}</td>
+	                        <td className="px-4 py-3 text-navytrust-foreground/80 max-w-[320px] truncate">{row.notes || '—'}</td>
+	                        <td className="px-4 py-3 text-navytrust-foreground/80 max-w-[320px] truncate">{row.enquiries || '—'}</td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex justify-end gap-2">
                             <Button size="icon" variant="secondary" className="bg-navytrust-elevated/45 border border-white/10 hover:bg-navytrust-elevated/70" onClick={() => openEdit(row)} aria-label={`Edit ${row.company}`} disabled={!canWrite}>
@@ -750,109 +751,132 @@ export default function PqActivities() {
             </table>
           </div>
 
-          <AnimatePresence initial={false}>
-            {expandedId ? (
-              <motion.div
-                key={expandedId}
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.22 }}
-                className="mt-3 rounded-2xl border border-white/10 bg-navytrust-surface/28 backdrop-blur shadow-elegant overflow-hidden"
-              >
-                {(() => {
-                  const row = rows.find((r) => r.id === expandedId);
-                  if (!row) return null;
-                  const showPassword = Boolean(passwordVisibleFor[row.id]);
-                  const url = safeUrl(row.link);
-                  return (
-                    <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <p className="font-semibold text-navytrust-foreground">Portal Credentials</p>
-                          <div className="text-xs text-navytrust-foreground/70">Updated: {formatIsoDate(row.updatedAt || null)}</div>
-                        </div>
-                        <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-4 space-y-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">User ID</div>
-                              <div className="mt-1 font-mono text-navytrust-foreground">{row.userId || '—'}</div>
-                            </div>
-                            <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => copyText(row.userId, 'User ID')} aria-label="Copy User ID">
-                              <Copy className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Password</div>
-                              <div className="mt-1 font-mono text-navytrust-foreground">{showPassword ? (row.password || '—') : (row.password ? '••••••••' : '—')}</div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => togglePasswordVisibility(row.id)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
-                                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                              </Button>
-                              <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => copyText(row.password, 'Password')} aria-label="Copy password">
-                                <Copy className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Portal Link</div>
-                              <div className="mt-1 text-navytrust-foreground">
-                                {url ? (
-                                  <a className="underline decoration-white/30 hover:decoration-white/70" href={url} target="_blank" rel="noreferrer">
-                                    {row.link}
-                                  </a>
-                                ) : '—'}
-                              </div>
-                            </div>
-                            <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => copyText(row.link, 'Portal link')} aria-label="Copy portal link">
-                              <Copy className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
+	          <Dialog open={Boolean(detailRow)} onOpenChange={(open) => { if (!open) setDetailRow(null); }}>
+	            <DialogContent className="max-w-4xl">
+	              <DialogHeader>
+	                <DialogTitle>{detailRow?.company || 'PQ Activity'}</DialogTitle>
+	                <DialogDescription>Registered Email is shown only in this popup.</DialogDescription>
+	              </DialogHeader>
+	              {detailRow ? (
+	                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+	                  <div className="space-y-3">
+	                    <p className="font-semibold text-navytrust-foreground">Portal Credentials</p>
+	                    <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-4 space-y-3">
+	                      <div className="flex items-center justify-between gap-2">
+	                        <div className="min-w-0">
+	                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Registered Email</div>
+	                          <div className="mt-1 font-mono text-navytrust-foreground truncate">{detailRow.registeredEmail || '—'}</div>
+	                        </div>
+	                        <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => copyText(detailRow.registeredEmail || '', 'Registered Email')} aria-label="Copy Registered Email">
+	                          <Copy className="h-4 w-4" />
+	                        </Button>
+	                      </div>
+	                      <div className="flex items-center justify-between gap-2">
+	                        <div className="min-w-0">
+	                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">User ID</div>
+	                          <div className="mt-1 font-mono text-navytrust-foreground truncate">{detailRow.userId || '—'}</div>
+	                        </div>
+	                        <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => copyText(detailRow.userId || '', 'User ID')} aria-label="Copy User ID">
+	                          <Copy className="h-4 w-4" />
+	                        </Button>
+	                      </div>
+	                      <div className="flex items-center justify-between gap-2">
+	                        <div className="min-w-0">
+	                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Password</div>
+	                          <div className="mt-1 font-mono text-navytrust-foreground truncate">
+	                            {Boolean(passwordVisibleFor[detailRow.id]) ? (detailRow.password || '—') : (detailRow.password ? '••••••••' : '—')}
+	                          </div>
+	                        </div>
+	                        <div className="flex items-center gap-2">
+	                          <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => togglePasswordVisibility(detailRow.id)} aria-label={Boolean(passwordVisibleFor[detailRow.id]) ? 'Hide password' : 'Show password'}>
+	                            {Boolean(passwordVisibleFor[detailRow.id]) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+	                          </Button>
+	                          <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => copyText(detailRow.password || '', 'Password')} aria-label="Copy password">
+	                            <Copy className="h-4 w-4" />
+	                          </Button>
+	                        </div>
+	                      </div>
+	                      <div className="flex items-center justify-between gap-2">
+	                        <div className="min-w-0">
+	                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Portal Link</div>
+	                          <div className="mt-1 text-navytrust-foreground truncate">
+	                            {safeUrl(detailRow.link) ? (
+	                              <a className="underline decoration-white/30 hover:decoration-white/70" href={safeUrl(detailRow.link)} target="_blank" rel="noreferrer">
+	                                {detailRow.link}
+	                              </a>
+	                            ) : '—'}
+	                          </div>
+	                        </div>
+	                        <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => copyText(detailRow.link || '', 'Portal link')} aria-label="Copy portal link">
+	                          <Copy className="h-4 w-4" />
+	                        </Button>
+	                      </div>
+	                    </div>
+	                  </div>
 
-                      <div className="space-y-3">
-                        <p className="font-semibold text-navytrust-foreground">Details</p>
-                        <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-4 space-y-3">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Last Update</div>
-                              <div className="mt-1 flex items-center gap-2 text-navytrust-foreground">
-                                <span>{formatIsoDate(row.lastUpdateDate || row.updatedAt || null)}</span>
-                                {isRowStale(row) && (
-                                  <Badge className="bg-warning/20 text-warning border border-warning/30">Reminder</Badge>
-                                )}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Last Update</div>
-                              <div className="mt-1 text-navytrust-foreground">{formatIsoDate(row.updatedAt || null)}</div>
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Notes</div>
-                            <div className="mt-1 whitespace-pre-wrap text-navytrust-foreground/90">{row.notes || '—'}</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
+	                  <div className="space-y-3">
+	                    <p className="font-semibold text-navytrust-foreground">Details</p>
+	                    <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-4 space-y-3">
+	                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+	                        <div>
+	                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Status</div>
+	                          <div className="mt-1 text-navytrust-foreground">{detailRow.status || '—'}</div>
+	                        </div>
+	                        <div>
+	                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Workgroup</div>
+	                          <div className="mt-1 text-navytrust-foreground">{detailRow.workgroup || '—'}</div>
+	                        </div>
+	                        <div>
+	                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Last Update</div>
+	                          <div className="mt-1 text-navytrust-foreground">{formatIsoDate(detailRow.lastUpdateDate || detailRow.updatedAt || null)}</div>
+	                        </div>
+	                        <div>
+	                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Renewal</div>
+	                          <div className="mt-1 text-navytrust-foreground">{formatIsoDate(detailRow.renewalDate || null)}</div>
+	                        </div>
+	                      </div>
+	                      <div>
+	                        <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Notes</div>
+	                        <div className="mt-1 whitespace-pre-wrap text-navytrust-foreground/90">{detailRow.notes || '—'}</div>
+	                      </div>
+	                      <div>
+	                        <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Enquiries</div>
+	                        <div className="mt-1 whitespace-pre-wrap text-navytrust-foreground/90">{detailRow.enquiries || '—'}</div>
+	                      </div>
+	                      <div className="flex items-center justify-between gap-2">
+	                        <div className="min-w-0">
+	                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Image Link</div>
+	                          <div className="mt-1 text-navytrust-foreground truncate">
+	                            {safeUrl(detailRow.imageLink || '') ? (
+	                              <a className="underline decoration-white/30 hover:decoration-white/70" href={safeUrl(detailRow.imageLink || '')} target="_blank" rel="noreferrer">
+	                                {detailRow.imageLink}
+	                              </a>
+	                            ) : (detailRow.imageLink || '—')}
+	                          </div>
+	                        </div>
+	                        <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => copyText(detailRow.imageLink || '', 'Image link')} aria-label="Copy image link">
+	                          <Copy className="h-4 w-4" />
+	                        </Button>
+	                      </div>
+	                      {safeUrl(detailRow.imageLink || '') ? (
+	                        <div className="rounded-2xl border border-white/10 bg-black/10 overflow-hidden">
+	                          <img src={safeUrl(detailRow.imageLink || '')} alt="Company logo" className="w-full max-h-48 object-contain bg-white/5" />
+	                        </div>
+	                      ) : null}
+	                    </div>
+	                  </div>
+	                </div>
+	              ) : null}
+	            </DialogContent>
+	          </Dialog>
         </div>
 
         {/* Mobile cards */}
-        <div className="md:hidden mt-6 space-y-3">
-          <AnimatePresence initial={false}>
-            {filteredRows.map((row, idx) => {
-              const expanded = expandedId === row.id;
-              const isPreq = row.status === 'Prequalified';
-              return (
+	        <div className="md:hidden mt-6 space-y-3">
+	          <AnimatePresence initial={false}>
+	            {filteredRows.map((row, idx) => {
+	              const isPreq = row.status === 'Prequalified';
+	              return (
                 <motion.div
                   key={row.id}
                   initial={{ opacity: 0, y: 6 }}
@@ -861,12 +885,12 @@ export default function PqActivities() {
                   transition={{ duration: 0.18, delay: Math.min(idx * 0.01, 0.12) }}
                   className="rounded-2xl border border-white/10 bg-navytrust-surface/28 backdrop-blur shadow-elegant overflow-hidden"
                 >
-                  <button
-                    type="button"
-                    className="w-full text-left p-4"
-                    onClick={() => setExpandedId((cur) => (cur === row.id ? null : row.id))}
-                    aria-label={`Toggle details for ${row.company}`}
-                  >
+	                  <button
+	                    type="button"
+	                    className="w-full text-left p-4"
+	                    onClick={() => setDetailRow(row)}
+	                    aria-label={`Open details for ${row.company}`}
+	                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Company</div>
@@ -878,70 +902,24 @@ export default function PqActivities() {
                           </Badge>
                           <span className="text-xs text-navytrust-foreground/70">#{row.sNo || idx + 1}</span>
                         </div>
-                      </div>
-                      <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+	                      </div>
+	                      <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <Button size="icon" variant="secondary" className="bg-navytrust-elevated/45 border border-white/10 hover:bg-navytrust-elevated/70" onClick={() => openEdit(row)} aria-label={`Edit ${row.company}`} disabled={!canWrite}>
                           <Pencil className="h-4 w-4" />
                         </Button>
                         <Button size="icon" variant="destructive" className="bg-red-500/80 hover:bg-red-500" onClick={() => setDeleteTarget(row)} aria-label={`Delete ${row.company}`} disabled={!canWrite}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                      </div>
-                    </div>
-                    <div className="mt-3 text-sm text-navytrust-foreground/90 truncate">{row.registeredEmail || '—'}</div>
-                    <div className="text-xs text-navytrust-foreground/70 truncate">Last update: {formatIsoDate(row.lastUpdateDate || row.updatedAt || null)}</div>
-                  </button>
-
-                  <AnimatePresence initial={false}>
-                    {expanded ? (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.22 }}
-                        className="border-t border-white/10 px-4 pb-4"
-                      >
-                        <div className="pt-4 space-y-3">
-                          <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-3 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">User ID</span>
-                              <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => copyText(row.userId, 'User ID')} aria-label="Copy User ID">
-                                <Copy className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            <div className="font-mono text-sm text-navytrust-foreground">{row.userId || '—'}</div>
-                          </div>
-                          <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-3 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Password</span>
-                              <div className="flex gap-2">
-                                <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => togglePasswordVisibility(row.id)} aria-label={passwordVisibleFor[row.id] ? 'Hide password' : 'Show password'}>
-                                  {passwordVisibleFor[row.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                </Button>
-                                <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => copyText(row.password, 'Password')} aria-label="Copy password">
-                                  <Copy className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </div>
-                            <div className="font-mono text-sm text-navytrust-foreground">{passwordVisibleFor[row.id] ? (row.password || '—') : (row.password ? '••••••••' : '—')}</div>
-                          </div>
-                          <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-3 space-y-1">
-                            <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Last Update</div>
-                            <div className="text-sm text-navytrust-foreground">{formatIsoDate(row.lastUpdateDate || row.updatedAt || null)}</div>
-                          </div>
-                          <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-3 space-y-1">
-                            <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Notes</div>
-                            <div className="text-sm text-navytrust-foreground/90 whitespace-pre-wrap">{row.notes || '—'}</div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    ) : null}
-                  </AnimatePresence>
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </div>
+	                      </div>
+	                    </div>
+	                    <div className="mt-3 text-sm text-navytrust-foreground/90 truncate">{row.workgroup || '—'}</div>
+	                    <div className="text-xs text-navytrust-foreground/70 truncate">Last update: {formatIsoDate(row.lastUpdateDate || row.updatedAt || null)}</div>
+	                  </button>
+	                </motion.div>
+	              );
+	            })}
+	          </AnimatePresence>
+	        </div>
         </>
 
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
