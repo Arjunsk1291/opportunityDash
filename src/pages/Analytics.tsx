@@ -1070,10 +1070,10 @@ const Analytics = () => {
         <div className="relative z-10 flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/12 backdrop-blur-sm">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-background/12 backdrop-blur-sm">
                 <BarChart3 className="h-6 w-6 text-white animate-[float_6s_ease-in-out_infinite]" />
               </div>
-              <Badge className="border-white/15 bg-white/10 text-white hover:bg-white/10">
+              <Badge className="border-white/15 bg-background/10 text-white hover:bg-background/10">
                 <span className="mr-2 inline-flex h-2 w-2 rounded-full bg-emerald-300 animate-pulse" />
                 LIVE
               </Badge>
@@ -1093,14 +1093,14 @@ const Analytics = () => {
           </div>
 
           <div className="flex w-full max-w-xl flex-col gap-3">
-            <div className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/8 p-2 backdrop-blur-md">
+            <div className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-background/8 p-2 backdrop-blur-md">
               {TIME_RANGE_OPTIONS.map((option) => (
                 <Button
                   key={option.value}
                   type="button"
                   size="sm"
                   variant={quickRange === option.value ? 'default' : 'ghost'}
-                  className={quickRange === option.value ? 'bg-white text-slate-900 hover:bg-white/90' : 'text-white hover:bg-white/10 hover:text-white'}
+                  className={quickRange === option.value ? 'bg-background text-foreground hover:bg-card/90' : 'text-white hover:bg-background/10 hover:text-white'}
                   onClick={() => {
                     setQuickRange(option.value);
                     setFilters((prev) => ({
@@ -1124,7 +1124,7 @@ const Analytics = () => {
                   }));
                 }}
               >
-                <SelectTrigger className="border-white/10 bg-white/8 text-white backdrop-blur-sm">
+                <SelectTrigger className="border-white/10 bg-background/8 text-white backdrop-blur-sm">
                   <SelectValue placeholder="Select vertical" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1134,7 +1134,7 @@ const Analytics = () => {
                 </SelectContent>
               </Select>
 
-              <Button type="button" variant="outline" className="border-white/10 bg-white/8 text-white hover:bg-white/10 hover:text-white" onClick={() => setRefreshKey((current) => current + 1)}>
+              <Button type="button" variant="outline" className="border-white/10 bg-background/8 text-white hover:bg-background/10 hover:text-white" onClick={() => setRefreshKey((current) => current + 1)}>
                 <RefreshCcw className="mr-2 h-4 w-4" />
                 Refresh
               </Button>
@@ -1144,7 +1144,7 @@ const Analytics = () => {
       </section>
 
       <section className="mb-6 lg:mb-8">
-        <div className="rounded-[28px] border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur-sm lg:p-5">
+        <div className="rounded-[28px] border border-slate-200 bg-card/90 p-4 shadow-sm backdrop-blur-sm lg:p-5">
           <AdvancedFilters
             data={opportunities}
             filters={filters}
@@ -1194,7 +1194,7 @@ const Analytics = () => {
                     )}
                   </div>
                 </div>
-                <div className={`rounded-2xl border border-white/70 bg-white/90 p-3 shadow-sm ${card.tone}`}>
+                <div className={`rounded-2xl border border-white/70 bg-card/90 p-3 shadow-sm ${card.tone}`}>
                   <card.icon className="h-5 w-5" />
                 </div>
               </div>
@@ -1242,7 +1242,7 @@ const Analytics = () => {
               <tbody>
                 {analytics.comparisonRows.map((row) => (
                   <tr key={row.label}>
-                    <td className="rounded-l-2xl border border-r-0 border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700">{row.label}</td>
+                    <td className="rounded-l-2xl border border-r-0 border-slate-200 bg-background px-3 py-3 text-sm font-medium text-slate-700">{row.label}</td>
                     <td className="border-y border-sky-100 bg-sky-50/60 px-3 py-3 text-right text-sm font-semibold text-slate-950">
                       <button
                         type="button"
@@ -1298,12 +1298,12 @@ const Analytics = () => {
               <button
                 key={bucket.key}
                 type="button"
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left"
+                className="w-full rounded-2xl border border-slate-200 bg-background px-4 py-4 text-left"
                 onClick={() => openDrilldown(`EOI Aging • ${bucket.label}`, analytics.drilldowns.pureEoi.filter((opp) => getEoiAgingBucket(getDayDiff(parseFlexibleTimestamp(opp.dateTenderReceived || opp.tenderSubmittedDate), Date.now())) === bucket.key))}
               >
                 <div className="mb-3 flex items-center justify-between gap-4">
                   <div>
-                    <div className="text-sm font-semibold text-slate-900">{bucket.label}</div>
+                    <div className="text-sm font-semibold text-foreground">{bucket.label}</div>
                     <div className="text-xs text-slate-500">{bucket.key} days</div>
                   </div>
                   <div className="text-right">
@@ -1334,12 +1334,12 @@ const Analytics = () => {
               <button
                 key={bucket.key}
                 type="button"
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left"
+                className="w-full rounded-2xl border border-slate-200 bg-background px-4 py-4 text-left"
                 onClick={() => openDrilldown(`Tender Aging • ${bucket.label}`, analytics.drilldowns.noDecision.filter((opp) => getTenderAgingBucket(getDayDiff(parseFlexibleTimestamp(opp.tenderSubmittedDate), Date.now())) === bucket.key))}
               >
                 <div className="mb-3 flex items-center justify-between gap-4">
                   <div>
-                    <div className="text-sm font-semibold text-slate-900">{bucket.label}</div>
+                    <div className="text-sm font-semibold text-foreground">{bucket.label}</div>
                     <div className="text-xs text-slate-500">{bucket.key} days since submitted</div>
                   </div>
                   <div className="text-right">
@@ -1419,7 +1419,7 @@ const Analytics = () => {
               <button
                 key={item.label}
                 type="button"
-                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left"
+                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-background px-4 py-3 text-left"
                 onClick={() => openDrilldown(`Post-Bid • ${item.label}`, analytics.drilldowns.lifecycle.filter((opp) => getPostBidLabel(opp) === item.label))}
               >
                 <div className="flex items-center gap-3">
@@ -1453,14 +1453,14 @@ const Analytics = () => {
                 <button
                   key={row.client}
                   type="button"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left"
+                  className="w-full rounded-2xl border border-slate-200 bg-background px-4 py-4 text-left"
                   onClick={() => openDrilldown(`Client Matrix • ${row.client}`, groupedOpportunities
                     .filter((group) => getGroupClient(group) === row.client)
                     .map((group) => getPureEoiRow(group) || getConvertedTenderRow(group) || group.primary)
                     .filter(Boolean) as Opportunity[])}
                 >
                   <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="max-w-[220px] truncate text-sm font-semibold text-slate-900">{row.client}</div>
+                    <div className="max-w-[220px] truncate text-sm font-semibold text-foreground">{row.client}</div>
                     <div className="flex flex-wrap gap-2 text-xs text-slate-500">
                       <span>EOI {row.eoiCount}</span>
                       <span>Tender {row.tenderCount}</span>
@@ -1506,12 +1506,12 @@ const Analytics = () => {
               <button
                 key={`${row.refNo}-${row.tenderName}`}
                 type="button"
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left"
+                className="w-full rounded-2xl border border-slate-200 bg-background px-4 py-4 text-left"
                 onClick={() => openDrilldown(`Stale EOI • ${row.tenderName}`, analytics.drilldowns.pureEoi.filter((opp) => normalizeText(opp.opportunityRefNo) === row.refNo && normalizeText(opp.tenderName) === row.tenderName))}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-slate-900">{row.tenderName}</div>
+                    <div className="text-sm font-semibold text-foreground">{row.tenderName}</div>
                     <div className="mt-1 text-xs text-slate-500">{row.refNo || 'NO REF'} • {row.client}</div>
                   </div>
                   <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">{row.ageDays} days</Badge>

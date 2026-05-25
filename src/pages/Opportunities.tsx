@@ -22,6 +22,8 @@ import { Check, ChevronDown, Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { getFirstWorksheet, loadWorkbookFromArrayBuffer } from '@/lib/excelWorkbook';
+import { useAsyncAction } from '@/hooks/useAsyncAction';
+import { Progress } from '@/components/ui/progress';
 
 interface OpportunitiesProps {
   statusFilter?: string;
@@ -277,8 +279,172 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const [sheetUploadSaving, setSheetUploadSaving] = useState(false);
   const [sheetUploadRows, setSheetUploadRows] = useState<FormState[]>([]);
   const [sheetUploadMeta, setSheetUploadMeta] = useState<{ created: number; updated: number } | null>(null);
-  const [sheetUploadProgress, setSheetUploadProgress] = useState<{ stage: string; pct: number } | null>(null);
-  const [sheetUploadCommitProgress, setSheetUploadCommitProgress] = useState<{ stage: string; pct: number } | null>(null);
+  const [sheetUploadProgressLabel, setSheetUploadProgressLabel] = useState<string | null>(null);
+
+  const { execute: executeCommit, isLoading: isCommitting, progress: commitProgress } = useAsyncAction({
+    action: async () => {
+      if (!sheetUploadRows.length) throw new Error('No parsed rows to save.');
+      const response = await fetch(`${API_URL}/opportunities/sheet-upload/commit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ rows: sheetUploadRows }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || 'Failed to save rows.');
+      const touched = Array.isArray(data?.rows) ? data.rows : [];
+      if (touched.length) upsertOpportunities(touched);
+      setSheetUploadRows([]);
+      setSheetUploadOpen(false);
+      setSheetUploadMeta(null);
+      void refreshData({ background: true }).catch(() => {});
+      return data;
+    },
+    successMessage: (data) => `Saved. Created ${data?.created ?? 0}, updated ${data?.updated ?? 0}.`,
+  });
+
+  const { execute: executeUpload, isLoading: isUploading, progress: uploadProgress } = useAsyncAction({
+    action: async (file: File) => {
+      setSheetUploadProgressLabel('Reading workbook…');
+      const buffer = await file.arrayBuffer();
+      const workbook = await loadWorkbookFromArrayBuffer(buffer);
+      const worksheet = getFirstWorksheet(workbook);
+      if (!worksheet) throw new Error('No worksheet found in uploaded file.');
+
+      const maxColumns = 50;
+      const maxScanRows = Math.min(15, worksheet.rowCount);
+      const maxRows = Math.min(worksheet.rowCount, MAX_OPPORTUNITY_UPLOAD_ROWS);
+
+      setSheetUploadProgressLabel('Detecting headers…');
+      const normalizeHeader = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const headerCandidates: Record<keyof FormState, string[]> = {
+        opportunityRefNo: ['tender no', 'ref no', 'ref no.', 'opportunity ref', 'avenir ref', 'avenir ref no'],
+        tenderName: ['tender name', 'tender'],
+        opportunityClassification: ['tender type', 'type'],
+        clientName: ['client', 'client name'],
+        groupClassification: ['gds/ges', 'group', 'vertical', 'group classification'],
+        dateTenderReceived: ['date tender recd', 'date tender received', 'rfp received', 'date received'],
+        tenderPlannedSubmissionDate: ['tender due date', 'tender due  date', 'submission', 'planned submission', 'submission date'],
+        tenderResult: ['tender result', 'result', 'outcome', 'final result', 'tender outcome'],
+        tenderStatusRemark: ['tender status -', 'tender status-', 'tender status'],
+        internalLead: ['assigned person', 'lead', 'internal lead'],
+        opportunityValue: ['tender value', 'value', 'opportunity value'],
+        avenirStatus: ['avenir status', 'status'],
+        adnocRftNo: ['adnoc rft no', 'client ref', 'client ref.', 'adnoc rft'],
+      };
+
+      const scoreHeaderRow = (rowIndex: number) => {
+        const row = worksheet.getRow(rowIndex);
+        const normalized: string[] = [];
+        for (let col = 1; col <= maxColumns; col += 1) {
+          normalized.push(normalizeHeader(row.getCell(col).value));
+        }
+        let score = 0;
+        (Object.keys(headerCandidates) as Array<keyof FormState>).forEach((key) => {
+          if (normalized.some((cell) => headerCandidates[key].includes(cell))) score += 1;
+        });
+        return score;
+      };
+
+      let headerRowIndex = 1;
+      let bestScore = -1;
+      for (let rowIndex = 1; rowIndex <= maxScanRows; rowIndex += 1) {
+        const score = scoreHeaderRow(rowIndex);
+        if (score > bestScore) {
+          bestScore = score;
+          headerRowIndex = rowIndex;
+        }
+      }
+
+      const headerRow = worksheet.getRow(headerRowIndex);
+      const normalizedHeader: string[] = [];
+      for (let col = 1; col <= maxColumns; col += 1) {
+        normalizedHeader.push(normalizeHeader(headerRow.getCell(col).value));
+      }
+      const columnIndex: Partial<Record<keyof FormState, number>> = {};
+      (Object.keys(headerCandidates) as Array<keyof FormState>).forEach((key) => {
+        const idx = normalizedHeader.findIndex((cell) => headerCandidates[key].includes(cell));
+        if (idx >= 0) columnIndex[key] = idx + 1;
+      });
+
+      if (columnIndex.opportunityRefNo === undefined) throw new Error('Could not find a "Tender no / Ref no" column.');
+
+      const getCellText = (excelRow: { getCell: (idx: number) => { value: unknown } }, key: keyof FormState) => {
+        const idx = columnIndex[key];
+        if (idx === undefined) return '';
+        const raw = excelRow.getCell(idx).value ?? '';
+        if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw.toISOString().slice(0, 10);
+        return String(raw ?? '').trim();
+      };
+
+      setSheetUploadProgressLabel('Mapping rows…');
+      const parsed: FormState[] = [];
+      for (let rowIndex = headerRowIndex + 1; rowIndex <= maxRows; rowIndex += 1) {
+        const excelRow = worksheet.getRow(rowIndex);
+        const opportunityRefNo = getCellText(excelRow, 'opportunityRefNo');
+        const tenderName = getCellText(excelRow, 'tenderName');
+        const clientName = getCellText(excelRow, 'clientName');
+        if (!opportunityRefNo && !tenderName && !clientName) continue;
+
+        parsed.push({
+          opportunityRefNo,
+          tenderName,
+          opportunityClassification: getCellText(excelRow, 'opportunityClassification'),
+          clientName,
+          groupClassification: getCellText(excelRow, 'groupClassification'),
+          dateTenderReceived: getCellText(excelRow, 'dateTenderReceived'),
+          tenderPlannedSubmissionDate: getCellText(excelRow, 'tenderPlannedSubmissionDate'),
+          tenderResult: getCellText(excelRow, 'tenderResult'),
+          tenderStatusRemark: getCellText(excelRow, 'tenderStatusRemark'),
+          internalLead: getCellText(excelRow, 'internalLead'),
+          opportunityValue: getCellText(excelRow, 'opportunityValue'),
+          avenirStatus: getCellText(excelRow, 'avenirStatus'),
+          adnocRftNo: getCellText(excelRow, 'adnocRftNo'),
+        });
+      }
+
+      setSheetUploadProgressLabel('Diffing with database…');
+      const normalizeRef = (value: string) => String(value || '').trim().toLowerCase();
+      const existingByRef = new Map(opportunities.map((opp) => [normalizeRef(String(opp.opportunityRefNo || opp.tenderNo || '')), opp]));
+      const normalizeValue = (value: unknown) => String(value ?? '').trim();
+      const isSame = (a: unknown, b: unknown) => normalizeValue(a) === normalizeValue(b);
+      const isUpdated = (row: FormState, existing: Opportunity) => {
+        if (!existing) return false;
+        return !(
+          isSame(existing.opportunityRefNo, row.opportunityRefNo) &&
+          isSame(existing.tenderName, row.tenderName) &&
+          isSame(existing.clientName, row.clientName) &&
+          isSame(existing.groupClassification, row.groupClassification) &&
+          isSame(existing.internalLead, row.internalLead) &&
+          isSame(existing.opportunityClassification, row.opportunityClassification) &&
+          isSame(existing.dateTenderReceived, row.dateTenderReceived) &&
+          isSame(existing.tenderPlannedSubmissionDate, row.tenderPlannedSubmissionDate) &&
+          isSame(existing.tenderResult, row.tenderResult) &&
+          isSame(existing.tenderStatusRemark, row.tenderStatusRemark) &&
+          isSame(existing.avenirStatus, row.avenirStatus) &&
+          isSame(existing.adnocRftNo, row.adnocRftNo) &&
+          isSame(String(existing.opportunityValue ?? ''), row.opportunityValue)
+        );
+      };
+
+      const created: FormState[] = [];
+      const updated: FormState[] = [];
+      const unchanged: FormState[] = [];
+      parsed.forEach((row) => {
+        const existing = existingByRef.get(normalizeRef(row.opportunityRefNo));
+        if (!existing) return created.push(row);
+        if (isUpdated(row, existing)) return updated.push(row);
+        return unchanged.push(row);
+      });
+
+      setSheetUploadRows([...created, ...updated, ...unchanged]);
+      setSheetUploadMeta({ created: created.length, updated: updated.length });
+      setSheetUploadOpen(true);
+      setSheetUploadProgressLabel(null);
+    }
+  });
 
   const logManualFlow = (flowId: string, stage: string, details: Record<string, unknown> = {}) => {
     // Hidden diagnostics
@@ -396,213 +562,6 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
     }
   };
 
-  const handleSheetUpload = async (file: File) => {
-    try {
-      if (!file) return;
-      if (file.size > MAX_OPPORTUNITY_UPLOAD_BYTES) throw new Error('File too large. Maximum allowed size is 10MB.');
-      const lower = String(file.name || '').toLowerCase();
-      if (!lower.endsWith('.xlsx')) throw new Error('Only .xlsx files are supported.');
-
-      const totalStart = performance.now();
-      setSheetUploadLoading(true);
-      setSheetUploadProgress({ stage: 'Reading file…', pct: 5 });
-      setSheetUploadMeta(null);
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-
-      setSheetUploadProgress({ stage: 'Loading workbook…', pct: 20 });
-      const buffer = await file.arrayBuffer();
-      const workbook = await loadWorkbookFromArrayBuffer(buffer);
-      const worksheet = getFirstWorksheet(workbook);
-      if (!worksheet) throw new Error('No worksheet found in uploaded file.');
-
-      const maxColumns = 50;
-      const maxScanRows = Math.min(15, worksheet.rowCount);
-      const maxRows = Math.min(worksheet.rowCount, MAX_OPPORTUNITY_UPLOAD_ROWS);
-
-      setSheetUploadProgress({ stage: 'Detecting headers…', pct: 35 });
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-
-      const normalizeHeader = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-      const headerCandidates: Record<keyof FormState, string[]> = {
-        opportunityRefNo: ['tender no', 'ref no', 'ref no.', 'opportunity ref', 'avenir ref', 'avenir ref no'],
-        tenderName: ['tender name', 'tender'],
-        opportunityClassification: ['tender type', 'type'],
-        clientName: ['client', 'client name'],
-        groupClassification: ['gds/ges', 'group', 'vertical', 'group classification'],
-        dateTenderReceived: ['date tender recd', 'date tender received', 'rfp received', 'date received'],
-        tenderPlannedSubmissionDate: ['tender due date', 'tender due  date', 'submission', 'planned submission', 'submission date'],
-        tenderResult: ['tender result', 'result', 'outcome', 'final result', 'tender outcome'],
-        tenderStatusRemark: ['tender status -', 'tender status-', 'tender status'],
-        internalLead: ['assigned person', 'lead', 'internal lead'],
-        opportunityValue: ['tender value', 'value', 'opportunity value'],
-        avenirStatus: ['avenir status', 'status'],
-        adnocRftNo: ['adnoc rft no', 'client ref', 'client ref.', 'adnoc rft'],
-      };
-
-      const scoreHeaderRow = (rowIndex: number) => {
-        const row = worksheet.getRow(rowIndex);
-        const normalized: string[] = [];
-        for (let col = 1; col <= maxColumns; col += 1) {
-          normalized.push(normalizeHeader(row.getCell(col).value));
-        }
-        let score = 0;
-        (Object.keys(headerCandidates) as Array<keyof FormState>).forEach((key) => {
-          if (normalized.some((cell) => headerCandidates[key].includes(cell))) score += 1;
-        });
-        return score;
-      };
-
-      let headerRowIndex = 1;
-      let bestScore = -1;
-      for (let rowIndex = 1; rowIndex <= maxScanRows; rowIndex += 1) {
-        const score = scoreHeaderRow(rowIndex);
-        if (score > bestScore) {
-          bestScore = score;
-          headerRowIndex = rowIndex;
-        }
-      }
-
-      const headerRow = worksheet.getRow(headerRowIndex);
-      const normalizedHeader: string[] = [];
-      for (let col = 1; col <= maxColumns; col += 1) {
-        normalizedHeader.push(normalizeHeader(headerRow.getCell(col).value));
-      }
-      const columnIndex: Partial<Record<keyof FormState, number>> = {};
-      (Object.keys(headerCandidates) as Array<keyof FormState>).forEach((key) => {
-        const idx = normalizedHeader.findIndex((cell) => headerCandidates[key].includes(cell));
-        if (idx >= 0) columnIndex[key] = idx + 1; // 1-based for exceljs
-      });
-
-      if (columnIndex.opportunityRefNo === undefined) throw new Error('Could not find a "Tender no / Ref no" column.');
-
-      const getCellText = (excelRow: { getCell: (idx: number) => { value: unknown } }, key: keyof FormState) => {
-        const idx = columnIndex[key];
-        if (idx === undefined) return '';
-        const raw = excelRow.getCell(idx).value ?? '';
-        if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw.toISOString().slice(0, 10);
-        return String(raw ?? '').trim();
-      };
-
-      setSheetUploadProgress({ stage: 'Parsing rows…', pct: 55 });
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-      const parsed: FormState[] = [];
-      for (let rowIndex = headerRowIndex + 1; rowIndex <= maxRows; rowIndex += 1) {
-        const excelRow = worksheet.getRow(rowIndex);
-        const opportunityRefNo = getCellText(excelRow, 'opportunityRefNo');
-        const tenderName = getCellText(excelRow, 'tenderName');
-        const clientName = getCellText(excelRow, 'clientName');
-        if (!opportunityRefNo && !tenderName && !clientName) continue;
-
-        parsed.push({
-          opportunityRefNo,
-          tenderName,
-          opportunityClassification: getCellText(excelRow, 'opportunityClassification'),
-          clientName,
-          groupClassification: getCellText(excelRow, 'groupClassification'),
-          dateTenderReceived: getCellText(excelRow, 'dateTenderReceived'),
-          tenderPlannedSubmissionDate: getCellText(excelRow, 'tenderPlannedSubmissionDate'),
-          tenderResult: getCellText(excelRow, 'tenderResult'),
-          tenderStatusRemark: getCellText(excelRow, 'tenderStatusRemark'),
-          internalLead: getCellText(excelRow, 'internalLead'),
-          opportunityValue: getCellText(excelRow, 'opportunityValue'),
-          avenirStatus: getCellText(excelRow, 'avenirStatus'),
-          adnocRftNo: getCellText(excelRow, 'adnocRftNo'),
-        });
-      }
-
-      setSheetUploadProgress({ stage: 'Diffing…', pct: 80 });
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-      const normalizeRef = (value: string) => String(value || '').trim().toLowerCase();
-      const existingByRef = new Map(opportunities.map((opp) => [normalizeRef(String(opp.opportunityRefNo || opp.tenderNo || '')), opp]));
-
-      const normalizeValue = (value: unknown) => String(value ?? '').trim();
-      const isSame = (a: unknown, b: unknown) => normalizeValue(a) === normalizeValue(b);
-      const isUpdated = (row: FormState, existing: Opportunity) => {
-        if (!existing) return false;
-        return !(
-          isSame(existing.opportunityRefNo, row.opportunityRefNo) &&
-          isSame(existing.tenderName, row.tenderName) &&
-          isSame(existing.clientName, row.clientName) &&
-          isSame(existing.groupClassification, row.groupClassification) &&
-          isSame(existing.internalLead, row.internalLead) &&
-          isSame(existing.opportunityClassification, row.opportunityClassification) &&
-          isSame(existing.dateTenderReceived, row.dateTenderReceived) &&
-          isSame(existing.tenderPlannedSubmissionDate, row.tenderPlannedSubmissionDate) &&
-          isSame(existing.tenderResult, row.tenderResult) &&
-          isSame(existing.tenderStatusRemark, row.tenderStatusRemark) &&
-          isSame(existing.avenirStatus, row.avenirStatus) &&
-          isSame(existing.adnocRftNo, row.adnocRftNo) &&
-          isSame(String(existing.opportunityValue ?? ''), row.opportunityValue)
-        );
-      };
-
-      const created: FormState[] = [];
-      const updated: FormState[] = [];
-      const unchanged: FormState[] = [];
-      parsed.forEach((row) => {
-        const existing = existingByRef.get(normalizeRef(row.opportunityRefNo));
-        if (!existing) return created.push(row);
-        if (isUpdated(row, existing)) return updated.push(row);
-        return unchanged.push(row);
-      });
-
-      setSheetUploadRows([...created, ...updated, ...unchanged]);
-      setSheetUploadMeta({ created: created.length, updated: updated.length });
-      setSheetUploadOpen(true);
-      setSheetUploadProgress({ stage: 'Ready', pct: 100 });
-    } catch (error) {
-      console.error('[opportunities.sheet-upload.error]', error);
-      toast.error((error as Error).message || 'Failed to parse uploaded sheet.');
-    } finally {
-      setSheetUploadLoading(false);
-      window.setTimeout(() => setSheetUploadProgress(null), 800);
-    }
-  };
-
-  const commitSheetUpload = async () => {
-    try {
-      if (!token) {
-        toast.error('Not authenticated.');
-        return;
-      }
-      if (!sheetUploadRows.length) {
-        toast.error('No parsed rows to save.');
-        return;
-      }
-      setSheetUploadSaving(true);
-      setSheetUploadCommitProgress({ stage: 'Preparing…', pct: 5 });
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-      const response = await fetch(`${API_URL}/opportunities/sheet-upload/commit`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ rows: sheetUploadRows }),
-      });
-      setSheetUploadCommitProgress({ stage: 'Saving…', pct: 55 });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.error || 'Failed to save rows.');
-      setSheetUploadCommitProgress({ stage: 'Applying updates…', pct: 80 });
-      toast.success(`Saved. Created ${data?.created ?? 0}, updated ${data?.updated ?? 0}.`);
-      const touched = Array.isArray(data?.rows) ? data.rows : [];
-      if (touched.length) {
-        upsertOpportunities(touched);
-      }
-      setSheetUploadRows([]);
-      setSheetUploadCommitProgress({ stage: 'Finalizing…', pct: 95 });
-      setSheetUploadOpen(false);
-      setSheetUploadMeta(null);
-      // Lightweight sync in background to ensure derived fields stay consistent.
-      void refreshData({ background: true }).catch(() => {});
-    } catch (error) {
-      console.error('[opportunities.sheet-upload.commit.error]', error);
-      toast.error((error as Error).message || 'Failed to save parsed rows.');
-    } finally {
-      setSheetUploadSaving(false);
-      window.setTimeout(() => setSheetUploadCommitProgress(null), 800);
-    }
-  };
 
   useEffect(() => {
     loadConflicts();
@@ -809,32 +768,31 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
                 id="opportunities-sheet-upload"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) void handleSheetUpload(file);
+                  if (file) void executeUpload(file);
                   e.currentTarget.value = '';
                 }}
-                disabled={sheetUploadLoading || sheetUploadSaving}
+                disabled={isUploading || isCommitting}
               />
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => document.getElementById('opportunities-sheet-upload')?.click()}
-                loading={sheetUploadLoading}
-                disabled={sheetUploadSaving}
+                loading={isUploading}
+                disabled={isCommitting}
               >
                 Upload Sheet
               </Button>
-              {sheetUploadLoading && sheetUploadProgress ? (
-                <div className="hidden sm:flex items-center gap-2 pl-3 text-xs text-muted-foreground border-l border-border ml-1">
+              {isUploading && (
+                <div className="hidden sm:flex items-center gap-3 pl-3 text-xs text-muted-foreground border-l border-border ml-1">
                   <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
                     <div
-                      className="h-full bg-teal-500 transition-[width] duration-200"
-                      style={{ width: `${Math.max(2, Math.min(100, sheetUploadProgress.pct))}%` }}
+                      className="h-full bg-primary transition-[width] duration-200"
+                      style={{ width: `${Math.max(2, Math.min(100, uploadProgress))}%` }}
                     />
                   </div>
-                  <span className="font-medium">{sheetUploadProgress.stage}</span>
-                  <span className="tabular-nums opacity-70">{Math.round(sheetUploadProgress.pct)}%</span>
+                  <span className="font-bold text-foreground truncate max-w-[100px]">{sheetUploadProgressLabel}</span>
                 </div>
-              ) : null}
+              )}
             </>
           ) : null}
           <Button
@@ -908,7 +866,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       <Dialog
         open={sheetUploadOpen}
         onOpenChange={(open) => {
-          if (!sheetUploadSaving) setSheetUploadOpen(open);
+          if (!isCommitting) setSheetUploadOpen(open);
         }}
       >
         <DialogContent className="max-w-5xl">
@@ -952,24 +910,24 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
             </table>
           </div>
           <div className="flex items-center justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setSheetUploadOpen(false)} disabled={sheetUploadSaving}>
+            <Button type="button" variant="outline" onClick={() => setSheetUploadOpen(false)} disabled={isCommitting}>
               Cancel
             </Button>
-            {sheetUploadSaving && sheetUploadCommitProgress ? (
+            {isCommitting && (
               <div className="mr-4 flex items-center gap-3 text-xs text-muted-foreground">
                 <div className="h-1.5 w-40 overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full bg-teal-500 transition-[width] duration-200"
-                    style={{ width: `${Math.max(2, Math.min(100, sheetUploadCommitProgress.pct))}%` }}
+                    className="h-full bg-primary transition-[width] duration-200"
+                    style={{ width: `${Math.max(2, Math.min(100, commitProgress))}%` }}
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-foreground">{sheetUploadCommitProgress.stage}</span>
-                  <span className="tabular-nums opacity-70">{Math.round(sheetUploadCommitProgress.pct)}%</span>
+                  <span className="font-bold text-foreground">Writing to DB…</span>
+                  <span className="tabular-nums opacity-70">{Math.round(commitProgress)}%</span>
                 </div>
               </div>
-            ) : null}
-            <Button type="button" onClick={commitSheetUpload} loading={sheetUploadSaving} disabled={!sheetUploadRows.length}>
+            )}
+            <Button type="button" onClick={() => executeCommit()} loading={isCommitting} disabled={!sheetUploadRows.length}>
               Save {sheetUploadRows.length} Row{sheetUploadRows.length === 1 ? '' : 's'}
             </Button>
           </div>

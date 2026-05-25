@@ -14,6 +14,7 @@ import VendorDirectory from "./pages/VendorDirectory";
 import Clients from "./pages/Clients";
 import Analytics from "./pages/Analytics";
 import BDEngagements from "./pages/BDEngagements";
+import AdvancedAnalytics from "./pages/AdvancedAnalytics";
 import Admin from "./pages/Admin";
 import PendingApproval from "./pages/PendingApproval";
 import NotFound from "./pages/NotFound";
@@ -29,6 +30,7 @@ import { AuthProvider as SessionAuthProvider } from "@/contexts/AuthContext";
 import { CssBaseline } from "@mui/material";
 import { StyledEngineProvider, ThemeProvider } from "@mui/material/styles";
 import { muiTheme } from "@/theme/muiTheme";
+import { ThemeProvider as NextThemeProvider, useTheme } from "next-themes";
 import { Skeleton } from "@/components/ui/skeleton";
 import { diag } from "@/lib/diagnostics";
 
@@ -104,6 +106,7 @@ function AppRoutes() {
             <Route path="clients" element={<PageAccessRoute pageKey="clients"><Clients /></PageAccessRoute>} />
             <Route path="analytics" element={<PageAccessRoute pageKey="analytics"><Analytics /></PageAccessRoute>} />
             <Route path="bd-engagements" element={<PageAccessRoute pageKey="bd_engagements"><BDEngagements /></PageAccessRoute>} />
+            <Route path="advanced-analytics" element={<PageAccessRoute pageKey="advanced_analytics"><AdvancedAnalytics /></PageAccessRoute>} />
             <Route path="master" element={<PageAccessRoute pageKey="master"><Admin /></PageAccessRoute>} />
             <Route path="hireflow" element={<PageAccessRoute pageKey="master"><HireFlow /></PageAccessRoute>} />
 
@@ -137,7 +140,7 @@ function RoutePerfLogger() {
       const frameMs = Math.round(performance.now() - startedAt);
       diag.navPaint(path);
       if (diag.enabled) {
-        // eslint-disable-next-line no-console
+
         console.log('[diag] hint: run `diagFinish()` in the browser console after the page finishes loading to print the full report.');
       }
     };
@@ -148,25 +151,47 @@ function RoutePerfLogger() {
   return null;
 }
 
+const MuiThemeProviderWrapper = ({ children }: { children: React.ReactNode }) => {
+  const { resolvedTheme } = useTheme();
+
+  const currentMuiTheme = React.useMemo(() => {
+    return {
+      ...muiTheme,
+      palette: {
+        ...muiTheme.palette,
+        mode: (resolvedTheme === "dark" ? "dark" : "light") as "light" | "dark",
+      },
+    };
+  }, [resolvedTheme]);
+
+  return (
+    <ThemeProvider theme={currentMuiTheme}>
+      <CssBaseline />
+      {children}
+    </ThemeProvider>
+  );
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <StyledEngineProvider injectFirst>
-      <ThemeProvider theme={muiTheme}>
-        <CssBaseline />
-        <SessionAuthProvider>
-          <CurrencyProvider>
-            <DataProvider>
-              <ApprovalProvider>
-                <TooltipProvider>
-                  <Toaster />
-                  <AppRoutes />
-                </TooltipProvider>
-              </ApprovalProvider>
-            </DataProvider>
-          </CurrencyProvider>
-        </SessionAuthProvider>
-      </ThemeProvider>
-    </StyledEngineProvider>
+    <NextThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <StyledEngineProvider injectFirst>
+        <MuiThemeProviderWrapper>
+          <SessionAuthProvider>
+            <CurrencyProvider>
+              <DataProvider>
+                <ApprovalProvider>
+                  <TooltipProvider>
+                    <Toaster />
+                    <AppRoutes />
+                  </TooltipProvider>
+                </ApprovalProvider>
+              </DataProvider>
+            </CurrencyProvider>
+          </SessionAuthProvider>
+        </MuiThemeProviderWrapper>
+      </StyledEngineProvider>
+    </NextThemeProvider>
   </QueryClientProvider>
 );
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Check, Copy, Globe, MapPin, Plus, Search, Upload } from 'lucide-react';
+import { Check, Copy, Globe, MapPin, Plus, Search, Upload, UserCheck, Merge, AlertCircle, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -14,14 +14,22 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { useClientStore } from '@/hooks/useClientStore';
 import { useAuth } from '@/contexts/AuthContext';
 import type { ClientContactInput, ClientInput, ClientProfile } from '@/types/client';
+
+type DuplicateCluster = {
+  id: string;
+  members: ClientProfile[];
+  suggestedName: string;
+};
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -246,7 +254,7 @@ const CopyButton = ({ value, label }: { value: string; label: string }) => {
 
 const Clients = () => {
   const { clients, stats, addClient, importClients, updateClient, normalizeCompanyName, isLoading, error, refreshClients } = useClientStore();
-  const { canPerformAction } = useAuth();
+  const { canPerformAction, token, isMaster } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const canManageClients = canPerformAction('clients_import');
@@ -261,6 +269,9 @@ const Clients = () => {
   const [isSavingClient, setIsSavingClient] = useState(false);
   const [lastImportSummary, setLastImportSummary] = useState<{ attempted: number; created: number; updated: number; at: string } | null>(null);
   const [filters, setFilters] = useState<{ domains: string[]; countries: string[] }>({ domains: [], countries: [] });
+  const [duplicates, setDuplicates] = useState<DuplicateCluster[]>([]);
+  const [loadingDuplicates, setLoadingDuplicates] = useState(false);
+  const [merging, setMerging] = useState<string | null>(null);
 
   const [newClient, setNewClient] = useState<ClientInput>({
     companyName: '',
@@ -490,11 +501,59 @@ const Clients = () => {
     }
   };
 
+  const loadDuplicates = async () => {
+    if (!token) return;
+    setLoadingDuplicates(true);
+    try {
+      const res = await fetch((import.meta.env.VITE_API_URL || '/api') + '/clients/duplicates', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load duplicates');
+      setDuplicates(data.clusters || []);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setLoadingDuplicates(false);
+    }
+  };
+
+  const mergeCluster = async (cluster: DuplicateCluster, targetId: string) => {
+    if (!token) return;
+    setMerging(cluster.id);
+    try {
+      const res = await fetch((import.meta.env.VITE_API_URL || '/api') + '/clients/merge', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          targetId,
+          memberIds: cluster.members.map((m) => m.id),
+          companyName: cluster.members.find((m) => m.id === targetId)?.companyName
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Merge failed');
+      toast.success(data.message || 'Clients merged successfully');
+      setDuplicates(prev => prev.filter(c => c.id !== cluster.id));
+      await refreshClients();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setMerging(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Clients</h1>
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <UserCheck className="h-6 w-6 text-primary" />
+            Clients
+          </h1>
           <p className="text-muted-foreground">Vendor-style directory of client profiles and contacts.</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -762,51 +821,70 @@ const Clients = () => {
         </div>
       </div>
 
+      <Tabs defaultValue="all" className="space-y-6">
+        <div className="flex items-center justify-between">
+          <TabsList className="bg-muted/50 p-1 rounded-xl">
+            <TabsTrigger value="all" className="rounded-lg gap-2">All Clients</TabsTrigger>
+            {isMaster && (
+              <TabsTrigger value="duplicates" className="rounded-lg gap-2" onClick={loadDuplicates}>
+                Duplicates
+                {duplicates.length > 0 && (
+                  <Badge variant="destructive" className="h-4 w-4 p-0 flex items-center justify-center text-[10px] rounded-full">
+                    {duplicates.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            )}
+          </TabsList>
+        </div>
+
+        <TabsContent value="all" className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-card border border-border/50">
+        <Card className="bg-card border border-border/50 shadow-sm">
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Total Clients</p>
-            <p className="text-2xl font-bold text-foreground">{stats.totalClients}</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Total Clients</p>
+            <p className="text-3xl font-black text-foreground mt-1">{stats.totalClients}</p>
           </CardContent>
         </Card>
-        <Card className="bg-card border border-border/50">
+        <Card className="bg-card border border-border/50 shadow-sm">
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">With Contacts</p>
-            <p className="text-2xl font-bold text-foreground">{stats.withContacts}</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">With Contacts</p>
+            <p className="text-3xl font-black text-foreground mt-1">{stats.withContacts}</p>
           </CardContent>
         </Card>
-        <Card className="bg-card border border-border/50">
+        <Card className="bg-card border border-border/50 shadow-sm">
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Total Contacts</p>
-            <p className="text-2xl font-bold text-foreground">{stats.totalContacts}</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Total Contacts</p>
+            <p className="text-3xl font-black text-foreground mt-1">{stats.totalContacts}</p>
           </CardContent>
         </Card>
-        <Card className="bg-card border border-border/50">
+        <Card className="bg-card border border-border/50 shadow-sm">
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Domains</p>
-            <p className="text-2xl font-bold text-foreground">{stats.domains}</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Unique Domains</p>
+            <p className="text-3xl font-black text-foreground mt-1">{stats.domains}</p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between pt-4">
         <div className="relative w-full lg:max-w-xl">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search companies, domains, locations, or contacts..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="h-12 pl-11 bg-card border-border/50"
+            className="h-12 pl-11 bg-card border-border/50 rounded-2xl shadow-sm focus-visible:ring-primary/20"
           />
         </div>
         <div className="flex flex-wrap gap-2">
           {filters.domains.length > 0 || filters.countries.length > 0 ? (
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
+              className="rounded-xl border-dashed"
               onClick={() => setFilters({ domains: [], countries: [] })}
             >
-              Clear Filters
+              Clear all filters
             </Button>
           ) : null}
         </div>
@@ -844,14 +922,25 @@ const Clients = () => {
         style={{ perspective: '1000px' }}
       >
         {isLoading && (
-          <Card className="border border-border/50 bg-card p-6 text-sm text-muted-foreground">
-            Loading clients from MongoDB...
+          <Card className="border border-border/50 bg-card p-12 text-center flex flex-col items-center gap-4 col-span-full">
+            <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm font-medium text-muted-foreground">Synchronizing client directory...</p>
           </Card>
         )}
         {error && !isLoading && (
-          <Card className="border border-border/50 bg-card p-6 text-sm text-destructive">
+          <Card className="border-destructive/20 bg-destructive/5 p-6 text-sm text-destructive col-span-full">
+            <AlertCircle className="h-4 w-4 inline mr-2" />
             {error}
           </Card>
+        )}
+        {!isLoading && filteredClients.length === 0 && (
+          <div className="col-span-full py-20 text-center">
+             <div className="inline-flex p-6 rounded-full bg-muted/50 mb-4">
+               <Search className="h-10 w-10 text-muted-foreground/50" />
+             </div>
+             <p className="text-lg font-bold text-foreground">No clients found</p>
+             <p className="text-muted-foreground">Try adjusting your search or filters to find what you're looking for.</p>
+          </div>
         )}
         {filteredClients.map((client) => {
           const firstContact = client.contacts[0];
@@ -904,6 +993,86 @@ const Clients = () => {
           );
         })}
       </div>
+      </TabsContent>
+
+      {isMaster && (
+        <TabsContent value="duplicates" className="space-y-6">
+          <div className="bg-amber-500/5 border border-amber-500/20 rounded-3xl p-6 flex flex-col sm:flex-row items-center gap-6 mb-8">
+            <div className="h-16 w-16 shrink-0 rounded-2xl bg-amber-500/10 flex items-center justify-center">
+              <Merge className="h-8 w-8 text-amber-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-amber-900 dark:text-amber-400">Client Deduplication</h2>
+              <p className="text-sm text-amber-800/70 dark:text-amber-400/70 max-w-2xl">
+                We've identified potential duplicate clients based on name similarity and common tokens. Review these clusters below to merge contacts and unify your data.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" className="ml-auto rounded-xl gap-2" onClick={loadDuplicates} disabled={loadingDuplicates}>
+              <RefreshCw className={cn("h-4 w-4", loadingDuplicates && "animate-spin")} />
+              Refresh Scan
+            </Button>
+          </div>
+
+          {loadingDuplicates && (
+            <div className="flex flex-col items-center justify-center py-20 gap-4">
+              <RefreshCw className="h-10 w-10 animate-spin text-primary" />
+              <p className="font-medium text-muted-foreground">Scanning for similarities...</p>
+            </div>
+          )}
+
+          {!loadingDuplicates && duplicates.length === 0 && (
+            <div className="text-center py-20 bg-muted/20 rounded-[2rem] border border-dashed">
+               <Check className="h-12 w-12 text-emerald-500 mx-auto mb-4" />
+               <p className="text-xl font-bold">No Duplicates Found</p>
+               <p className="text-muted-foreground">Your client directory is looking clean!</p>
+            </div>
+          )}
+
+          <div className="grid gap-6">
+            {duplicates.map((cluster) => (
+              <Card key={cluster.id} className="rounded-[2rem] border-2 border-border/50 overflow-hidden shadow-sm hover:border-primary/20 transition-all">
+                <CardHeader className="bg-muted/30 border-b p-6 sm:p-8">
+                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Potential Cluster</div>
+                        <CardTitle className="text-2xl font-black">{cluster.suggestedName}</CardTitle>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="rounded-full bg-background font-bold text-xs px-3">{cluster.members.length} variants</Badge>
+                      </div>
+                   </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                   <div className="divide-y divide-border/50">
+                     {cluster.members.map((member) => (
+                       <div key={member.id} className="p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6 hover:bg-muted/5 transition-colors">
+                          <div className="space-y-2">
+                             <div className="font-bold text-lg">{member.companyName}</div>
+                             <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                                <span className="flex items-center gap-1.5"><Globe className="h-3.5 w-3.5" /> {member.domain || member.group || 'No domain'}</span>
+                                <span className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5" /> {member.location.city}, {member.location.country}</span>
+                                <span className="flex items-center gap-1.5"><UserCheck className="h-3.5 w-3.5" /> {member.contacts.length} contacts</span>
+                             </div>
+                          </div>
+                          <Button
+                            className="rounded-xl px-6 gap-2"
+                            onClick={() => mergeCluster(cluster, member.id)}
+                            disabled={merging === cluster.id}
+                            variant={merging === cluster.id ? "secondary" : "default"}
+                          >
+                            {merging === cluster.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Merge className="h-4 w-4" />}
+                            Make Primary & Merge
+                          </Button>
+                       </div>
+                     ))}
+                   </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+      )}
+      </Tabs>
 
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
         <DialogContent className="max-w-3xl">
