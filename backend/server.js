@@ -5302,13 +5302,15 @@ app.get('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
 
 // --- PQ & Registration Activities ---
 const PQ_STATUS_VALUES = ['Prequalified', 'Registered', 'Registration on Process'];
-const PQ_TENANTS = ['avenir_abudhabi', 'avenir_india', 'bcts_dubai', 'bcts_abudhabi', 'avenir_energy'];
+const PQ_TENANTS = ['avenir_abudhabi', 'avenir_india', 'bcts_dubai', 'bcts_abudhabi', 'avenir_energy', 'avenir_oilfield', 'lauren'];
 const PQ_TENANT_ALIASES = {
   avenir_abudhabi: ['avenir_abudhabi', 'avenir', 'avenir_abudhabi ', 'avenir-abu-dhabi', 'avenir_abudhabi'],
   avenir_india: ['avenir_india', 'avenir india', 'avenir_ind', 'india', 'avenir_india '],
   bcts_dubai: ['bcts_dubai', 'bcts dubai', 'bcts', 'dubai', 'bcts_dubai '],
   bcts_abudhabi: ['bcts_abudhabi', 'bcts abu dhabi', 'bcts_abudhabi ', 'bcts-abu-dhabi'],
   avenir_energy: ['avenir_energy', 'avenir energy', 'energy', 'avenir_energy '],
+  avenir_oilfield: ['avenir_oilfield', 'avenir oilfield', 'oilfield', 'avenir oil field', 'avenir_oilfield '],
+  lauren: ['lauren', 'lauren ', 'lauren llc', 'lauren-llc'],
 };
 
 const normalizePqTenant = (value) => {
@@ -5339,7 +5341,7 @@ const normalizePqStatus = (value) => {
 };
 
 const pqActivityCreateSchema = z.object({
-  tenant: z.enum(['avenir_abudhabi', 'avenir_india', 'bcts_dubai', 'bcts_abudhabi', 'avenir_energy']).optional(),
+  tenant: z.enum(['avenir_abudhabi', 'avenir_india', 'bcts_dubai', 'bcts_abudhabi', 'avenir_energy', 'avenir_oilfield', 'lauren']).optional(),
   sNo: z.number().int().nonnegative().optional(),
   company: z.string().trim().min(1).max(120),
   status: z.enum(['Prequalified', 'Registered', 'Registration on Process']).optional(),

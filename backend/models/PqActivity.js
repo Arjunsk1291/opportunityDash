@@ -6,6 +6,8 @@ export const PQ_TENANTS = [
   'bcts_dubai',
   'bcts_abudhabi',
   'avenir_energy',
+  'avenir_oilfield',
+  'lauren',
 ];
 
 const pqActivitySchema = new mongoose.Schema(
@@ -43,6 +45,8 @@ export const getPqModel = (tenant) => {
     bcts_dubai: 'BCTS_DUBAI_PQ',
     bcts_abudhabi: 'BCTS_ABUDHABII_PQ',
     avenir_energy: 'AVENIR_ENERGY_PQ',
+    avenir_oilfield: 'AVENIR_OILFIELD_PQ',
+    lauren: 'LAUREN_PQ',
   };
 
   const collectionName = collectionMap[normalized] || 'pq_activities_others';

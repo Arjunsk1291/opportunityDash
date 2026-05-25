@@ -98,6 +98,8 @@ const PQ_TENANTS = [
   { key: 'avenir_abudhabi', brand: 'Avenir', location: 'Abu Dhabi' },
   { key: 'avenir_india', brand: 'Avenir', location: 'India' },
   { key: 'avenir_energy', brand: 'Avenir', location: 'Energy' },
+  { key: 'avenir_oilfield', brand: 'Avenir', location: 'Oilfield' },
+  { key: 'lauren', brand: 'Lauren', location: '' },
   { key: 'bcts_dubai', brand: 'BCTS', location: 'Dubai' },
   { key: 'bcts_abudhabi', brand: 'BCTS', location: 'Abu Dhabi' },
 ] as const;
