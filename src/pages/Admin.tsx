@@ -26,6 +26,7 @@ import { DEFAULT_EXPORT_TEMPLATE, ExportTemplateConfig, normalizeExportTemplate 
 import { ExportTemplateSpreadsheet } from '@/components/Admin/ExportTemplateSpreadsheet';
 import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToObjects } from '@/lib/excelWorkbook';
 import { UserMultiEmailPicker } from '@/components/Admin/UserMultiEmailPicker';
+import { diag } from '@/lib/diagnostics';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -277,10 +278,12 @@ export default function Admin() {
     pageExcludePermissions,
     pageEmailPermissions,
     updatePagePermissions,
+    reloadPagePermissions,
     canAccessPage,
     actionPermissions,
     actionEmailPermissions,
     updateActionPermissions,
+    reloadActionPermissions,
     canPerformAction,
   } = useAuth();
   const canAccessPanel = isMaster || user?.role === 'Admin';
@@ -498,6 +501,12 @@ export default function Admin() {
       loadExportTemplateConfig();
       loadNotificationStatus();
       fetchConsentUrl();
+      if (diag.enabled) {
+        fetch(API_URL + '/version', { headers: token ? { Authorization: 'Bearer ' + token } : undefined })
+          .then((r) => r.json())
+          .then((data) => console.log('[diag]', { tag: 'DIAG_BACKEND_VERSION', ts: new Date().toISOString(), data }))
+          .catch(() => {});
+      }
     }
   }, [canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1798,6 +1807,7 @@ export default function Admin() {
         setProgress(40, 'Saving page visibility permissions');
         await updatePagePermissions(draftPagePermissions, draftPageEmailPermissions, draftPageExcludePermissions);
         setProgress(75, 'Applying updates');
+        await reloadPagePermissions();
         setMessage({ type: 'success', text: '✅ Page visibility permissions updated' });
         setProgress(90, 'Refreshing permissions state');
         setTimeout(() => setMessage(null), 3000);
@@ -1837,6 +1847,7 @@ export default function Admin() {
         setProgress(40, 'Saving action permissions');
         await updateActionPermissions(draftActionPermissions, draftActionEmailPermissions);
         setProgress(75, 'Applying updates');
+        await reloadActionPermissions();
         setMessage({ type: 'success', text: '✅ Action permissions updated' });
         setProgress(90, 'Refreshing permissions state');
         setTimeout(() => setMessage(null), 3000);

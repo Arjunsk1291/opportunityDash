@@ -43,10 +43,12 @@ interface AuthContextType {
     emailPermissions?: Record<PageKey, string[]>,
     excludePermissions?: Record<PageKey, UserRole[]>,
   ) => Promise<void>;
+  reloadPagePermissions: () => Promise<void>;
   actionPermissions: Record<ActionKey, UserRole[]>;
   actionEmailPermissions: Record<ActionKey, string[]>;
   canPerformAction: (actionKey: ActionKey) => boolean;
   updateActionPermissions: (permissions: Record<ActionKey, UserRole[]>, emailPermissions?: Record<ActionKey, string[]>) => Promise<void>;
+  reloadActionPermissions: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -492,10 +494,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pageEmailPermissions,
         canAccessPage,
         updatePagePermissions,
+        reloadPagePermissions: loadPagePermissions,
         actionPermissions,
         actionEmailPermissions,
         canPerformAction,
         updateActionPermissions,
+        reloadActionPermissions: loadActionPermissions,
       }}
     >
       {authError && (
