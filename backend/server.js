@@ -4009,12 +4009,6 @@ const BUILD_INFO = (() => {
   return { gitSha, buildTime };
 })();
 
-const invalidateSystemConfigCache = () => {
-  systemConfigCache.value = null;
-  systemConfigCache.expiresAt = 0;
-  systemConfigCache.inFlight = null;
-};
-
 const getActionPermissions = async () => {
   const config = await getSystemConfig();
   const permissions = sanitizeActionRoleAccess(config.actionRoleAccess || {});
