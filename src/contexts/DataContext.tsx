@@ -299,11 +299,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   React.useEffect(() => {
     const intervalId = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return;
+      const route = typeof window !== 'undefined' ? window.location.pathname : '';
+      // Master Panel makes many privileged config calls; avoid concurrent heavy opportunities refresh
+      // that can starve a single-worker backend (Render WEB_CONCURRENCY=1) and make saves appear hung.
+      if (route === '/master' || route.startsWith('/master/')) return;
       refreshData({ background: true });
     }, LIVE_REFRESH_INTERVAL);
 
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
+        const route = typeof window !== 'undefined' ? window.location.pathname : '';
+        if (route === '/master' || route.startsWith('/master/')) return;
         refreshData({ background: true });
       }
     };
