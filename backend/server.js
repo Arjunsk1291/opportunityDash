@@ -3831,8 +3831,11 @@ const PAGE_KEYS = [
   'master_users',
   'master_data_sync',
   'master_telecast',
+  'master_update',
+  'master_export',
+  'advanced_analytics',
 ];
-const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'BDTeam'];
+const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'BDTeam', 'TempUser'];
 const ACTION_KEYS = [
   'opportunities_view',
   'opportunities_write',
@@ -3857,24 +3860,28 @@ const ACTION_KEYS = [
   'graph_auth_write',
   'telecast_config_write',
   'telecast_auth_write',
+  'export_template_write',
   'notification_alert_flags_write',
   'lead_email_manage',
   'logs_cleanup',
 ];
 const DEFAULT_PAGE_ROLE_ACCESS = {
-  dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'],
+  opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   pq_activities: ['Master', 'Admin', 'Basic'],
-  vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   bd_engagements: ['Master', 'Admin', 'BDTeam'],
+  advanced_analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam'],
   master: ['Master', 'Admin'],
   master_general: ['Master', 'Admin'],
   master_users: ['Master', 'Admin'],
   master_data_sync: ['Master', 'Admin'],
   master_telecast: ['Master', 'Admin'],
+  master_update: ['Master', 'Admin'],
+  master_export: ['Master', 'Admin'],
 };
 const DEFAULT_ACTION_ROLE_ACCESS = {
   opportunities_view: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
@@ -3884,7 +3891,7 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   manual_opportunity_updates_write: ['Master', 'Admin'],
   bd_engagements_write: ['Master', 'Admin', 'BDTeam'],
   pq_activities_view: ['Master', 'Admin', 'Basic'],
-  pq_activities_manage: ['Master', 'Admin'],
+  pq_activities_manage: ['Master'],
   approvals_proposal_head: ['Master', 'ProposalHead'],
   approvals_svp: ['Master', 'SVP'],
   approvals_bulk_revert: ['Master', 'ProposalHead'],
@@ -3900,6 +3907,7 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   graph_auth_write: ['Master'],
   telecast_config_write: ['Master'],
   telecast_auth_write: ['Master'],
+  export_template_write: ['Master'],
   notification_alert_flags_write: ['Master', 'Admin'],
   lead_email_manage: ['Master', 'Admin'],
   logs_cleanup: ['Master'],
@@ -3909,8 +3917,10 @@ const sanitizePageRoleAccess = (input = {}) => {
   const normalized = {};
   for (const page of PAGE_KEYS) {
     const list = Array.isArray(input?.[page]) ? input[page] : DEFAULT_PAGE_ROLE_ACCESS[page];
-    normalized[page] = [...new Set(list.filter((role) => ROLE_KEYS.includes(role)))];
-    if (!normalized[page].length) normalized[page] = [...DEFAULT_PAGE_ROLE_ACCESS[page]];
+    const filtered = list.filter((role) => ROLE_KEYS.includes(role));
+    // Safety: Master should always have access.
+    if (!filtered.includes('Master')) filtered.unshift('Master');
+    normalized[page] = [...new Set(filtered)];
   }
   return normalized;
 };
@@ -3927,7 +3937,10 @@ const sanitizePageExcludeRoleAccess = (input = {}) => {
   const normalized = {};
   for (const page of PAGE_KEYS) {
     const list = Array.isArray(input?.[page]) ? input[page] : [];
-    normalized[page] = [...new Set(list.filter((role) => ROLE_KEYS.includes(role)))];
+    const filtered = list.filter((role) => ROLE_KEYS.includes(role));
+    // Safety: Master cannot be excluded.
+    const final = filtered.filter((role) => role !== 'Master');
+    normalized[page] = [...new Set(final)];
   }
   return normalized;
 };
@@ -3936,8 +3949,10 @@ const sanitizeActionRoleAccess = (input = {}) => {
   const normalized = {};
   for (const action of ACTION_KEYS) {
     const list = Array.isArray(input?.[action]) ? input[action] : DEFAULT_ACTION_ROLE_ACCESS[action];
-    normalized[action] = [...new Set(list.filter((role) => ROLE_KEYS.includes(role)))];
-    if (!normalized[action].length) normalized[action] = [...DEFAULT_ACTION_ROLE_ACCESS[action]];
+    const filtered = list.filter((role) => ROLE_KEYS.includes(role));
+    // Safety: Master should always have access.
+    if (!filtered.includes('Master')) filtered.unshift('Master');
+    normalized[action] = [...new Set(filtered)];
   }
   return normalized;
 };
@@ -4189,6 +4204,16 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
       approvalTemplateSubject: config.approvalAlertTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}',
       approvalTemplateBody: config.approvalAlertTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.',
       approvalTemplateStyle: getTelecastTemplateStyle(config.approvalAlertTemplateStyle).key,
+      awardAlertEnabled: Boolean(config.awardAlertEnabled),
+      awardTemplateSubject: config.awardAlertTemplateSubject || 'Awarded: {{TENDER_NO}} - {{TENDER_NAME}}',
+      awardTemplateBody: config.awardAlertTemplateBody || 'Tender {{TENDER_NAME}} has transitioned to AWARDED for {{CLIENT}}.',
+      awardTemplateStyle: getTelecastTemplateStyle(config.awardAlertTemplateStyle).key,
+      awardRoleRecipients: Array.isArray(config.awardAlertRoleRecipients) ? config.awardAlertRoleRecipients : ['Master', 'Admin'],
+      awardGroupRecipients: {
+        GES: normalizeEmailList(config.awardGroupRecipients?.GES || []),
+        GDS: normalizeEmailList(config.awardGroupRecipients?.GDS || []),
+        GTS: normalizeEmailList(config.awardGroupRecipients?.GTS || []),
+      },
       deadlineAlertEnabled: Boolean(config.deadlineAlertEnabled),
       deadlineTemplateSubject: config.deadlineAlertTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}',
       deadlineTemplateBody: config.deadlineAlertTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.',
@@ -4246,6 +4271,30 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     config.approvalAlertTemplateSubject = approvalTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}';
     config.approvalAlertTemplateBody = approvalTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.';
     config.approvalAlertTemplateStyle = approvalTemplateStyle.key;
+
+    if (req.body?.awardAlertEnabled !== undefined) {
+      config.awardAlertEnabled = Boolean(req.body.awardAlertEnabled);
+    }
+    if (req.body?.awardTemplateSubject !== undefined) {
+      config.awardAlertTemplateSubject = String(req.body.awardTemplateSubject || '').trim();
+    }
+    if (req.body?.awardTemplateBody !== undefined) {
+      config.awardAlertTemplateBody = String(req.body.awardTemplateBody || '').trim();
+    }
+    if (req.body?.awardTemplateStyle !== undefined) {
+      config.awardAlertTemplateStyle = getTelecastTemplateStyle(req.body.awardTemplateStyle).key;
+    }
+    if (Array.isArray(req.body?.awardRoleRecipients)) {
+      config.awardAlertRoleRecipients = req.body.awardRoleRecipients.map((r) => String(r || '').trim()).filter(Boolean);
+    }
+    if (req.body?.awardGroupRecipients) {
+      config.awardGroupRecipients = {
+        GES: normalizeEmailList(req.body.awardGroupRecipients.GES || []),
+        GDS: normalizeEmailList(req.body.awardGroupRecipients.GDS || []),
+        GTS: normalizeEmailList(req.body.awardGroupRecipients.GTS || []),
+      };
+    }
+
     config.deadlineAlertEnabled = deadlineAlertEnabled;
     config.deadlineAlertTemplateSubject = deadlineTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}';
     config.deadlineAlertTemplateBody = deadlineTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.';
@@ -4267,6 +4316,12 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
       approvalTemplateSubject: config.approvalAlertTemplateSubject,
       approvalTemplateBody: config.approvalAlertTemplateBody,
       approvalTemplateStyle: config.approvalAlertTemplateStyle,
+      awardAlertEnabled: config.awardAlertEnabled,
+      awardTemplateSubject: config.awardAlertTemplateSubject,
+      awardTemplateBody: config.awardAlertTemplateBody,
+      awardTemplateStyle: config.awardAlertTemplateStyle,
+      awardRoleRecipients: config.awardAlertRoleRecipients,
+      awardGroupRecipients: config.awardGroupRecipients,
       deadlineAlertEnabled: config.deadlineAlertEnabled,
       deadlineTemplateSubject: config.deadlineAlertTemplateSubject,
       deadlineTemplateBody: config.deadlineAlertTemplateBody,
