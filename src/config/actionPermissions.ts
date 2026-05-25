@@ -97,7 +97,7 @@ export const DEFAULT_ACTION_ROLE_ACCESS: Record<ActionKey, UserRole[]> = {
   clients_import: ['Master', 'Admin'],
   clients_seed: ['Master', 'Admin'],
   pq_activities_view: ['Master', 'Admin', 'Basic'],
-  pq_activities_manage: ['Master', 'Admin'],
+  pq_activities_manage: ['Master'],
   users_manage: ['Master'],
   navigation_permissions_write: ['Master'],
   graph_config_write: ['Master'],
