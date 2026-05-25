@@ -247,6 +247,11 @@ export function OpportunitiesTable({
     submitter: '',
   });
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const topScrollbarRef = useRef<HTMLDivElement | null>(null);
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  const isSyncingScrollRef = useRef(false);
+  const [topScrollWidth, setTopScrollWidth] = useState(0);
+  const [showTopScrollbar, setShowTopScrollbar] = useState(false);
   const [renderLimit, setRenderLimit] = useState(150);
   const isInfiniteScrollEnabled = responsiveMode === 'dashboard';
   const RENDER_BATCH_SIZE = 150;
@@ -258,6 +263,56 @@ export function OpportunitiesTable({
   const densityStyle = TABLE_DENSITY_STYLES[1];
   const cellPaddingClass = densityStyle.cell;
   const tableTextClass = densityStyle.text;
+
+  const measureHorizontalOverflow = () => {
+    const container = scrollContainerRef.current;
+    const table = tableRef.current;
+    if (!container || !table) {
+      setShowTopScrollbar(false);
+      return;
+    }
+    const scrollWidth = table.scrollWidth || 0;
+    setTopScrollWidth(scrollWidth);
+    setShowTopScrollbar(scrollWidth > (container.clientWidth || 0) + 2);
+  };
+
+  useEffect(() => {
+    measureHorizontalOverflow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.length, columnPreset, showAllColumns, maxHeight, responsiveMode]);
+
+  useEffect(() => {
+    const handleResize = () => measureHorizontalOverflow();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const main = scrollContainerRef.current;
+    const top = topScrollbarRef.current;
+    if (!main || !top) return;
+
+    const onMainScroll = () => {
+      if (isSyncingScrollRef.current) return;
+      isSyncingScrollRef.current = true;
+      top.scrollLeft = main.scrollLeft;
+      isSyncingScrollRef.current = false;
+    };
+    const onTopScroll = () => {
+      if (isSyncingScrollRef.current) return;
+      isSyncingScrollRef.current = true;
+      main.scrollLeft = top.scrollLeft;
+      isSyncingScrollRef.current = false;
+    };
+
+    main.addEventListener('scroll', onMainScroll, { passive: true });
+    top.addEventListener('scroll', onTopScroll, { passive: true });
+    return () => {
+      main.removeEventListener('scroll', onMainScroll);
+      top.removeEventListener('scroll', onTopScroll);
+    };
+  }, []);
 
   const canCellEdit = Boolean(onEditCell) && canPerformAction('manual_opportunity_updates_write');
   const getRowStatusClass = (tender: Opportunity) => {
@@ -762,8 +817,8 @@ export function OpportunitiesTable({
     }
   };
 
-  return (
-    <Card className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+	  return (
+	    <Card className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
       <CardHeader className="pb-3">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -839,13 +894,20 @@ export function OpportunitiesTable({
             </Tooltip>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-1 min-w-0 flex-col overflow-hidden p-0">
-        <div
-          ref={scrollContainerRef}
-          className={`${scrollContainerClassName || ''} w-full max-w-full min-w-0 overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}
-        >
-          <Table className={`w-max min-w-full ${tableTextClass}`}>
+	      </CardHeader>
+	      <CardContent className="flex flex-1 min-w-0 flex-col overflow-hidden p-0">
+	        {showTopScrollbar ? (
+	          <div className="sticky top-0 z-20 bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/70 border-b">
+	            <div ref={topScrollbarRef} className="h-4 overflow-x-auto overflow-y-hidden">
+	              <div style={{ width: topScrollWidth || 0, height: 1 }} />
+	            </div>
+	          </div>
+	        ) : null}
+	        <div
+	          ref={scrollContainerRef}
+	          className={`${scrollContainerClassName || ''} w-full max-w-full min-w-0 overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}
+	        >
+	          <Table ref={tableRef} className={`w-max min-w-full ${tableTextClass}`}>
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
                 {isSheetPreset ? (
@@ -943,7 +1005,7 @@ export function OpportunitiesTable({
 	                return (
 	                  <TableRow
 	                    key={tender.id}
-	                    className={`cursor-pointer hover:bg-muted/50 ${styles.row} ${styles[getRowStatusClass(tender)] || ''} ${isDedupeKeptRow ? styles.dedupeKeptRow : ''}`}
+	                    className={`group cursor-pointer hover:bg-muted/50 ${styles.row} ${styles[getRowStatusClass(tender)] || ''} ${isDedupeKeptRow ? styles.dedupeKeptRow : ''}`}
 	                    onClick={() => {
                       if (rowTrace) {
                         setSelectedDuplicateTrace(rowTrace);
@@ -968,30 +1030,19 @@ export function OpportunitiesTable({
 	                          <EditableCell opp={tender} fieldKey="opportunityRefNo">
 	                            <div className="flex items-center gap-1.5">
 	                              <span className="truncate">{tender.opportunityRefNo || '—'}</span>
-	                              {searchTerm && matchColumns.length ? (
-	                                <Tooltip>
-	                                  <TooltipTrigger asChild>
-	                                    <Badge
-	                                      variant="outline"
-	                                      className="border-slate-300/60 bg-white/60 text-slate-600 dark:bg-transparent dark:text-slate-300 text-[10px] px-1 py-0 leading-4"
-	                                      onClick={(e) => e.stopPropagation()}
-	                                    >
-	                                      match
-	                                    </Badge>
-	                                  </TooltipTrigger>
-	                                  <TooltipContent className="max-w-[260px] text-xs">
-	                                    Matched in: {matchColumns.join(', ')}
-	                                  </TooltipContent>
-	                                </Tooltip>
-	                              ) : null}
 	                              {isDedupeKeptRow ? (
 	                                <Badge className="border border-fuchsia-400 bg-fuchsia-100 text-[10px] text-fuchsia-800">
 	                                  dedupe
 	                                </Badge>
 	                              ) : null}
-                            </div>
-                          </EditableCell>
-                        </TableCell>
+	                            </div>
+	                            {searchTerm && matchColumns.length ? (
+	                              <div className="pointer-events-none mt-0.5 truncate text-[10px] font-normal text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+	                                Matched: {matchColumns.join(', ')}
+	                              </div>
+	                            ) : null}
+	                          </EditableCell>
+	                        </TableCell>
                         <TableCell className={`${cellPaddingClass} max-w-[180px] sm:max-w-[250px] min-w-0`}>
                           <div className="min-w-0 space-y-1">
                             <EditableCell opp={tender} fieldKey="tenderName">
