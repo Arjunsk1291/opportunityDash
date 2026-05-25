@@ -5343,14 +5343,17 @@ const pqActivityCreateSchema = z.object({
   sNo: z.number().int().nonnegative().optional(),
   company: z.string().trim().min(1).max(120),
   status: z.enum(['Prequalified', 'Registered', 'Registration on Process']).optional(),
+  workgroup: z.string().trim().max(120).optional().default(''),
   registeredEmail: z.string().trim().max(200).optional().default(''),
   userId: z.string().trim().max(200).optional().default('-'),
   password: z.string().max(500).optional().default(''),
   link: z.string().trim().max(800).optional().default('-'),
+  imageLink: z.string().trim().max(1200).optional().default(''),
   contactPerson: z.string().trim().max(120).optional().default(''),
   renewalDate: z.union([z.string(), z.date(), z.null()]).optional().default(null),
   lastUpdateDate: z.union([z.string(), z.date(), z.null()]).optional().default(null),
   notes: z.string().trim().max(1000).optional().default(''),
+  enquiries: z.string().trim().max(2000).optional().default(''),
 });
 
 const pqActivityPatchSchema = pqActivityCreateSchema.partial().extend({
@@ -5641,14 +5644,17 @@ app.post('/api/pq-activities', verifyToken, async (req, res) => {
       sNo: typeof value.sNo === 'number' ? value.sNo : 0,
       company,
       status: value.status || 'Registration on Process',
+      workgroup: clampString(value.workgroup || '', 120),
       registeredEmail,
       userId: clampString(value.userId || '-', 200) || '-',
       password: String(value.password || ''),
       link: clampString(value.link || '-', 800) || '-',
+      imageLink: clampString(value.imageLink || '', 1200),
       contactPerson: clampString(value.contactPerson || deriveContactPersonFromEmail(registeredEmail), 120),
       renewalDate: parseOptionalDate(value.renewalDate),
       lastUpdateDate: parseOptionalDate(value.lastUpdateDate),
       notes: clampString(value.notes || '', 1000),
+      enquiries: clampString(value.enquiries || '', 2000),
     });
     res.json({ success: true, row: mapPqActivity(doc) });
   } catch (error) {
@@ -5675,14 +5681,17 @@ app.patch('/api/pq-activities/:id', verifyToken, async (req, res) => {
     if (typeof next.sNo === 'number') existing.sNo = next.sNo;
     if (typeof next.company === 'string') existing.company = clampString(next.company, 120);
     if (typeof next.status === 'string') existing.status = next.status;
+    if (typeof next.workgroup === 'string') existing.workgroup = clampString(next.workgroup, 120);
     if (typeof next.registeredEmail === 'string') existing.registeredEmail = clampString(next.registeredEmail, 200);
     if (typeof next.userId === 'string') existing.userId = clampString(next.userId || '-', 200) || '-';
     if (typeof next.password === 'string') existing.password = String(next.password);
     if (typeof next.link === 'string') existing.link = clampString(next.link || '-', 800) || '-';
+    if (typeof next.imageLink === 'string') existing.imageLink = clampString(next.imageLink, 1200);
     if (typeof next.contactPerson === 'string') existing.contactPerson = clampString(next.contactPerson, 120);
     if ('renewalDate' in next) existing.renewalDate = parseOptionalDate(next.renewalDate);
     if ('lastUpdateDate' in next) existing.lastUpdateDate = parseOptionalDate(next.lastUpdateDate);
     if (typeof next.notes === 'string') existing.notes = clampString(next.notes, 1000);
+    if (typeof next.enquiries === 'string') existing.enquiries = clampString(next.enquiries, 2000);
     await existing.save();
     res.json({ success: true, row: mapPqActivity(existing) });
   } catch (error) {
@@ -5746,10 +5755,13 @@ app.post(
       const idxSno = colIdx(['S.No', 'SNo', 'S No', 'S.No.']);
       const idxCompany = colIdx(['Company']);
       const idxStatus = colIdx(['Status']);
+      const idxWorkgroup = colIdx(['Workgroup', 'Work Group', 'Work Group/Dept', 'Department']);
       const idxEmail = colIdx(['Registered Email', 'RegisteredEmail', 'Email']);
       const idxUserId = colIdx(['User ID (Portal)', 'User ID Portal', 'User ID', 'Portal User ID']);
       const idxPassword = colIdx(['Password(Portal)', 'Password (Portal)', 'Portal Password', 'Password']);
       const idxLink = colIdx(['Link(Portal)', 'Link (Portal)', 'Portal Link', 'Link', 'URL']);
+      const idxImageLink = colIdx(['Image Link', 'Image', 'Logo', 'Logo Link', 'Image URL', 'Logo URL']);
+      const idxEnquiries = colIdx(['Enquiries', 'Enquiries/Notes', 'Inquiry', 'Inquiries', 'Queries']);
 
       if (idxCompany < 0) return res.status(400).json({ error: 'Missing Company column' });
 
@@ -5761,19 +5773,25 @@ app.post(
 
         const registeredEmail = clampString(idxEmail >= 0 ? row[idxEmail] : '', 200);
         const status = normalizePqStatus(idxStatus >= 0 ? row[idxStatus] : '');
+        const workgroup = clampString(idxWorkgroup >= 0 ? row[idxWorkgroup] : '', 120);
         const sNoRaw = idxSno >= 0 ? Number(String(row[idxSno] || '').trim()) : NaN;
         const userId = clampString(idxUserId >= 0 ? row[idxUserId] : '-', 200) || '-';
         const password = String(idxPassword >= 0 ? row[idxPassword] : '');
         const link = clampString(idxLink >= 0 ? row[idxLink] : '-', 800) || '-';
+        const imageLink = clampString(idxImageLink >= 0 ? row[idxImageLink] : '', 1200);
+        const enquiries = clampString(idxEnquiries >= 0 ? row[idxEnquiries] : '', 2000);
         const contactPerson = deriveContactPersonFromEmail(registeredEmail);
 
         const updateDoc = {
           $set: {
             status,
+            workgroup,
             registeredEmail,
             userId,
             password,
             link,
+            imageLink,
+            enquiries,
           },
           $setOnInsert: {
             contactPerson: clampString(contactPerson, 120),
@@ -5822,17 +5840,20 @@ app.get('/api/pq-activities/export', verifyToken, async (req, res) => {
     const rows = await getPqModel(tenant).find({ tenant }).sort({ company: 1 }).lean();
 
     const data = [
-      ['S.No', 'Company', 'Status', 'Registered Email', 'User ID (Portal)', 'Password(Portal)', 'Link(Portal)', 'Renewal Date', 'Notes', 'Updated At'],
+      ['S.No', 'Company', 'Status', 'Workgroup', 'Registered Email', 'User ID (Portal)', 'Password(Portal)', 'Link(Portal)', 'Image Link', 'Renewal Date', 'Notes', 'Enquiries', 'Updated At'],
       ...rows.map((r) => ([
         r.sNo ?? '',
         r.company ?? '',
         r.status ?? '',
+        r.workgroup ?? '',
         r.registeredEmail ?? '',
         r.userId ?? '',
         r.password ?? '',
         r.link ?? '',
+        r.imageLink ?? '',
         r.renewalDate ? new Date(r.renewalDate).toISOString().slice(0, 10) : '',
         r.notes ?? '',
+        r.enquiries ?? '',
         r.updatedAt ? new Date(r.updatedAt).toISOString() : '',
       ])),
     ];
