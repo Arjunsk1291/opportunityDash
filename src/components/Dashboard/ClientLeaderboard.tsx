@@ -75,11 +75,13 @@ export function ClientLeaderboard({ data, onClientClick }: ClientLeaderboardProp
                       {client.name}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] sm:text-xs shrink-0">
-                    <span className={sortBy === 'count' ? 'font-black text-foreground' : 'text-muted-foreground'}>{client.count} opps</span>
-                    <span className={`font-black ${sortBy === 'value' ? 'text-primary' : 'text-foreground'}`}>{formatCurrency(client.value)}</span>
-                  </div>
-                </div>
+	                  <div className="flex items-center gap-2 text-[10px] sm:text-xs shrink-0">
+	                    <span className={sortBy === 'count' ? 'font-black text-foreground' : 'text-muted-foreground'}>{client.count} opps</span>
+	                    {sortBy === 'value' ? (
+	                      <span className="font-black text-primary">{formatCurrency(client.value)}</span>
+	                    ) : null}
+	                  </div>
+	                </div>
                 <Progress
                   value={sortBy === 'value' ? (client.value / maxVal) * 100 : (client.count / maxCount) * 100}
                   className="h-1.5"

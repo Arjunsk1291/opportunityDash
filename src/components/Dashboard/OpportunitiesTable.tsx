@@ -1040,7 +1040,7 @@ export function OpportunitiesTable({
 	                              ) : null}
 	                              </div>
 	                            {searchTerm && matchColumns.length ? (
-	                              <div className="pointer-events-none mt-0.5 truncate text-[10px] font-normal text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+	                              <div className="pointer-events-none mt-0.5 text-[10px] font-normal text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 whitespace-normal break-words">
 	                                Matched: {matchColumns.join(', ')}
 	                              </div>
 	                            ) : null}

@@ -627,7 +627,10 @@ const Dashboard = () => {
 
   const filteredData = useMemo(() => applyFilters(opportunities, filters), [opportunities, filters]);
   const funnelData = useMemo(() => calculateFunnelData(filteredData), [filteredData]);
-  const clientData = useMemo(() => getClientData(filteredData), [filteredData]);
+  const clientData = useMemo(
+    () => getClientData(filteredData.filter((opp) => normalizeCanonicalStatus(getDisplayStatus(opp)) === 'AWARDED')),
+    [filteredData],
+  );
   const dataHealth = useMemo(() => calculateDataHealth(filteredData), [filteredData]);
 
   const groupedOpportunities = useMemo(() => buildProjectGroups(filteredData), [filteredData]);
