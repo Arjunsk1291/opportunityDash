@@ -367,9 +367,7 @@ export function getClientData(data: Opportunity[]) {
       clientStats[name] = { count: 0, value: 0 };
     }
     clientStats[name].count++;
-    if (normalizeCanonicalStatus(getDisplayStatus(o)) === 'AWARDED') {
-      clientStats[name].value += getEffectiveOpportunityValue(o);
-    }
+    clientStats[name].value += getEffectiveOpportunityValue(o);
   });
   
   return Object.entries(clientStats)
