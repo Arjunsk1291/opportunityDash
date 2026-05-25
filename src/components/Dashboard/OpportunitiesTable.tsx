@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -243,6 +243,10 @@ export function OpportunitiesTable({
     client: '',
     submitter: '',
   });
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [renderLimit, setRenderLimit] = useState(150);
+  const isInfiniteScrollEnabled = responsiveMode === 'dashboard';
+  const RENDER_BATCH_SIZE = 150;
 
   const isSheetPreset = columnPreset === 'sheet';
   const postBidColumnClass = responsiveMode === 'dashboard'
@@ -595,6 +599,39 @@ export function OpportunitiesTable({
     });
   }, [filteredData, showConvertedEoiRows, isSheetPreset, sheetSortHeader, sheetSortOrder]);
 
+  useEffect(() => {
+    if (!isInfiniteScrollEnabled) return;
+    setRenderLimit(RENDER_BATCH_SIZE);
+    const container = scrollContainerRef.current;
+    if (container) container.scrollTop = 0;
+  }, [isInfiniteScrollEnabled, visibleData.length]);
+
+  useEffect(() => {
+    if (!isInfiniteScrollEnabled) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const onScroll = () => {
+      const thresholdPx = 200;
+      const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (distanceToBottom > thresholdPx) return;
+      setRenderLimit((prev) => {
+        if (prev >= visibleData.length) return prev;
+        return Math.min(visibleData.length, prev + RENDER_BATCH_SIZE);
+      });
+    };
+
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', onScroll);
+    };
+  }, [isInfiniteScrollEnabled, visibleData.length]);
+
+  const renderedData = useMemo(() => {
+    if (!isInfiniteScrollEnabled) return visibleData;
+    return visibleData.slice(0, renderLimit);
+  }, [isInfiniteScrollEnabled, renderLimit, visibleData]);
+
   const toggleSheetSort = (header: string) => {
     setSheetSortHeader((prev) => {
       if (prev === header) {
@@ -801,7 +838,10 @@ export function OpportunitiesTable({
         </div>
       </CardHeader>
       <CardContent className="flex flex-1 min-w-0 flex-col overflow-hidden p-0">
-        <div className={`${scrollContainerClassName || ''} w-full max-w-full min-w-0 overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}>
+        <div
+          ref={scrollContainerRef}
+          className={`${scrollContainerClassName || ''} w-full max-w-full min-w-0 overflow-x-auto ${maxHeight} overflow-y-auto ${styles.scrollContainer}`}
+        >
           <Table className={`w-max min-w-full ${tableTextClass}`}>
             <TableHeader className="sticky top-0 z-10 bg-background">
               <TableRow>
@@ -890,7 +930,7 @@ export function OpportunitiesTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visibleData.map((tender) => {
+              {renderedData.map((tender) => {
                 const approvalStatus = getApprovalStatus(tender.opportunityRefNo);
                 const approvalState = getApprovalState(tender.opportunityRefNo);
                 const rowTrace = duplicateTraceByKeptId[getRowKey(tender)];
@@ -1047,10 +1087,10 @@ export function OpportunitiesTable({
           </Table>
         </div>
         <div className="p-2 sm:p-3 text-xs sm:text-sm text-muted-foreground border-t bg-background">
-          Showing by {sortBy === 'ref' ? `Avenir Ref (${refSortOrder.toUpperCase()})` : `RFP Received (${rfpSortOrder.toUpperCase()})`}: {visibleData.length} of {data.length} tenders
+          Showing by {sortBy === 'ref' ? `Avenir Ref (${refSortOrder.toUpperCase()})` : `RFP Received (${rfpSortOrder.toUpperCase()})`}: {renderedData.length} of {visibleData.length} tenders
           {!showConvertedEoiRows && visibleData.length !== filteredData.length ? ` (${filteredData.length - visibleData.length} converted EOI row${filteredData.length - visibleData.length === 1 ? '' : 's'} hidden)` : ''}
           {dedupeHighlightedCount > 0 ? ` (${dedupeHighlightedCount} dedupe-kept row${dedupeHighlightedCount === 1 ? '' : 's'} highlighted)` : ''}
-          {' '} (scroll to view all)
+          {isInfiniteScrollEnabled ? ' (infinite scroll enabled)' : ' (scroll to view all)'}
         </div>
         <Dialog open={Boolean(selectedDuplicateTrace)} onOpenChange={(open) => { if (!open) setSelectedDuplicateTrace(null); }}>
           <DialogContent className="max-w-4xl">
