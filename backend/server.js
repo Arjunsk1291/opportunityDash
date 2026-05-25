@@ -5384,7 +5384,7 @@ app.get('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
     const allowedEmails = Array.isArray(config.postBidAllowedEmails) ? config.postBidAllowedEmails : [];
     const email = String(req.user?.email || '').trim().toLowerCase();
     const canEdit = ['Master', 'Admin'].includes(req.user.role) || allowedEmails.map((e) => String(e || '').trim().toLowerCase()).includes(email);
-    res.json({ success: true, canEdit });
+    res.json({ success: true, canEdit, allowedEmails });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -5395,7 +5395,8 @@ app.post('/api/opportunities/post-bid-config', verifyToken, async (req, res) => 
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can update post-bid config' });
     }
-    const nextEmails = normalizeEmailList(req.body?.allowedEmails || []);
+    // Frontend historically sends `{ emails: [...] }`; support both shapes.
+    const nextEmails = normalizeEmailList(req.body?.allowedEmails || req.body?.emails || []);
     const config = await getSystemConfig();
     const beforeHashes = { postBidAllowedEmails: hashJson(config.postBidAllowedEmails || []) };
     config.postBidAllowedEmails = nextEmails;
@@ -6031,39 +6032,75 @@ app.post('/api/eoi-duplicates/config', verifyToken, async (req, res) => {
 app.get('/api/export-template/config', verifyToken, async (_req, res) => {
   try {
     const config = await getSystemConfig();
+    // Frontend expects the unprefixed ExportTemplateConfig shape.
+    const payload = {
+      sheetName: config.exportTemplateSheetName,
+      title: config.exportTemplateTitle,
+      introText: config.exportTemplateIntroText,
+      showLogo: config.exportTemplateShowLogo,
+      logoDataUrl: config.exportTemplateLogoDataUrl,
+      logoRow: config.exportTemplateLogoRow,
+      logoColumn: config.exportTemplateLogoColumn,
+      logoWidth: config.exportTemplateLogoWidth,
+      logoHeight: config.exportTemplateLogoHeight,
+      titleRow: config.exportTemplateTitleRow,
+      titleColumn: config.exportTemplateTitleColumn,
+      titleRowSpan: config.exportTemplateTitleRowSpan,
+      titleColumnSpan: config.exportTemplateTitleColumnSpan,
+      titleHorizontalAlign: config.exportTemplateTitleHorizontalAlign,
+      titleVerticalAlign: config.exportTemplateTitleVerticalAlign,
+      introRow: config.exportTemplateIntroRow,
+      introColumn: config.exportTemplateIntroColumn,
+      introRowSpan: config.exportTemplateIntroRowSpan,
+      introColumnSpan: config.exportTemplateIntroColumnSpan,
+      introHorizontalAlign: config.exportTemplateIntroHorizontalAlign,
+      introVerticalAlign: config.exportTemplateIntroVerticalAlign,
+      headerRow: config.exportTemplateHeaderRow,
+      headerColumn: config.exportTemplateHeaderColumn,
+      headerHorizontalAlign: config.exportTemplateHeaderHorizontalAlign,
+      headerVerticalAlign: config.exportTemplateHeaderVerticalAlign,
+      headerBackgroundColor: config.exportTemplateHeaderBackgroundColor,
+      headerTextColor: config.exportTemplateHeaderTextColor,
+      titleColor: config.exportTemplateTitleColor,
+      introColor: config.exportTemplateIntroColor,
+      columnWidths: config.exportTemplateColumnWidths,
+      rowHeights: config.exportTemplateRowHeights,
+    };
     res.json({
       success: true,
-      exportTemplateSheetName: config.exportTemplateSheetName,
-      exportTemplateTitle: config.exportTemplateTitle,
-      exportTemplateIntroText: config.exportTemplateIntroText,
-      exportTemplateShowLogo: config.exportTemplateShowLogo,
-      exportTemplateLogoDataUrl: config.exportTemplateLogoDataUrl,
-      exportTemplateLogoRow: config.exportTemplateLogoRow,
-      exportTemplateLogoColumn: config.exportTemplateLogoColumn,
-      exportTemplateLogoWidth: config.exportTemplateLogoWidth,
-      exportTemplateLogoHeight: config.exportTemplateLogoHeight,
-      exportTemplateTitleRow: config.exportTemplateTitleRow,
-      exportTemplateTitleColumn: config.exportTemplateTitleColumn,
-      exportTemplateTitleRowSpan: config.exportTemplateTitleRowSpan,
-      exportTemplateTitleColumnSpan: config.exportTemplateTitleColumnSpan,
-      exportTemplateTitleHorizontalAlign: config.exportTemplateTitleHorizontalAlign,
-      exportTemplateTitleVerticalAlign: config.exportTemplateTitleVerticalAlign,
-      exportTemplateIntroRow: config.exportTemplateIntroRow,
-      exportTemplateIntroColumn: config.exportTemplateIntroColumn,
-      exportTemplateIntroRowSpan: config.exportTemplateIntroRowSpan,
-      exportTemplateIntroColumnSpan: config.exportTemplateIntroColumnSpan,
-      exportTemplateIntroHorizontalAlign: config.exportTemplateIntroHorizontalAlign,
-      exportTemplateIntroVerticalAlign: config.exportTemplateIntroVerticalAlign,
-      exportTemplateHeaderRow: config.exportTemplateHeaderRow,
-      exportTemplateHeaderColumn: config.exportTemplateHeaderColumn,
-      exportTemplateHeaderHorizontalAlign: config.exportTemplateHeaderHorizontalAlign,
-      exportTemplateHeaderVerticalAlign: config.exportTemplateHeaderVerticalAlign,
-      exportTemplateHeaderBackgroundColor: config.exportTemplateHeaderBackgroundColor,
-      exportTemplateHeaderTextColor: config.exportTemplateHeaderTextColor,
-      exportTemplateTitleColor: config.exportTemplateTitleColor,
-      exportTemplateIntroColor: config.exportTemplateIntroColor,
-      exportTemplateColumnWidths: config.exportTemplateColumnWidths,
-      exportTemplateRowHeights: config.exportTemplateRowHeights,
+      ...payload,
+      // Backward-compatible prefixed keys (older clients).
+      exportTemplateSheetName: payload.sheetName,
+      exportTemplateTitle: payload.title,
+      exportTemplateIntroText: payload.introText,
+      exportTemplateShowLogo: payload.showLogo,
+      exportTemplateLogoDataUrl: payload.logoDataUrl,
+      exportTemplateLogoRow: payload.logoRow,
+      exportTemplateLogoColumn: payload.logoColumn,
+      exportTemplateLogoWidth: payload.logoWidth,
+      exportTemplateLogoHeight: payload.logoHeight,
+      exportTemplateTitleRow: payload.titleRow,
+      exportTemplateTitleColumn: payload.titleColumn,
+      exportTemplateTitleRowSpan: payload.titleRowSpan,
+      exportTemplateTitleColumnSpan: payload.titleColumnSpan,
+      exportTemplateTitleHorizontalAlign: payload.titleHorizontalAlign,
+      exportTemplateTitleVerticalAlign: payload.titleVerticalAlign,
+      exportTemplateIntroRow: payload.introRow,
+      exportTemplateIntroColumn: payload.introColumn,
+      exportTemplateIntroRowSpan: payload.introRowSpan,
+      exportTemplateIntroColumnSpan: payload.introColumnSpan,
+      exportTemplateIntroHorizontalAlign: payload.introHorizontalAlign,
+      exportTemplateIntroVerticalAlign: payload.introVerticalAlign,
+      exportTemplateHeaderRow: payload.headerRow,
+      exportTemplateHeaderColumn: payload.headerColumn,
+      exportTemplateHeaderHorizontalAlign: payload.headerHorizontalAlign,
+      exportTemplateHeaderVerticalAlign: payload.headerVerticalAlign,
+      exportTemplateHeaderBackgroundColor: payload.headerBackgroundColor,
+      exportTemplateHeaderTextColor: payload.headerTextColor,
+      exportTemplateTitleColor: payload.titleColor,
+      exportTemplateIntroColor: payload.introColor,
+      exportTemplateColumnWidths: payload.columnWidths,
+      exportTemplateRowHeights: payload.rowHeights,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -6085,37 +6122,41 @@ app.post('/api/export-template/config', verifyToken, async (req, res) => {
 
     const body = req.body || {};
     // Persist fields used by the Master Panel export template designer.
-    if (body.exportTemplateSheetName !== undefined) config.exportTemplateSheetName = String(body.exportTemplateSheetName || '');
-    if (body.exportTemplateTitle !== undefined) config.exportTemplateTitle = String(body.exportTemplateTitle || '');
-    if (body.exportTemplateIntroText !== undefined) config.exportTemplateIntroText = String(body.exportTemplateIntroText || '');
-    if (body.exportTemplateShowLogo !== undefined) config.exportTemplateShowLogo = Boolean(body.exportTemplateShowLogo);
-    if (body.exportTemplateLogoDataUrl !== undefined) config.exportTemplateLogoDataUrl = String(body.exportTemplateLogoDataUrl || '');
-    if (body.exportTemplateLogoRow !== undefined) config.exportTemplateLogoRow = Number(body.exportTemplateLogoRow) || 1;
-    if (body.exportTemplateLogoColumn !== undefined) config.exportTemplateLogoColumn = Number(body.exportTemplateLogoColumn) || 1;
-    if (body.exportTemplateLogoWidth !== undefined) config.exportTemplateLogoWidth = Number(body.exportTemplateLogoWidth) || 150;
-    if (body.exportTemplateLogoHeight !== undefined) config.exportTemplateLogoHeight = Number(body.exportTemplateLogoHeight) || 46;
-    if (body.exportTemplateTitleRow !== undefined) config.exportTemplateTitleRow = Number(body.exportTemplateTitleRow) || 1;
-    if (body.exportTemplateTitleColumn !== undefined) config.exportTemplateTitleColumn = Number(body.exportTemplateTitleColumn) || 3;
-    if (body.exportTemplateTitleRowSpan !== undefined) config.exportTemplateTitleRowSpan = Number(body.exportTemplateTitleRowSpan) || 1;
-    if (body.exportTemplateTitleColumnSpan !== undefined) config.exportTemplateTitleColumnSpan = Number(body.exportTemplateTitleColumnSpan) || 4;
-    if (body.exportTemplateTitleHorizontalAlign !== undefined) config.exportTemplateTitleHorizontalAlign = String(body.exportTemplateTitleHorizontalAlign || 'left');
-    if (body.exportTemplateTitleVerticalAlign !== undefined) config.exportTemplateTitleVerticalAlign = String(body.exportTemplateTitleVerticalAlign || 'middle');
-    if (body.exportTemplateIntroRow !== undefined) config.exportTemplateIntroRow = Number(body.exportTemplateIntroRow) || 2;
-    if (body.exportTemplateIntroColumn !== undefined) config.exportTemplateIntroColumn = Number(body.exportTemplateIntroColumn) || 3;
-    if (body.exportTemplateIntroRowSpan !== undefined) config.exportTemplateIntroRowSpan = Number(body.exportTemplateIntroRowSpan) || 2;
-    if (body.exportTemplateIntroColumnSpan !== undefined) config.exportTemplateIntroColumnSpan = Number(body.exportTemplateIntroColumnSpan) || 5;
-    if (body.exportTemplateIntroHorizontalAlign !== undefined) config.exportTemplateIntroHorizontalAlign = String(body.exportTemplateIntroHorizontalAlign || 'left');
-    if (body.exportTemplateIntroVerticalAlign !== undefined) config.exportTemplateIntroVerticalAlign = String(body.exportTemplateIntroVerticalAlign || 'top');
-    if (body.exportTemplateHeaderRow !== undefined) config.exportTemplateHeaderRow = Number(body.exportTemplateHeaderRow) || 4;
-    if (body.exportTemplateHeaderColumn !== undefined) config.exportTemplateHeaderColumn = Number(body.exportTemplateHeaderColumn) || 1;
-    if (body.exportTemplateHeaderHorizontalAlign !== undefined) config.exportTemplateHeaderHorizontalAlign = String(body.exportTemplateHeaderHorizontalAlign || 'left');
-    if (body.exportTemplateHeaderVerticalAlign !== undefined) config.exportTemplateHeaderVerticalAlign = String(body.exportTemplateHeaderVerticalAlign || 'middle');
-    if (body.exportTemplateHeaderBackgroundColor !== undefined) config.exportTemplateHeaderBackgroundColor = String(body.exportTemplateHeaderBackgroundColor || '#1D4ED8');
-    if (body.exportTemplateHeaderTextColor !== undefined) config.exportTemplateHeaderTextColor = String(body.exportTemplateHeaderTextColor || '#FFFFFF');
-    if (body.exportTemplateTitleColor !== undefined) config.exportTemplateTitleColor = String(body.exportTemplateTitleColor || '#0F172A');
-    if (body.exportTemplateIntroColor !== undefined) config.exportTemplateIntroColor = String(body.exportTemplateIntroColor || '#475569');
-    if (Array.isArray(body.exportTemplateColumnWidths)) config.exportTemplateColumnWidths = body.exportTemplateColumnWidths.map((n) => Number(n) || 0);
-    if (Array.isArray(body.exportTemplateRowHeights)) config.exportTemplateRowHeights = body.exportTemplateRowHeights.map((n) => Number(n) || 0);
+    // Support both unprefixed (current frontend) and prefixed (legacy) payloads.
+    const get = (key, legacyKey) => (body[key] !== undefined ? body[key] : body[legacyKey]);
+    if (get('sheetName', 'exportTemplateSheetName') !== undefined) config.exportTemplateSheetName = String(get('sheetName', 'exportTemplateSheetName') || '');
+    if (get('title', 'exportTemplateTitle') !== undefined) config.exportTemplateTitle = String(get('title', 'exportTemplateTitle') || '');
+    if (get('introText', 'exportTemplateIntroText') !== undefined) config.exportTemplateIntroText = String(get('introText', 'exportTemplateIntroText') || '');
+    if (get('showLogo', 'exportTemplateShowLogo') !== undefined) config.exportTemplateShowLogo = Boolean(get('showLogo', 'exportTemplateShowLogo'));
+    if (get('logoDataUrl', 'exportTemplateLogoDataUrl') !== undefined) config.exportTemplateLogoDataUrl = String(get('logoDataUrl', 'exportTemplateLogoDataUrl') || '');
+    if (get('logoRow', 'exportTemplateLogoRow') !== undefined) config.exportTemplateLogoRow = Number(get('logoRow', 'exportTemplateLogoRow')) || 1;
+    if (get('logoColumn', 'exportTemplateLogoColumn') !== undefined) config.exportTemplateLogoColumn = Number(get('logoColumn', 'exportTemplateLogoColumn')) || 1;
+    if (get('logoWidth', 'exportTemplateLogoWidth') !== undefined) config.exportTemplateLogoWidth = Number(get('logoWidth', 'exportTemplateLogoWidth')) || 150;
+    if (get('logoHeight', 'exportTemplateLogoHeight') !== undefined) config.exportTemplateLogoHeight = Number(get('logoHeight', 'exportTemplateLogoHeight')) || 46;
+    if (get('titleRow', 'exportTemplateTitleRow') !== undefined) config.exportTemplateTitleRow = Number(get('titleRow', 'exportTemplateTitleRow')) || 1;
+    if (get('titleColumn', 'exportTemplateTitleColumn') !== undefined) config.exportTemplateTitleColumn = Number(get('titleColumn', 'exportTemplateTitleColumn')) || 3;
+    if (get('titleRowSpan', 'exportTemplateTitleRowSpan') !== undefined) config.exportTemplateTitleRowSpan = Number(get('titleRowSpan', 'exportTemplateTitleRowSpan')) || 1;
+    if (get('titleColumnSpan', 'exportTemplateTitleColumnSpan') !== undefined) config.exportTemplateTitleColumnSpan = Number(get('titleColumnSpan', 'exportTemplateTitleColumnSpan')) || 4;
+    if (get('titleHorizontalAlign', 'exportTemplateTitleHorizontalAlign') !== undefined) config.exportTemplateTitleHorizontalAlign = String(get('titleHorizontalAlign', 'exportTemplateTitleHorizontalAlign') || 'left');
+    if (get('titleVerticalAlign', 'exportTemplateTitleVerticalAlign') !== undefined) config.exportTemplateTitleVerticalAlign = String(get('titleVerticalAlign', 'exportTemplateTitleVerticalAlign') || 'middle');
+    if (get('introRow', 'exportTemplateIntroRow') !== undefined) config.exportTemplateIntroRow = Number(get('introRow', 'exportTemplateIntroRow')) || 2;
+    if (get('introColumn', 'exportTemplateIntroColumn') !== undefined) config.exportTemplateIntroColumn = Number(get('introColumn', 'exportTemplateIntroColumn')) || 3;
+    if (get('introRowSpan', 'exportTemplateIntroRowSpan') !== undefined) config.exportTemplateIntroRowSpan = Number(get('introRowSpan', 'exportTemplateIntroRowSpan')) || 2;
+    if (get('introColumnSpan', 'exportTemplateIntroColumnSpan') !== undefined) config.exportTemplateIntroColumnSpan = Number(get('introColumnSpan', 'exportTemplateIntroColumnSpan')) || 5;
+    if (get('introHorizontalAlign', 'exportTemplateIntroHorizontalAlign') !== undefined) config.exportTemplateIntroHorizontalAlign = String(get('introHorizontalAlign', 'exportTemplateIntroHorizontalAlign') || 'left');
+    if (get('introVerticalAlign', 'exportTemplateIntroVerticalAlign') !== undefined) config.exportTemplateIntroVerticalAlign = String(get('introVerticalAlign', 'exportTemplateIntroVerticalAlign') || 'top');
+    if (get('headerRow', 'exportTemplateHeaderRow') !== undefined) config.exportTemplateHeaderRow = Number(get('headerRow', 'exportTemplateHeaderRow')) || 4;
+    if (get('headerColumn', 'exportTemplateHeaderColumn') !== undefined) config.exportTemplateHeaderColumn = Number(get('headerColumn', 'exportTemplateHeaderColumn')) || 1;
+    if (get('headerHorizontalAlign', 'exportTemplateHeaderHorizontalAlign') !== undefined) config.exportTemplateHeaderHorizontalAlign = String(get('headerHorizontalAlign', 'exportTemplateHeaderHorizontalAlign') || 'left');
+    if (get('headerVerticalAlign', 'exportTemplateHeaderVerticalAlign') !== undefined) config.exportTemplateHeaderVerticalAlign = String(get('headerVerticalAlign', 'exportTemplateHeaderVerticalAlign') || 'middle');
+    if (get('headerBackgroundColor', 'exportTemplateHeaderBackgroundColor') !== undefined) config.exportTemplateHeaderBackgroundColor = String(get('headerBackgroundColor', 'exportTemplateHeaderBackgroundColor') || '#1D4ED8');
+    if (get('headerTextColor', 'exportTemplateHeaderTextColor') !== undefined) config.exportTemplateHeaderTextColor = String(get('headerTextColor', 'exportTemplateHeaderTextColor') || '#FFFFFF');
+    if (get('titleColor', 'exportTemplateTitleColor') !== undefined) config.exportTemplateTitleColor = String(get('titleColor', 'exportTemplateTitleColor') || '#0F172A');
+    if (get('introColor', 'exportTemplateIntroColor') !== undefined) config.exportTemplateIntroColor = String(get('introColor', 'exportTemplateIntroColor') || '#475569');
+    const nextColumnWidths = get('columnWidths', 'exportTemplateColumnWidths');
+    const nextRowHeights = get('rowHeights', 'exportTemplateRowHeights');
+    if (Array.isArray(nextColumnWidths)) config.exportTemplateColumnWidths = nextColumnWidths.map((n) => Number(n) || 0);
+    if (Array.isArray(nextRowHeights)) config.exportTemplateRowHeights = nextRowHeights.map((n) => Number(n) || 0);
 
     config.updatedBy = req.user.email;
     await config.save();
@@ -6135,40 +6176,75 @@ app.post('/api/export-template/config', verifyToken, async (req, res) => {
       },
     }));
 
-    res.json({
-      success: true,
-      exportTemplateSheetName: config.exportTemplateSheetName,
-      exportTemplateTitle: config.exportTemplateTitle,
-      exportTemplateIntroText: config.exportTemplateIntroText,
-      exportTemplateShowLogo: config.exportTemplateShowLogo,
-      exportTemplateLogoDataUrl: config.exportTemplateLogoDataUrl,
-      exportTemplateLogoRow: config.exportTemplateLogoRow,
-      exportTemplateLogoColumn: config.exportTemplateLogoColumn,
-      exportTemplateLogoWidth: config.exportTemplateLogoWidth,
-      exportTemplateLogoHeight: config.exportTemplateLogoHeight,
-      exportTemplateTitleRow: config.exportTemplateTitleRow,
-      exportTemplateTitleColumn: config.exportTemplateTitleColumn,
-      exportTemplateTitleRowSpan: config.exportTemplateTitleRowSpan,
-      exportTemplateTitleColumnSpan: config.exportTemplateTitleColumnSpan,
-      exportTemplateTitleHorizontalAlign: config.exportTemplateTitleHorizontalAlign,
-      exportTemplateTitleVerticalAlign: config.exportTemplateTitleVerticalAlign,
-      exportTemplateIntroRow: config.exportTemplateIntroRow,
-      exportTemplateIntroColumn: config.exportTemplateIntroColumn,
-      exportTemplateIntroRowSpan: config.exportTemplateIntroRowSpan,
-      exportTemplateIntroColumnSpan: config.exportTemplateIntroColumnSpan,
-      exportTemplateIntroHorizontalAlign: config.exportTemplateIntroHorizontalAlign,
-      exportTemplateIntroVerticalAlign: config.exportTemplateIntroVerticalAlign,
-      exportTemplateHeaderRow: config.exportTemplateHeaderRow,
-      exportTemplateHeaderColumn: config.exportTemplateHeaderColumn,
-      exportTemplateHeaderHorizontalAlign: config.exportTemplateHeaderHorizontalAlign,
-      exportTemplateHeaderVerticalAlign: config.exportTemplateHeaderVerticalAlign,
-      exportTemplateHeaderBackgroundColor: config.exportTemplateHeaderBackgroundColor,
-      exportTemplateHeaderTextColor: config.exportTemplateHeaderTextColor,
-      exportTemplateTitleColor: config.exportTemplateTitleColor,
-      exportTemplateIntroColor: config.exportTemplateIntroColor,
-      exportTemplateColumnWidths: config.exportTemplateColumnWidths,
-      exportTemplateRowHeights: config.exportTemplateRowHeights,
-    });
+    res.json({ success: true, ...(await (async () => {
+      const payload = {
+        sheetName: config.exportTemplateSheetName,
+        title: config.exportTemplateTitle,
+        introText: config.exportTemplateIntroText,
+        showLogo: config.exportTemplateShowLogo,
+        logoDataUrl: config.exportTemplateLogoDataUrl,
+        logoRow: config.exportTemplateLogoRow,
+        logoColumn: config.exportTemplateLogoColumn,
+        logoWidth: config.exportTemplateLogoWidth,
+        logoHeight: config.exportTemplateLogoHeight,
+        titleRow: config.exportTemplateTitleRow,
+        titleColumn: config.exportTemplateTitleColumn,
+        titleRowSpan: config.exportTemplateTitleRowSpan,
+        titleColumnSpan: config.exportTemplateTitleColumnSpan,
+        titleHorizontalAlign: config.exportTemplateTitleHorizontalAlign,
+        titleVerticalAlign: config.exportTemplateTitleVerticalAlign,
+        introRow: config.exportTemplateIntroRow,
+        introColumn: config.exportTemplateIntroColumn,
+        introRowSpan: config.exportTemplateIntroRowSpan,
+        introColumnSpan: config.exportTemplateIntroColumnSpan,
+        introHorizontalAlign: config.exportTemplateIntroHorizontalAlign,
+        introVerticalAlign: config.exportTemplateIntroVerticalAlign,
+        headerRow: config.exportTemplateHeaderRow,
+        headerColumn: config.exportTemplateHeaderColumn,
+        headerHorizontalAlign: config.exportTemplateHeaderHorizontalAlign,
+        headerVerticalAlign: config.exportTemplateHeaderVerticalAlign,
+        headerBackgroundColor: config.exportTemplateHeaderBackgroundColor,
+        headerTextColor: config.exportTemplateHeaderTextColor,
+        titleColor: config.exportTemplateTitleColor,
+        introColor: config.exportTemplateIntroColor,
+        columnWidths: config.exportTemplateColumnWidths,
+        rowHeights: config.exportTemplateRowHeights,
+      };
+      return {
+        ...payload,
+        exportTemplateSheetName: payload.sheetName,
+        exportTemplateTitle: payload.title,
+        exportTemplateIntroText: payload.introText,
+        exportTemplateShowLogo: payload.showLogo,
+        exportTemplateLogoDataUrl: payload.logoDataUrl,
+        exportTemplateLogoRow: payload.logoRow,
+        exportTemplateLogoColumn: payload.logoColumn,
+        exportTemplateLogoWidth: payload.logoWidth,
+        exportTemplateLogoHeight: payload.logoHeight,
+        exportTemplateTitleRow: payload.titleRow,
+        exportTemplateTitleColumn: payload.titleColumn,
+        exportTemplateTitleRowSpan: payload.titleRowSpan,
+        exportTemplateTitleColumnSpan: payload.titleColumnSpan,
+        exportTemplateTitleHorizontalAlign: payload.titleHorizontalAlign,
+        exportTemplateTitleVerticalAlign: payload.titleVerticalAlign,
+        exportTemplateIntroRow: payload.introRow,
+        exportTemplateIntroColumn: payload.introColumn,
+        exportTemplateIntroRowSpan: payload.introRowSpan,
+        exportTemplateIntroColumnSpan: payload.introColumnSpan,
+        exportTemplateIntroHorizontalAlign: payload.introHorizontalAlign,
+        exportTemplateIntroVerticalAlign: payload.introVerticalAlign,
+        exportTemplateHeaderRow: payload.headerRow,
+        exportTemplateHeaderColumn: payload.headerColumn,
+        exportTemplateHeaderHorizontalAlign: payload.headerHorizontalAlign,
+        exportTemplateHeaderVerticalAlign: payload.headerVerticalAlign,
+        exportTemplateHeaderBackgroundColor: payload.headerBackgroundColor,
+        exportTemplateHeaderTextColor: payload.headerTextColor,
+        exportTemplateTitleColor: payload.titleColor,
+        exportTemplateIntroColor: payload.introColor,
+        exportTemplateColumnWidths: payload.columnWidths,
+        exportTemplateRowHeights: payload.rowHeights,
+      };
+    })()) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
