@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomBytes, randomUUID, scrypt as nodeScrypt, timingSafeEqual, createHash } from 'crypto';
+import { execSync } from 'child_process';
 import jwt from 'jsonwebtoken';
 import compression from 'compression';
 import approvalDb from './approvalDb.js';
@@ -361,6 +362,16 @@ app.get('/api/health', (_req, res) => {
     ok: dbReady,
     service: 'backend',
     dbState: mongoose.connection.readyState,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/api/version', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'backend',
+    gitSha: BUILD_INFO.gitSha,
+    buildTime: BUILD_INFO.buildTime,
     timestamp: new Date().toISOString(),
   });
 });
@@ -3945,6 +3956,24 @@ const systemConfigCache = {
   inFlight: null,
 };
 
+const hashJson = (value) => {
+  try {
+    const json = JSON.stringify(value ?? null);
+    return createHash('sha256').update(json).digest('hex').slice(0, 12);
+  } catch {
+    return 'hash_error';
+  }
+};
+
+const invalidateSystemConfigCache = (reason = 'unknown') => {
+  systemConfigCache.value = null;
+  systemConfigCache.expiresAt = 0;
+  systemConfigCache.inFlight = null;
+  if (DIAG_LOGS) {
+    console.log(`[diag] ${clampLog({ tag: 'DIAG_CONFIG_CACHE_INVALIDATE', ts: new Date().toISOString(), reason })}`);
+  }
+};
+
 const getSystemConfig = async (options = {}) => {
   const force = Boolean(options.force);
   const now = Date.now();
@@ -3965,6 +3994,20 @@ const getSystemConfig = async (options = {}) => {
   });
   return systemConfigCache.inFlight;
 };
+
+const BUILD_INFO = (() => {
+  const buildTime = process.env.BUILD_TIME || new Date().toISOString();
+  const envSha = process.env.GIT_SHA || process.env.RENDER_GIT_COMMIT || process.env.COMMIT_SHA || '';
+  let gitSha = String(envSha || '').trim();
+  if (!gitSha) {
+    try {
+      gitSha = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    } catch {
+      gitSha = 'unknown';
+    }
+  }
+  return { gitSha, buildTime };
+})();
 
 const invalidateSystemConfigCache = () => {
   systemConfigCache.value = null;
@@ -4056,11 +4099,30 @@ app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
     const excludePermissions = sanitizePageExcludeRoleAccess(req.body?.excludePermissions || {});
     const emailPermissions = sanitizePageEmailAccess(req.body?.emailPermissions || {});
     const config = await getSystemConfig();
+    const beforeHashes = {
+      pageRoleAccess: hashJson(config.pageRoleAccess || {}),
+      pageRoleExcludeAccess: hashJson(config.pageRoleExcludeAccess || {}),
+      pageEmailAccess: hashJson(config.pageEmailAccess || {}),
+    };
     config.pageRoleAccess = permissions;
     config.pageRoleExcludeAccess = excludePermissions;
     config.pageEmailAccess = emailPermissions;
     config.updatedBy = req.user.email;
     await config.save();
+    invalidateSystemConfigCache('navigation_permissions_write');
+
+    console.log(JSON.stringify({
+      tag: 'ADMIN_CONFIG_SAVE',
+      ts: new Date().toISOString(),
+      actor: req.user.email,
+      endpoint: '/api/navigation/permissions',
+      before: beforeHashes,
+      after: {
+        pageRoleAccess: hashJson(config.pageRoleAccess || {}),
+        pageRoleExcludeAccess: hashJson(config.pageRoleExcludeAccess || {}),
+        pageEmailAccess: hashJson(config.pageEmailAccess || {}),
+      },
+    }));
 
     res.json({ success: true, permissions, excludePermissions, emailPermissions });
   } catch (error) {
@@ -4084,10 +4146,27 @@ app.post('/api/action-permissions', verifyToken, async (req, res) => {
     const permissions = sanitizeActionRoleAccess(req.body?.permissions || {});
     const emailPermissions = sanitizeActionEmailAccess(req.body?.emailPermissions || {});
     const config = await getSystemConfig();
+    const beforeHashes = {
+      actionRoleAccess: hashJson(config.actionRoleAccess || {}),
+      actionEmailAccess: hashJson(config.actionEmailAccess || {}),
+    };
     config.actionRoleAccess = permissions;
     config.actionEmailAccess = emailPermissions;
     config.updatedBy = req.user.email;
     await config.save();
+    invalidateSystemConfigCache('action_permissions_write');
+
+    console.log(JSON.stringify({
+      tag: 'ADMIN_CONFIG_SAVE',
+      ts: new Date().toISOString(),
+      actor: req.user.email,
+      endpoint: '/api/action-permissions',
+      before: beforeHashes,
+      after: {
+        actionRoleAccess: hashJson(config.actionRoleAccess || {}),
+        actionEmailAccess: hashJson(config.actionEmailAccess || {}),
+      },
+    }));
 
     res.json({ success: true, permissions, emailPermissions });
   } catch (error) {
@@ -4183,6 +4262,7 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     config.telecastKeywordHelp = TELECAST_TEMPLATE_KEYWORDS;
     config.updatedBy = req.user.email;
     await config.save();
+    invalidateSystemConfigCache('telecast_config_write');
 
     res.json({
       success: true,
@@ -4243,6 +4323,7 @@ app.post('/api/reporting/config', verifyToken, async (req, res) => {
     config.issueReportTemplateStyle = templateStyle.key;
     config.updatedBy = req.user.email;
     await config.save();
+    invalidateSystemConfigCache('reporting_config_write');
 
     res.json({
       success: true,
@@ -5315,6 +5396,34 @@ app.get('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
   }
 });
 
+app.post('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can update post-bid config' });
+    }
+    const nextEmails = normalizeEmailList(req.body?.allowedEmails || []);
+    const config = await getSystemConfig();
+    const beforeHashes = { postBidAllowedEmails: hashJson(config.postBidAllowedEmails || []) };
+    config.postBidAllowedEmails = nextEmails;
+    config.updatedBy = req.user.email;
+    await config.save();
+    invalidateSystemConfigCache('post_bid_config_write');
+
+    console.log(JSON.stringify({
+      tag: 'ADMIN_CONFIG_SAVE',
+      ts: new Date().toISOString(),
+      actor: req.user.email,
+      endpoint: '/api/opportunities/post-bid-config',
+      before: beforeHashes,
+      after: { postBidAllowedEmails: hashJson(config.postBidAllowedEmails || []) },
+    }));
+
+    res.json({ success: true, allowedEmails: config.postBidAllowedEmails || [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- PQ & Registration Activities ---
 const PQ_STATUS_VALUES = ['Prequalified', 'Registered', 'Registration on Process'];
 const PQ_TENANTS = ['avenir_abudhabi', 'avenir_india', 'bcts_dubai', 'bcts_abudhabi', 'avenir_energy', 'avenir_oilfield', 'lauren'];
@@ -5897,9 +6006,141 @@ app.get('/api/eoi-duplicates/config', verifyToken, async (_req, res) => {
   }
 });
 
+app.post('/api/eoi-duplicates/config', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can update EOI duplicates config' });
+    }
+    const nextValue = Boolean(req.body?.showConvertedEoiRowsDefault);
+    const config = await getSystemConfig();
+    const beforeHashes = { showConvertedEoiRowsDefault: hashJson(Boolean(config.showConvertedEoiRowsDefault)) };
+    config.showConvertedEoiRowsDefault = nextValue;
+    config.updatedBy = req.user.email;
+    await config.save();
+    invalidateSystemConfigCache('eoi_duplicates_config_write');
+
+    console.log(JSON.stringify({
+      tag: 'ADMIN_CONFIG_SAVE',
+      ts: new Date().toISOString(),
+      actor: req.user.email,
+      endpoint: '/api/eoi-duplicates/config',
+      before: beforeHashes,
+      after: { showConvertedEoiRowsDefault: hashJson(Boolean(config.showConvertedEoiRowsDefault)) },
+    }));
+
+    res.json({ success: true, showConvertedEoiRowsDefault: Boolean(config.showConvertedEoiRowsDefault) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/export-template/config', verifyToken, async (_req, res) => {
   try {
     const config = await getSystemConfig();
+    res.json({
+      success: true,
+      exportTemplateSheetName: config.exportTemplateSheetName,
+      exportTemplateTitle: config.exportTemplateTitle,
+      exportTemplateIntroText: config.exportTemplateIntroText,
+      exportTemplateShowLogo: config.exportTemplateShowLogo,
+      exportTemplateLogoDataUrl: config.exportTemplateLogoDataUrl,
+      exportTemplateLogoRow: config.exportTemplateLogoRow,
+      exportTemplateLogoColumn: config.exportTemplateLogoColumn,
+      exportTemplateLogoWidth: config.exportTemplateLogoWidth,
+      exportTemplateLogoHeight: config.exportTemplateLogoHeight,
+      exportTemplateTitleRow: config.exportTemplateTitleRow,
+      exportTemplateTitleColumn: config.exportTemplateTitleColumn,
+      exportTemplateTitleRowSpan: config.exportTemplateTitleRowSpan,
+      exportTemplateTitleColumnSpan: config.exportTemplateTitleColumnSpan,
+      exportTemplateTitleHorizontalAlign: config.exportTemplateTitleHorizontalAlign,
+      exportTemplateTitleVerticalAlign: config.exportTemplateTitleVerticalAlign,
+      exportTemplateIntroRow: config.exportTemplateIntroRow,
+      exportTemplateIntroColumn: config.exportTemplateIntroColumn,
+      exportTemplateIntroRowSpan: config.exportTemplateIntroRowSpan,
+      exportTemplateIntroColumnSpan: config.exportTemplateIntroColumnSpan,
+      exportTemplateIntroHorizontalAlign: config.exportTemplateIntroHorizontalAlign,
+      exportTemplateIntroVerticalAlign: config.exportTemplateIntroVerticalAlign,
+      exportTemplateHeaderRow: config.exportTemplateHeaderRow,
+      exportTemplateHeaderColumn: config.exportTemplateHeaderColumn,
+      exportTemplateHeaderHorizontalAlign: config.exportTemplateHeaderHorizontalAlign,
+      exportTemplateHeaderVerticalAlign: config.exportTemplateHeaderVerticalAlign,
+      exportTemplateHeaderBackgroundColor: config.exportTemplateHeaderBackgroundColor,
+      exportTemplateHeaderTextColor: config.exportTemplateHeaderTextColor,
+      exportTemplateTitleColor: config.exportTemplateTitleColor,
+      exportTemplateIntroColor: config.exportTemplateIntroColor,
+      exportTemplateColumnWidths: config.exportTemplateColumnWidths,
+      exportTemplateRowHeights: config.exportTemplateRowHeights,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/export-template/config', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'Admin'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only Master/Admin can update export template config' });
+    }
+    const config = await getSystemConfig();
+    const beforeHashes = {
+      exportTemplateTitle: hashJson(config.exportTemplateTitle || ''),
+      exportTemplateLogoDataUrl: hashJson(config.exportTemplateLogoDataUrl || ''),
+      exportTemplateColumnWidths: hashJson(config.exportTemplateColumnWidths || []),
+      exportTemplateRowHeights: hashJson(config.exportTemplateRowHeights || []),
+    };
+
+    const body = req.body || {};
+    // Persist fields used by the Master Panel export template designer.
+    if (body.exportTemplateSheetName !== undefined) config.exportTemplateSheetName = String(body.exportTemplateSheetName || '');
+    if (body.exportTemplateTitle !== undefined) config.exportTemplateTitle = String(body.exportTemplateTitle || '');
+    if (body.exportTemplateIntroText !== undefined) config.exportTemplateIntroText = String(body.exportTemplateIntroText || '');
+    if (body.exportTemplateShowLogo !== undefined) config.exportTemplateShowLogo = Boolean(body.exportTemplateShowLogo);
+    if (body.exportTemplateLogoDataUrl !== undefined) config.exportTemplateLogoDataUrl = String(body.exportTemplateLogoDataUrl || '');
+    if (body.exportTemplateLogoRow !== undefined) config.exportTemplateLogoRow = Number(body.exportTemplateLogoRow) || 1;
+    if (body.exportTemplateLogoColumn !== undefined) config.exportTemplateLogoColumn = Number(body.exportTemplateLogoColumn) || 1;
+    if (body.exportTemplateLogoWidth !== undefined) config.exportTemplateLogoWidth = Number(body.exportTemplateLogoWidth) || 150;
+    if (body.exportTemplateLogoHeight !== undefined) config.exportTemplateLogoHeight = Number(body.exportTemplateLogoHeight) || 46;
+    if (body.exportTemplateTitleRow !== undefined) config.exportTemplateTitleRow = Number(body.exportTemplateTitleRow) || 1;
+    if (body.exportTemplateTitleColumn !== undefined) config.exportTemplateTitleColumn = Number(body.exportTemplateTitleColumn) || 3;
+    if (body.exportTemplateTitleRowSpan !== undefined) config.exportTemplateTitleRowSpan = Number(body.exportTemplateTitleRowSpan) || 1;
+    if (body.exportTemplateTitleColumnSpan !== undefined) config.exportTemplateTitleColumnSpan = Number(body.exportTemplateTitleColumnSpan) || 4;
+    if (body.exportTemplateTitleHorizontalAlign !== undefined) config.exportTemplateTitleHorizontalAlign = String(body.exportTemplateTitleHorizontalAlign || 'left');
+    if (body.exportTemplateTitleVerticalAlign !== undefined) config.exportTemplateTitleVerticalAlign = String(body.exportTemplateTitleVerticalAlign || 'middle');
+    if (body.exportTemplateIntroRow !== undefined) config.exportTemplateIntroRow = Number(body.exportTemplateIntroRow) || 2;
+    if (body.exportTemplateIntroColumn !== undefined) config.exportTemplateIntroColumn = Number(body.exportTemplateIntroColumn) || 3;
+    if (body.exportTemplateIntroRowSpan !== undefined) config.exportTemplateIntroRowSpan = Number(body.exportTemplateIntroRowSpan) || 2;
+    if (body.exportTemplateIntroColumnSpan !== undefined) config.exportTemplateIntroColumnSpan = Number(body.exportTemplateIntroColumnSpan) || 5;
+    if (body.exportTemplateIntroHorizontalAlign !== undefined) config.exportTemplateIntroHorizontalAlign = String(body.exportTemplateIntroHorizontalAlign || 'left');
+    if (body.exportTemplateIntroVerticalAlign !== undefined) config.exportTemplateIntroVerticalAlign = String(body.exportTemplateIntroVerticalAlign || 'top');
+    if (body.exportTemplateHeaderRow !== undefined) config.exportTemplateHeaderRow = Number(body.exportTemplateHeaderRow) || 4;
+    if (body.exportTemplateHeaderColumn !== undefined) config.exportTemplateHeaderColumn = Number(body.exportTemplateHeaderColumn) || 1;
+    if (body.exportTemplateHeaderHorizontalAlign !== undefined) config.exportTemplateHeaderHorizontalAlign = String(body.exportTemplateHeaderHorizontalAlign || 'left');
+    if (body.exportTemplateHeaderVerticalAlign !== undefined) config.exportTemplateHeaderVerticalAlign = String(body.exportTemplateHeaderVerticalAlign || 'middle');
+    if (body.exportTemplateHeaderBackgroundColor !== undefined) config.exportTemplateHeaderBackgroundColor = String(body.exportTemplateHeaderBackgroundColor || '#1D4ED8');
+    if (body.exportTemplateHeaderTextColor !== undefined) config.exportTemplateHeaderTextColor = String(body.exportTemplateHeaderTextColor || '#FFFFFF');
+    if (body.exportTemplateTitleColor !== undefined) config.exportTemplateTitleColor = String(body.exportTemplateTitleColor || '#0F172A');
+    if (body.exportTemplateIntroColor !== undefined) config.exportTemplateIntroColor = String(body.exportTemplateIntroColor || '#475569');
+    if (Array.isArray(body.exportTemplateColumnWidths)) config.exportTemplateColumnWidths = body.exportTemplateColumnWidths.map((n) => Number(n) || 0);
+    if (Array.isArray(body.exportTemplateRowHeights)) config.exportTemplateRowHeights = body.exportTemplateRowHeights.map((n) => Number(n) || 0);
+
+    config.updatedBy = req.user.email;
+    await config.save();
+    invalidateSystemConfigCache('export_template_config_write');
+
+    console.log(JSON.stringify({
+      tag: 'ADMIN_CONFIG_SAVE',
+      ts: new Date().toISOString(),
+      actor: req.user.email,
+      endpoint: '/api/export-template/config',
+      before: beforeHashes,
+      after: {
+        exportTemplateTitle: hashJson(config.exportTemplateTitle || ''),
+        exportTemplateLogoDataUrl: hashJson(config.exportTemplateLogoDataUrl || ''),
+        exportTemplateColumnWidths: hashJson(config.exportTemplateColumnWidths || []),
+        exportTemplateRowHeights: hashJson(config.exportTemplateRowHeights || []),
+      },
+    }));
+
     res.json({
       success: true,
       exportTemplateSheetName: config.exportTemplateSheetName,
