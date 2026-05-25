@@ -111,14 +111,20 @@ const normalizeTenderName = (value: string | null | undefined) => String(value |
 const normalizeRefNo = (value: string | null | undefined) => String(value || '').trim().toUpperCase();
 const getBaseRefNo = (value: string | null | undefined) => normalizeRefNo(value).replace(/_EOI$/i, '');
 const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(normalizeRefNo(value));
+const parseOptionalNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 const getEffectiveOpportunityValue = (opp: Opportunity) => {
-  const legacyBase = Number(opp.opportunityValue || 0);
-  const frameworkTotal = Number(opp.frameworkTotalValue);
-  const callOffActual = Number(opp.callOffActualValue);
-  const variationDelta = Number(opp.variationDeltaValue || 0);
-  if (Number.isFinite(callOffActual)) return callOffActual;
-  if (Number.isFinite(frameworkTotal)) return frameworkTotal + (Number.isFinite(variationDelta) ? variationDelta : 0);
-  return legacyBase + (Number.isFinite(variationDelta) ? variationDelta : 0);
+  const legacyBase = parseOptionalNumber(opp.opportunityValue) ?? 0;
+  const frameworkTotal = parseOptionalNumber(opp.frameworkTotalValue);
+  const callOffActual = parseOptionalNumber(opp.callOffActualValue);
+  const variationDelta = parseOptionalNumber(opp.variationDeltaValue) ?? 0;
+  if (callOffActual !== null) return callOffActual;
+  if (frameworkTotal !== null) return frameworkTotal + variationDelta;
+  return legacyBase + variationDelta;
 };
 
 const getOpportunityTimestamp = (opp: Opportunity) => {

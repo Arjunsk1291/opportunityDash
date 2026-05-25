@@ -1462,21 +1462,15 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
         <FunnelChart data={funnelData} onStageClick={handleFunnelClick} />
         <AtRiskWidget data={filteredData} onSelectOpportunity={setSelectedOpp} />
-        <ClientLeaderboard data={clientData} onClientClick={(client) => {
-          setFilters((prevFilters) => {
-            if (client === 'ADNOC') {
-              return {
-                ...prevFilters,
-                search: 'ADNOC',
-                clients: [],
-              };
-            }
-            return {
-              ...prevFilters,
-              clients: [client],
-            };
-          });
-        }} />
+	        <ClientLeaderboard data={clientData} onClientClick={(client) => {
+	          setFilters((prevFilters) => {
+	            return {
+	              ...prevFilters,
+	              search: prevFilters.search,
+	              clients: [client],
+	            };
+	          });
+	        }} />
       </div>
 
       {/* Data Health & Stats Row */}

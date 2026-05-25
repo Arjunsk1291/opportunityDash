@@ -323,13 +323,15 @@ export function OpportunitiesTable({
     opp,
     fieldKey,
     children,
+    allowMultiline = false,
   }: {
     opp: Opportunity;
     fieldKey: string;
     children: React.ReactNode;
+    allowMultiline?: boolean;
   }) => (
     <div className="group flex items-center justify-between gap-2">
-      <div className="min-w-0 flex-1 truncate">{children}</div>
+      <div className={`min-w-0 flex-1 ${allowMultiline ? '' : 'truncate'}`}>{children}</div>
       {canCellEdit ? (
         <Button
           type="button"
@@ -1027,20 +1029,22 @@ export function OpportunitiesTable({
                     ) : (
                       <>
 	                        <TableCell className={`${cellPaddingClass} max-w-[120px] truncate font-mono text-[10px] sm:text-[11px] font-bold text-blue-600 dark:text-blue-400`}>
-	                          <EditableCell opp={tender} fieldKey="opportunityRefNo">
-	                            <div className="flex items-center gap-1.5">
-	                              <span className="truncate">{tender.opportunityRefNo || '—'}</span>
+	                          <EditableCell opp={tender} fieldKey="opportunityRefNo" allowMultiline>
+	                            <div className="min-w-0 space-y-0.5">
+	                              <div className="flex items-center gap-1.5 min-w-0">
+	                                <span className="truncate">{tender.opportunityRefNo || '—'}</span>
 	                              {isDedupeKeptRow ? (
 	                                <Badge className="border border-fuchsia-400 bg-fuchsia-100 text-[10px] text-fuchsia-800">
 	                                  dedupe
 	                                </Badge>
 	                              ) : null}
-	                            </div>
+	                              </div>
 	                            {searchTerm && matchColumns.length ? (
 	                              <div className="pointer-events-none mt-0.5 truncate text-[10px] font-normal text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
 	                                Matched: {matchColumns.join(', ')}
 	                              </div>
 	                            ) : null}
+	                            </div>
 	                          </EditableCell>
 	                        </TableCell>
                         <TableCell className={`${cellPaddingClass} max-w-[180px] sm:max-w-[250px] min-w-0`}>
