@@ -3912,6 +3912,15 @@ const sanitizePageEmailAccess = (input = {}) => {
   return normalized;
 };
 
+const sanitizePageExcludeRoleAccess = (input = {}) => {
+  const normalized = {};
+  for (const page of PAGE_KEYS) {
+    const list = Array.isArray(input?.[page]) ? input[page] : [];
+    normalized[page] = [...new Set(list.filter((role) => ROLE_KEYS.includes(role)))];
+  }
+  return normalized;
+};
+
 const sanitizeActionRoleAccess = (input = {}) => {
   const normalized = {};
   for (const action of ACTION_KEYS) {
@@ -4019,17 +4028,21 @@ app.get('/api/navigation/permissions', verifyToken, async (req, res) => {
   try {
     const config = await getSystemConfig();
     const permissions = sanitizePageRoleAccess(config.pageRoleAccess || {});
+    const excludePermissions = sanitizePageExcludeRoleAccess(config.pageRoleExcludeAccess || {});
     const emailPermissions = sanitizePageEmailAccess(config.pageEmailAccess || {});
     if (!config.pageRoleAccess || Object.keys(config.pageRoleAccess).length === 0) {
       config.pageRoleAccess = permissions;
     }
+    if (!config.pageRoleExcludeAccess || Object.keys(config.pageRoleExcludeAccess).length === 0) {
+      config.pageRoleExcludeAccess = excludePermissions;
+    }
     if (!config.pageEmailAccess || Object.keys(config.pageEmailAccess).length === 0) {
       config.pageEmailAccess = emailPermissions;
     }
-    if (config.isModified('pageRoleAccess') || config.isModified('pageEmailAccess')) {
+    if (config.isModified('pageRoleAccess') || config.isModified('pageRoleExcludeAccess') || config.isModified('pageEmailAccess')) {
       await config.save();
     }
-    res.json({ success: true, permissions, emailPermissions });
+    res.json({ success: true, permissions, excludePermissions, emailPermissions });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -4040,14 +4053,16 @@ app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
     if (!await requireActionPermission(req, res, 'navigation_permissions_write')) return;
 
     const permissions = sanitizePageRoleAccess(req.body?.permissions || {});
+    const excludePermissions = sanitizePageExcludeRoleAccess(req.body?.excludePermissions || {});
     const emailPermissions = sanitizePageEmailAccess(req.body?.emailPermissions || {});
     const config = await getSystemConfig();
     config.pageRoleAccess = permissions;
+    config.pageRoleExcludeAccess = excludePermissions;
     config.pageEmailAccess = emailPermissions;
     config.updatedBy = req.user.email;
     await config.save();
 
-    res.json({ success: true, permissions, emailPermissions });
+    res.json({ success: true, permissions, excludePermissions, emailPermissions });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
