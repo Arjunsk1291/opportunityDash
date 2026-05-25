@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { cn } from '@/lib/utils';
 import logo from '@/assets/Avenir_Logo.avif';
 
 type AuthMode = 'password-login' | 'reset-request' | 'reset-confirm' | 'success';
