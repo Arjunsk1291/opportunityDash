@@ -25,6 +25,7 @@ import defaultExportLogo from '@/assets/avenir-logo.png';
 import { DEFAULT_EXPORT_TEMPLATE, ExportTemplateConfig, normalizeExportTemplate } from '@/lib/exportTemplate';
 import { ExportTemplateSpreadsheet } from '@/components/Admin/ExportTemplateSpreadsheet';
 import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToObjects } from '@/lib/excelWorkbook';
+import { UserMultiEmailPicker } from '@/components/Admin/UserMultiEmailPicker';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -427,6 +428,10 @@ export default function Admin() {
   const [manualUpdateUploading, setManualUpdateUploading] = useState(false);
   const [manualUpdateFileName, setManualUpdateFileName] = useState('');
   const [manualUpdateSummary, setManualUpdateSummary] = useState<ManualUpdateSummary | null>(null);
+  const [backendHealth, setBackendHealth] = useState<{ ok: boolean; dbState: number; timestamp?: string } | null>(null);
+  const [backendHealthLoading, setBackendHealthLoading] = useState(false);
+  const [userManagementBusy, setUserManagementBusy] = useState(false);
+  const [permissionsBusy, setPermissionsBusy] = useState(false);
 
   const runTrackedAction = async <T,>(
     actionName: string,
@@ -480,12 +485,13 @@ export default function Admin() {
   // Telecast mail auth is env-driven (server-side ROPC). UI should not handle credentials/tokens.
   const telecastMailReady = true;
 
-  useEffect(() => {
-    if (canAccessPanel) {
-      loadUsers();
-      loadCollectionStats();
-      loadGraphConfig();
-      loadGraphAuthStatus();
+	  useEffect(() => {
+	    if (canAccessPanel) {
+	      loadBackendHealth();
+	      loadUsers();
+	      loadCollectionStats();
+	      loadGraphConfig();
+	      loadGraphAuthStatus();
       loadTelecastConfig();
       loadEoiDuplicateConfig();
       loadReportingConfig();
@@ -631,34 +637,59 @@ export default function Admin() {
   const canManageLeadEmails = canPerformAction('lead_email_manage');
   const canManageManualUpdates = canPerformAction('manual_opportunity_updates_write');
   const canManageExportTemplate = canPerformAction('export_template_write');
+  const canManageUsers = canPerformAction('users_manage');
   const approvedUsers = useMemo(
     () => users.filter((candidate) => candidate.status === 'approved'),
     [users],
   );
   const exportTemplateLogoPreview = exportTemplate.logoDataUrl || defaultExportLogo;
 
+  const loadBackendHealth = async () => {
+    setBackendHealthLoading(true);
+    try {
+      const response = await fetch(API_URL + '/health', {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(parseApiErrorPayload(data, 'Failed to load backend health'));
+      }
+      setBackendHealth({
+        ok: Boolean(data?.ok),
+        dbState: Number.isFinite(Number(data?.dbState)) ? Number(data.dbState) : -1,
+        timestamp: data?.timestamp ? String(data.timestamp) : undefined,
+      });
+    } catch (error) {
+      setBackendHealth(null);
+      toast.error((error as Error).message);
+    } finally {
+      setBackendHealthLoading(false);
+    }
+  };
+
   const loadUsers = async () => {
     if (!token) return;
     setLoading(true);
-    try {
-      const response = await fetch(API_URL + '/users/authorized', {
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to load users');
-      }
-
-      const data = await response.json();
-      setUsers(data);
-    } catch (error) {
-      console.error('❌ Error loading users:', error);
-      setMessage({ type: 'error', text: 'Failed to load users: ' + (error as Error).message });
-    } finally {
-      setLoading(false);
+	    try {
+	      const response = await fetch(API_URL + '/users/authorized', {
+	        headers: {
+	          'Authorization': 'Bearer ' + token,
+	          'Content-Type': 'application/json',
+	        },
+	      });
+	      const data = await response.json().catch(() => ({}));
+	      if (!response.ok) {
+	        throw new Error(parseApiErrorPayload(data, 'Failed to load users'));
+	      }
+	      setUsers(data as AuthorizedUser[]);
+	    } catch (error) {
+	      console.error('❌ Error loading users:', error);
+	      setMessage({ type: 'error', text: 'Failed to load users: ' + (error as Error).message });
+	    } finally {
+	      setLoading(false);
     }
   };
 
@@ -1245,14 +1276,14 @@ export default function Admin() {
       }
       const data = await response.json();
       setDeadlineStatusDate(String(data?.tomorrow || ''));
-      setDeadlineStatusRows(
-        Array.isArray(data?.rows)
-          ? data.rows.map((row: any) => ({
-            ...row,
-            reason: row?.reason || 'pending',
-          }))
-          : []
-      );
+	      setDeadlineStatusRows(
+	        Array.isArray(data?.rows)
+	          ? data.rows.map((row: Record<string, unknown>) => ({
+	            ...row,
+	            reason: typeof row?.reason === 'string' && row.reason ? row.reason : 'pending',
+	          }))
+	          : []
+	      );
     } catch (error) {
       console.error('Failed to load deadline status:', error);
     } finally {
@@ -1617,50 +1648,76 @@ export default function Admin() {
   const approveUser = async (email: string) => {
     if (!token) return;
     try {
-      const response = await fetch(API_URL + '/users/approve', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to approve user');
+      if (!canManageUsers) {
+        toast.error('You do not have permission to approve users.');
+        return;
       }
+      setUserManagementBusy(true);
+      await runTrackedAction('Approve User', async (setProgress) => {
+        setProgress(40, 'Sending approve request');
+        const response = await fetch(API_URL + '/users/approve', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email }),
+        });
 
-      setMessage({ type: 'success', text: '✅ User approved: ' + email });
-      await loadUsers();
-      setTimeout(() => setMessage(null), 3000);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(parseApiErrorPayload(data, 'Failed to approve user'));
+        }
+
+        setProgress(75, 'Applying updates');
+        setMessage({ type: 'success', text: '✅ User approved: ' + email });
+        setProgress(90, 'Refreshing user list');
+        await loadUsers();
+        setTimeout(() => setMessage(null), 3000);
+      });
     } catch (error) {
       console.error('❌ Error approving user:', error);
       setMessage({ type: 'error', text: '❌ Failed to approve user: ' + (error as Error).message });
+    } finally {
+      setUserManagementBusy(false);
     }
   };
 
   const rejectUser = async (email: string) => {
     if (!token) return;
     try {
-      const response = await fetch(API_URL + '/users/reject', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to reject user');
+      if (!canManageUsers) {
+        toast.error('You do not have permission to reject users.');
+        return;
       }
+      setUserManagementBusy(true);
+      await runTrackedAction('Reject User', async (setProgress) => {
+        setProgress(40, 'Sending reject request');
+        const response = await fetch(API_URL + '/users/reject', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email }),
+        });
 
-      setMessage({ type: 'success', text: '❌ User rejected: ' + email });
-      await loadUsers();
-      setTimeout(() => setMessage(null), 3000);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(parseApiErrorPayload(data, 'Failed to reject user'));
+        }
+
+        setProgress(75, 'Applying updates');
+        setMessage({ type: 'success', text: '❌ User rejected: ' + email });
+        setProgress(90, 'Refreshing user list');
+        await loadUsers();
+        setTimeout(() => setMessage(null), 3000);
+      });
     } catch (error) {
       console.error('❌ Error rejecting user:', error);
       setMessage({ type: 'error', text: '❌ Failed to reject user: ' + (error as Error).message });
+    } finally {
+      setUserManagementBusy(false);
     }
   };
 
@@ -1668,27 +1725,39 @@ export default function Admin() {
     if (!token) return;
     setChangingRole(email);
     try {
-      const response = await fetch(API_URL + '/users/change-role', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, newRole, assignedGroup: newRole === 'SVP' ? assignedGroup : null }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to change role');
+      if (!canManageUsers) {
+        toast.error('You do not have permission to change user roles.');
+        return;
       }
+      setUserManagementBusy(true);
+      await runTrackedAction('Change User Role', async (setProgress) => {
+        setProgress(40, 'Sending role update');
+        const response = await fetch(API_URL + '/users/change-role', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email, newRole, assignedGroup: newRole === 'SVP' ? assignedGroup : null }),
+        });
 
-      setMessage({ type: 'success', text: '🔄 User role changed to ' + newRole + ': ' + email });
-      await loadUsers();
-      setTimeout(() => setMessage(null), 3000);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(parseApiErrorPayload(data, 'Failed to change role'));
+        }
+
+        setProgress(75, 'Applying updates');
+        setMessage({ type: 'success', text: '🔄 User role changed to ' + newRole + ': ' + email });
+        setProgress(90, 'Refreshing user list');
+        await loadUsers();
+        setTimeout(() => setMessage(null), 3000);
+      });
     } catch (error) {
       console.error('❌ Error changing role:', error);
       setMessage({ type: 'error', text: '❌ Failed to change role: ' + (error as Error).message });
     } finally {
       setChangingRole(null);
+      setUserManagementBusy(false);
     }
   };
 
@@ -1719,12 +1788,24 @@ export default function Admin() {
   };
 
   const savePagePermissions = async () => {
+    if (!isMaster) {
+      toast.error('Only Master users can update page permissions.');
+      return;
+    }
     try {
-      await updatePagePermissions(draftPagePermissions, draftPageEmailPermissions, draftPageExcludePermissions);
-      setMessage({ type: 'success', text: '✅ Page visibility permissions updated' });
-      setTimeout(() => setMessage(null), 3000);
+      setPermissionsBusy(true);
+      await runTrackedAction('Save Page Permissions', async (setProgress) => {
+        setProgress(40, 'Saving page visibility permissions');
+        await updatePagePermissions(draftPagePermissions, draftPageEmailPermissions, draftPageExcludePermissions);
+        setProgress(75, 'Applying updates');
+        setMessage({ type: 'success', text: '✅ Page visibility permissions updated' });
+        setProgress(90, 'Refreshing permissions state');
+        setTimeout(() => setMessage(null), 3000);
+      });
     } catch (error) {
       setMessage({ type: 'error', text: '❌ Failed to save page permissions: ' + (error as Error).message });
+    } finally {
+      setPermissionsBusy(false);
     }
   };
 
@@ -1746,43 +1827,72 @@ export default function Admin() {
   };
 
   const saveActionPermissions = async () => {
+    if (!isMaster) {
+      toast.error('Only Master users can update action permissions.');
+      return;
+    }
     try {
-      await updateActionPermissions(draftActionPermissions, draftActionEmailPermissions);
-      setMessage({ type: 'success', text: '✅ Action permissions updated' });
-      setTimeout(() => setMessage(null), 3000);
+      setPermissionsBusy(true);
+      await runTrackedAction('Save Action Permissions', async (setProgress) => {
+        setProgress(40, 'Saving action permissions');
+        await updateActionPermissions(draftActionPermissions, draftActionEmailPermissions);
+        setProgress(75, 'Applying updates');
+        setMessage({ type: 'success', text: '✅ Action permissions updated' });
+        setProgress(90, 'Refreshing permissions state');
+        setTimeout(() => setMessage(null), 3000);
+      });
     } catch (error) {
       setMessage({ type: 'error', text: '❌ Failed to save action permissions: ' + (error as Error).message });
+    } finally {
+      setPermissionsBusy(false);
     }
   };
 
   const removeUser = async (email: string) => {
     if (!token || !confirm('Are you sure you want to remove ' + email + '?')) return;
     try {
-      const response = await fetch(API_URL + '/users/remove', {
-        method: 'DELETE',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to remove user');
+      if (!canManageUsers) {
+        toast.error('You do not have permission to remove users.');
+        return;
       }
+      setUserManagementBusy(true);
+      await runTrackedAction('Remove User', async (setProgress) => {
+        setProgress(40, 'Sending remove request');
+        const response = await fetch(API_URL + '/users/remove', {
+          method: 'DELETE',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email }),
+        });
 
-      setMessage({ type: 'success', text: '🗑️ User removed: ' + email });
-      await loadUsers();
-      setTimeout(() => setMessage(null), 3000);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(parseApiErrorPayload(data, 'Failed to remove user'));
+        }
+
+        setProgress(75, 'Applying updates');
+        setMessage({ type: 'success', text: '🗑️ User removed: ' + email });
+        setProgress(90, 'Refreshing user list');
+        await loadUsers();
+        setTimeout(() => setMessage(null), 3000);
+      });
     } catch (error) {
       console.error('❌ Error removing user:', error);
       setMessage({ type: 'error', text: '❌ Failed to remove user: ' + (error as Error).message });
+    } finally {
+      setUserManagementBusy(false);
     }
   };
 
 
   const addAuthorizedUser = async () => {
     if (!token) return;
+    if (!canManageUsers) {
+      toast.error('You do not have permission to add or update users.');
+      return;
+    }
     if (!newAuthorizedUser.email.trim()) {
       toast.error('Email is required');
       return;
@@ -1798,26 +1908,35 @@ export default function Admin() {
       }
     }
     try {
-      const response = await fetch(API_URL + '/users/add', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...newAuthorizedUser,
-          tempAccessExpiresAt: newAuthorizedUser.tempAccessExpiresAt
-            ? new Date(newAuthorizedUser.tempAccessExpiresAt).toISOString()
-            : '',
-        }),
+      setUserManagementBusy(true);
+      await runTrackedAction('Add/Update Authorized User', async (setProgress) => {
+        setProgress(25, 'Validating payload');
+        const response = await fetch(API_URL + '/users/add', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ...newAuthorizedUser,
+            tempAccessExpiresAt: newAuthorizedUser.tempAccessExpiresAt
+              ? new Date(newAuthorizedUser.tempAccessExpiresAt).toISOString()
+              : '',
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to add user'));
+
+        setProgress(75, 'Resetting form');
+        toast.success('Authorized user added/updated');
+        setNewAuthorizedUser({ email: '', displayName: '', role: 'Basic', assignedGroup: 'GES', status: 'approved', password: '', tempAccessExpiresAt: '' });
+        setProgress(90, 'Refreshing user list');
+        await loadUsers();
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to add user');
-      toast.success('Authorized user added/updated');
-      setNewAuthorizedUser({ email: '', displayName: '', role: 'Basic', assignedGroup: 'GES', status: 'approved', password: '', tempAccessExpiresAt: '' });
-      await loadUsers();
     } catch (error) {
       toast.error((error as Error).message);
+    } finally {
+      setUserManagementBusy(false);
     }
   };
 
@@ -2294,9 +2413,9 @@ export default function Admin() {
         </Card>
 
         {allowedTabValues.has('general') && (
-        <TabsContent value="general" className="mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
+	        <TabsContent value="general" className="mt-6">
+	          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+	            <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Lock className="h-5 w-5" />
@@ -2314,10 +2433,10 @@ export default function Admin() {
                 </div>
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Master Privileges</CardTitle>
-              </CardHeader>
+	            <Card>
+	              <CardHeader>
+	                <CardTitle>Master Privileges</CardTitle>
+	              </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <div className="flex items-start gap-2">
                   <span className="text-green-600 mt-1">✓</span>
@@ -2335,10 +2454,42 @@ export default function Admin() {
                   <span className="text-green-600 mt-1">✓</span>
                   <span>Sync data from Graph Excel</span>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
+	              </CardContent>
+	            </Card>
+	            <Card>
+	              <CardHeader>
+	                <CardTitle className="flex items-center gap-2">
+	                  <Database className="h-5 w-5" />
+	                  Backend / DB Health
+	                </CardTitle>
+	                <CardDescription>Quick visibility into MongoDB connectivity from the backend.</CardDescription>
+	              </CardHeader>
+	              <CardContent className="space-y-3">
+	                <div className="flex flex-wrap items-center gap-2">
+	                  {backendHealthLoading ? (
+	                    <Badge variant="secondary">Checking…</Badge>
+	                  ) : backendHealth ? (
+	                    backendHealth.ok ? (
+	                      <Badge className="bg-success/20 text-success">OK</Badge>
+	                    ) : (
+	                      <Badge variant="destructive">DB Not Ready</Badge>
+	                    )
+	                  ) : (
+	                    <Badge variant="secondary">Unknown</Badge>
+	                  )}
+	                  <Badge variant="outline">dbState: {backendHealth ? backendHealth.dbState : '—'}</Badge>
+	                  {backendHealth?.timestamp && (
+	                    <Badge variant="outline">{new Date(backendHealth.timestamp).toLocaleString()}</Badge>
+	                  )}
+	                </div>
+	                <Button type="button" variant="outline" onClick={loadBackendHealth} disabled={backendHealthLoading}>
+	                  <RefreshCw className="mr-2 h-4 w-4" />
+	                  Refresh Health
+	                </Button>
+	              </CardContent>
+	            </Card>
+	          </div>
+	        </TabsContent>
         )}
 
         {allowedTabValues.has('users') && (
@@ -2415,11 +2566,11 @@ export default function Admin() {
               <p className="mt-3 text-xs text-muted-foreground">
                 Explicit email access overrides excluded roles. This lets you block a role from a page while still allowing specific users by email.
               </p>
-              {isMaster && (
-                <div className="mt-4">
-                  <Button onClick={savePagePermissions}>Save Page Permissions</Button>
-                </div>
-              )}
+	              {isMaster && (
+	                <div className="mt-4">
+	                  <Button onClick={savePagePermissions} disabled={permissionsBusy}>Save Page Permissions</Button>
+	                </div>
+	              )}
             </CardContent>
           </Card>
 
@@ -2626,26 +2777,33 @@ export default function Admin() {
                               disabled={!isMaster}
                             />
                           </td>
-                        ))}
-                        <td className="py-2 pl-3">
-                          <Input
-                            value={(draftActionEmailPermissions[actionKey] || []).join(', ')}
-                            onChange={(e) => updateActionEmailPermission(actionKey, e.target.value)}
-                            placeholder="user1@company.com, user2@company.com"
-                            disabled={!isMaster}
-                            className="h-9 text-xs"
-                          />
-                        </td>
-                      </tr>
-                    ))}
+	                        ))}
+	                        <td className="py-2 pl-3">
+	                          <UserMultiEmailPicker
+	                            title="Special Users"
+	                            description="Select one or more approved users who may perform this action (email-based override)."
+	                            selectedEmails={draftActionEmailPermissions[actionKey] || []}
+	                            onSelectionChange={(emails) => setDraftActionEmailPermissions((prev) => ({ ...prev, [actionKey]: emails }))}
+	                            allUsers={approvedUsers.map((candidate) => ({
+	                              id: candidate._id,
+	                              email: candidate.email,
+	                              displayName: (candidate as unknown as { displayName?: string }).displayName,
+	                              role: candidate.role,
+	                            }))}
+	                            disabled={!isMaster || permissionsBusy}
+	                            manualEntryPlaceholder="user@company.com"
+	                          />
+	                        </td>
+	                      </tr>
+	                    ))}
                   </tbody>
                 </table>
               </div>
-              {isMaster && (
-                <div className="mt-4">
-                  <Button onClick={saveActionPermissions}>Save Action Permissions</Button>
-                </div>
-              )}
+	              {isMaster && (
+	                <div className="mt-4">
+	                  <Button onClick={saveActionPermissions} disabled={permissionsBusy}>Save Action Permissions</Button>
+	                </div>
+	              )}
             </CardContent>
           </Card>
 
@@ -2786,9 +2944,11 @@ export default function Admin() {
                   </Select>
                 </div>
               )}
-              <div className="md:col-span-2">
-                <Button onClick={addAuthorizedUser}>Add / Update Authorized User</Button>
-              </div>
+	              <div className="md:col-span-2">
+	                <Button onClick={addAuthorizedUser} disabled={!canManageUsers || userManagementBusy}>
+	                  Add / Update Authorized User
+	                </Button>
+	              </div>
             </CardContent>
           </Card>
 
@@ -2862,7 +3022,7 @@ export default function Admin() {
                                   }
                                   changeUserRole(u.email, newRole);
                                 }}
-                                disabled={changingRole === u.email}
+                                disabled={!canManageUsers || userManagementBusy || changingRole === u.email}
                               >
                                 <SelectTrigger className="w-[140px] h-8">
                                   <SelectValue />
@@ -2880,7 +3040,7 @@ export default function Admin() {
                                 <Select
                                   value={(u.assignedGroup || 'GES').toUpperCase()}
                                   onValueChange={(group) => changeUserRole(u.email, 'SVP', group)}
-                                  disabled={changingRole === u.email}
+                                  disabled={!canManageUsers || userManagementBusy || changingRole === u.email}
                                 >
                                   <SelectTrigger className="w-[100px] h-8 mt-2">
                                     <SelectValue placeholder="Group" />
@@ -2936,12 +3096,13 @@ export default function Admin() {
                               <>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button
-                                      size="sm"
-                                      variant="default"
-                                      onClick={() => approveUser(u.email)}
-                                      className="h-8 px-2 gap-1"
-                                    >
+	                                    <Button
+	                                      size="sm"
+	                                      variant="default"
+	                                      onClick={() => approveUser(u.email)}
+	                                      disabled={!canManageUsers || userManagementBusy}
+	                                      className="h-8 px-2 gap-1"
+	                                    >
                                       <CheckCircle className="h-3 w-3" />
                                       Approve
                                     </Button>
@@ -2950,12 +3111,13 @@ export default function Admin() {
                                 </Tooltip>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      onClick={() => rejectUser(u.email)}
-                                      className="h-8 px-2 gap-1"
-                                    >
+	                                    <Button
+	                                      size="sm"
+	                                      variant="destructive"
+	                                      onClick={() => rejectUser(u.email)}
+	                                      disabled={!canManageUsers || userManagementBusy}
+	                                      className="h-8 px-2 gap-1"
+	                                    >
                                       <XCircle className="h-3 w-3" />
                                       Reject
                                     </Button>
@@ -2967,12 +3129,13 @@ export default function Admin() {
                             {u.status === 'approved' && u.role !== 'Master' && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => removeUser(u.email)}
-                                    className="h-8 px-2 gap-1"
-                                  >
+	                                  <Button
+	                                    size="sm"
+	                                    variant="outline"
+	                                    onClick={() => removeUser(u.email)}
+	                                    disabled={!canManageUsers || userManagementBusy}
+	                                    className="h-8 px-2 gap-1"
+	                                  >
                                     <Trash2 className="h-3 w-3" />
                                     Remove
                                   </Button>
@@ -2983,12 +3146,13 @@ export default function Admin() {
                             {u.status === 'rejected' && u.role !== 'Master' && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => removeUser(u.email)}
-                                    className="h-8 px-2 gap-1"
-                                  >
+	                                  <Button
+	                                    size="sm"
+	                                    variant="outline"
+	                                    onClick={() => removeUser(u.email)}
+	                                    disabled={!canManageUsers || userManagementBusy}
+	                                    className="h-8 px-2 gap-1"
+	                                  >
                                     <Trash2 className="h-3 w-3" />
                                     Remove
                                   </Button>

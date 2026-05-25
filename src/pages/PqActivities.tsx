@@ -117,6 +117,7 @@ export default function PqActivities() {
 
   const [passwordVisibleFor, setPasswordVisibleFor] = useState<Record<string, boolean>>({});
   const [detailRow, setDetailRow] = useState<PqActivityRow | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<PqActivityRow | null>(null);
