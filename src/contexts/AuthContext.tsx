@@ -293,7 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const timer = window.setTimeout(() => {
       refreshSessionToken().catch((error) => {
-        console.error('Session refresh failed:', error);
+        // Keep console quiet; auth state will be cleared if refresh fails.
       });
     }, refreshInMs);
 
@@ -337,7 +337,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPageEmailPermissions(data.emailPermissions);
       }
     } catch (error) {
-      console.error('Failed to load page permissions', error);
+      // Keep console quiet; permissions failures should not spam console in prod.
     }
   }, [authHeaders, token]);
 
@@ -358,7 +358,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setActionEmailPermissions(data.emailPermissions);
       }
     } catch (error) {
-      console.error('Failed to load action permissions', error);
+      // Keep console quiet; permissions failures should not spam console in prod.
     }
   }, [authHeaders, token]);
 

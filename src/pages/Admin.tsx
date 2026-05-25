@@ -27,6 +27,7 @@ import { ExportTemplateSpreadsheet } from '@/components/Admin/ExportTemplateSpre
 import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToObjects } from '@/lib/excelWorkbook';
 import { UserMultiEmailPicker } from '@/components/Admin/UserMultiEmailPicker';
 import { diag } from '@/lib/diagnostics';
+import { statusConsole } from '@/lib/statusConsole';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -447,17 +448,18 @@ export default function Admin() {
       setLiveActionStatus({ name: actionName, percent: safePercent, detail, startedAt });
     };
 
-    console.time(`[admin.action] ${actionName}`);
+    statusConsole.info(`${actionName}: started`);
     setProgress(10, 'Starting');
     try {
       const result = await runner(setProgress);
       setProgress(100, 'Completed');
+      statusConsole.success(`${actionName}: completed`, { elapsedMs: Math.round(performance.now() - startedAt) });
       return result;
     } catch (error) {
       setProgress(100, `Failed: ${(error as Error)?.message || 'unknown error'}`);
+      statusConsole.error(`${actionName}: failed`, { elapsedMs: Math.round(performance.now() - startedAt), error: (error as Error)?.message || String(error) });
       throw error;
     } finally {
-      console.timeEnd(`[admin.action] ${actionName}`);
       setTimeout(() => {
         setLiveActionStatus((current) => (current?.name === actionName ? null : current));
       }, 2200);
@@ -504,7 +506,7 @@ export default function Admin() {
       if (diag.enabled) {
         fetch(API_URL + '/version', { headers: token ? { Authorization: 'Bearer ' + token } : undefined })
           .then((r) => r.json())
-          .then((data) => console.log('[diag]', { tag: 'DIAG_BACKEND_VERSION', ts: new Date().toISOString(), data }))
+          .then((data) => statusConsole.info('backend version', data))
           .catch(() => {});
       }
     }
@@ -695,7 +697,6 @@ export default function Admin() {
 	      }
 	      setUsers(data as AuthorizedUser[]);
 	    } catch (error) {
-	      console.error('❌ Error loading users:', error);
 	      setMessage({ type: 'error', text: 'Failed to load users: ' + (error as Error).message });
 	    } finally {
 	      setLoading(false);
@@ -718,7 +719,6 @@ export default function Admin() {
       const data = await response.json();
       setLeadEmailSuggestions(Array.isArray(data?.suggestions) ? data.suggestions : []);
     } catch (error) {
-      console.error('❌ Error loading lead email suggestions:', error);
       toast.error((error as Error).message || 'Failed to load lead email suggestions');
     } finally {
       setLeadEmailLoading(false);
@@ -741,7 +741,6 @@ export default function Admin() {
       const data = await response.json();
       setAssignedLeadEmails(Array.isArray(data?.leads) ? data.leads : []);
     } catch (error) {
-      console.error('❌ Error loading assigned lead emails:', error);
       toast.error((error as Error).message || 'Failed to load assigned lead emails');
     } finally {
       setAssignedLeadLoading(false);
@@ -763,7 +762,6 @@ export default function Admin() {
       const data = await response.json();
       setPostBidAllowedEmails(Array.isArray(data?.allowedEmails) ? data.allowedEmails : []);
     } catch (error) {
-      console.error('❌ Error loading post-bid assignees:', error);
       toast.error((error as Error).message || 'Failed to load post-bid assignees');
     }
   };
@@ -783,7 +781,6 @@ export default function Admin() {
       const data = await response.json();
       setExportTemplate(normalizeExportTemplate(data));
     } catch (error) {
-      console.error('❌ Error loading export template:', error);
       toast.error((error as Error).message || 'Failed to load export template');
     }
   };
@@ -1073,7 +1070,7 @@ export default function Admin() {
         setCollectionStats(data);
       }
     } catch (error) {
-      console.error('Error loading stats:', error);
+      // Keep console quiet; surface toasts/messages instead.
     }
   };
 
@@ -1155,7 +1152,7 @@ export default function Admin() {
         tokenUpdatedAt: data.tokenUpdatedAt || null,
       });
     } catch (error) {
-      console.error('Failed to load graph auth status:', error);
+      // Keep console quiet; surface toasts/messages instead.
     }
   };
 
@@ -1180,7 +1177,7 @@ export default function Admin() {
         senderEmail: data.senderEmail || '',
       });
     } catch (error) {
-      console.error('Failed to load telecast auth status:', error);
+      // Keep console quiet; surface toasts/messages instead.
     }
   };
 
@@ -1229,7 +1226,7 @@ export default function Admin() {
       });
       setTelecastWeeklyStats(Array.isArray(data.weeklyStats) ? data.weeklyStats : []);
     } catch (error) {
-      console.error('Failed to load telecast config:', error);
+      // Keep console quiet; surface toasts/messages instead.
     }
   };
 
@@ -1246,7 +1243,7 @@ export default function Admin() {
       const data = await response.json();
       setShowConvertedEoiRowsDefault(Boolean(data.showConvertedEoiRowsDefault));
     } catch (error) {
-      console.error('Failed to load EOI duplicate config:', error);
+      // Keep console quiet; surface toasts/messages instead.
     }
   };
 
@@ -1266,7 +1263,7 @@ export default function Admin() {
         : [];
       setAvailableClients([...new Set(names)].sort((a, b) => a.localeCompare(b)));
     } catch (error) {
-      console.error('Failed to load clients:', error);
+      // Keep console quiet; surface toasts/messages instead.
     }
   };
 
@@ -1294,7 +1291,7 @@ export default function Admin() {
 	          : []
 	      );
     } catch (error) {
-      console.error('Failed to load deadline status:', error);
+      // Keep console quiet; surface toasts/messages instead.
     } finally {
       setDeadlineStatusLoading(false);
     }
@@ -1314,7 +1311,7 @@ export default function Admin() {
       setIssueReportTemplateStyle(data.templateStyle || DEFAULT_TELECAST_TEMPLATE_STYLE.key);
       setIssueReportTemplateStyles(Array.isArray(data.templateStyles) && data.templateStyles.length ? data.templateStyles : [DEFAULT_TELECAST_TEMPLATE_STYLE]);
     } catch (error) {
-      console.error('Failed to load reporting config:', error);
+      // Keep console quiet; surface toasts/messages instead.
     }
   };
 
@@ -1345,7 +1342,7 @@ export default function Admin() {
       });
       if (Array.isArray(data.weeklyStats)) setTelecastWeeklyStats(data.weeklyStats);
     } catch (error) {
-      console.error('Failed to load notification status:', error);
+      // Keep console quiet; surface toasts/messages instead.
     }
   };
 
@@ -1395,7 +1392,6 @@ export default function Admin() {
       setConsentUrl(data.consentUrl || '');
       return data.consentUrl || '';
     } catch (error) {
-      console.error('Failed to load consent URL:', error);
       return '';
     }
   };
@@ -1492,7 +1488,7 @@ export default function Admin() {
         await loadWorksheets(next.driveId, next.fileId);
       }
     } catch (error) {
-      console.error('Failed to load graph config:', error);
+      // Keep console quiet; surface toasts/messages instead.
     }
   };
 
@@ -1512,7 +1508,7 @@ export default function Admin() {
         setWorksheets(data.sheets || []);
       }
     } catch (error) {
-      console.error('Failed to load worksheets:', error);
+      // Keep console quiet; surface toasts/messages instead.
     }
   };
 
@@ -1685,7 +1681,6 @@ export default function Admin() {
         setTimeout(() => setMessage(null), 3000);
       });
     } catch (error) {
-      console.error('❌ Error approving user:', error);
       setMessage({ type: 'error', text: '❌ Failed to approve user: ' + (error as Error).message });
     } finally {
       setUserManagementBusy(false);
@@ -1723,7 +1718,6 @@ export default function Admin() {
         setTimeout(() => setMessage(null), 3000);
       });
     } catch (error) {
-      console.error('❌ Error rejecting user:', error);
       setMessage({ type: 'error', text: '❌ Failed to reject user: ' + (error as Error).message });
     } finally {
       setUserManagementBusy(false);
@@ -1762,7 +1756,6 @@ export default function Admin() {
         setTimeout(() => setMessage(null), 3000);
       });
     } catch (error) {
-      console.error('❌ Error changing role:', error);
       setMessage({ type: 'error', text: '❌ Failed to change role: ' + (error as Error).message });
     } finally {
       setChangingRole(null);
@@ -1890,7 +1883,6 @@ export default function Admin() {
         setTimeout(() => setMessage(null), 3000);
       });
     } catch (error) {
-      console.error('❌ Error removing user:', error);
       setMessage({ type: 'error', text: '❌ Failed to remove user: ' + (error as Error).message });
     } finally {
       setUserManagementBusy(false);
@@ -2070,7 +2062,6 @@ export default function Admin() {
       setMessage({ type: 'success', text: '🗑️ Cleaned up ' + result.deletedCount + ' old login logs' });
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
-      console.error('❌ Error cleaning logs:', error);
       setMessage({ type: 'error', text: '❌ Failed to cleanup logs: ' + (error as Error).message });
     }
   };

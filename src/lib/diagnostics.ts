@@ -14,9 +14,8 @@ const state = {
 
 const push = (entry: DiagEntry) => {
   state.entries.push(entry);
-  // Keep console logs easy to grep/paste.
-
-  console.log('[diag]', entry);
+  // Intentionally do not log each entry to console.
+  // Console should stay quiet unless explicitly requested (statusConsole or diagFinish()).
 };
 
 export const diag = {
@@ -90,7 +89,7 @@ export const diag = {
     const w = window as any;
     if (typeof w.diagFinish === 'function') return;
     w.diagFinish = () => {
-
+      // eslint-disable-next-line no-console
       console.log('[diag] DIAG_FINISH', {
         ts: new Date().toISOString(),
         path: state.navPath,
@@ -99,4 +98,3 @@ export const diag = {
     };
   },
 };
-
