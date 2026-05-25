@@ -267,11 +267,6 @@ export default function Login() {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="relative z-10 max-w-lg text-center"
         >
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-md mb-8">
-            <ShieldCheck className="h-4 w-4 text-blue-400" />
-            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-100/70">Enterprise Grade Security</span>
-          </div>
-
           <div className="flex justify-center mb-10">
              <div className="p-6 rounded-[2.5rem] bg-white/5 border border-white/10 backdrop-blur-xl shadow-2xl">
                <img src={logo} alt="Avenir" className="h-16 w-auto" />
@@ -286,27 +281,6 @@ export default function Login() {
           <p className="text-lg text-slate-400 font-medium leading-relaxed mb-12">
             Streamline your sales pipeline with real-time analytics, automated workflows, and executive-level business intelligence.
           </p>
-
-          <div className="grid grid-cols-3 gap-6">
-             {[
-               { icon: Zap, label: 'Real-time Sync', color: 'text-amber-400' },
-               { icon: Sparkles, label: 'AI Analytics', color: 'text-blue-400' },
-               { icon: ShieldCheck, label: 'ISO Certified', color: 'text-emerald-400' }
-             ].map((feat, i) => (
-               <motion.div
-                 key={feat.label}
-                 initial={{ opacity: 0, scale: 0.8 }}
-                 animate={{ opacity: 1, scale: 1 }}
-                 transition={{ delay: 0.5 + (i * 0.1) }}
-                 className="flex flex-col items-center gap-3"
-               >
-                 <div className="p-3 rounded-2xl bg-white/5 border border-white/10">
-                   <feat.icon className={cn("h-5 w-5", feat.color)} />
-                 </div>
-                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{feat.label}</span>
-               </motion.div>
-             ))}
-          </div>
         </motion.div>
       </div>
 
