@@ -19,12 +19,14 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import styles from './OpportunitiesTable.module.css';
 import { CANONICAL_STATUS_ORDER, getDisplayStatus, getStatusBadgeClass, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
+import { getSearchMatchInfo } from '@/lib/opportunitySearchMatch';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
   onSelectOpportunity?: (opp: Opportunity) => void;
   onRowDoubleClick?: (opp: Opportunity) => void;
   onEditCell?: (opp: Opportunity, fieldKey: string) => void;
+  searchTerm?: string;
   columnPreset?: 'summary' | 'sheet';
   scrollContainerClassName?: string;
   maxHeight?: string;
@@ -192,6 +194,7 @@ export function OpportunitiesTable({
   onSelectOpportunity,
   onRowDoubleClick,
   onEditCell,
+  searchTerm,
   columnPreset = 'summary',
   scrollContainerClassName,
   maxHeight = 'max-h-96',
@@ -930,16 +933,18 @@ export function OpportunitiesTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {renderedData.map((tender) => {
-                const approvalStatus = getApprovalStatus(tender.opportunityRefNo);
-                const approvalState = getApprovalState(tender.opportunityRefNo);
-                const rowTrace = duplicateTraceByKeptId[getRowKey(tender)];
-                const isDedupeKeptRow = Boolean(rowTrace);
-                return (
-                  <TableRow
-                    key={tender.id}
-                    className={`cursor-pointer hover:bg-muted/50 ${styles.row} ${styles[getRowStatusClass(tender)] || ''} ${isDedupeKeptRow ? styles.dedupeKeptRow : ''}`}
-                    onClick={() => {
+	              {renderedData.map((tender) => {
+	                const approvalStatus = getApprovalStatus(tender.opportunityRefNo);
+	                const approvalState = getApprovalState(tender.opportunityRefNo);
+	                const rowTrace = duplicateTraceByKeptId[getRowKey(tender)];
+	                const isDedupeKeptRow = Boolean(rowTrace);
+	                const matchInfo = searchTerm ? getSearchMatchInfo(tender, searchTerm) : null;
+	                const matchColumns = matchInfo && matchInfo.matched ? matchInfo.columns : [];
+	                return (
+	                  <TableRow
+	                    key={tender.id}
+	                    className={`cursor-pointer hover:bg-muted/50 ${styles.row} ${styles[getRowStatusClass(tender)] || ''} ${isDedupeKeptRow ? styles.dedupeKeptRow : ''}`}
+	                    onClick={() => {
                       if (rowTrace) {
                         setSelectedDuplicateTrace(rowTrace);
                         return;
@@ -959,15 +964,31 @@ export function OpportunitiesTable({
                       ))
                     ) : (
                       <>
-                        <TableCell className={`${cellPaddingClass} max-w-[120px] truncate font-mono text-[10px] sm:text-[11px] font-bold text-blue-600 dark:text-blue-400`}>
-                          <EditableCell opp={tender} fieldKey="opportunityRefNo">
-                            <div className="flex items-center gap-1.5">
-                              <span className="truncate">{tender.opportunityRefNo || '—'}</span>
-                              {isDedupeKeptRow ? (
-                                <Badge className="border border-fuchsia-400 bg-fuchsia-100 text-[10px] text-fuchsia-800">
-                                  dedupe
-                                </Badge>
-                              ) : null}
+	                        <TableCell className={`${cellPaddingClass} max-w-[120px] truncate font-mono text-[10px] sm:text-[11px] font-bold text-blue-600 dark:text-blue-400`}>
+	                          <EditableCell opp={tender} fieldKey="opportunityRefNo">
+	                            <div className="flex items-center gap-1.5">
+	                              <span className="truncate">{tender.opportunityRefNo || '—'}</span>
+	                              {searchTerm && matchColumns.length ? (
+	                                <Tooltip>
+	                                  <TooltipTrigger asChild>
+	                                    <Badge
+	                                      variant="outline"
+	                                      className="border-slate-300/60 bg-white/60 text-slate-600 dark:bg-transparent dark:text-slate-300 text-[10px] px-1 py-0 leading-4"
+	                                      onClick={(e) => e.stopPropagation()}
+	                                    >
+	                                      match
+	                                    </Badge>
+	                                  </TooltipTrigger>
+	                                  <TooltipContent className="max-w-[260px] text-xs">
+	                                    Matched in: {matchColumns.join(', ')}
+	                                  </TooltipContent>
+	                                </Tooltip>
+	                              ) : null}
+	                              {isDedupeKeptRow ? (
+	                                <Badge className="border border-fuchsia-400 bg-fuchsia-100 text-[10px] text-fuchsia-800">
+	                                  dedupe
+	                                </Badge>
+	                              ) : null}
                             </div>
                           </EditableCell>
                         </TableCell>

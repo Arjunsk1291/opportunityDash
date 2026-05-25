@@ -23,6 +23,7 @@ import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOf
 import { cn } from "@/lib/utils";
 import { Opportunity, GROUP_CLASSIFICATIONS } from "@/data/opportunityData";
 import { CANONICAL_STATUS_ORDER, getDisplayStatus, normalizeCanonicalStatus } from "@/lib/opportunityStatus";
+import { getSearchMatchInfo } from "@/lib/opportunitySearchMatch";
 
 type DatePreset = "all" | "thisMonth" | "lastMonth" | "thisQuarter" | "lastQuarter" | "thisYear" | "lastYear" | "custom";
 
@@ -627,29 +628,8 @@ export function AdvancedFilters({
 export function applyFilters(data: Opportunity[], filters: FilterState): Opportunity[] {
   return data.filter((o) => {
     if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      const rowSnapshot = o.rawGraphData?.rowSnapshot && typeof o.rawGraphData.rowSnapshot === 'object'
-        ? Object.values(o.rawGraphData.rowSnapshot).map((value) => String(value ?? '')).join(' ').toLowerCase()
-        : '';
-      const searchableBlob = [
-        o.opportunityRefNo,
-        o.tenderName,
-        o.opportunityClassification,
-        o.clientName,
-        o.groupClassification,
-        o.awardedDate,
-        o.dateTenderReceived,
-        o.tenderPlannedSubmissionDate,
-        o.tenderSubmittedDate,
-        o.internalLead,
-        o.opportunityValue,
-        o.avenirStatus,
-        o.tenderResult,
-        o.remarksReason,
-        o.comments,
-        rowSnapshot,
-      ].map((value) => String(value ?? '').toLowerCase()).join(' ');
-      if (!searchableBlob.includes(searchLower)) return false;
+      const matchInfo = getSearchMatchInfo(o, filters.search);
+      if (!matchInfo.matched) return false;
     }
 
     if (filters.statuses.length > 0) {
@@ -675,8 +655,9 @@ export function applyFilters(data: Opportunity[], filters: FilterState): Opportu
 
     if (filters.clients.length > 0) {
       const clientKey = normalizeKey(String(o.clientName || ''));
-      const selected = new Set(filters.clients.map((client) => normalizeKey(client)));
-      if (!selected.has(clientKey)) return false;
+      const selectedKeys = filters.clients.map((client) => normalizeKey(client));
+      const matchesClient = selectedKeys.some((selected) => selected && clientKey.includes(selected));
+      if (!matchesClient) return false;
     }
 
     if (filters.clientTypes.length > 0 && !filters.clientTypes.includes(o.clientType)) {

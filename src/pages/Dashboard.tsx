@@ -1452,6 +1452,7 @@ const Dashboard = () => {
       {/* Opportunities Table */}
       <OpportunitiesTable
         data={filteredData}
+        searchTerm={filters.search}
         onSelectOpportunity={setSelectedOpp}
         responsiveMode="dashboard"
         duplicateTraceByKeptId={duplicateTraceByKeptId}
