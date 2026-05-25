@@ -4,6 +4,8 @@ export type ActionKey =
   | 'opportunities_view'
   | 'opportunities_write'
   | 'opportunities_sync'
+  | 'opportunities_sheet_upload'
+  | 'bd_engagements_write'
   | 'approvals_proposal_head'
   | 'approvals_svp'
   | 'approvals_bulk_revert'
@@ -31,6 +33,8 @@ export const ACTION_LABELS: Record<ActionKey, string> = {
   opportunities_view: 'View Opportunities Data',
   opportunities_write: 'Write Opportunities Data',
   opportunities_sync: 'Sync Opportunities to MongoDB',
+  opportunities_sheet_upload: 'Upload Opportunities Spreadsheet',
+  bd_engagements_write: 'Write BD Engagements',
   approvals_proposal_head: 'Tender Manager Approval Writes',
   approvals_svp: 'SVP Approval Writes',
   approvals_bulk_revert: 'Bulk Revert Approval Writes',
@@ -59,6 +63,8 @@ export const ACTION_DESCRIPTIONS: Record<ActionKey, string> = {
   opportunities_view: 'Read access to opportunities-derived modules (e.g., Potential Opportunities list).',
   opportunities_write: 'Write access to opportunities-derived modules (mark potential, manage extras, etc.).',
   opportunities_sync: 'Manual sync and dashboard auto-sync that write synced rows into MongoDB.',
+  opportunities_sheet_upload: 'Perform bulk spreadsheet imports on the Opportunities page.',
+  bd_engagements_write: 'Create or update business development engagement records.',
   approvals_proposal_head: 'Writes proposal-head approval state into MongoDB.',
   approvals_svp: 'Writes SVP approval state into MongoDB.',
   approvals_bulk_revert: 'Bulk approval revert operations.',
@@ -87,6 +93,8 @@ export const DEFAULT_ACTION_ROLE_ACCESS: Record<ActionKey, UserRole[]> = {
   opportunities_view: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   opportunities_write: ['Master', 'Admin', 'ProposalHead', 'SVP'],
   opportunities_sync: ['Master', 'Admin'],
+  opportunities_sheet_upload: ['Master', 'Admin'],
+  bd_engagements_write: ['Master', 'Admin', 'BDTeam'],
   approvals_proposal_head: ['Master', 'ProposalHead'],
   approvals_svp: ['Master', 'SVP'],
   approvals_bulk_revert: ['Master', 'ProposalHead'],
