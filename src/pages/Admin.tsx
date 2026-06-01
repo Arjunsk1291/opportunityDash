@@ -442,6 +442,12 @@ export default function Admin() {
     runner: (setProgress: (percent: number, detail: string) => void) => Promise<T>,
   ): Promise<T> => {
     const startedAt = performance.now();
+    const slowTimer = window.setTimeout(() => {
+      setLiveActionStatus((current) => {
+        if (!current || current.name !== actionName) return current;
+        return { ...current, detail: `${current.detail} (taking longer than expected...)` };
+      });
+    }, 10000);
     const setProgress = (percent: number, detail: string) => {
       const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
       const elapsedMs = Math.round(performance.now() - startedAt);
@@ -460,6 +466,7 @@ export default function Admin() {
       statusConsole.error(`${actionName}: failed`, { elapsedMs: Math.round(performance.now() - startedAt), error: (error as Error)?.message || String(error) });
       throw error;
     } finally {
+      window.clearTimeout(slowTimer);
       setTimeout(() => {
         setLiveActionStatus((current) => (current?.name === actionName ? null : current));
       }, 2200);
