@@ -455,7 +455,7 @@ export default function Admin() {
     };
 
     statusConsole.info(`${actionName}: started`);
-    setProgress(10, 'Starting');
+    setProgress(0, 'Starting');
     try {
       const result = await runner(setProgress);
       setProgress(100, 'Completed');
@@ -794,22 +794,27 @@ export default function Admin() {
 
   const saveExportTemplateConfig = async () => {
     if (!token) return;
-    setExportTemplateSaving(true);
     try {
-      const response = await fetch(API_URL + '/export-template/config', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(exportTemplate),
+      setExportTemplateSaving(true);
+      await runTrackedAction('Save Export Template', async (setProgress) => {
+        setProgress(30, 'Sending update');
+        const response = await fetch(API_URL + '/export-template/config', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(exportTemplate),
+        });
+        setProgress(70, 'Processing response');
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.error || 'Failed to save export template');
+        }
+        setExportTemplate(normalizeExportTemplate(data));
+        setProgress(95, 'Applying updates');
+        toast.success('Export template saved.');
       });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || 'Failed to save export template');
-      }
-      setExportTemplate(normalizeExportTemplate(data));
-      toast.success('Export template saved.');
     } catch (error) {
       toast.error((error as Error).message || 'Failed to save export template');
     } finally {
@@ -950,22 +955,27 @@ export default function Admin() {
 
   const savePostBidConfig = async () => {
     if (!token) return;
-    setPostBidSaving(true);
     try {
-      const response = await fetch(API_URL + '/opportunities/post-bid-config', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ emails: postBidAllowedEmails }),
+      setPostBidSaving(true);
+      await runTrackedAction('Save Post-Bid Assignees', async (setProgress) => {
+        setProgress(30, 'Sending update');
+        const response = await fetch(API_URL + '/opportunities/post-bid-config', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ emails: postBidAllowedEmails }),
+        });
+        setProgress(70, 'Processing response');
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.error || 'Failed to save post-bid assignees');
+        }
+        setPostBidAllowedEmails(Array.isArray(data?.allowedEmails) ? data.allowedEmails : []);
+        setProgress(95, 'Applying updates');
+        toast.success('Post-bid assignees updated.');
       });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || 'Failed to save post-bid assignees');
-      }
-      setPostBidAllowedEmails(Array.isArray(data?.allowedEmails) ? data.allowedEmails : []);
-      toast.success('Post-bid assignees updated.');
     } catch (error) {
       toast.error((error as Error).message || 'Failed to save post-bid assignees');
     } finally {
@@ -1034,28 +1044,34 @@ export default function Admin() {
       toast.error('Lead email is required.');
       return;
     }
-    setLeadEmailSaving(true);
     try {
-      const response = await fetch(`${API_URL}/opportunities/lead-email/approve`, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          leadName: row.leadName,
-          leadNameKey: row.leadNameKey || row.leadName,
-          email,
-        }),
+      setLeadEmailSaving(true);
+      await runTrackedAction('Save Lead Email Mapping', async (setProgress) => {
+        setProgress(25, 'Sending update');
+        const response = await fetch(`${API_URL}/opportunities/lead-email/approve`, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            leadName: row.leadName,
+            leadNameKey: row.leadNameKey || row.leadName,
+            email,
+          }),
+        });
+        setProgress(60, 'Processing response');
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.error || 'Update failed');
+        }
+        toast.success('Lead email updated.');
+        setProgress(80, 'Refreshing lists');
+        cancelLeadEmailEdit();
+        await loadAssignedLeadEmails();
+        await loadLeadEmailSuggestions();
+        setProgress(95, 'Applying updates');
       });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || 'Update failed');
-      }
-      toast.success('Lead email updated.');
-      cancelLeadEmailEdit();
-      await loadAssignedLeadEmails();
-      await loadLeadEmailSuggestions();
     } catch (error) {
       toast.error((error as Error).message || 'Update failed');
     } finally {
