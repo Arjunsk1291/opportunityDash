@@ -83,6 +83,23 @@ interface CurrentUserResponse {
   assignedGroup?: string | null;
 }
 
+async function fetchJsonWithTimeout<T>(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  options?: { timeoutMs?: number },
+): Promise<{ response: Response; data: T }> {
+  const timeoutMs = options?.timeoutMs ?? 25000;
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(input, { ...init, signal: controller.signal });
+    const data = (await response.json().catch(() => ({}))) as T;
+    return { response, data };
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function parseJwtExpiryMs(jwtToken: string): number | null {
   try {
     const parts = jwtToken.split('.');
@@ -375,17 +392,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error('Only Master users can update page permissions');
     }
 
-    const response = await fetch(API_URL + '/navigation/permissions', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({
-        permissions,
-        emailPermissions: emailPermissions || pageEmailPermissions,
-        excludePermissions: excludePermissions || pageExcludePermissions,
-      }),
-    });
-
-    const data = await response.json();
+    const { response, data } = await fetchJsonWithTimeout<{
+      error?: string;
+      permissions?: Record<PageKey, UserRole[]>;
+      excludePermissions?: Record<PageKey, UserRole[]>;
+      emailPermissions?: Record<PageKey, string[]>;
+    }>(
+      API_URL + '/navigation/permissions',
+      {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          permissions,
+          emailPermissions: emailPermissions || pageEmailPermissions,
+          excludePermissions: excludePermissions || pageExcludePermissions,
+        }),
+      },
+      { timeoutMs: 25000 },
+    );
     if (!response.ok) {
       throw new Error(data?.error || 'Failed to update page permissions');
     }
@@ -448,13 +472,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error('Only Master users can update action permissions');
     }
 
-    const response = await fetch(API_URL + '/action-permissions', {
+    const { response, data } = await fetchJsonWithTimeout<{ error?: string; permissions?: Record<ActionKey, UserRole[]>; emailPermissions?: Record<ActionKey, string[]> }>(
+      API_URL + '/action-permissions',
+      {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({ permissions, emailPermissions: emailPermissions || actionEmailPermissions }),
-    });
-
-    const data = await response.json();
+      },
+      { timeoutMs: 25000 },
+    );
     if (!response.ok) {
       throw new Error(data?.error || 'Failed to update action permissions');
     }
