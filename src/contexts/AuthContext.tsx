@@ -55,6 +55,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const SESSION_REFRESH_LEEWAY_MS = 2 * 60 * 1000;
 const FALLBACK_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const PERMISSIONS_REFRESH_INTERVAL_MS = 2 * 60 * 1000;
 interface AuthorizedUserResponse {
   id?: string;
   _id?: string;
@@ -382,6 +383,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     loadActionPermissions();
   }, [loadActionPermissions]);
+
+  useEffect(() => {
+    if (!token || !user?.email || user.status !== 'approved') return;
+
+    const refresh = () => {
+      loadPagePermissions();
+      loadActionPermissions();
+    };
+
+    const intervalId = window.setInterval(refresh, PERMISSIONS_REFRESH_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [loadActionPermissions, loadPagePermissions, token, user?.email, user?.status]);
 
   const updatePagePermissions = useCallback(async (
     permissions: Record<PageKey, UserRole[]>,
