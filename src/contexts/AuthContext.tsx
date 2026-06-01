@@ -391,6 +391,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!token || user?.role !== 'Master') {
       throw new Error('Only Master users can update page permissions');
     }
+    if (!emailPermissions || !excludePermissions) {
+      throw new Error('Missing page permissions payload');
+    }
 
     const { response, data } = await fetchJsonWithTimeout<{
       error?: string;
@@ -404,8 +407,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: authHeaders(),
         body: JSON.stringify({
           permissions,
-          emailPermissions: emailPermissions || pageEmailPermissions,
-          excludePermissions: excludePermissions || pageExcludePermissions,
+          emailPermissions,
+          excludePermissions,
         }),
       },
       { timeoutMs: 25000 },
@@ -417,7 +420,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data?.permissions) setPagePermissions(data.permissions);
     if (data?.excludePermissions) setPageExcludePermissions(data.excludePermissions);
     if (data?.emailPermissions) setPageEmailPermissions(data.emailPermissions);
-  }, [authHeaders, pageEmailPermissions, pageExcludePermissions, token, user?.role]);
+  }, [authHeaders, token, user?.role]);
 
   const updateUserRole = useCallback(async (userId: string, newRole: UserRole, assignedGroup?: string) => {
     if (!token || user?.role !== 'Master') {
@@ -471,13 +474,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!token || user?.role !== 'Master') {
       throw new Error('Only Master users can update action permissions');
     }
+    if (!emailPermissions) {
+      throw new Error('Missing action permissions payload');
+    }
 
     const { response, data } = await fetchJsonWithTimeout<{ error?: string; permissions?: Record<ActionKey, UserRole[]>; emailPermissions?: Record<ActionKey, string[]> }>(
       API_URL + '/action-permissions',
       {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ permissions, emailPermissions: emailPermissions || actionEmailPermissions }),
+      body: JSON.stringify({ permissions, emailPermissions }),
       },
       { timeoutMs: 25000 },
     );
@@ -487,7 +493,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (data?.permissions) setActionPermissions(data.permissions);
     if (data?.emailPermissions) setActionEmailPermissions(data.emailPermissions);
-  }, [actionEmailPermissions, authHeaders, token, user?.role]);
+  }, [authHeaders, token, user?.role]);
 
   const isAuthenticated = user !== null && token !== null;
   const isMaster = user?.role === 'Master' && user?.status === 'approved';
