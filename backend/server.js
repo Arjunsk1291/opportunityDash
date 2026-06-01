@@ -3826,13 +3826,16 @@ const PAGE_KEYS = [
   'clients',
   'analytics',
   'bd_engagements',
+  'advanced_analytics',
   'master',
   'master_general',
   'master_users',
   'master_data_sync',
   'master_telecast',
+  'master_update',
+  'master_export',
 ];
-const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'BDTeam'];
+const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'BDTeam', 'TempUser'];
 const ACTION_KEYS = [
   'opportunities_view',
   'opportunities_write',
@@ -3857,24 +3860,28 @@ const ACTION_KEYS = [
   'graph_auth_write',
   'telecast_config_write',
   'telecast_auth_write',
+  'export_template_write',
   'notification_alert_flags_write',
   'lead_email_manage',
   'logs_cleanup',
 ];
 const DEFAULT_PAGE_ROLE_ACCESS = {
-  dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'],
+  opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   pq_activities: ['Master', 'Admin', 'Basic'],
-  vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
-  analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic'],
+  vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   bd_engagements: ['Master', 'Admin', 'BDTeam'],
+  advanced_analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam'],
   master: ['Master', 'Admin'],
   master_general: ['Master', 'Admin'],
   master_users: ['Master', 'Admin'],
   master_data_sync: ['Master', 'Admin'],
   master_telecast: ['Master', 'Admin'],
+  master_update: ['Master', 'Admin'],
+  master_export: ['Master', 'Admin'],
 };
 const DEFAULT_ACTION_ROLE_ACCESS = {
   opportunities_view: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
@@ -3884,7 +3891,7 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   manual_opportunity_updates_write: ['Master', 'Admin'],
   bd_engagements_write: ['Master', 'Admin', 'BDTeam'],
   pq_activities_view: ['Master', 'Admin', 'Basic'],
-  pq_activities_manage: ['Master', 'Admin'],
+  pq_activities_manage: ['Master'],
   approvals_proposal_head: ['Master', 'ProposalHead'],
   approvals_svp: ['Master', 'SVP'],
   approvals_bulk_revert: ['Master', 'ProposalHead'],
@@ -3900,10 +3907,27 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   graph_auth_write: ['Master'],
   telecast_config_write: ['Master'],
   telecast_auth_write: ['Master'],
+  export_template_write: ['Master'],
   notification_alert_flags_write: ['Master', 'Admin'],
   lead_email_manage: ['Master', 'Admin'],
   logs_cleanup: ['Master'],
 };
+
+(() => {
+  const pageKeySet = new Set(PAGE_KEYS);
+  const defaultPages = Object.keys(DEFAULT_PAGE_ROLE_ACCESS);
+  const unknownDefaultPages = defaultPages.filter((key) => !pageKeySet.has(key));
+  if (unknownDefaultPages.length) {
+    console.warn('[boot] DEFAULT_PAGE_ROLE_ACCESS contains unknown keys:', unknownDefaultPages);
+  }
+
+  const actionKeySet = new Set(ACTION_KEYS);
+  const defaultActions = Object.keys(DEFAULT_ACTION_ROLE_ACCESS);
+  const unknownDefaultActions = defaultActions.filter((key) => !actionKeySet.has(key));
+  if (unknownDefaultActions.length) {
+    console.warn('[boot] DEFAULT_ACTION_ROLE_ACCESS contains unknown keys:', unknownDefaultActions);
+  }
+})();
 
 const sanitizePageRoleAccess = (input = {}) => {
   const normalized = {};
@@ -4098,11 +4122,20 @@ app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
       pageRoleExcludeAccess: hashJson(config.pageRoleExcludeAccess || {}),
       pageEmailAccess: hashJson(config.pageEmailAccess || {}),
     };
-    config.pageRoleAccess = permissions;
-    config.pageRoleExcludeAccess = excludePermissions;
-    config.pageEmailAccess = emailPermissions;
-    config.updatedBy = req.user.email;
-    await config.save();
+
+    // Important: avoid saving a large SystemConfig document when only updating permission maps.
+    const updated = await SystemConfig.findOneAndUpdate(
+      {},
+      {
+        $set: {
+          pageRoleAccess: permissions,
+          pageRoleExcludeAccess: excludePermissions,
+          pageEmailAccess: emailPermissions,
+          updatedBy: req.user.email,
+        },
+      },
+      { new: true, upsert: true },
+    );
     invalidateSystemConfigCache('navigation_permissions_write');
 
     console.log(JSON.stringify({
@@ -4112,9 +4145,9 @@ app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
       endpoint: '/api/navigation/permissions',
       before: beforeHashes,
       after: {
-        pageRoleAccess: hashJson(config.pageRoleAccess || {}),
-        pageRoleExcludeAccess: hashJson(config.pageRoleExcludeAccess || {}),
-        pageEmailAccess: hashJson(config.pageEmailAccess || {}),
+        pageRoleAccess: hashJson(updated?.pageRoleAccess || {}),
+        pageRoleExcludeAccess: hashJson(updated?.pageRoleExcludeAccess || {}),
+        pageEmailAccess: hashJson(updated?.pageEmailAccess || {}),
       },
     }));
 
@@ -4144,10 +4177,19 @@ app.post('/api/action-permissions', verifyToken, async (req, res) => {
       actionRoleAccess: hashJson(config.actionRoleAccess || {}),
       actionEmailAccess: hashJson(config.actionEmailAccess || {}),
     };
-    config.actionRoleAccess = permissions;
-    config.actionEmailAccess = emailPermissions;
-    config.updatedBy = req.user.email;
-    await config.save();
+
+    // Important: avoid saving a large SystemConfig document when only updating permission maps.
+    const updated = await SystemConfig.findOneAndUpdate(
+      {},
+      {
+        $set: {
+          actionRoleAccess: permissions,
+          actionEmailAccess: emailPermissions,
+          updatedBy: req.user.email,
+        },
+      },
+      { new: true, upsert: true },
+    );
     invalidateSystemConfigCache('action_permissions_write');
 
     console.log(JSON.stringify({
@@ -4157,8 +4199,8 @@ app.post('/api/action-permissions', verifyToken, async (req, res) => {
       endpoint: '/api/action-permissions',
       before: beforeHashes,
       after: {
-        actionRoleAccess: hashJson(config.actionRoleAccess || {}),
-        actionEmailAccess: hashJson(config.actionEmailAccess || {}),
+        actionRoleAccess: hashJson(updated?.actionRoleAccess || {}),
+        actionEmailAccess: hashJson(updated?.actionEmailAccess || {}),
       },
     }));
 
