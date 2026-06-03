@@ -2836,9 +2836,14 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       user.failedLoginAttempts = 0;
     }
 
-    if (user.status === 'rejected') return res.status(403).json({ error: 'User access rejected', status: 'rejected' });
-    if (user.status === 'pending') return res.status(403).json({ error: 'User access pending approval', status: 'pending' });
-    if (user.status !== 'approved') return res.status(403).json({ error: 'Account not approved for login' });
+    const tempAccessEndsAt = user.tempAccessExpiresAt ? new Date(user.tempAccessExpiresAt).getTime() : 0;
+    const hasValidTempAccess = String(user.role || '').trim() === 'TempUser' && tempAccessEndsAt > Date.now();
+
+    if (!hasValidTempAccess) {
+      if (user.status === 'rejected') return res.status(403).json({ error: 'User access rejected', status: 'rejected' });
+      if (user.status === 'pending') return res.status(403).json({ error: 'User access pending approval', status: 'pending' });
+      if (user.status !== 'approved') return res.status(403).json({ error: 'Account not approved for login' });
+    }
 
     if (!user.passwordHash && !adminBypassLogin) {
       return res.status(403).json({ error: 'Password login not configured' });
