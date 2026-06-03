@@ -2301,7 +2301,10 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
     if (isBootstrapMaster(username) && (user.role !== 'Master' || user.status !== 'approved')) {
       user.role = 'Master';
       user.status = 'approved';
-      await user.save();
+      await AuthorizedUser.updateOne(
+        { _id: user._id },
+        { $set: { role: 'Master', status: 'approved' } },
+      );
     }
 
     // /verify-token is intentionally NOT a passwordless login endpoint.
@@ -2470,7 +2473,10 @@ app.post('/api/auth/login', authRateLimiter, verifyToken, async (req, res) => {
     const user = await AuthorizedUser.findOne({ email: req.user.email });
     if (user) {
       user.lastLogin = new Date();
-      await user.save();
+      await AuthorizedUser.updateOne(
+        { _id: user._id },
+        { $set: { lastLogin: user.lastLogin } },
+      );
     }
 
     res.json({ success: true, message: 'Login recorded' });
@@ -2848,7 +2854,16 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
         console.warn(`[auth.login.failed-attempt] email=${email} attempts=${user.failedLoginAttempts}`);
       }
 
-      await user.save();
+      await AuthorizedUser.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            failedLoginAttempts: user.failedLoginAttempts,
+            lastFailedLoginAt: user.lastFailedLoginAt,
+            accountLockedUntil: user.accountLockedUntil,
+          },
+        },
+      );
       return res.status(403).json({ error: 'Invalid credentials' });
     }
 
@@ -2857,7 +2872,17 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
     user.lastFailedLoginAt = null;
     user.accountLockedUntil = null;
     user.lastLogin = new Date();
-    await user.save();
+    await AuthorizedUser.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          failedLoginAttempts: 0,
+          lastFailedLoginAt: null,
+          accountLockedUntil: null,
+          lastLogin: user.lastLogin,
+        },
+      },
+    );
 
     // Log successful login (ISO/IEC 27001 - A.12.4.1)
     const loginLog = new LoginLog({
@@ -2965,7 +2990,15 @@ app.post('/api/auth/password-reset/request', passwordResetRateLimiter, async (re
     const code = randomBytes(16).toString('hex').toUpperCase();
     user.resetPasswordTokenHash = hashResetToken(code);
     user.resetPasswordExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
-    await user.save();
+    await AuthorizedUser.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          resetPasswordTokenHash: user.resetPasswordTokenHash,
+          resetPasswordExpiresAt: user.resetPasswordExpiresAt,
+        },
+      },
+    );
 
     const telecastSender = getTelecastSender();
     const { accessToken } = await getTelecastSendMailAccessToken();
@@ -3032,7 +3065,22 @@ app.post('/api/users/send-temp-credential', verifyToken, async (req, res) => {
       user.tempAccessExpiresAt = expiryDate;
       user.resetPasswordTokenHash = tempCodeHash;
       user.resetPasswordExpiresAt = expiryDate;
-      await user.save();
+      await AuthorizedUser.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            passwordHash: user.passwordHash,
+            passwordChangedAt: user.passwordChangedAt,
+            requiresPasswordChange: true,
+            failedLoginAttempts: 0,
+            accountLockedUntil: null,
+            lastFailedLoginAt: null,
+            tempAccessExpiresAt: user.tempAccessExpiresAt,
+            resetPasswordTokenHash: user.resetPasswordTokenHash,
+            resetPasswordExpiresAt: user.resetPasswordExpiresAt,
+          },
+        },
+      );
 
       const html = buildTempCredentialEmailHtml({
         code: tempCode,
