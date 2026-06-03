@@ -188,6 +188,20 @@ interface TempCredentialLogRow {
   expiresAt: string;
 }
 
+interface AuthDiagnosticLogRow {
+  _id: string;
+  email?: string;
+  route: string;
+  method: string;
+  code: string;
+  message: string;
+  status: number;
+  details?: Record<string, unknown>;
+  userAgent?: string;
+  ipAddress?: string;
+  createdAt: string;
+}
+
 interface LiveActionStatus {
   name: string;
   percent: number;
@@ -446,12 +460,19 @@ export default function Admin() {
   const [manualUpdateSummary, setManualUpdateSummary] = useState<ManualUpdateSummary | null>(null);
   const [tempCredentialLogs, setTempCredentialLogs] = useState<TempCredentialLogRow[]>([]);
   const [tempCredentialLogsLoading, setTempCredentialLogsLoading] = useState(false);
+  const [authDiagnostics, setAuthDiagnostics] = useState<AuthDiagnosticLogRow[]>([]);
+  const [authDiagnosticsLoading, setAuthDiagnosticsLoading] = useState(false);
   const [backendHealth, setBackendHealth] = useState<{ ok: boolean; dbState: number; timestamp?: string } | null>(null);
   const [backendHealthLoading, setBackendHealthLoading] = useState(false);
   const [userManagementBusy, setUserManagementBusy] = useState(false);
   const [permissionsBusy, setPermissionsBusy] = useState(false);
   const [tempCredentialSelection, setTempCredentialSelection] = useState<string[]>([]);
   const [tempCredentialConfirmOpen, setTempCredentialConfirmOpen] = useState(false);
+  const copyAuthDiagnostic = async (row: AuthDiagnosticLogRow) => {
+    const payload = JSON.stringify(row, null, 2);
+    await navigator.clipboard.writeText(payload);
+    toast.success('Diagnostic copied to clipboard');
+  };
 
   const runTrackedAction = async <T,>(
     actionName: string,
@@ -493,6 +514,7 @@ export default function Admin() {
     () => ([
       { value: 'general', label: 'General', pageKey: 'master_general' as PageKey },
       { value: 'users', label: 'User Management', pageKey: 'master_users' as PageKey },
+      { value: 'auth-diagnostics', label: 'Auth Diagnostics', pageKey: 'master_users' as PageKey },
       { value: 'data-sync', label: 'Data Sync', pageKey: 'master_data_sync' as PageKey },
       { value: 'telecast', label: '📣 Telecast', pageKey: 'master_telecast' as PageKey },
       { value: 'update', label: 'Update', pageKey: 'master_update' as PageKey },
@@ -551,6 +573,9 @@ export default function Admin() {
       loadAssignedLeadEmails();
       loadPostBidConfig();
       loadTempCredentialLogs();
+    }
+    if (activeTab === 'auth-diagnostics') {
+      loadAuthDiagnostics();
     }
   }, [activeTab, canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -787,6 +812,25 @@ export default function Admin() {
       toast.error((error as Error).message || 'Failed to load temporary credential logs');
     } finally {
       setTempCredentialLogsLoading(false);
+    }
+  };
+
+  const loadAuthDiagnostics = async () => {
+    if (!token || !isMaster) return;
+    setAuthDiagnosticsLoading(true);
+    try {
+      const response = await fetch(API_URL + '/auth/diagnostics', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(parseApiErrorPayload(data, 'Failed to load auth diagnostics'));
+      }
+      setAuthDiagnostics(Array.isArray(data?.logs) ? data.logs : []);
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to load auth diagnostics');
+    } finally {
+      setAuthDiagnosticsLoading(false);
     }
   };
 
@@ -2446,6 +2490,7 @@ export default function Admin() {
   const activeTabDescriptions: Record<string, string> = {
     general: 'User context and privilege overview.',
     users: 'Role access, user management, and approval controls.',
+    'auth-diagnostics': 'Login failures, temp credential checks, and authentication diagnostics.',
     update: 'Manual opportunity updates and update templates.',
     export: 'Export layout designer and template configuration.',
     'data-sync': 'Graph workbook sync configuration and controls.',
@@ -3404,6 +3449,69 @@ export default function Admin() {
             </DialogContent>
           </Dialog>
 
+        </TabsContent>
+        )}
+
+        {allowedTabValues.has('auth-diagnostics') && (
+        <TabsContent value="auth-diagnostics" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Auth Diagnostics</CardTitle>
+              <CardDescription>
+                Copyable report of the most recent authentication failures and their diagnostic codes.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="text-xs text-muted-foreground">
+                  {authDiagnostics.length} diagnostic entries loaded
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={loadAuthDiagnostics}
+                  disabled={authDiagnosticsLoading}
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${authDiagnosticsLoading ? 'animate-spin' : ''}`} />
+                  Refresh Diagnostics
+                </Button>
+              </div>
+              <div className="space-y-3 max-h-[70vh] overflow-auto pr-1">
+                {authDiagnosticsLoading ? (
+                  <div className="rounded-xl border p-4 text-sm text-muted-foreground">Loading diagnostics...</div>
+                ) : authDiagnostics.length ? (
+                  authDiagnostics.map((row) => (
+                    <div key={row._id} className="rounded-xl border bg-card p-4 shadow-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="outline">{row.code}</Badge>
+                            <Badge variant="secondary">{row.status}</Badge>
+                            <span className="text-xs text-muted-foreground">{row.method}</span>
+                            <span className="text-xs text-muted-foreground">{row.route}</span>
+                          </div>
+                          <div className="mt-2 text-sm font-medium">{row.message}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {row.createdAt ? new Date(row.createdAt).toLocaleString() : '—'}
+                            {row.email ? ` · ${row.email}` : ''}
+                          </div>
+                        </div>
+                        <Button type="button" variant="outline" size="sm" onClick={() => copyAuthDiagnostic(row)}>
+                          Copy JSON
+                        </Button>
+                      </div>
+                      <pre className="mt-3 max-h-64 overflow-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">
+{JSON.stringify(row, null, 2)}
+                      </pre>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-xl border p-4 text-sm text-muted-foreground">No auth diagnostics captured yet.</div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
         )}
 

@@ -16,6 +16,7 @@ import OpportunityFieldConflict from './models/OpportunityFieldConflict.js';
 import LeadEmailMapping from './models/LeadEmailMapping.js';
 import Approval from './models/Approval.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
+import AuthDiagnosticLog from './models/AuthDiagnosticLog.js';
 import LoginLog from './models/LoginLog.js';
 import TempCredentialLog from './models/TempCredentialLog.js';
 import Client from './models/Client.js';
@@ -118,6 +119,20 @@ const isConfiguredAdminUsername = (value) => {
 
 const shouldExposeAuthDiag = (req) => AUTH_DIAG_LOGS || String(req.headers['x-auth-diagnose'] || '').toLowerCase() === '1';
 const sendAuthFailure = (res, req, status, error, code, details = {}) => {
+  void AuthDiagnosticLog.create({
+    email: String(details?.email || details?.username || details?.requestedLogin || '').trim(),
+    route: String(req.originalUrl || req.path || '/api/auth/login-password'),
+    method: String(req.method || 'POST'),
+    code,
+    message: error,
+    status,
+    details,
+    userAgent: String(req.headers['user-agent'] || ''),
+    ipAddress: String(req.ip || ''),
+  }).catch((logError) => {
+    console.error('[auth.diagnostics.log-failed]', logError?.message || String(logError));
+  });
+
   const payload = { error };
   if (shouldExposeAuthDiag(req)) {
     payload.code = code;
@@ -2782,7 +2797,7 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
     const password = String(req.body?.password || '');
 
     if (!email || !password) {
-      return sendAuthFailure(res, req, 400, 'Email and password are required', 'missing_credentials');
+      return sendAuthFailure(res, req, 400, 'Email and password are required', 'missing_credentials', { requestedLogin: requestedLogin || '' });
     }
 
     const adminBypassEnabled = Boolean(DEFAULT_ADMIN_PASSWORD) && DEFAULT_ADMIN_PASSWORD.length >= 12;
@@ -2798,11 +2813,11 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
 
     // Security: Validate email format (ISO/IEC 27001 - A.14.1.1)
     if (!adminBypassLogin && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return sendAuthFailure(res, req, 400, 'Invalid email format', 'invalid_email_format', { email });
+      return sendAuthFailure(res, req, 400, 'Invalid email format', 'invalid_email_format', { email, requestedLogin });
     }
 
     if (DISABLE_MONGODB) {
-      return sendAuthFailure(res, req, 403, 'Password login not available in offline mode', 'offline_mode');
+      return sendAuthFailure(res, req, 403, 'Password login not available in offline mode', 'offline_mode', { email });
     }
 
     let user = await findAuthorizedUserByEmail(email);
@@ -2828,13 +2843,14 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
     }
     if (!user) {
       console.warn(`[auth.login.invalid-user] email=${email}`);
-      return sendAuthFailure(res, req, 403, 'Invalid credentials', 'user_not_found', { email });
+      return sendAuthFailure(res, req, 403, 'Invalid credentials', 'user_not_found', { email, requestedLogin });
     }
 
     // Security: Check if account is locked (ISO/IEC 27001 - A.9.4.3)
     if (user.accountLockedUntil && new Date(user.accountLockedUntil).getTime() > Date.now()) {
       console.warn(`[auth.login.account-locked] email=${email} lockedUntil=${user.accountLockedUntil}`);
       return sendAuthFailure(res, req, 403, 'Account locked due to multiple failed attempts. Please try again later.', 'account_locked', {
+        email,
         lockedUntil: user.accountLockedUntil,
         failedLoginAttempts: user.failedLoginAttempts || 0,
       });
@@ -2854,18 +2870,19 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
     const hasValidTempAccess = String(user.role || '').trim() === 'TempUser' && tempAccessEndsAt > Date.now();
 
     if (!hasValidTempAccess) {
-      if (user.status === 'rejected') return sendAuthFailure(res, req, 403, 'User access rejected', 'status_rejected', { status: user.status });
-      if (user.status === 'pending') return sendAuthFailure(res, req, 403, 'User access pending approval', 'status_pending', { status: user.status });
-      if (user.status !== 'approved') return sendAuthFailure(res, req, 403, 'Account not approved for login', 'status_not_approved', { status: user.status });
+      if (user.status === 'rejected') return sendAuthFailure(res, req, 403, 'User access rejected', 'status_rejected', { email, status: user.status });
+      if (user.status === 'pending') return sendAuthFailure(res, req, 403, 'User access pending approval', 'status_pending', { email, status: user.status });
+      if (user.status !== 'approved') return sendAuthFailure(res, req, 403, 'Account not approved for login', 'status_not_approved', { email, status: user.status });
     }
 
     if (!user.passwordHash && !adminBypassLogin) {
-      return sendAuthFailure(res, req, 403, 'Password login not configured', 'password_not_configured', { role: user.role, status: user.status });
+      return sendAuthFailure(res, req, 403, 'Password login not configured', 'password_not_configured', { email, role: user.role, status: user.status });
     }
 
     if (user.tempAccessExpiresAt && new Date(user.tempAccessExpiresAt).getTime() <= Date.now()) {
       console.warn(`[auth.login.access-expired] email=${email}`);
       return sendAuthFailure(res, req, 403, 'Temporary access has expired', 'temp_access_expired', {
+        email,
         tempAccessExpiresAt: user.tempAccessExpiresAt,
       });
     }
@@ -2898,6 +2915,7 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
         },
       );
       return sendAuthFailure(res, req, 403, 'Invalid credentials', 'password_mismatch', {
+        email,
         failedLoginAttempts: user.failedLoginAttempts,
         tempAccessExpiresAt: user.tempAccessExpiresAt || null,
       });
@@ -3182,6 +3200,20 @@ app.get('/api/users/temp-credential-logs', verifyToken, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error?.message || 'Failed to load temporary credential logs' });
+  }
+});
+
+app.get('/api/auth/diagnostics', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'users_manage')) return;
+    if (!(req.user?.role === 'Master' || req.user?.role === 'MASTER')) {
+      return res.status(403).json({ error: 'Only Master users can view auth diagnostics' });
+    }
+
+    const logs = await AuthDiagnosticLog.find().sort({ createdAt: -1 }).limit(100).lean();
+    res.json({ success: true, logs: logs.map(mapIdField) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to load auth diagnostics' });
   }
 });
 
