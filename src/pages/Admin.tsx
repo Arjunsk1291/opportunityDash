@@ -923,7 +923,7 @@ export default function Admin() {
         }
         setProgress(80, 'Reloading persisted template');
         const persisted = await loadExportTemplateConfig();
-        if (!configsMatch(normalizeExportTemplate(data), normalizeExportTemplate(persisted))) {
+        if (!configsMatch(normalizeExportTemplate(exportTemplate), normalizeExportTemplate(persisted))) {
           throw new Error('Export template save did not persist');
         }
         setProgress(95, 'Applying updates');
@@ -2195,7 +2195,7 @@ export default function Admin() {
         if (!response.ok) throw new Error(data.error || 'Failed to save telecast config');
         setProgress(80, 'Reloading persisted config');
         const persisted = await loadTelecastConfig();
-        if (!configsMatch(String(persisted?.templateSubject || ''), String(data.templateSubject || ''))) {
+        if (!configsMatch(String(persisted?.templateSubject || ''), String(telecastTemplateSubject || ''))) {
           throw new Error('Telecast template subject did not persist');
         }
         toast.success('Telecast template and recipients saved');
@@ -2227,7 +2227,7 @@ export default function Admin() {
         if (!response.ok) throw new Error(data.error || 'Failed to save EOI duplicate config');
         setProgress(80, 'Reloading persisted config');
         const persisted = await loadEoiDuplicateConfig();
-        if (Boolean(persisted?.showConvertedEoiRowsDefault) !== Boolean(data.showConvertedEoiRowsDefault)) {
+        if (Boolean(persisted?.showConvertedEoiRowsDefault) !== Boolean(showConvertedEoiRowsDefault)) {
           throw new Error('EOI duplicate config did not persist');
         }
         toast.success('EOI duplicate visibility default updated');
@@ -2259,7 +2259,7 @@ export default function Admin() {
         if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to save reporting template'));
         setProgress(80, 'Reloading persisted config');
         const persisted = await loadReportingConfig();
-        if (String(persisted?.templateStyle || '') !== String(data.templateStyle || '')) {
+        if (String(persisted?.templateStyle || '') !== String(issueReportTemplateStyle || '')) {
           throw new Error('Reporting template did not persist');
         }
         toast.success('Issue reporting template saved.');
