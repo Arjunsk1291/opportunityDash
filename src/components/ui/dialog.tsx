@@ -4,6 +4,26 @@ import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+const hasDialogPart = (
+  children: React.ReactNode,
+  part: React.ComponentType | typeof DialogPrimitive.Title | typeof DialogPrimitive.Description,
+): boolean => {
+  let found = false;
+
+  React.Children.forEach(children, (child) => {
+    if (found || !React.isValidElement(child)) return;
+    if (child.type === part) {
+      found = true;
+      return;
+    }
+    if (child.props?.children) {
+      found = hasDialogPart(child.props.children, part);
+    }
+  });
+
+  return found;
+};
+
 const Dialog = DialogPrimitive.Root;
 
 const DialogTrigger = DialogPrimitive.Trigger;
@@ -41,6 +61,12 @@ const DialogContent = React.forwardRef<
       )}
       {...props}
     >
+      {!hasDialogPart(children, DialogPrimitive.Title) ? (
+        <DialogPrimitive.Title className="sr-only">Dialog</DialogPrimitive.Title>
+      ) : null}
+      {!hasDialogPart(children, DialogPrimitive.Description) ? (
+        <DialogPrimitive.Description className="sr-only">Dialog content</DialogPrimitive.Description>
+      ) : null}
       {children}
       <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity data-[state=open]:bg-accent data-[state=open]:text-muted-foreground hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
         <X className="h-4 w-4" />

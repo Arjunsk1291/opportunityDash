@@ -352,6 +352,14 @@ const assertStrongPassword = (password) => {
   if (!/[^A-Za-z0-9]/.test(value)) throw new Error('Password must include a symbol');
 };
 
+const findAuthorizedUserByEmail = async (email) => {
+  const normalizedEmail = normalizeLoginEmail(email);
+  if (!normalizedEmail) return null;
+  const exact = await AuthorizedUser.findOne({ email: normalizedEmail });
+  if (exact) return exact;
+  return AuthorizedUser.findOne({ email: new RegExp(`^${normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') });
+};
+
 app.get('/healthz', (_req, res) => {
   res.status(200).json({ ok: true, service: 'backend', timestamp: new Date().toISOString() });
 });
@@ -2766,7 +2774,7 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       return res.status(403).json({ error: 'Password login not available in offline mode' });
     }
 
-    let user = await AuthorizedUser.findOne({ email });
+    let user = await findAuthorizedUserByEmail(email);
     if (!user && adminBypassLogin) {
       if (!email.includes('@')) email = `${email}@dev.local`;
       user = await AuthorizedUser.findOneAndUpdate(
@@ -2800,9 +2808,12 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
 
     // Reset lock if expired
     if (user.accountLockedUntil && new Date(user.accountLockedUntil).getTime() <= Date.now()) {
+      await AuthorizedUser.updateOne(
+        { _id: user._id },
+        { $set: { accountLockedUntil: null, failedLoginAttempts: 0 } },
+      );
       user.accountLockedUntil = null;
       user.failedLoginAttempts = 0;
-      await user.save();
     }
 
     if (user.status === 'rejected') return res.status(403).json({ error: 'User access rejected', status: 'rejected' });
@@ -2912,7 +2923,7 @@ app.post('/api/auth/password-reset/request', passwordResetRateLimiter, async (re
     const email = normalizeLoginEmail(req.body?.email);
     if (!email) return res.json({ success: true });
 
-    const user = await AuthorizedUser.findOne({ email });
+    const user = await findAuthorizedUserByEmail(email);
     // Always respond success to avoid user enumeration.
     if (!user || user.status !== 'approved') return res.json({ success: true });
 
@@ -2961,7 +2972,7 @@ app.post('/api/auth/password-reset/confirm', passwordResetRateLimiter, async (re
     if (!email || !code || !newPassword) return res.status(400).json({ error: 'email, code, and newPassword are required' });
 
     assertStrongPassword(newPassword);
-    const user = await AuthorizedUser.findOne({ email });
+    const user = await findAuthorizedUserByEmail(email);
     if (!user || user.status !== 'approved') return res.status(403).json({ error: 'Invalid reset request' });
 
     const expiresAt = user.resetPasswordExpiresAt ? new Date(user.resetPasswordExpiresAt).getTime() : 0;
@@ -6568,8 +6579,33 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
     rows.forEach((input, idx) => {
       const opportunityRefNo = normalizeRef(input?.opportunityRefNo || input?.tenderNo || input?.refNo);
       if (!opportunityRefNo) return;
+      const normalizedInput = {
+        opportunityRefNo,
+        adnocRftNo: String(input?.adnocRftNo || '').trim(),
+        tenderName: String(input?.tenderName || '').trim(),
+        clientName: String(input?.clientName || '').trim(),
+        groupClassification: String(input?.groupClassification || '').trim(),
+        internalLead: String(input?.internalLead || '').trim(),
+        opportunityClassification: String(input?.opportunityClassification || '').trim(),
+        dateTenderReceived: String(input?.dateTenderReceived || '').trim(),
+        tenderPlannedSubmissionDate: String(input?.tenderPlannedSubmissionDate || '').trim(),
+        tenderSubmittedDate: String(input?.tenderSubmittedDate || '').trim(),
+        avenirStatus: String(input?.avenirStatus || '').trim(),
+        tenderResult: String(input?.tenderResult || '').trim(),
+        canonicalStage: String(input?.canonicalStage || '').trim(),
+        remarksReason: String(input?.remarksReason || '').trim(),
+        comments: String(input?.comments || '').trim(),
+        tenderStatusRemark: String(input?.tenderStatusRemark || '').trim(),
+        rawSheetYear: String(input?.rawSheetYear || input?.year || '').trim(),
+        rawAvenirStatus: String(input?.rawAvenirStatus || '').trim(),
+        rawTenderResult: String(input?.rawTenderResult || '').trim(),
+        dateAudit: input?.dateAudit || null,
+        opportunityValue: input?.opportunityValue,
+        probability: input?.probability,
+        rawGraphData: input?.rawGraphData || null,
+      };
       const bucket = grouped.get(opportunityRefNo) || [];
-      bucket.push({ input, idx });
+      bucket.push({ input: normalizedInput, idx });
       grouped.set(opportunityRefNo, bucket);
     });
 
@@ -6649,8 +6685,29 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
       return res.json({ success: true, created: 0, updated: 0, touched: 0, rows: [] });
     }
 
-    // Performance: replace individual save/create calls with bulkWrite for O(1) database round-trip.
-    const result = await SyncedOpportunity.bulkWrite(ops, { ordered: false });
+    let result;
+    try {
+      // Performance: replace individual save/create calls with bulkWrite for O(1) database round-trip.
+      result = await SyncedOpportunity.bulkWrite(ops, { ordered: false });
+    } catch (bulkError) {
+      console.error('[opportunities.sheet-upload.commit.bulk-write-failed]', bulkError);
+
+      // Fallback: one-by-one writes keep the upload usable if one row is malformed.
+      let createdCount = 0;
+      let updatedCount = 0;
+      for (const op of ops) {
+        const { filter, update, upsert } = op.updateOne;
+        const existing = await SyncedOpportunity.findOne(filter).lean();
+        if (existing) {
+          await SyncedOpportunity.updateOne(filter, update, { runValidators: false });
+          updatedCount += 1;
+        } else if (upsert) {
+          await SyncedOpportunity.updateOne(filter, update, { upsert: true, runValidators: false });
+          createdCount += 1;
+        }
+      }
+      result = { upsertedCount: createdCount, modifiedCount: updatedCount };
+    }
 
     const touchedRefs = Array.from(grouped.keys());
     const updatedDocs = await SyncedOpportunity.find({ opportunityRefNo: { $in: touchedRefs } }).lean();

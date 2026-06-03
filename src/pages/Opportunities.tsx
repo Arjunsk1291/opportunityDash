@@ -280,27 +280,58 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const [sheetUploadRows, setSheetUploadRows] = useState<FormState[]>([]);
   const [sheetUploadMeta, setSheetUploadMeta] = useState<{ created: number; updated: number } | null>(null);
   const [sheetUploadProgressLabel, setSheetUploadProgressLabel] = useState<string | null>(null);
+  const SHEET_UPLOAD_COMMIT_BATCH_SIZE = 100;
 
   const { execute: executeCommit, isLoading: isCommitting, progress: commitProgress } = useAsyncAction({
     action: async () => {
       if (!sheetUploadRows.length) throw new Error('No parsed rows to save.');
-      const response = await fetch(`${API_URL}/opportunities/sheet-upload/commit`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ rows: sheetUploadRows }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.error || 'Failed to save rows.');
-      const touched = Array.isArray(data?.rows) ? data.rows : [];
+      const batches: FormState[][] = [];
+      for (let index = 0; index < sheetUploadRows.length; index += SHEET_UPLOAD_COMMIT_BATCH_SIZE) {
+        batches.push(sheetUploadRows.slice(index, index + SHEET_UPLOAD_COMMIT_BATCH_SIZE));
+      }
+
+      const touchedByRef = new Map<string, Opportunity>();
+
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+        const batch = batches[batchIndex];
+        setSheetUploadProgressLabel(`Writing batch ${batchIndex + 1} of ${batches.length}…`);
+        const response = await fetch(`${API_URL}/opportunities/sheet-upload/commit`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ rows: batch }),
+        });
+
+        const rawText = await response.text();
+        const data = rawText ? (() => {
+          try {
+            return JSON.parse(rawText);
+          } catch {
+            return { error: rawText };
+          }
+        })() : {};
+
+        if (!response.ok) {
+          const statusText = response.statusText ? ` ${response.statusText}` : '';
+          throw new Error(data?.error || `Failed to save rows.${statusText} (HTTP ${response.status})`);
+        }
+
+        const touched = Array.isArray(data?.rows) ? data.rows : [];
+        touched.forEach((row: Opportunity) => {
+          const ref = String(row.opportunityRefNo || row.tenderNo || '').trim().toLowerCase();
+          if (ref) touchedByRef.set(ref, row);
+        });
+      }
+
+      const touched = Array.from(touchedByRef.values());
       if (touched.length) upsertOpportunities(touched);
       setSheetUploadRows([]);
       setSheetUploadOpen(false);
       setSheetUploadMeta(null);
       void refreshData({ background: true }).catch(() => {});
-      return data;
+      return { success: true, rows: touched };
     },
     successMessage: (data) => `Saved. Created ${data?.created ?? 0}, updated ${data?.updated ?? 0}.`,
   });
