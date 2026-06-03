@@ -3046,6 +3046,7 @@ app.post('/api/users/send-temp-credential', verifyToken, async (req, res) => {
     const { accessToken } = await getTelecastSendMailAccessToken();
 
     const sent = [];
+    const tempPasswords = [];
 
     for (const email of uniqueEmails) {
       const user = await findAuthorizedUserByEmail(email);
@@ -3055,6 +3056,7 @@ app.post('/api/users/send-temp-credential', verifyToken, async (req, res) => {
       }
 
       const tempCode = generateTempCredential();
+      tempPasswords.push(tempCode);
       const tempCodeHash = hashResetToken(tempCode);
       user.passwordHash = await hashPassword(tempCode);
       user.passwordChangedAt = new Date();
@@ -3114,6 +3116,7 @@ app.post('/api/users/send-temp-credential', verifyToken, async (req, res) => {
       createdBy: String(req.user?.email || ''),
       createdByRole: String(req.user?.role || ''),
       targetEmails: sent,
+      tempPasswords,
       sentCount: sent.length,
       expiresAt: expiryDate,
     });
@@ -3122,6 +3125,23 @@ app.post('/api/users/send-temp-credential', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('[users.send-temp-credential.error]', error?.message || String(error));
     return res.status(500).json({ error: error?.message || 'Failed to send temporary credentials' });
+  }
+});
+
+app.get('/api/users/temp-credential-logs', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'users_manage')) return;
+    if (!(req.user?.role === 'Master' || req.user?.role === 'MASTER')) {
+      return res.status(403).json({ error: 'Only Master users can view temporary credential logs' });
+    }
+
+    const logs = await TempCredentialLog.find().sort({ sentAt: -1 }).limit(50).lean();
+    res.json({
+      success: true,
+      logs: logs.map(mapIdField),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to load temporary credential logs' });
   }
 });
 

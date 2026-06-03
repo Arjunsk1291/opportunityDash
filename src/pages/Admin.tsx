@@ -177,6 +177,17 @@ interface ManualUpdateSummary {
   syncedRowsPatched: number;
 }
 
+interface TempCredentialLogRow {
+  _id: string;
+  createdBy: string;
+  createdByRole: string;
+  targetEmails: string[];
+  tempPasswords?: string[];
+  sentCount: number;
+  sentAt: string;
+  expiresAt: string;
+}
+
 interface LiveActionStatus {
   name: string;
   percent: number;
@@ -433,6 +444,8 @@ export default function Admin() {
   const [manualUpdateUploading, setManualUpdateUploading] = useState(false);
   const [manualUpdateFileName, setManualUpdateFileName] = useState('');
   const [manualUpdateSummary, setManualUpdateSummary] = useState<ManualUpdateSummary | null>(null);
+  const [tempCredentialLogs, setTempCredentialLogs] = useState<TempCredentialLogRow[]>([]);
+  const [tempCredentialLogsLoading, setTempCredentialLogsLoading] = useState(false);
   const [backendHealth, setBackendHealth] = useState<{ ok: boolean; dbState: number; timestamp?: string } | null>(null);
   const [backendHealthLoading, setBackendHealthLoading] = useState(false);
   const [userManagementBusy, setUserManagementBusy] = useState(false);
@@ -537,6 +550,7 @@ export default function Admin() {
       loadLeadEmailSuggestions();
       loadAssignedLeadEmails();
       loadPostBidConfig();
+      loadTempCredentialLogs();
     }
   }, [activeTab, canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -754,6 +768,25 @@ export default function Admin() {
       toast.error((error as Error).message || 'Failed to load assigned lead emails');
     } finally {
       setAssignedLeadLoading(false);
+    }
+  };
+
+  const loadTempCredentialLogs = async () => {
+    if (!token || !isMaster) return;
+    setTempCredentialLogsLoading(true);
+    try {
+      const response = await fetch(API_URL + '/users/temp-credential-logs', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(parseApiErrorPayload(data, 'Failed to load temporary credential logs'));
+      }
+      setTempCredentialLogs(Array.isArray(data?.logs) ? data.logs : []);
+    } catch (error) {
+      toast.error((error as Error).message || 'Failed to load temporary credential logs');
+    } finally {
+      setTempCredentialLogsLoading(false);
     }
   };
 
@@ -3283,6 +3316,59 @@ export default function Admin() {
               </div>
             </CardContent>
           </Card>
+
+          {isMaster && (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Temporary Password History</CardTitle>
+                <CardDescription>
+                  Master-only record of temp passwords generated from this panel.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Sent At</TableHead>
+                        <TableHead>Expires At</TableHead>
+                        <TableHead>Created By</TableHead>
+                        <TableHead>Users</TableHead>
+                        <TableHead>Temp Passwords</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {tempCredentialLogsLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-muted-foreground">Loading history...</TableCell>
+                        </TableRow>
+                      ) : tempCredentialLogs.length ? (
+                        tempCredentialLogs.map((log) => (
+                          <TableRow key={log._id}>
+                            <TableCell>{log.sentAt ? new Date(log.sentAt).toLocaleString() : '—'}</TableCell>
+                            <TableCell>{log.expiresAt ? new Date(log.expiresAt).toLocaleString() : '—'}</TableCell>
+                            <TableCell className="font-mono text-xs">{log.createdBy}</TableCell>
+                            <TableCell className="text-xs">
+                              {log.targetEmails.length ? log.targetEmails.join(', ') : '—'}
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {log.tempPasswords?.length ? log.tempPasswords.join(' · ') : '—'}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-muted-foreground">
+                            No temporary passwords have been sent yet.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <Dialog open={tempCredentialConfirmOpen} onOpenChange={setTempCredentialConfirmOpen}>
             <DialogContent className="max-w-lg">
