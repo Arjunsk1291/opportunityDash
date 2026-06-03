@@ -17,6 +17,7 @@ import LeadEmailMapping from './models/LeadEmailMapping.js';
 import Approval from './models/Approval.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
 import LoginLog from './models/LoginLog.js';
+import TempCredentialLog from './models/TempCredentialLog.js';
 import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
 import PqActivity, { getPqModel } from './models/PqActivity.js';
@@ -3060,6 +3061,14 @@ app.post('/api/users/send-temp-credential', verifyToken, async (req, res) => {
 
       sent.push(user.email);
     }
+
+    await TempCredentialLog.create({
+      createdBy: String(req.user?.email || ''),
+      createdByRole: String(req.user?.role || ''),
+      targetEmails: sent,
+      sentCount: sent.length,
+      expiresAt: expiryDate,
+    });
 
     return res.json({ success: true, sentCount: sent.length, sent });
   } catch (error) {

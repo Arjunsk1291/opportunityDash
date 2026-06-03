@@ -1,6 +1,7 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, Lock, Users, Trash2, CheckCircle, XCircle, Clock, RefreshCw, Download, Database, Send } from 'lucide-react';
@@ -437,6 +438,7 @@ export default function Admin() {
   const [userManagementBusy, setUserManagementBusy] = useState(false);
   const [permissionsBusy, setPermissionsBusy] = useState(false);
   const [tempCredentialSelection, setTempCredentialSelection] = useState<string[]>([]);
+  const [tempCredentialConfirmOpen, setTempCredentialConfirmOpen] = useState(false);
 
   const runTrackedAction = async <T,>(
     actionName: string,
@@ -3039,7 +3041,7 @@ export default function Admin() {
                     <Button
                       variant="default"
                       size="sm"
-                      onClick={sendTemporaryPasswords}
+                      onClick={() => setTempCredentialConfirmOpen(true)}
                       loading={userManagementBusy}
                       disabled={!tempCredentialSelection.length}
                       className="gap-2"
@@ -3281,6 +3283,40 @@ export default function Admin() {
               </div>
             </CardContent>
           </Card>
+
+          <Dialog open={tempCredentialConfirmOpen} onOpenChange={setTempCredentialConfirmOpen}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Send temporary passwords?</DialogTitle>
+                <DialogDescription>
+                  This generates a 24-hour temporary login code for each selected user and emails it to them.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="rounded-xl border bg-muted/20 p-4 text-sm">
+                <div className="font-medium">Selected users</div>
+                <div className="mt-2 max-h-40 overflow-auto space-y-1 text-muted-foreground">
+                  {tempCredentialSelection.map((email) => (
+                    <div key={email} className="font-mono text-xs">{email}</div>
+                  ))}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setTempCredentialConfirmOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={async () => {
+                    setTempCredentialConfirmOpen(false);
+                    await sendTemporaryPasswords();
+                  }}
+                  disabled={userManagementBusy || !tempCredentialSelection.length}
+                >
+                  Send now
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
         </TabsContent>
         )}
