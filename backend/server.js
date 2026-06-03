@@ -71,6 +71,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 const app = express();
 const DIAG_LOGS = String(process.env.DIAG_LOGS || '').toLowerCase() === '1' || String(process.env.DIAG_LOGS || '').toLowerCase() === 'true';
+const AUTH_DIAG_LOGS = String(process.env.AUTH_DIAG_LOGS || '').toLowerCase() === '1' || String(process.env.AUTH_DIAG_LOGS || '').toLowerCase() === 'true';
 
 const safeJson = (value) => {
   try {
@@ -113,6 +114,16 @@ const isConfiguredAdminUsername = (value) => {
   if (ADMIN_USERS_SET.has(normalized)) return true;
   if (!normalized.includes('@') && ADMIN_USERS_SET.has(`${normalized}@dev.local`)) return true;
   return false;
+};
+
+const shouldExposeAuthDiag = (req) => AUTH_DIAG_LOGS || String(req.headers['x-auth-diagnose'] || '').toLowerCase() === '1';
+const sendAuthFailure = (res, req, status, error, code, details = {}) => {
+  const payload = { error };
+  if (shouldExposeAuthDiag(req)) {
+    payload.code = code;
+    payload.details = details;
+  }
+  return res.status(status).json(payload);
 };
 
 const hasGraphAppCredentialsConfigured = () => {
@@ -2771,7 +2782,7 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
     const password = String(req.body?.password || '');
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      return sendAuthFailure(res, req, 400, 'Email and password are required', 'missing_credentials');
     }
 
     const adminBypassEnabled = Boolean(DEFAULT_ADMIN_PASSWORD) && DEFAULT_ADMIN_PASSWORD.length >= 12;
@@ -2787,11 +2798,11 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
 
     // Security: Validate email format (ISO/IEC 27001 - A.14.1.1)
     if (!adminBypassLogin && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return res.status(400).json({ error: 'Invalid email format' });
+      return sendAuthFailure(res, req, 400, 'Invalid email format', 'invalid_email_format', { email });
     }
 
     if (DISABLE_MONGODB) {
-      return res.status(403).json({ error: 'Password login not available in offline mode' });
+      return sendAuthFailure(res, req, 403, 'Password login not available in offline mode', 'offline_mode');
     }
 
     let user = await findAuthorizedUserByEmail(email);
@@ -2817,13 +2828,16 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
     }
     if (!user) {
       console.warn(`[auth.login.invalid-user] email=${email}`);
-      return res.status(403).json({ error: 'Invalid credentials' });
+      return sendAuthFailure(res, req, 403, 'Invalid credentials', 'user_not_found', { email });
     }
 
     // Security: Check if account is locked (ISO/IEC 27001 - A.9.4.3)
     if (user.accountLockedUntil && new Date(user.accountLockedUntil).getTime() > Date.now()) {
       console.warn(`[auth.login.account-locked] email=${email} lockedUntil=${user.accountLockedUntil}`);
-      return res.status(403).json({ error: 'Account locked due to multiple failed attempts. Please try again later.' });
+      return sendAuthFailure(res, req, 403, 'Account locked due to multiple failed attempts. Please try again later.', 'account_locked', {
+        lockedUntil: user.accountLockedUntil,
+        failedLoginAttempts: user.failedLoginAttempts || 0,
+      });
     }
 
     // Reset lock if expired
@@ -2840,18 +2854,20 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
     const hasValidTempAccess = String(user.role || '').trim() === 'TempUser' && tempAccessEndsAt > Date.now();
 
     if (!hasValidTempAccess) {
-      if (user.status === 'rejected') return res.status(403).json({ error: 'User access rejected', status: 'rejected' });
-      if (user.status === 'pending') return res.status(403).json({ error: 'User access pending approval', status: 'pending' });
-      if (user.status !== 'approved') return res.status(403).json({ error: 'Account not approved for login' });
+      if (user.status === 'rejected') return sendAuthFailure(res, req, 403, 'User access rejected', 'status_rejected', { status: user.status });
+      if (user.status === 'pending') return sendAuthFailure(res, req, 403, 'User access pending approval', 'status_pending', { status: user.status });
+      if (user.status !== 'approved') return sendAuthFailure(res, req, 403, 'Account not approved for login', 'status_not_approved', { status: user.status });
     }
 
     if (!user.passwordHash && !adminBypassLogin) {
-      return res.status(403).json({ error: 'Password login not configured' });
+      return sendAuthFailure(res, req, 403, 'Password login not configured', 'password_not_configured', { role: user.role, status: user.status });
     }
 
     if (user.tempAccessExpiresAt && new Date(user.tempAccessExpiresAt).getTime() <= Date.now()) {
       console.warn(`[auth.login.access-expired] email=${email}`);
-      return res.status(403).json({ error: 'Temporary access has expired' });
+      return sendAuthFailure(res, req, 403, 'Temporary access has expired', 'temp_access_expired', {
+        tempAccessExpiresAt: user.tempAccessExpiresAt,
+      });
     }
 
     // Verify password
@@ -2881,7 +2897,10 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
           },
         },
       );
-      return res.status(403).json({ error: 'Invalid credentials' });
+      return sendAuthFailure(res, req, 403, 'Invalid credentials', 'password_mismatch', {
+        failedLoginAttempts: user.failedLoginAttempts,
+        tempAccessExpiresAt: user.tempAccessExpiresAt || null,
+      });
     }
 
     // Success: Reset failed attempts counter
