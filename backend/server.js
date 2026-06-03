@@ -2468,7 +2468,11 @@ app.post('/api/auth/login', authRateLimiter, verifyToken, async (req, res) => {
       ipAddress: req.ip,
     });
 
-    await loginLog.save();
+    try {
+      await loginLog.save();
+    } catch (logError) {
+      console.error('[auth.login.loginlog-failed]', logError?.message || String(logError));
+    }
 
     const user = await AuthorizedUser.findOne({ email: req.user.email });
     if (user) {
@@ -2565,7 +2569,11 @@ app.post('/api/auth/simple-role-login', authRateLimiter, async (req, res) => {
       success: true,
       authMethod: 'role-login',
     });
-    await loginLog.save();
+    try {
+      await loginLog.save();
+    } catch (logError) {
+      console.error('[auth.role-password-login.loginlog-failed]', logError?.message || String(logError));
+    }
 
 
     res.json({
@@ -2665,7 +2673,11 @@ app.post('/api/auth/role-password-login', authRateLimiter, async (req, res) => {
       success: true,
       authMethod: 'role-password',
     });
-    await loginLog.save();
+    try {
+      await loginLog.save();
+    } catch (logError) {
+      console.error('[auth.role-login.loginlog-failed]', logError?.message || String(logError));
+    }
 
 
     res.json({
@@ -2892,7 +2904,11 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       success: true,
       authMethod: 'password',
     });
-    await loginLog.save();
+    try {
+      await loginLog.save();
+    } catch (logError) {
+      console.error('[auth.password-login.loginlog-failed]', logError?.message || String(logError));
+    }
 
 
     res.json({
