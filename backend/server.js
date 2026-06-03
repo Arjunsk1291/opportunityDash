@@ -293,6 +293,7 @@ const createSessionToken = (user) => {
 };
 
 const hashResetToken = (token) => createHash('sha256').update(String(token || '')).digest('hex');
+const generateTempCredential = () => randomBytes(6).toString('hex').toUpperCase();
 
 const scryptAsync = (password, salt, options) => new Promise((resolve, reject) => {
   nodeScrypt(password, salt, options.keylen, { N: options.N, r: options.r, p: options.p, maxmem: options.maxmem }, (err, derivedKey) => {
@@ -2915,6 +2916,39 @@ const buildPasswordResetEmailHtml = ({ code, displayName = '', styleKey = 'aveni
   `;
 };
 
+const buildTempCredentialEmailHtml = ({ code, displayName = '', expiresAt, styleKey = 'avenir_blue' }) => {
+  const style = getTelecastTemplateStyle(styleKey);
+  const colors = style.colors;
+  const safeName = escapeHtml(displayName || '');
+  const safeCode = escapeHtml(code || '');
+  const safeExpiry = escapeHtml(expiresAt || '');
+
+  return `
+    <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
+      <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+        <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Access</div>
+          <h1 style="margin:0;font-size:22px;line-height:1.2;">Temporary Password</h1>
+          <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">Use this code to sign in directly, or as your reset code if you need to change it later. It expires in 24 hours.</p>
+        </div>
+        <div style="padding:24px 28px;">
+          ${safeName ? `<p style="margin:0 0 14px;font-size:14px;color:#334155;">Hello ${safeName},</p>` : ''}
+          <div style="margin:16px 0;padding:18px;border-radius:14px;background:${colors.summaryBg};border:1px solid ${colors.summaryBorder};text-align:center;">
+            <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:${colors.summaryText};opacity:0.9;margin-bottom:10px;">Temporary Password</div>
+            <div style="font-size:28px;letter-spacing:0.18em;font-weight:700;color:#0f172a;">${safeCode}</div>
+          </div>
+          <p style="margin:0 0 8px;font-size:13px;line-height:1.6;color:#475569;">
+            Expires at: <strong>${safeExpiry}</strong>
+          </p>
+          <p style="margin:0;font-size:13px;line-height:1.6;color:#475569;">
+            You can use the same code on the sign-in screen and in the forgot-password flow.
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
 app.post('/api/auth/password-reset/request', passwordResetRateLimiter, async (req, res) => {
   try {
     if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
@@ -2958,6 +2992,79 @@ app.post('/api/auth/password-reset/request', passwordResetRateLimiter, async (re
   } catch (error) {
     console.error('[auth.password-reset.request.error]', error?.message || String(error));
     return res.json({ success: true });
+  }
+});
+
+app.post('/api/users/send-temp-credential', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'users_manage')) return;
+    if (!(req.user?.role === 'Master' || req.user?.role === 'MASTER')) {
+      return res.status(403).json({ error: 'Only Master users can send temporary credentials' });
+    }
+
+    const emails = Array.isArray(req.body?.emails) ? req.body.emails : [];
+    const uniqueEmails = Array.from(new Set(emails.map((value) => normalizeLoginEmail(value)).filter(Boolean)));
+    if (!uniqueEmails.length) return res.status(400).json({ error: 'No users selected' });
+
+    const expiryDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const expiryText = expiryDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+    const telecastSender = getTelecastSender();
+    const { accessToken } = await getTelecastSendMailAccessToken();
+
+    const sent = [];
+
+    for (const email of uniqueEmails) {
+      const user = await findAuthorizedUserByEmail(email);
+      if (!user) continue;
+      if (user.role === 'Master' || user.role === 'MASTER') {
+        continue;
+      }
+
+      const tempCode = generateTempCredential();
+      const tempCodeHash = hashResetToken(tempCode);
+      user.passwordHash = await hashPassword(tempCode);
+      user.passwordChangedAt = new Date();
+      user.requiresPasswordChange = true;
+      user.failedLoginAttempts = 0;
+      user.accountLockedUntil = null;
+      user.lastFailedLoginAt = null;
+      user.tempAccessExpiresAt = expiryDate;
+      user.resetPasswordTokenHash = tempCodeHash;
+      user.resetPasswordExpiresAt = expiryDate;
+      await user.save();
+
+      const html = buildTempCredentialEmailHtml({
+        code: tempCode,
+        displayName: user.displayName || user.email,
+        expiresAt: expiryText,
+        styleKey: 'avenir_blue',
+      });
+
+      const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: {
+            subject: 'Avenir Access · Temporary Password',
+            body: { contentType: 'HTML', content: html },
+            toRecipients: [{ emailAddress: { address: user.email } }],
+          },
+          saveToSentItems: 'true',
+        }),
+      });
+
+      if (!graphResponse.ok) {
+        const payload = await graphResponse.json().catch(() => ({}));
+        throw new Error(payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`);
+      }
+
+      sent.push(user.email);
+    }
+
+    return res.json({ success: true, sentCount: sent.length, sent });
+  } catch (error) {
+    console.error('[users.send-temp-credential.error]', error?.message || String(error));
+    return res.status(500).json({ error: error?.message || 'Failed to send temporary credentials' });
   }
 });
 

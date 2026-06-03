@@ -436,6 +436,7 @@ export default function Admin() {
   const [backendHealthLoading, setBackendHealthLoading] = useState(false);
   const [userManagementBusy, setUserManagementBusy] = useState(false);
   const [permissionsBusy, setPermissionsBusy] = useState(false);
+  const [tempCredentialSelection, setTempCredentialSelection] = useState<string[]>([]);
 
   const runTrackedAction = async <T,>(
     actionName: string,
@@ -1912,6 +1913,55 @@ export default function Admin() {
     }
   };
 
+  const toggleTempCredentialSelection = (email: string, checked: boolean) => {
+    const normalized = String(email || '').trim().toLowerCase();
+    if (!normalized) return;
+    setTempCredentialSelection((current) => {
+      const next = new Set(current.map((value) => value.toLowerCase()));
+      if (checked) next.add(normalized);
+      else next.delete(normalized);
+      return Array.from(next);
+    });
+  };
+
+  const sendTemporaryPasswords = async () => {
+    if (!token) return;
+    if (!isMaster) {
+      toast.error('Only Master users can send temporary passwords.');
+      return;
+    }
+    if (!tempCredentialSelection.length) {
+      toast.error('Select at least one user.');
+      return;
+    }
+    try {
+      setUserManagementBusy(true);
+      await runTrackedAction('Send Temporary Passwords', async (setProgress) => {
+        setProgress(25, 'Generating credentials');
+        const response = await fetch(API_URL + '/users/send-temp-credential', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ emails: tempCredentialSelection }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(parseApiErrorPayload(data, 'Failed to send temporary passwords'));
+        }
+        setProgress(80, `Sent to ${data?.sentCount ?? 0} user(s)`);
+        toast.success(`Temporary passwords sent to ${data?.sentCount ?? 0} user(s).`);
+        setTempCredentialSelection([]);
+        await loadUsers();
+      });
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setUserManagementBusy(false);
+    }
+  };
+
 
   const addAuthorizedUser = async () => {
     if (!token) return;
@@ -2985,6 +3035,19 @@ export default function Admin() {
                   <CardTitle>Authorized Users ({users.length})</CardTitle>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+                  {isMaster && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={sendTemporaryPasswords}
+                      loading={userManagementBusy}
+                      disabled={!tempCredentialSelection.length}
+                      className="gap-2"
+                    >
+                      <Send className="h-4 w-4" />
+                      Send Temp Passwords ({tempCredentialSelection.length})
+                    </Button>
+                  )}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -3022,6 +3085,19 @@ export default function Admin() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={users.length > 0 && tempCredentialSelection.length === users.filter((u) => u.role !== 'Master').length && users.filter((u) => u.role !== 'Master').length > 0}
+                          onCheckedChange={(checked) => {
+                            if (Boolean(checked)) {
+                              setTempCredentialSelection(users.filter((u) => u.role !== 'Master').map((u) => u.email.toLowerCase()));
+                            } else {
+                              setTempCredentialSelection([]);
+                            }
+                          }}
+                          disabled={!isMaster}
+                        />
+                      </TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Role</TableHead>
                       <TableHead>Status</TableHead>
@@ -3034,6 +3110,17 @@ export default function Admin() {
                   <TableBody>
                     {users.map((u) => (
                       <TableRow key={u._id}>
+                        <TableCell>
+                          {u.role !== 'Master' ? (
+                            <Checkbox
+                              checked={tempCredentialSelection.includes(u.email.toLowerCase())}
+                              onCheckedChange={(checked) => toggleTempCredentialSelection(u.email, Boolean(checked))}
+                              disabled={!isMaster || userManagementBusy}
+                            />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
                         <TableCell className="font-mono text-sm">{u.email}</TableCell>
                         <TableCell>
                           {isMaster || u.role !== 'Master' ? (
