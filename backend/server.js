@@ -321,6 +321,10 @@ const createSessionToken = (user) => {
 
 const hashResetToken = (token) => createHash('sha256').update(String(token || '')).digest('hex');
 const generateTempCredential = () => randomBytes(6).toString('hex').toUpperCase();
+const normalizeTempCredentialInput = (value) => String(value || '')
+  .trim()
+  .replace(/[\s-]+/g, '')
+  .toUpperCase();
 
 const scryptAsync = (password, salt, options) => new Promise((resolve, reject) => {
   nodeScrypt(password, salt, options.keylen, { N: options.N, r: options.r, p: options.p, maxmem: options.maxmem }, (err, derivedKey) => {
@@ -2895,7 +2899,27 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
 
     // Verify password
     const passwordMatches = adminBypassLogin ? true : await verifyPassword(password, user.passwordHash);
-    if (!passwordMatches) {
+    const isTempCredentialLogin = String(user.role || '').trim() === 'TempUser'
+      && Boolean(user.tempAccessExpiresAt)
+      && new Date(user.tempAccessExpiresAt).getTime() > Date.now();
+    const tempCredentialMatches = !passwordMatches && isTempCredentialLogin && user.resetPasswordTokenHash
+      ? await (async () => {
+          const candidates = Array.from(new Set([
+            String(password || ''),
+            String(password || '').trim(),
+            normalizeTempCredentialInput(password),
+          ]));
+
+          for (const candidate of candidates) {
+            if (!candidate) continue;
+            if (await verifyPassword(candidate, user.passwordHash)) return true;
+          }
+
+          return false;
+        })()
+      : false;
+
+    if (!passwordMatches && !tempCredentialMatches) {
       // Security: Track failed login attempt (ISO/IEC 27001 - A.12.4.1)
       const maxAttempts = 5;
       const lockoutDurationMs = 15 * 60 * 1000; // 15 minutes
