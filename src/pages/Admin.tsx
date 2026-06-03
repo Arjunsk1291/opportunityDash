@@ -209,6 +209,12 @@ interface LiveActionStatus {
   startedAt: number;
 }
 
+interface SystemConfigMeta {
+  systemConfigUpdatedAt: string | null;
+  systemConfigUpdatedBy: string | null;
+  systemConfigFingerprint: string | null;
+}
+
 const EXPORT_TEMPLATE_PREVIEW_HEADERS = ['Avenir Ref', 'Tender Name', 'Client', 'Status', 'RFP Received'];
 const EXPORT_TEMPLATE_PREVIEW_ROW = ['AC26144', 'HSE MONITORING SYSTEM', 'L&T', 'Submitted', '2026-04-07'];
 const EXPORT_PREVIEW_GRID_COLUMNS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -464,6 +470,11 @@ export default function Admin() {
   const [authDiagnosticsLoading, setAuthDiagnosticsLoading] = useState(false);
   const [backendHealth, setBackendHealth] = useState<{ ok: boolean; dbState: number; timestamp?: string } | null>(null);
   const [backendHealthLoading, setBackendHealthLoading] = useState(false);
+  const [systemConfigMeta, setSystemConfigMeta] = useState<SystemConfigMeta>({
+    systemConfigUpdatedAt: null,
+    systemConfigUpdatedBy: null,
+    systemConfigFingerprint: null,
+  });
   const [userManagementBusy, setUserManagementBusy] = useState(false);
   const [permissionsBusy, setPermissionsBusy] = useState(false);
   const [tempCredentialSelection, setTempCredentialSelection] = useState<string[]>([]);
@@ -473,6 +484,19 @@ export default function Admin() {
     await navigator.clipboard.writeText(payload);
     toast.success('Diagnostic copied to clipboard');
   };
+
+  const applySystemConfigMeta = (payload: unknown, response?: Response) => {
+    const data = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    const nextMeta: SystemConfigMeta = {
+      systemConfigUpdatedAt: String(data.systemConfigUpdatedAt || response?.headers.get('X-System-Config-Updated-At') || '') || null,
+      systemConfigUpdatedBy: String(data.systemConfigUpdatedBy || response?.headers.get('X-System-Config-Updated-By') || '') || null,
+      systemConfigFingerprint: String(data.systemConfigFingerprint || response?.headers.get('X-System-Config-Fingerprint') || '') || null,
+    };
+    setSystemConfigMeta(nextMeta);
+    return nextMeta;
+  };
+
+  const configsMatch = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
   const runTrackedAction = async <T,>(
     actionName: string,
@@ -847,9 +871,12 @@ export default function Admin() {
         throw new Error('Failed to load post-bid assignees');
       }
       const data = await response.json();
+      applySystemConfigMeta(data, response);
       setPostBidAllowedEmails(Array.isArray(data?.allowedEmails) ? data.allowedEmails : []);
+      return data;
     } catch (error) {
       toast.error((error as Error).message || 'Failed to load post-bid assignees');
+      return null;
     }
   };
 
@@ -866,9 +893,12 @@ export default function Admin() {
         throw new Error('Failed to load export template');
       }
       const data = await response.json();
+      applySystemConfigMeta(data, response);
       setExportTemplate(normalizeExportTemplate(data));
+      return data;
     } catch (error) {
       toast.error((error as Error).message || 'Failed to load export template');
+      return null;
     }
   };
 
@@ -891,9 +921,14 @@ export default function Admin() {
         if (!response.ok) {
           throw new Error(data?.error || 'Failed to save export template');
         }
-        setExportTemplate(normalizeExportTemplate(data));
+        setProgress(80, 'Reloading persisted template');
+        const persisted = await loadExportTemplateConfig();
+        if (!configsMatch(normalizeExportTemplate(data), normalizeExportTemplate(persisted))) {
+          throw new Error('Export template save did not persist');
+        }
         setProgress(95, 'Applying updates');
         toast.success('Export template saved.');
+        window.dispatchEvent(new CustomEvent('app:config-updated'));
       });
     } catch (error) {
       toast.error((error as Error).message || 'Failed to save export template');
@@ -1052,9 +1087,16 @@ export default function Admin() {
         if (!response.ok) {
           throw new Error(data?.error || 'Failed to save post-bid assignees');
         }
-        setPostBidAllowedEmails(Array.isArray(data?.allowedEmails) ? data.allowedEmails : []);
+        setProgress(80, 'Reloading persisted assignees');
+        const persisted = await loadPostBidConfig();
+        const persistedEmails = Array.isArray(persisted?.allowedEmails) ? persisted.allowedEmails.map((email: string) => String(email).trim().toLowerCase()).sort() : [];
+        const responseEmails = Array.isArray(data?.allowedEmails) ? data.allowedEmails.map((email: string) => String(email).trim().toLowerCase()).sort() : [];
+        if (!configsMatch(persistedEmails, responseEmails)) {
+          throw new Error('Post-bid assignees did not persist');
+        }
         setProgress(95, 'Applying updates');
         toast.success('Post-bid assignees updated.');
+        window.dispatchEvent(new CustomEvent('app:config-updated'));
       });
     } catch (error) {
       toast.error((error as Error).message || 'Failed to save post-bid assignees');
@@ -1296,6 +1338,7 @@ export default function Admin() {
       });
       if (!response.ok) return;
       const data = await response.json();
+      applySystemConfigMeta(data, response);
       setTelecastTemplateSubject(data.templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
       setTelecastTemplateBody(data.templateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
       setTelecastTemplateStyle(data.templateStyle || DEFAULT_TELECAST_TEMPLATE_STYLE.key);
@@ -1328,8 +1371,10 @@ export default function Admin() {
         GTS: normalizeRecipientList(data.groupRecipients?.GTS),
       });
       setTelecastWeeklyStats(Array.isArray(data.weeklyStats) ? data.weeklyStats : []);
+      return data;
     } catch (error) {
       // Keep console quiet; surface toasts/messages instead.
+      return null;
     }
   };
 
@@ -1344,9 +1389,12 @@ export default function Admin() {
       });
       if (!response.ok) return;
       const data = await response.json();
+      applySystemConfigMeta(data, response);
       setShowConvertedEoiRowsDefault(Boolean(data.showConvertedEoiRowsDefault));
+      return data;
     } catch (error) {
       // Keep console quiet; surface toasts/messages instead.
+      return null;
     }
   };
 
@@ -1411,10 +1459,13 @@ export default function Admin() {
       });
       if (!response.ok) return;
       const data = await response.json();
+      applySystemConfigMeta(data, response);
       setIssueReportTemplateStyle(data.templateStyle || DEFAULT_TELECAST_TEMPLATE_STYLE.key);
       setIssueReportTemplateStyles(Array.isArray(data.templateStyles) && data.templateStyles.length ? data.templateStyles : [DEFAULT_TELECAST_TEMPLATE_STYLE]);
+      return data;
     } catch (error) {
       // Keep console quiet; surface toasts/messages instead.
+      return null;
     }
   };
 
@@ -1906,6 +1957,7 @@ export default function Admin() {
         await reloadPagePermissions();
         setMessage({ type: 'success', text: '✅ Page visibility permissions updated' });
         setProgress(90, 'Refreshing permissions state');
+        window.dispatchEvent(new CustomEvent('app:config-updated'));
         setTimeout(() => setMessage(null), 3000);
       });
     } catch (error) {
@@ -1946,6 +1998,7 @@ export default function Admin() {
         await reloadActionPermissions();
         setMessage({ type: 'success', text: '✅ Action permissions updated' });
         setProgress(90, 'Refreshing permissions state');
+        window.dispatchEvent(new CustomEvent('app:config-updated'));
         setTimeout(() => setMessage(null), 3000);
       });
     } catch (error) {
@@ -2097,49 +2150,58 @@ export default function Admin() {
 
   const saveTelecastConfig = async () => {
     if (!token) return;
-    setConfigSaving(true);
     try {
-      const response = await fetch(API_URL + '/telecast/config', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          templateSubject: telecastTemplateSubject,
-          templateBody: telecastTemplateBody,
-          templateStyle: telecastTemplateStyle,
-          approvalAlertEnabled,
-          approvalTemplateSubject,
-          approvalTemplateBody,
-          approvalTemplateStyle,
-          awardAlertEnabled,
-          awardTemplateSubject,
-          awardTemplateBody,
-          awardTemplateStyle,
-          awardRoleRecipients,
-          awardGroupRecipients: {
-            GES: normalizeRecipientList(awardGroupRecipients.GES),
-            GDS: normalizeRecipientList(awardGroupRecipients.GDS),
-            GTS: normalizeRecipientList(awardGroupRecipients.GTS),
+      setConfigSaving(true);
+      await runTrackedAction('Save Telecast Config', async (setProgress) => {
+        setProgress(30, 'Sending update');
+        const response = await fetch(API_URL + '/telecast/config', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
           },
-          deadlineAlertEnabled,
-          deadlineTemplateSubject,
-          deadlineTemplateBody,
-          deadlineTemplateStyle,
-          deadlineAlertClients,
-          telecastSendDelayMinutes,
-          groupRecipients: {
-            GES: normalizeRecipientList(telecastGroupRecipients.GES),
-            GDS: normalizeRecipientList(telecastGroupRecipients.GDS),
-            GTS: normalizeRecipientList(telecastGroupRecipients.GTS),
-          },
-        }),
+          body: JSON.stringify({
+            templateSubject: telecastTemplateSubject,
+            templateBody: telecastTemplateBody,
+            templateStyle: telecastTemplateStyle,
+            approvalAlertEnabled,
+            approvalTemplateSubject,
+            approvalTemplateBody,
+            approvalTemplateStyle,
+            awardAlertEnabled,
+            awardTemplateSubject,
+            awardTemplateBody,
+            awardTemplateStyle,
+            awardRoleRecipients,
+            awardGroupRecipients: {
+              GES: normalizeRecipientList(awardGroupRecipients.GES),
+              GDS: normalizeRecipientList(awardGroupRecipients.GDS),
+              GTS: normalizeRecipientList(awardGroupRecipients.GTS),
+            },
+            deadlineAlertEnabled,
+            deadlineTemplateSubject,
+            deadlineTemplateBody,
+            deadlineTemplateStyle,
+            deadlineAlertClients,
+            telecastSendDelayMinutes,
+            groupRecipients: {
+              GES: normalizeRecipientList(telecastGroupRecipients.GES),
+              GDS: normalizeRecipientList(telecastGroupRecipients.GDS),
+              GTS: normalizeRecipientList(telecastGroupRecipients.GTS),
+            },
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to save telecast config');
+        setProgress(80, 'Reloading persisted config');
+        const persisted = await loadTelecastConfig();
+        if (!configsMatch(String(persisted?.templateSubject || ''), String(data.templateSubject || ''))) {
+          throw new Error('Telecast template subject did not persist');
+        }
+        toast.success('Telecast template and recipients saved');
+        setProgress(95, 'Applying updates');
+        window.dispatchEvent(new CustomEvent('app:config-updated'));
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to save telecast config');
-      toast.success('Telecast template and recipients saved');
-      await loadTelecastConfig();
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -2149,20 +2211,29 @@ export default function Admin() {
 
   const saveEoiDuplicateConfig = async () => {
     if (!token) return;
-    setEoiDuplicateConfigSaving(true);
     try {
-      const response = await fetch(API_URL + '/eoi-duplicates/config', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ showConvertedEoiRowsDefault }),
+      setEoiDuplicateConfigSaving(true);
+      await runTrackedAction('Save EOI Duplicate Config', async (setProgress) => {
+        setProgress(30, 'Sending update');
+        const response = await fetch(API_URL + '/eoi-duplicates/config', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ showConvertedEoiRowsDefault }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to save EOI duplicate config');
+        setProgress(80, 'Reloading persisted config');
+        const persisted = await loadEoiDuplicateConfig();
+        if (Boolean(persisted?.showConvertedEoiRowsDefault) !== Boolean(data.showConvertedEoiRowsDefault)) {
+          throw new Error('EOI duplicate config did not persist');
+        }
+        toast.success('EOI duplicate visibility default updated');
+        setProgress(95, 'Applying updates');
+        window.dispatchEvent(new CustomEvent('app:config-updated'));
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to save EOI duplicate config');
-      toast.success('EOI duplicate visibility default updated');
-      await loadEoiDuplicateConfig();
     } catch (error) {
       toast.error((error as Error).message || 'Failed to save EOI duplicate config');
     } finally {
@@ -2172,22 +2243,29 @@ export default function Admin() {
 
   const saveReportingConfig = async () => {
     if (!token) return;
-    setConfigSaving(true);
     try {
-      const response = await fetch(API_URL + '/reporting/config', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ templateStyle: issueReportTemplateStyle }),
+      setConfigSaving(true);
+      await runTrackedAction('Save Reporting Config', async (setProgress) => {
+        setProgress(30, 'Sending update');
+        const response = await fetch(API_URL + '/reporting/config', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ templateStyle: issueReportTemplateStyle }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to save reporting template'));
+        setProgress(80, 'Reloading persisted config');
+        const persisted = await loadReportingConfig();
+        if (String(persisted?.templateStyle || '') !== String(data.templateStyle || '')) {
+          throw new Error('Reporting template did not persist');
+        }
+        toast.success('Issue reporting template saved.');
+        setProgress(95, 'Applying updates');
+        window.dispatchEvent(new CustomEvent('app:config-updated'));
       });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to save reporting template'));
-
-      toast.success('Issue reporting template saved.');
-      await loadReportingConfig();
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -2636,6 +2714,11 @@ export default function Admin() {
 	                  {backendHealth?.timestamp && (
 	                    <Badge variant="outline">{new Date(backendHealth.timestamp).toLocaleString()}</Badge>
 	                  )}
+	                </div>
+	                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+	                  <Badge variant="secondary">Config {systemConfigMeta.systemConfigFingerprint || '—'}</Badge>
+	                  <Badge variant="outline">Updated {systemConfigMeta.systemConfigUpdatedAt ? new Date(systemConfigMeta.systemConfigUpdatedAt).toLocaleString() : '—'}</Badge>
+	                  <Badge variant="outline">{systemConfigMeta.systemConfigUpdatedBy || 'unknown'}</Badge>
 	                </div>
 	                <Button type="button" variant="outline" onClick={loadBackendHealth} disabled={backendHealthLoading}>
 	                  <RefreshCw className="mr-2 h-4 w-4" />

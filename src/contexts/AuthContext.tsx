@@ -55,7 +55,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const SESSION_REFRESH_LEEWAY_MS = 2 * 60 * 1000;
 const FALLBACK_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
-const PERMISSIONS_REFRESH_INTERVAL_MS = 2 * 60 * 1000;
+const PERMISSIONS_REFRESH_INTERVAL_MS = 30 * 1000;
 interface AuthorizedUserResponse {
   id?: string;
   _id?: string;
@@ -388,6 +388,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!token || !user?.email || user.status !== 'approved') return;
 
     const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
       loadPagePermissions();
       loadActionPermissions();
     };
@@ -396,11 +397,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') refresh();
     };
+    const onConfigUpdated = () => refresh();
+    const onFocus = () => refresh();
 
     document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('app:config-updated', onConfigUpdated as EventListener);
     return () => {
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('app:config-updated', onConfigUpdated as EventListener);
     };
   }, [loadActionPermissions, loadPagePermissions, token, user?.email, user?.status]);
 

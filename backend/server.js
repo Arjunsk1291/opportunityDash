@@ -2075,11 +2075,17 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   config.lastSyncAt = now;
   await config.save();
 
-  systemConfig.telecastAlertedKeys = Array.from(alertedKeySet).slice(-MAX_ALERTED_TRACKED_KEYS);
-  systemConfig.telecastAlertedRefNos = Array.from(alertedRefSet).slice(-MAX_ALERTED_TRACKED_REFS);
-  pushWeeklyTelecastStats(systemConfig, newRows);
-
-  await systemConfig.save();
+  const nextSystemConfig = {
+    ...((typeof systemConfig.toObject === 'function' ? systemConfig.toObject() : systemConfig) || {}),
+    telecastAlertedKeys: Array.from(alertedKeySet).slice(-MAX_ALERTED_TRACKED_KEYS),
+    telecastAlertedRefNos: Array.from(alertedRefSet).slice(-MAX_ALERTED_TRACKED_REFS),
+  };
+  pushWeeklyTelecastStats(nextSystemConfig, newRows);
+  await persistSystemConfigFields(systemConfig, {
+    telecastAlertedKeys: nextSystemConfig.telecastAlertedKeys,
+    telecastAlertedRefNos: nextSystemConfig.telecastAlertedRefNos,
+    telecastWeeklyStats: nextSystemConfig.telecastWeeklyStats,
+  }, source, 'telecast_sync_refresh');
 
   console.log(JSON.stringify({
     source,
@@ -4256,6 +4262,55 @@ const hashJson = (value) => {
   }
 };
 
+const getSystemConfigFingerprint = (config) => {
+  if (!config) return 'missing-config';
+  const source = typeof config.toObject === 'function' ? config.toObject() : config;
+  const {
+    _id,
+    __v,
+    createdAt,
+    updatedAt,
+    lastUpdatedBy,
+    updatedBy,
+    ...rest
+  } = source || {};
+  return hashJson(rest);
+};
+
+const getSystemConfigMeta = (config) => {
+  const source = typeof config?.toObject === 'function' ? config.toObject() : (config || {});
+  return {
+    systemConfigUpdatedAt: source.updatedAt || null,
+    systemConfigUpdatedBy: source.updatedBy || source.lastUpdatedBy || null,
+    systemConfigFingerprint: getSystemConfigFingerprint(source),
+  };
+};
+
+const addConfigMetaHeaders = (res, config) => {
+  const meta = getSystemConfigMeta(config);
+  res.setHeader('X-System-Config-Fingerprint', meta.systemConfigFingerprint);
+  if (meta.systemConfigUpdatedAt) res.setHeader('X-System-Config-Updated-At', new Date(meta.systemConfigUpdatedAt).toISOString());
+  if (meta.systemConfigUpdatedBy) res.setHeader('X-System-Config-Updated-By', String(meta.systemConfigUpdatedBy));
+  return meta;
+};
+
+const getUnknownPermissionKeys = (input = {}, allowedKeys = []) => Object.keys(input || {}).filter((key) => !allowedKeys.includes(key));
+
+const persistSystemConfigFields = async (config, updates, updatedBy, reason = 'system_config_update') => {
+  const targetId = config?._id;
+  if (!targetId) {
+    throw new Error('System config is missing');
+  }
+  const patch = { ...updates };
+  if (updatedBy !== undefined) {
+    patch.updatedBy = updatedBy;
+    patch.lastUpdatedBy = updatedBy;
+  }
+  await SystemConfig.updateOne({ _id: targetId }, { $set: patch });
+  invalidateSystemConfigCache(reason);
+  return SystemConfig.findById(targetId);
+};
+
 const invalidateSystemConfigCache = (reason = 'unknown') => {
   systemConfigCache.value = null;
   systemConfigCache.expiresAt = 0;
@@ -4301,17 +4356,19 @@ const BUILD_INFO = (() => {
 })();
 
 const getActionPermissions = async () => {
-  const config = await getSystemConfig();
+  const config = await getSystemConfig({ force: true });
   const permissions = sanitizeActionRoleAccess(config.actionRoleAccess || {});
   const emailPermissions = sanitizeActionEmailAccess(config.actionEmailAccess || {});
-  if (!config.actionRoleAccess || Object.keys(config.actionRoleAccess).length === 0) {
-    config.actionRoleAccess = permissions;
-  }
-  if (!config.actionEmailAccess || Object.keys(config.actionEmailAccess).length === 0) {
-    config.actionEmailAccess = emailPermissions;
-  }
-  if (config.isModified('actionRoleAccess') || config.isModified('actionEmailAccess')) {
-    await config.save();
+  const missingRoleKeys = ACTION_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(config.actionRoleAccess || {}, key));
+  const missingEmailKeys = ACTION_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(config.actionEmailAccess || {}, key));
+  if (missingRoleKeys.length || missingEmailKeys.length) {
+    const nextActionRoleAccess = { ...(config.actionRoleAccess || {}), ...permissions };
+    const nextActionEmailAccess = { ...(config.actionEmailAccess || {}), ...emailPermissions };
+    const refreshed = await persistSystemConfigFields(config, {
+      actionRoleAccess: nextActionRoleAccess,
+      actionEmailAccess: nextActionEmailAccess,
+    }, config.updatedBy || config.lastUpdatedBy || '', 'action_permissions_backfill');
+    return { config: refreshed, permissions: sanitizeActionRoleAccess(refreshed.actionRoleAccess || {}), emailPermissions: sanitizeActionEmailAccess(refreshed.actionEmailAccess || {}) };
   }
   return { config, permissions, emailPermissions };
 };
@@ -4345,32 +4402,34 @@ const refreshSystemConfigAlertTrackingFromSyncedOpportunities = async (config, u
     SyncedOpportunity.distinct('telecastAlertedRefNo', { telecastAlerted: true, telecastAlertedRefNo: { $ne: '' } }),
   ]);
 
-  config.telecastAlertedKeys = keys.slice(-MAX_ALERTED_TRACKED_KEYS);
-  config.telecastAlertedRefNos = refs.map((ref) => normalizeRefNo(ref)).filter(Boolean).slice(-MAX_ALERTED_TRACKED_REFS);
-  if (updatedBy) config.updatedBy = updatedBy;
-  await config.save();
+  const updated = await persistSystemConfigFields(config, {
+    telecastAlertedKeys: keys.slice(-MAX_ALERTED_TRACKED_KEYS),
+    telecastAlertedRefNos: refs.map((ref) => normalizeRefNo(ref)).filter(Boolean).slice(-MAX_ALERTED_TRACKED_REFS),
+  }, updatedBy || config.updatedBy || config.lastUpdatedBy || '', 'telecast_alert_tracking_refresh');
+  return updated;
 };
 
 
 app.get('/api/navigation/permissions', verifyToken, async (req, res) => {
   try {
-    const config = await getSystemConfig();
+    const config = await getSystemConfig({ force: true });
     const permissions = sanitizePageRoleAccess(config.pageRoleAccess || {});
     const excludePermissions = sanitizePageExcludeRoleAccess(config.pageRoleExcludeAccess || {});
     const emailPermissions = sanitizePageEmailAccess(config.pageEmailAccess || {});
-    if (!config.pageRoleAccess || Object.keys(config.pageRoleAccess).length === 0) {
-      config.pageRoleAccess = permissions;
+    const missingRoleKeys = PAGE_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(config.pageRoleAccess || {}, key));
+    const missingExcludeKeys = PAGE_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(config.pageRoleExcludeAccess || {}, key));
+    const missingEmailKeys = PAGE_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(config.pageEmailAccess || {}, key));
+    if (missingRoleKeys.length || missingExcludeKeys.length || missingEmailKeys.length) {
+      const refreshed = await persistSystemConfigFields(config, {
+        pageRoleAccess: { ...(config.pageRoleAccess || {}), ...permissions },
+        pageRoleExcludeAccess: { ...(config.pageRoleExcludeAccess || {}), ...excludePermissions },
+        pageEmailAccess: { ...(config.pageEmailAccess || {}), ...emailPermissions },
+      }, config.updatedBy || config.lastUpdatedBy || '', 'navigation_permissions_backfill');
+      const meta = addConfigMetaHeaders(res, refreshed);
+      return res.json({ success: true, permissions: sanitizePageRoleAccess(refreshed.pageRoleAccess || {}), excludePermissions: sanitizePageExcludeRoleAccess(refreshed.pageRoleExcludeAccess || {}), emailPermissions: sanitizePageEmailAccess(refreshed.pageEmailAccess || {}), ...meta });
     }
-    if (!config.pageRoleExcludeAccess || Object.keys(config.pageRoleExcludeAccess).length === 0) {
-      config.pageRoleExcludeAccess = excludePermissions;
-    }
-    if (!config.pageEmailAccess || Object.keys(config.pageEmailAccess).length === 0) {
-      config.pageEmailAccess = emailPermissions;
-    }
-    if (config.isModified('pageRoleAccess') || config.isModified('pageRoleExcludeAccess') || config.isModified('pageEmailAccess')) {
-      await config.save();
-    }
-    res.json({ success: true, permissions, excludePermissions, emailPermissions });
+    const meta = addConfigMetaHeaders(res, config);
+    res.json({ success: true, permissions, excludePermissions, emailPermissions, ...meta });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -4380,30 +4439,29 @@ app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'navigation_permissions_write')) return;
 
+    const unknownKeys = [
+      ...getUnknownPermissionKeys(req.body?.permissions || {}, PAGE_KEYS),
+      ...getUnknownPermissionKeys(req.body?.excludePermissions || {}, PAGE_KEYS),
+      ...getUnknownPermissionKeys(req.body?.emailPermissions || {}, PAGE_KEYS),
+    ];
+    if (unknownKeys.length) {
+      return res.status(400).json({ error: 'Unknown permission keys', unknownKeys, serverKeys: PAGE_KEYS });
+    }
     const permissions = sanitizePageRoleAccess(req.body?.permissions || {});
     const excludePermissions = sanitizePageExcludeRoleAccess(req.body?.excludePermissions || {});
     const emailPermissions = sanitizePageEmailAccess(req.body?.emailPermissions || {});
-    const config = await getSystemConfig();
+    const config = await getSystemConfig({ force: true });
     const beforeHashes = {
       pageRoleAccess: hashJson(config.pageRoleAccess || {}),
       pageRoleExcludeAccess: hashJson(config.pageRoleExcludeAccess || {}),
       pageEmailAccess: hashJson(config.pageEmailAccess || {}),
     };
 
-    // Important: avoid saving a large SystemConfig document when only updating permission maps.
-    const updated = await SystemConfig.findOneAndUpdate(
-      {},
-      {
-        $set: {
-          pageRoleAccess: permissions,
-          pageRoleExcludeAccess: excludePermissions,
-          pageEmailAccess: emailPermissions,
-          updatedBy: req.user.email,
-        },
-      },
-      { new: true, upsert: true },
-    );
-    invalidateSystemConfigCache('navigation_permissions_write');
+    const updated = await persistSystemConfigFields(config, {
+      pageRoleAccess: permissions,
+      pageRoleExcludeAccess: excludePermissions,
+      pageEmailAccess: emailPermissions,
+    }, req.user.email, 'navigation_permissions_write');
 
     console.log(JSON.stringify({
       tag: 'ADMIN_CONFIG_SAVE',
@@ -4418,7 +4476,8 @@ app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
       },
     }));
 
-    res.json({ success: true, permissions, excludePermissions, emailPermissions });
+    const meta = addConfigMetaHeaders(res, updated);
+    res.json({ success: true, permissions, excludePermissions, emailPermissions, ...meta });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -4427,7 +4486,9 @@ app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
 app.get('/api/action-permissions', verifyToken, async (_req, res) => {
   try {
     const { permissions, emailPermissions } = await getActionPermissions();
-    res.json({ success: true, permissions, emailPermissions });
+    const config = await getSystemConfig({ force: true });
+    const meta = addConfigMetaHeaders(res, config);
+    res.json({ success: true, permissions, emailPermissions, ...meta });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -4437,27 +4498,25 @@ app.post('/api/action-permissions', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'navigation_permissions_write')) return;
 
+    const unknownKeys = [
+      ...getUnknownPermissionKeys(req.body?.permissions || {}, ACTION_KEYS),
+      ...getUnknownPermissionKeys(req.body?.emailPermissions || {}, ACTION_KEYS),
+    ];
+    if (unknownKeys.length) {
+      return res.status(400).json({ error: 'Unknown permission keys', unknownKeys, serverKeys: ACTION_KEYS });
+    }
     const permissions = sanitizeActionRoleAccess(req.body?.permissions || {});
     const emailPermissions = sanitizeActionEmailAccess(req.body?.emailPermissions || {});
-    const config = await getSystemConfig();
+    const config = await getSystemConfig({ force: true });
     const beforeHashes = {
       actionRoleAccess: hashJson(config.actionRoleAccess || {}),
       actionEmailAccess: hashJson(config.actionEmailAccess || {}),
     };
 
-    // Important: avoid saving a large SystemConfig document when only updating permission maps.
-    const updated = await SystemConfig.findOneAndUpdate(
-      {},
-      {
-        $set: {
-          actionRoleAccess: permissions,
-          actionEmailAccess: emailPermissions,
-          updatedBy: req.user.email,
-        },
-      },
-      { new: true, upsert: true },
-    );
-    invalidateSystemConfigCache('action_permissions_write');
+    const updated = await persistSystemConfigFields(config, {
+      actionRoleAccess: permissions,
+      actionEmailAccess: emailPermissions,
+    }, req.user.email, 'action_permissions_write');
 
     console.log(JSON.stringify({
       tag: 'ADMIN_CONFIG_SAVE',
@@ -4471,7 +4530,8 @@ app.post('/api/action-permissions', verifyToken, async (req, res) => {
       },
     }));
 
-    res.json({ success: true, permissions, emailPermissions });
+    const meta = addConfigMetaHeaders(res, updated);
+    res.json({ success: true, permissions, emailPermissions, ...meta });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -4483,12 +4543,13 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can view telecast config' });
     }
-    const config = await getSystemConfig();
+    const config = await getSystemConfig({ force: true });
     const groupRecipients = {
       GES: normalizeEmailList(config?.telecastGroupRecipients?.GES || []),
       GDS: normalizeEmailList(config?.telecastGroupRecipients?.GDS || []),
       GTS: normalizeEmailList(config?.telecastGroupRecipients?.GTS || []),
     };
+    const meta = addConfigMetaHeaders(res, config);
     res.json({
       success: true,
       templateSubject: config.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}',
@@ -4515,6 +4576,7 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
       groupRecipients,
       keywords: TELECAST_TEMPLATE_KEYWORDS,
       weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
+      ...meta,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -4547,41 +4609,41 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
       GTS: normalizeEmailList(groupRecipientsInput.GTS || []),
     };
 
-    const config = await getSystemConfig();
-    config.telecastTemplateSubject = templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}';
-    config.telecastTemplateBody = templateBody || 'New row detected for {{TENDER_NO}}';
-    config.telecastTemplateStyle = templateStyle.key;
-    config.approvalAlertEnabled = approvalAlertEnabled;
-    config.approvalAlertTemplateSubject = approvalTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}';
-    config.approvalAlertTemplateBody = approvalTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.';
-    config.approvalAlertTemplateStyle = approvalTemplateStyle.key;
-    config.deadlineAlertEnabled = deadlineAlertEnabled;
-    config.deadlineAlertTemplateSubject = deadlineTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}';
-    config.deadlineAlertTemplateBody = deadlineTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.';
-    config.deadlineAlertTemplateStyle = deadlineTemplateStyle.key;
-    config.deadlineAlertClients = deadlineAlertClients;
-    config.telecastSendDelayMinutes = telecastSendDelayMinutes || 0;
-    config.telecastGroupRecipients = groupRecipients;
-    config.telecastKeywordHelp = TELECAST_TEMPLATE_KEYWORDS;
-    config.updatedBy = req.user.email;
-    await config.save();
-    invalidateSystemConfigCache('telecast_config_write');
+    const config = await getSystemConfig({ force: true });
+    const updated = await persistSystemConfigFields(config, {
+      telecastTemplateSubject: templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}',
+      telecastTemplateBody: templateBody || 'New row detected for {{TENDER_NO}}',
+      telecastTemplateStyle: templateStyle.key,
+      approvalAlertEnabled,
+      approvalAlertTemplateSubject: approvalTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}',
+      approvalAlertTemplateBody: approvalTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.',
+      approvalAlertTemplateStyle: approvalTemplateStyle.key,
+      deadlineAlertEnabled,
+      deadlineAlertTemplateSubject: deadlineTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}',
+      deadlineAlertTemplateBody: deadlineTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.',
+      deadlineAlertTemplateStyle: deadlineTemplateStyle.key,
+      deadlineAlertClients,
+      telecastSendDelayMinutes: telecastSendDelayMinutes || 0,
+      telecastGroupRecipients: groupRecipients,
+      telecastKeywordHelp: TELECAST_TEMPLATE_KEYWORDS,
+    }, req.user.email, 'telecast_config_write');
+    const meta = addConfigMetaHeaders(res, updated);
 
     res.json({
       success: true,
-      templateSubject: config.telecastTemplateSubject,
-      templateBody: config.telecastTemplateBody,
-      templateStyle: config.telecastTemplateStyle,
-      approvalAlertEnabled: config.approvalAlertEnabled,
-      approvalTemplateSubject: config.approvalAlertTemplateSubject,
-      approvalTemplateBody: config.approvalAlertTemplateBody,
-      approvalTemplateStyle: config.approvalAlertTemplateStyle,
-      deadlineAlertEnabled: config.deadlineAlertEnabled,
-      deadlineTemplateSubject: config.deadlineAlertTemplateSubject,
-      deadlineTemplateBody: config.deadlineAlertTemplateBody,
-      deadlineTemplateStyle: config.deadlineAlertTemplateStyle,
-      deadlineAlertClients: config.deadlineAlertClients || [],
-      telecastSendDelayMinutes: config.telecastSendDelayMinutes || 0,
+      templateSubject: updated.telecastTemplateSubject,
+      templateBody: updated.telecastTemplateBody,
+      templateStyle: updated.telecastTemplateStyle,
+      approvalAlertEnabled: updated.approvalAlertEnabled,
+      approvalTemplateSubject: updated.approvalAlertTemplateSubject,
+      approvalTemplateBody: updated.approvalAlertTemplateBody,
+      approvalTemplateStyle: updated.approvalAlertTemplateStyle,
+      deadlineAlertEnabled: updated.deadlineAlertEnabled,
+      deadlineTemplateSubject: updated.deadlineAlertTemplateSubject,
+      deadlineTemplateBody: updated.deadlineAlertTemplateBody,
+      deadlineTemplateStyle: updated.deadlineAlertTemplateStyle,
+      deadlineAlertClients: updated.deadlineAlertClients || [],
+      telecastSendDelayMinutes: updated.telecastSendDelayMinutes || 0,
       templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
         key: style.key,
         label: style.label,
@@ -4590,6 +4652,7 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
       })),
       groupRecipients,
       keywords: TELECAST_TEMPLATE_KEYWORDS,
+      ...meta,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -4601,7 +4664,8 @@ app.get('/api/reporting/config', verifyToken, async (req, res) => {
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can view reporting config' });
     }
-    const config = await getSystemConfig();
+    const config = await getSystemConfig({ force: true });
+    const meta = addConfigMetaHeaders(res, config);
     res.json({
       success: true,
       templateStyle: getTelecastTemplateStyle(config.issueReportTemplateStyle).key,
@@ -4611,6 +4675,7 @@ app.get('/api/reporting/config', verifyToken, async (req, res) => {
         description: style.description,
         colors: style.colors,
       })),
+      ...meta,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -4622,21 +4687,22 @@ app.post('/api/reporting/config', verifyToken, async (req, res) => {
     if (!await requireActionPermission(req, res, 'telecast_config_write')) return;
 
     const templateStyle = getTelecastTemplateStyle(req.body?.templateStyle);
-    const config = await getSystemConfig();
-    config.issueReportTemplateStyle = templateStyle.key;
-    config.updatedBy = req.user.email;
-    await config.save();
-    invalidateSystemConfigCache('reporting_config_write');
+    const config = await getSystemConfig({ force: true });
+    const updated = await persistSystemConfigFields(config, {
+      issueReportTemplateStyle: templateStyle.key,
+    }, req.user.email, 'reporting_config_write');
+    const meta = addConfigMetaHeaders(res, updated);
 
     res.json({
       success: true,
-      templateStyle: config.issueReportTemplateStyle,
+      templateStyle: updated.issueReportTemplateStyle,
       templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
         key: style.key,
         label: style.label,
         description: style.description,
         colors: style.colors,
       })),
+      ...meta,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -4720,7 +4786,8 @@ app.get('/api/notifications/status', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can view notification status' });
     }
 
-    const config = await getSystemConfig();
+    const config = await getSystemConfig({ force: true });
+    const meta = addConfigMetaHeaders(res, config);
     const alertedTracked = await SyncedOpportunity.countDocuments({ telecastAlerted: true });
     const alertedKeysTracked = await SyncedOpportunity.distinct('telecastAlertedKey', { telecastAlerted: true, telecastAlertedKey: { $ne: '' } });
     const alertedPreviewRows = await SyncedOpportunity.find(
@@ -5689,11 +5756,12 @@ app.delete('/api/bd-engagements/:id', verifyToken, async (req, res) => {
 
 app.get('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
   try {
-    const config = await getSystemConfig();
+    const config = await getSystemConfig({ force: true });
     const allowedEmails = Array.isArray(config.postBidAllowedEmails) ? config.postBidAllowedEmails : [];
     const email = String(req.user?.email || '').trim().toLowerCase();
     const canEdit = ['Master', 'Admin'].includes(req.user.role) || allowedEmails.map((e) => String(e || '').trim().toLowerCase()).includes(email);
-    res.json({ success: true, canEdit, allowedEmails });
+    const meta = addConfigMetaHeaders(res, config);
+    res.json({ success: true, canEdit, allowedEmails, ...meta });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -5706,12 +5774,12 @@ app.post('/api/opportunities/post-bid-config', verifyToken, async (req, res) => 
     }
     // Frontend historically sends `{ emails: [...] }`; support both shapes.
     const nextEmails = normalizeEmailList(req.body?.allowedEmails || req.body?.emails || []);
-    const config = await getSystemConfig();
+    const config = await getSystemConfig({ force: true });
     const beforeHashes = { postBidAllowedEmails: hashJson(config.postBidAllowedEmails || []) };
-    config.postBidAllowedEmails = nextEmails;
-    config.updatedBy = req.user.email;
-    await config.save();
-    invalidateSystemConfigCache('post_bid_config_write');
+    const updated = await persistSystemConfigFields(config, {
+      postBidAllowedEmails: nextEmails,
+    }, req.user.email, 'post_bid_config_write');
+    const meta = addConfigMetaHeaders(res, updated);
 
     console.log(JSON.stringify({
       tag: 'ADMIN_CONFIG_SAVE',
@@ -5719,10 +5787,10 @@ app.post('/api/opportunities/post-bid-config', verifyToken, async (req, res) => 
       actor: req.user.email,
       endpoint: '/api/opportunities/post-bid-config',
       before: beforeHashes,
-      after: { postBidAllowedEmails: hashJson(config.postBidAllowedEmails || []) },
+      after: { postBidAllowedEmails: hashJson(updated.postBidAllowedEmails || []) },
     }));
 
-    res.json({ success: true, allowedEmails: config.postBidAllowedEmails || [] });
+    res.json({ success: true, allowedEmails: updated.postBidAllowedEmails || [], ...meta });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -6303,8 +6371,9 @@ app.get('/api/pq-activities/export', verifyToken, async (req, res) => {
 
 app.get('/api/eoi-duplicates/config', verifyToken, async (_req, res) => {
   try {
-    const config = await getSystemConfig();
-    res.json({ success: true, showConvertedEoiRowsDefault: Boolean(config.showConvertedEoiRowsDefault) });
+    const config = await getSystemConfig({ force: true });
+    const meta = addConfigMetaHeaders(res, config);
+    res.json({ success: true, showConvertedEoiRowsDefault: Boolean(config.showConvertedEoiRowsDefault), ...meta });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -6316,12 +6385,12 @@ app.post('/api/eoi-duplicates/config', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can update EOI duplicates config' });
     }
     const nextValue = Boolean(req.body?.showConvertedEoiRowsDefault);
-    const config = await getSystemConfig();
+    const config = await getSystemConfig({ force: true });
     const beforeHashes = { showConvertedEoiRowsDefault: hashJson(Boolean(config.showConvertedEoiRowsDefault)) };
-    config.showConvertedEoiRowsDefault = nextValue;
-    config.updatedBy = req.user.email;
-    await config.save();
-    invalidateSystemConfigCache('eoi_duplicates_config_write');
+    const updated = await persistSystemConfigFields(config, {
+      showConvertedEoiRowsDefault: nextValue,
+    }, req.user.email, 'eoi_duplicates_config_write');
+    const meta = addConfigMetaHeaders(res, updated);
 
     console.log(JSON.stringify({
       tag: 'ADMIN_CONFIG_SAVE',
@@ -6329,10 +6398,10 @@ app.post('/api/eoi-duplicates/config', verifyToken, async (req, res) => {
       actor: req.user.email,
       endpoint: '/api/eoi-duplicates/config',
       before: beforeHashes,
-      after: { showConvertedEoiRowsDefault: hashJson(Boolean(config.showConvertedEoiRowsDefault)) },
+      after: { showConvertedEoiRowsDefault: hashJson(Boolean(updated.showConvertedEoiRowsDefault)) },
     }));
 
-    res.json({ success: true, showConvertedEoiRowsDefault: Boolean(config.showConvertedEoiRowsDefault) });
+    res.json({ success: true, showConvertedEoiRowsDefault: Boolean(updated.showConvertedEoiRowsDefault), ...meta });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -6410,6 +6479,7 @@ app.get('/api/export-template/config', verifyToken, async (_req, res) => {
       exportTemplateIntroColor: payload.introColor,
       exportTemplateColumnWidths: payload.columnWidths,
       exportTemplateRowHeights: payload.rowHeights,
+      ...meta,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -6421,7 +6491,7 @@ app.post('/api/export-template/config', verifyToken, async (req, res) => {
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can update export template config' });
     }
-    const config = await getSystemConfig();
+    const config = await getSystemConfig({ force: true });
     const beforeHashes = {
       exportTemplateTitle: hashJson(config.exportTemplateTitle || ''),
       exportTemplateLogoDataUrl: hashJson(config.exportTemplateLogoDataUrl || ''),
@@ -6467,9 +6537,40 @@ app.post('/api/export-template/config', verifyToken, async (req, res) => {
     if (Array.isArray(nextColumnWidths)) config.exportTemplateColumnWidths = nextColumnWidths.map((n) => Number(n) || 0);
     if (Array.isArray(nextRowHeights)) config.exportTemplateRowHeights = nextRowHeights.map((n) => Number(n) || 0);
 
-    config.updatedBy = req.user.email;
-    await config.save();
-    invalidateSystemConfigCache('export_template_config_write');
+    const updated = await persistSystemConfigFields(config, {
+      exportTemplateSheetName: config.exportTemplateSheetName,
+      exportTemplateTitle: config.exportTemplateTitle,
+      exportTemplateIntroText: config.exportTemplateIntroText,
+      exportTemplateShowLogo: config.exportTemplateShowLogo,
+      exportTemplateLogoDataUrl: config.exportTemplateLogoDataUrl,
+      exportTemplateLogoRow: config.exportTemplateLogoRow,
+      exportTemplateLogoColumn: config.exportTemplateLogoColumn,
+      exportTemplateLogoWidth: config.exportTemplateLogoWidth,
+      exportTemplateLogoHeight: config.exportTemplateLogoHeight,
+      exportTemplateTitleRow: config.exportTemplateTitleRow,
+      exportTemplateTitleColumn: config.exportTemplateTitleColumn,
+      exportTemplateTitleRowSpan: config.exportTemplateTitleRowSpan,
+      exportTemplateTitleColumnSpan: config.exportTemplateTitleColumnSpan,
+      exportTemplateTitleHorizontalAlign: config.exportTemplateTitleHorizontalAlign,
+      exportTemplateTitleVerticalAlign: config.exportTemplateTitleVerticalAlign,
+      exportTemplateIntroRow: config.exportTemplateIntroRow,
+      exportTemplateIntroColumn: config.exportTemplateIntroColumn,
+      exportTemplateIntroRowSpan: config.exportTemplateIntroRowSpan,
+      exportTemplateIntroColumnSpan: config.exportTemplateIntroColumnSpan,
+      exportTemplateIntroHorizontalAlign: config.exportTemplateIntroHorizontalAlign,
+      exportTemplateIntroVerticalAlign: config.exportTemplateIntroVerticalAlign,
+      exportTemplateHeaderRow: config.exportTemplateHeaderRow,
+      exportTemplateHeaderColumn: config.exportTemplateHeaderColumn,
+      exportTemplateHeaderHorizontalAlign: config.exportTemplateHeaderHorizontalAlign,
+      exportTemplateHeaderVerticalAlign: config.exportTemplateHeaderVerticalAlign,
+      exportTemplateHeaderBackgroundColor: config.exportTemplateHeaderBackgroundColor,
+      exportTemplateHeaderTextColor: config.exportTemplateHeaderTextColor,
+      exportTemplateTitleColor: config.exportTemplateTitleColor,
+      exportTemplateIntroColor: config.exportTemplateIntroColor,
+      exportTemplateColumnWidths: config.exportTemplateColumnWidths,
+      exportTemplateRowHeights: config.exportTemplateRowHeights,
+    }, req.user.email, 'export_template_config_write');
+    const meta = addConfigMetaHeaders(res, updated);
 
     console.log(JSON.stringify({
       tag: 'ADMIN_CONFIG_SAVE',
@@ -6488,36 +6589,37 @@ app.post('/api/export-template/config', verifyToken, async (req, res) => {
     res.json({ success: true, ...(await (async () => {
       const payload = {
         sheetName: config.exportTemplateSheetName,
-        title: config.exportTemplateTitle,
-        introText: config.exportTemplateIntroText,
-        showLogo: config.exportTemplateShowLogo,
-        logoDataUrl: config.exportTemplateLogoDataUrl,
-        logoRow: config.exportTemplateLogoRow,
-        logoColumn: config.exportTemplateLogoColumn,
-        logoWidth: config.exportTemplateLogoWidth,
-        logoHeight: config.exportTemplateLogoHeight,
-        titleRow: config.exportTemplateTitleRow,
-        titleColumn: config.exportTemplateTitleColumn,
-        titleRowSpan: config.exportTemplateTitleRowSpan,
-        titleColumnSpan: config.exportTemplateTitleColumnSpan,
-        titleHorizontalAlign: config.exportTemplateTitleHorizontalAlign,
-        titleVerticalAlign: config.exportTemplateTitleVerticalAlign,
-        introRow: config.exportTemplateIntroRow,
-        introColumn: config.exportTemplateIntroColumn,
-        introRowSpan: config.exportTemplateIntroRowSpan,
-        introColumnSpan: config.exportTemplateIntroColumnSpan,
-        introHorizontalAlign: config.exportTemplateIntroHorizontalAlign,
-        introVerticalAlign: config.exportTemplateIntroVerticalAlign,
-        headerRow: config.exportTemplateHeaderRow,
-        headerColumn: config.exportTemplateHeaderColumn,
-        headerHorizontalAlign: config.exportTemplateHeaderHorizontalAlign,
-        headerVerticalAlign: config.exportTemplateHeaderVerticalAlign,
-        headerBackgroundColor: config.exportTemplateHeaderBackgroundColor,
-        headerTextColor: config.exportTemplateHeaderTextColor,
-        titleColor: config.exportTemplateTitleColor,
-        introColor: config.exportTemplateIntroColor,
-        columnWidths: config.exportTemplateColumnWidths,
-        rowHeights: config.exportTemplateRowHeights,
+        title: updated.exportTemplateTitle,
+        introText: updated.exportTemplateIntroText,
+        showLogo: updated.exportTemplateShowLogo,
+        logoDataUrl: updated.exportTemplateLogoDataUrl,
+        logoRow: updated.exportTemplateLogoRow,
+        logoColumn: updated.exportTemplateLogoColumn,
+        logoWidth: updated.exportTemplateLogoWidth,
+        logoHeight: updated.exportTemplateLogoHeight,
+        titleRow: updated.exportTemplateTitleRow,
+        titleColumn: updated.exportTemplateTitleColumn,
+        titleRowSpan: updated.exportTemplateTitleRowSpan,
+        titleColumnSpan: updated.exportTemplateTitleColumnSpan,
+        titleHorizontalAlign: updated.exportTemplateTitleHorizontalAlign,
+        titleVerticalAlign: updated.exportTemplateTitleVerticalAlign,
+        introRow: updated.exportTemplateIntroRow,
+        introColumn: updated.exportTemplateIntroColumn,
+        introRowSpan: updated.exportTemplateIntroRowSpan,
+        introColumnSpan: updated.exportTemplateIntroColumnSpan,
+        introHorizontalAlign: updated.exportTemplateIntroHorizontalAlign,
+        introVerticalAlign: updated.exportTemplateIntroVerticalAlign,
+        headerRow: updated.exportTemplateHeaderRow,
+        headerColumn: updated.exportTemplateHeaderColumn,
+        headerHorizontalAlign: updated.exportTemplateHeaderHorizontalAlign,
+        headerVerticalAlign: updated.exportTemplateHeaderVerticalAlign,
+        headerBackgroundColor: updated.exportTemplateHeaderBackgroundColor,
+        headerTextColor: updated.exportTemplateHeaderTextColor,
+        titleColor: updated.exportTemplateTitleColor,
+        introColor: updated.exportTemplateIntroColor,
+        columnWidths: updated.exportTemplateColumnWidths,
+        rowHeights: updated.exportTemplateRowHeights,
+        ...meta,
       };
       return {
         ...payload,
