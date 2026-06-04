@@ -70,7 +70,7 @@ function AppRoutes() {
   }
 
   return (
-    <BrowserRouter>
+    <>
       <RoutePerfLogger />
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -125,7 +125,7 @@ function AppRoutes() {
           </Route>
         )}
       </Routes>
-    </BrowserRouter>
+    </>
   );
 }
 
@@ -173,26 +173,28 @@ const MuiThemeProviderWrapper = ({ children }: { children: React.ReactNode }) =>
 };
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <NextThemeProvider attribute="class" defaultTheme="system" enableSystem>
-      <StyledEngineProvider injectFirst>
-        <MuiThemeProviderWrapper>
-          <SessionAuthProvider>
-            <CurrencyProvider>
-              <DataProvider>
-                <ApprovalProvider>
-                  <TooltipProvider>
-                    <Toaster />
-                    <AppRoutes />
-                  </TooltipProvider>
-                </ApprovalProvider>
-              </DataProvider>
-            </CurrencyProvider>
-          </SessionAuthProvider>
-        </MuiThemeProviderWrapper>
-      </StyledEngineProvider>
-    </NextThemeProvider>
-  </QueryClientProvider>
+  <BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <NextThemeProvider attribute="class" defaultTheme="system" enableSystem>
+        <StyledEngineProvider injectFirst>
+          <MuiThemeProviderWrapper>
+            <SessionAuthProvider>
+              <CurrencyProvider>
+                <DataProvider>
+                  <ApprovalProvider>
+                    <TooltipProvider>
+                      <Toaster />
+                      <AppRoutes />
+                    </TooltipProvider>
+                  </ApprovalProvider>
+                </DataProvider>
+              </CurrencyProvider>
+            </SessionAuthProvider>
+          </MuiThemeProviderWrapper>
+        </StyledEngineProvider>
+      </NextThemeProvider>
+    </QueryClientProvider>
+  </BrowserRouter>
 );
 
 export default App;
