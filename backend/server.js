@@ -394,7 +394,13 @@ const findAuthorizedUserByEmail = async (email) => {
 };
 
 app.get('/healthz', (_req, res) => {
-  res.status(200).json({ ok: true, service: 'backend', timestamp: new Date().toISOString() });
+  const dbReady = DISABLE_MONGODB ? true : mongoose.connection.readyState === 1;
+  res.status(dbReady ? 200 : 503).json({
+    ok: dbReady,
+    service: 'backend',
+    dbState: mongoose.connection.readyState,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 app.get('/api/health', (_req, res) => {
@@ -433,8 +439,18 @@ app.get('/api/auth/msal-config', (_req, res) => {
   });
 });
 
+let httpServer = null;
+const startHttpServer = () => {
+  if (httpServer) return httpServer;
+  httpServer = app.listen(PORT, () => {
+    console.log(`[startup] Server listening on port ${PORT}`);
+  });
+  return httpServer;
+};
+
 if (DISABLE_MONGODB) {
   console.log('[startup] MongoDB disabled via environment variable.');
+  startHttpServer();
   initializeBootSync().catch(err => console.error('[startup.bootsync.error]', err));
 } else {
 mongoose.connect(MONGODB_URI, {
@@ -443,54 +459,56 @@ mongoose.connect(MONGODB_URI, {
   autoCreate: !IS_PROD,
 })
   .then(() => {
-    if (!DIAG_LOGS) return;
-    try {
-      const client = mongoose.connection.getClient();
-      const startedAtByRequestId = new Map();
+    if (DIAG_LOGS) {
+      try {
+        const client = mongoose.connection.getClient();
+        const startedAtByRequestId = new Map();
 
-      client.on('commandStarted', (event) => {
-        const key = event.requestId;
-        startedAtByRequestId.set(key, process.hrtime.bigint());
-        console.log(`[diag] ${clampLog({
-          tag: 'DIAG_MONGO_START',
-          ts: new Date().toISOString(),
-          requestId: event.requestId,
-          db: event.databaseName,
-          commandName: event.commandName,
-          command: event.command ? { ...event.command, lsid: undefined, $db: undefined } : undefined,
-        })}`);
-      });
+        client.on('commandStarted', (event) => {
+          const key = event.requestId;
+          startedAtByRequestId.set(key, process.hrtime.bigint());
+          console.log(`[diag] ${clampLog({
+            tag: 'DIAG_MONGO_START',
+            ts: new Date().toISOString(),
+            requestId: event.requestId,
+            db: event.databaseName,
+            commandName: event.commandName,
+            command: event.command ? { ...event.command, lsid: undefined, $db: undefined } : undefined,
+          })}`);
+        });
 
-      client.on('commandSucceeded', (event) => {
-        const startedAt = startedAtByRequestId.get(event.requestId);
-        startedAtByRequestId.delete(event.requestId);
-        const elapsedMs = startedAt ? Number(process.hrtime.bigint() - startedAt) / 1e6 : null;
-        console.log(`[diag] ${clampLog({
-          tag: 'DIAG_MONGO_OK',
-          ts: new Date().toISOString(),
-          requestId: event.requestId,
-          commandName: event.commandName,
-          elapsedMs: elapsedMs != null ? Math.round(elapsedMs * 100) / 100 : null,
-          reply: event.reply ? { ok: event.reply.ok, n: event.reply.n, nModified: event.reply.nModified } : undefined,
-        })}`);
-      });
+        client.on('commandSucceeded', (event) => {
+          const startedAt = startedAtByRequestId.get(event.requestId);
+          startedAtByRequestId.delete(event.requestId);
+          const elapsedMs = startedAt ? Number(process.hrtime.bigint() - startedAt) / 1e6 : null;
+          console.log(`[diag] ${clampLog({
+            tag: 'DIAG_MONGO_OK',
+            ts: new Date().toISOString(),
+            requestId: event.requestId,
+            commandName: event.commandName,
+            elapsedMs: elapsedMs != null ? Math.round(elapsedMs * 100) / 100 : null,
+            reply: event.reply ? { ok: event.reply.ok, n: event.reply.n, nModified: event.reply.nModified } : undefined,
+          })}`);
+        });
 
-      client.on('commandFailed', (event) => {
-        const startedAt = startedAtByRequestId.get(event.requestId);
-        startedAtByRequestId.delete(event.requestId);
-        const elapsedMs = startedAt ? Number(process.hrtime.bigint() - startedAt) / 1e6 : null;
-        console.log(`[diag] ${clampLog({
-          tag: 'DIAG_MONGO_FAIL',
-          ts: new Date().toISOString(),
-          requestId: event.requestId,
-          commandName: event.commandName,
-          elapsedMs: elapsedMs != null ? Math.round(elapsedMs * 100) / 100 : null,
-          failure: { name: event.failure?.name, message: event.failure?.message },
-        })}`);
-      });
-    } catch (err) {
-      console.error('[diag.mongo.hooks.error]', err);
+        client.on('commandFailed', (event) => {
+          const startedAt = startedAtByRequestId.get(event.requestId);
+          startedAtByRequestId.delete(event.requestId);
+          const elapsedMs = startedAt ? Number(process.hrtime.bigint() - startedAt) / 1e6 : null;
+          console.log(`[diag] ${clampLog({
+            tag: 'DIAG_MONGO_FAIL',
+            ts: new Date().toISOString(),
+            requestId: event.requestId,
+            commandName: event.commandName,
+            elapsedMs: elapsedMs != null ? Math.round(elapsedMs * 100) / 100 : null,
+            failure: { name: event.failure?.name, message: event.failure?.message },
+          })}`);
+        });
+      } catch (err) {
+        console.error('[diag.mongo.hooks.error]', err);
+      }
     }
+    startHttpServer();
   })
   .then(async () => {
     await initializeBootSync();
@@ -8510,7 +8528,4 @@ app.use(express.static(distPath));
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
-});
-
-app.listen(PORT, () => {
 });
