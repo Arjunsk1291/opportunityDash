@@ -448,6 +448,7 @@ export function OpportunitiesTable({
             'Content-Type': 'application/json',
           },
         });
+        if (response.status === 503) return;
         const contentType = response.headers.get('content-type') || '';
         if (!contentType.includes('application/json')) {
           const text = await response.text();
@@ -460,7 +461,9 @@ export function OpportunitiesTable({
         if (!mounted) return;
         setPostBidCanEdit(Boolean(payload?.canEdit));
       } catch (error) {
-        console.error('❌ Failed to load post-bid permissions:', error);
+        if (!String((error as Error)?.message || '').includes('503')) {
+          console.error('❌ Failed to load post-bid permissions:', error);
+        }
       }
     };
 
@@ -482,6 +485,7 @@ export function OpportunitiesTable({
             'Content-Type': 'application/json',
           },
         });
+        if (response.status === 503) return;
         const contentType = response.headers.get('content-type') || '';
         if (!contentType.includes('application/json')) {
           const text = await response.text();
@@ -492,7 +496,9 @@ export function OpportunitiesTable({
         if (!mounted) return;
         setShowConvertedEoiRows(Boolean(payload?.showConvertedEoiRowsDefault));
       } catch (error) {
-        console.error('❌ Failed to load EOI duplicate config:', error);
+        if (!String((error as Error)?.message || '').includes('503')) {
+          console.error('❌ Failed to load EOI duplicate config:', error);
+        }
       }
     };
 

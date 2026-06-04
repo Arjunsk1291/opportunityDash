@@ -48,13 +48,16 @@ export const useClientStore = () => {
         method: 'GET',
         headers: writeHeaders(),
       });
+      if (response.status === 503) return;
       if (!response.ok) throw new Error('Failed to load clients');
       const data = await response.json();
       setClients(Array.isArray(data) ? data : []);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      setError(message);
-      setClients([]);
+      if (!message.includes('503')) {
+        setError(message);
+        setClients([]);
+      }
     } finally {
       setIsLoading(false);
     }

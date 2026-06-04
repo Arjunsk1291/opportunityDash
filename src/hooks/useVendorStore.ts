@@ -25,13 +25,16 @@ export const useVendorStore = () => {
     setError(null);
     try {
       const response = await fetch(`${API_URL}/vendors`, { method: 'GET', headers: writeHeaders() });
+      if (response.status === 503) return;
       if (!response.ok) throw new Error('Failed to load vendors');
       const data = await response.json();
       setVendors(Array.isArray(data) ? data : []);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      setError(message);
-      setVendors([]);
+      if (!message.includes('503')) {
+        setError(message);
+        setVendors([]);
+      }
     } finally {
       setIsLoading(false);
     }

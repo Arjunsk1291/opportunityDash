@@ -245,6 +245,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
         });
         const fetchEnd = performance.now();
 
+        if (response.status === 503) {
+          const message = 'Backend temporarily unavailable';
+          if (!isBackground && !opportunitiesRef.current.length) {
+            setError(message);
+          }
+          lastSuccessfulRefreshAtRef.current = Date.now();
+          setIsLoading(false);
+          return;
+        }
+
         if (!response.ok) {
           throw new Error('HTTP ' + response.status + ': ' + response.statusText);
         }

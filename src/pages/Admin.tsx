@@ -269,6 +269,11 @@ interface AdminBootstrapResponse {
   graphConfig?: Partial<GraphConfig>;
   graphAuthStatus?: GraphAuthStatus;
   consentUrl?: string;
+  postBidConfig?: {
+    success?: boolean;
+    allowedEmails?: string[];
+    canEdit?: boolean;
+  };
   telecastConfig?: {
     templateSubject?: string;
     templateBody?: string;
@@ -875,6 +880,9 @@ export default function Admin() {
           system: bootstrap.backendHealth.system || undefined,
         });
       }
+      if (bootstrap.postBidConfig) {
+        setPostBidAllowedEmails(Array.isArray(bootstrap.postBidConfig.allowedEmails) ? bootstrap.postBidConfig.allowedEmails : []);
+      }
       if (Array.isArray(bootstrap.users)) {
         setUsers(bootstrap.users);
       }
@@ -1111,6 +1119,7 @@ export default function Admin() {
           'Content-Type': 'application/json',
         },
       });
+      if (response.status === 503) return null;
       if (!response.ok) {
         throw new Error('Failed to load post-bid assignees');
       }
@@ -1119,7 +1128,9 @@ export default function Admin() {
       setPostBidAllowedEmails(Array.isArray(data?.allowedEmails) ? data.allowedEmails : []);
       return data;
     } catch (error) {
-      toast.error((error as Error).message || 'Failed to load post-bid assignees');
+      if (!String((error as Error)?.message || '').includes('503')) {
+        toast.error((error as Error).message || 'Failed to load post-bid assignees');
+      }
       return null;
     }
   };
@@ -1633,6 +1644,7 @@ export default function Admin() {
           'Content-Type': 'application/json',
         },
       });
+      if (response.status === 503) return null;
       if (!response.ok) return;
       const data = await response.json();
       applySystemConfigMeta(data, response);

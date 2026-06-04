@@ -5060,6 +5060,13 @@ app.get('/api/admin/bootstrap', verifyToken, async (req, res) => {
       graphConfig: buildGraphConfigPayload(graphConfig),
       graphAuthStatus: buildGraphAuthStatusPayload(graphConfig),
       consentUrl: buildDelegatedConsentUrl({}),
+      postBidConfig: {
+        success: true,
+        allowedEmails: Array.isArray(systemConfig.postBidAllowedEmails) ? systemConfig.postBidAllowedEmails : [],
+        canEdit: ['Master', 'Admin'].includes(String(req.user?.role || '')) || (Array.isArray(systemConfig.postBidAllowedEmails)
+          ? systemConfig.postBidAllowedEmails.map((email) => String(email || '').trim().toLowerCase()).includes(String(req.user?.email || '').trim().toLowerCase())
+          : false),
+      },
       telecastConfig: buildTelecastConfigPayload(systemConfig),
       eoiDuplicateConfig: {
         success: true,
