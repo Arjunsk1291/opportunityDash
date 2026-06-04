@@ -9,6 +9,7 @@ import { randomBytes, randomUUID, scrypt as nodeScrypt, timingSafeEqual, createH
 import { execSync } from 'child_process';
 import jwt from 'jsonwebtoken';
 import compression from 'compression';
+import os from 'os';
 import approvalDb from './approvalDb.js';
 import SyncedOpportunity from './models/SyncedOpportunity.js';
 import OpportunityManualUpdate from './models/OpportunityManualUpdate.js';
@@ -398,10 +399,12 @@ app.get('/healthz', (_req, res) => {
 
 app.get('/api/health', (_req, res) => {
   const dbReady = mongoose.connection.readyState === 1;
+  const system = getSystemHealthSnapshot();
   res.status(dbReady ? 200 : 503).json({
     ok: dbReady,
     service: 'backend',
     dbState: mongoose.connection.readyState,
+    system,
     timestamp: new Date().toISOString(),
   });
 });
@@ -4444,6 +4447,110 @@ const BUILD_INFO = (() => {
   return { gitSha, buildTime };
 })();
 
+const bytesToPercent = (usedBytes, totalBytes) => {
+  const total = Number(totalBytes || 0);
+  if (!Number.isFinite(total) || total <= 0) return null;
+  const used = Number(usedBytes || 0);
+  return Math.max(0, Math.min(100, Math.round((used / total) * 1000) / 10));
+};
+
+const detectDeploymentPlatform = () => {
+  if (process.env.RENDER) return 'Render';
+  if (process.env.LIGHTSAIL_HOME || process.env.LIGHTSAIL_REGION) return 'AWS Lightsail';
+  if (process.env.AWS_EXECUTION_ENV || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION) return 'AWS';
+  if (process.env.VERCEL) return 'Vercel';
+  if (process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PROJECT_ID) return 'Railway';
+  return 'Unknown';
+};
+
+const readSystemTemperature = () => {
+  const candidates = [
+    '/sys/class/thermal/thermal_zone0/temp',
+    '/sys/class/hwmon/hwmon0/temp1_input',
+    '/sys/class/hwmon/hwmon1/temp1_input',
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      if (!fs.existsSync(candidate)) continue;
+      const raw = String(fs.readFileSync(candidate, 'utf8')).trim();
+      const numeric = Number(raw);
+      if (!Number.isFinite(numeric)) continue;
+      const celsius = numeric > 1000 ? numeric / 1000 : numeric;
+      return {
+        celsius: Math.round(celsius * 10) / 10,
+        source: path.basename(candidate),
+      };
+    } catch {
+      // ignore and try next source
+    }
+  }
+
+  return { celsius: null, source: null };
+};
+
+const getSystemHealthSnapshot = () => {
+  const totalMemoryBytes = os.totalmem();
+  const freeMemoryBytes = os.freemem();
+  const usedMemoryBytes = Math.max(0, totalMemoryBytes - freeMemoryBytes);
+  const processMemory = process.memoryUsage();
+
+  let disk = null;
+  try {
+    const stat = fs.statfsSync(process.cwd());
+    const blockSize = Number(stat.bsize || stat.blksize || 0);
+    const totalBlocks = Number(stat.blocks || 0);
+    const availableBlocks = Number(stat.bavail ?? stat.bfree ?? 0);
+    const totalBytes = blockSize * totalBlocks;
+    const freeBytes = blockSize * availableBlocks;
+    const usedBytes = Math.max(0, totalBytes - freeBytes);
+    disk = {
+      path: process.cwd(),
+      totalBytes,
+      freeBytes,
+      usedBytes,
+      usedPercent: bytesToPercent(usedBytes, totalBytes),
+    };
+  } catch {
+    disk = null;
+  }
+
+  const temperature = readSystemTemperature();
+  const loadAverage = os.loadavg().map((value) => Math.round(value * 100) / 100);
+  const memoryUsedPercent = bytesToPercent(usedMemoryBytes, totalMemoryBytes);
+  const processHeapPercent = bytesToPercent(processMemory.heapUsed, processMemory.heapTotal);
+  const status = (
+    (disk?.usedPercent !== null && disk?.usedPercent !== undefined && disk.usedPercent >= 90)
+    || (temperature.celsius !== null && temperature.celsius >= 80)
+    || (memoryUsedPercent !== null && memoryUsedPercent >= 90)
+  ) ? 'warning' : 'ok';
+
+  return {
+    status,
+    platform: detectDeploymentPlatform(),
+    hostname: os.hostname(),
+    arch: os.arch(),
+    nodeVersion: process.version,
+    uptimeSeconds: Math.round(process.uptime()),
+    uptimeHuman: `${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m`,
+    loadAverage,
+    memory: {
+      totalBytes: totalMemoryBytes,
+      freeBytes: freeMemoryBytes,
+      usedBytes: usedMemoryBytes,
+      usedPercent: memoryUsedPercent,
+      processRssBytes: processMemory.rss,
+      processHeapUsedBytes: processMemory.heapUsed,
+      processHeapTotalBytes: processMemory.heapTotal,
+      processExternalBytes: processMemory.external,
+      processArrayBuffersBytes: processMemory.arrayBuffers,
+      processHeapPercent,
+    },
+    disk,
+    temperature,
+  };
+};
+
 const getActionPermissions = async () => {
   const config = await getSystemConfig({ force: true });
   const permissions = sanitizeActionRoleAccess(config.actionRoleAccess || {});
@@ -4945,6 +5052,7 @@ app.get('/api/admin/bootstrap', verifyToken, async (req, res) => {
       backendHealth: {
         ok: mongoose.connection.readyState === 1,
         dbState: mongoose.connection.readyState,
+        system: getSystemHealthSnapshot(),
         timestamp: new Date().toISOString(),
       },
       users: users.map(mapIdField),

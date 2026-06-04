@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Lock, Users, Trash2, CheckCircle, XCircle, Clock, RefreshCw, Download, Database, Send } from 'lucide-react';
+import { AlertCircle, Lock, Users, Trash2, CheckCircle, XCircle, Clock, RefreshCw, Download, Database, Send, Cpu, HardDrive, Server, Thermometer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -215,12 +215,54 @@ interface SystemConfigMeta {
   systemConfigFingerprint: string | null;
 }
 
+interface SystemHealthSnapshot {
+  status: 'ok' | 'warning' | 'critical';
+  platform?: string;
+  hostname?: string;
+  arch?: string;
+  nodeVersion?: string;
+  uptimeSeconds?: number;
+  uptimeHuman?: string;
+  loadAverage?: number[];
+  memory?: {
+    totalBytes?: number;
+    freeBytes?: number;
+    usedBytes?: number;
+    usedPercent?: number | null;
+    processRssBytes?: number;
+    processHeapUsedBytes?: number;
+    processHeapTotalBytes?: number;
+    processExternalBytes?: number;
+    processArrayBuffersBytes?: number;
+    processHeapPercent?: number | null;
+  };
+  disk?: {
+    path?: string;
+    totalBytes?: number;
+    freeBytes?: number;
+    usedBytes?: number;
+    usedPercent?: number | null;
+  } | null;
+  temperature?: {
+    celsius?: number | null;
+    source?: string | null;
+  };
+}
+
+interface BackendHealthSnapshot {
+  ok: boolean;
+  dbState: number;
+  timestamp?: string;
+  system?: SystemHealthSnapshot;
+}
+
 interface AdminBootstrapResponse {
   success: boolean;
   backendHealth?: {
     ok: boolean;
     dbState: number;
     timestamp?: string;
+    system?: SystemHealthSnapshot;
   };
   users?: AuthorizedUser[];
   collectionStats?: CollectionStats;
@@ -521,7 +563,7 @@ export default function Admin() {
   const [tempCredentialLogsLoading, setTempCredentialLogsLoading] = useState(false);
   const [authDiagnostics, setAuthDiagnostics] = useState<AuthDiagnosticLogRow[]>([]);
   const [authDiagnosticsLoading, setAuthDiagnosticsLoading] = useState(false);
-  const [backendHealth, setBackendHealth] = useState<{ ok: boolean; dbState: number; timestamp?: string } | null>(null);
+  const [backendHealth, setBackendHealth] = useState<BackendHealthSnapshot | null>(null);
   const [backendHealthLoading, setBackendHealthLoading] = useState(false);
   const [systemConfigMeta, setSystemConfigMeta] = useState<SystemConfigMeta>({
     systemConfigUpdatedAt: null,
@@ -548,6 +590,23 @@ export default function Admin() {
     setSystemConfigMeta(nextMeta);
     return nextMeta;
   };
+
+  const formatBytes = (bytes: number | null | undefined) => {
+    const value = Number(bytes || 0);
+    if (!Number.isFinite(value) || value <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let current = value;
+    let index = 0;
+    while (current >= 1024 && index < units.length - 1) {
+      current /= 1024;
+      index += 1;
+    }
+    return `${current.toFixed(current >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+  };
+
+  const formatPercent = (value: number | null | undefined) => (
+    Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 10) / 10}%` : '—'
+  );
 
   const configsMatch = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
@@ -813,6 +872,7 @@ export default function Admin() {
           ok: Boolean(bootstrap.backendHealth.ok),
           dbState: Number.isFinite(Number(bootstrap.backendHealth.dbState)) ? Number(bootstrap.backendHealth.dbState) : -1,
           timestamp: bootstrap.backendHealth.timestamp,
+          system: bootstrap.backendHealth.system || undefined,
         });
       }
       if (Array.isArray(bootstrap.users)) {
@@ -928,6 +988,7 @@ export default function Admin() {
         ok: Boolean(data?.ok),
         dbState: Number.isFinite(Number(data?.dbState)) ? Number(data.dbState) : -1,
         timestamp: data?.timestamp ? String(data.timestamp) : undefined,
+        system: data?.system || undefined,
       });
     } catch (error) {
       setBackendHealth(null);
@@ -2900,6 +2961,56 @@ export default function Admin() {
 	                    <Badge variant="outline">{new Date(backendHealth.timestamp).toLocaleString()}</Badge>
 	                  )}
 	                </div>
+	                {backendHealth?.system && (
+	                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+	                    <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+	                      <div className="flex items-center gap-2 text-sm font-semibold">
+	                        <Server className="h-4 w-4" />
+	                        Host
+	                      </div>
+	                      <p className="mt-2 text-sm">{backendHealth.system.platform || 'Unknown platform'}</p>
+	                      <p className="text-xs text-muted-foreground font-mono break-all">{backendHealth.system.hostname || '—'}</p>
+	                      <p className="text-xs text-muted-foreground mt-1">Node {backendHealth.system.nodeVersion || '—'} • {backendHealth.system.arch || '—'}</p>
+	                    </div>
+	                    <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+	                      <div className="flex items-center gap-2 text-sm font-semibold">
+	                        <Clock className="h-4 w-4" />
+	                        Uptime / Load
+	                      </div>
+	                      <p className="mt-2 text-sm">Uptime: {backendHealth.system.uptimeHuman || '—'}</p>
+	                      <p className="text-xs text-muted-foreground">
+	                        Load avg: {(backendHealth.system.loadAverage || []).slice(0, 3).map((value) => Number.isFinite(Number(value)) ? Number(value).toFixed(2) : '—').join(' / ')}
+	                      </p>
+	                    </div>
+	                    <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+	                      <div className="flex items-center gap-2 text-sm font-semibold">
+	                        <Cpu className="h-4 w-4" />
+	                        Memory
+	                      </div>
+	                      <p className="mt-2 text-sm">
+	                        Host used: {formatPercent(backendHealth.system.memory?.usedPercent)} · RSS: {formatBytes(backendHealth.system.memory?.processRssBytes)}
+	                      </p>
+	                      <p className="text-xs text-muted-foreground">
+	                        Heap: {formatBytes(backendHealth.system.memory?.processHeapUsedBytes)} / {formatBytes(backendHealth.system.memory?.processHeapTotalBytes)}
+	                      </p>
+	                    </div>
+	                    <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+	                      <div className="flex items-center gap-2 text-sm font-semibold">
+	                        <HardDrive className="h-4 w-4" />
+	                        Disk / Temp
+	                      </div>
+	                      <p className="mt-2 text-sm">
+	                        Free: {formatBytes(backendHealth.system.disk?.freeBytes)} / {formatBytes(backendHealth.system.disk?.totalBytes)}
+	                      </p>
+	                      <p className="text-xs text-muted-foreground">
+	                        Used: {formatPercent(backendHealth.system.disk?.usedPercent)} • Temp: {backendHealth.system.temperature?.celsius !== null && backendHealth.system.temperature?.celsius !== undefined ? `${backendHealth.system.temperature.celsius}°C` : '—'}
+	                      </p>
+	                      <p className="text-xs text-muted-foreground">
+	                        Mount: {backendHealth.system.disk?.path || '—'} {backendHealth.system.temperature?.source ? `• Sensor: ${backendHealth.system.temperature.source}` : ''}
+	                      </p>
+	                    </div>
+	                  </div>
+	                )}
 	                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
 	                  <Badge variant="secondary">Config {systemConfigMeta.systemConfigFingerprint || '—'}</Badge>
 	                  <Badge variant="outline">Updated {systemConfigMeta.systemConfigUpdatedAt ? new Date(systemConfigMeta.systemConfigUpdatedAt).toLocaleString() : '—'}</Badge>
