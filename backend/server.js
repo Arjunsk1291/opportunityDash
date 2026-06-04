@@ -437,7 +437,11 @@ if (DISABLE_MONGODB) {
   console.log('[startup] MongoDB disabled via environment variable.');
   initializeBootSync().catch(err => console.error('[startup.bootsync.error]', err));
 } else {
-mongoose.connect(MONGODB_URI, { monitorCommands: DIAG_LOGS })
+mongoose.connect(MONGODB_URI, {
+  monitorCommands: DIAG_LOGS,
+  autoIndex: !IS_PROD,
+  autoCreate: !IS_PROD,
+})
   .then(() => {
     if (!DIAG_LOGS) return;
     try {
