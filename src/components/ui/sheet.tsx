@@ -5,7 +5,23 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const Sheet = SheetPrimitive.Root;
+const blurActiveElement = () => {
+  if (typeof document === "undefined") return;
+  const activeElement = document.activeElement as HTMLElement | null;
+  if (activeElement && activeElement !== document.body) {
+    activeElement.blur();
+  }
+};
+
+const Sheet = ({ onOpenChange, ...props }: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Root>) => (
+  <SheetPrimitive.Root
+    onOpenChange={(open) => {
+      if (open) blurActiveElement();
+      onOpenChange?.(open);
+    }}
+    {...props}
+  />
+);
 
 const SheetTrigger = SheetPrimitive.Trigger;
 

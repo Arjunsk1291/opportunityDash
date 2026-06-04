@@ -4,6 +4,14 @@ import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+const blurActiveElement = () => {
+  if (typeof document === "undefined") return;
+  const activeElement = document.activeElement as HTMLElement | null;
+  if (activeElement && activeElement !== document.body) {
+    activeElement.blur();
+  }
+};
+
 const hasDialogPart = (
   children: React.ReactNode,
   part: React.ComponentType | typeof DialogPrimitive.Title | typeof DialogPrimitive.Description,
@@ -24,7 +32,15 @@ const hasDialogPart = (
   return found;
 };
 
-const Dialog = DialogPrimitive.Root;
+const Dialog = ({ onOpenChange, ...props }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) => (
+  <DialogPrimitive.Root
+    onOpenChange={(open) => {
+      if (open) blurActiveElement();
+      onOpenChange?.(open);
+    }}
+    {...props}
+  />
+);
 
 const DialogTrigger = DialogPrimitive.Trigger;
 

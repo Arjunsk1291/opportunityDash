@@ -7072,6 +7072,7 @@ app.post('/api/eoi-duplicates/config', verifyToken, async (req, res) => {
 app.get('/api/export-template/config', verifyToken, async (_req, res) => {
   try {
     const config = await getSystemConfig();
+    const meta = addConfigMetaHeaders(res, config);
     // Frontend expects the unprefixed ExportTemplateConfig shape.
     const payload = {
       sheetName: config.exportTemplateSheetName,
