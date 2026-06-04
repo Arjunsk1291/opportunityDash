@@ -4397,6 +4397,265 @@ const getActionPermissions = async () => {
   return { config, permissions, emailPermissions };
 };
 
+const buildPagePermissionsPayload = async (config) => {
+  const permissions = sanitizePageRoleAccess(config.pageRoleAccess || {});
+  const excludePermissions = sanitizePageExcludeRoleAccess(config.pageRoleExcludeAccess || {});
+  const emailPermissions = sanitizePageEmailAccess(config.pageEmailAccess || {});
+  const missingRoleKeys = PAGE_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(config.pageRoleAccess || {}, key));
+  const missingExcludeKeys = PAGE_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(config.pageRoleExcludeAccess || {}, key));
+  const missingEmailKeys = PAGE_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(config.pageEmailAccess || {}, key));
+
+  if (missingRoleKeys.length || missingExcludeKeys.length || missingEmailKeys.length) {
+    const refreshed = await persistSystemConfigFields(config, {
+      pageRoleAccess: { ...(config.pageRoleAccess || {}), ...permissions },
+      pageRoleExcludeAccess: { ...(config.pageRoleExcludeAccess || {}), ...excludePermissions },
+      pageEmailAccess: { ...(config.pageEmailAccess || {}), ...emailPermissions },
+    }, config.updatedBy || config.lastUpdatedBy || '', 'navigation_permissions_backfill');
+    return {
+      config: refreshed,
+      permissions: sanitizePageRoleAccess(refreshed.pageRoleAccess || {}),
+      excludePermissions: sanitizePageExcludeRoleAccess(refreshed.pageRoleExcludeAccess || {}),
+      emailPermissions: sanitizePageEmailAccess(refreshed.pageEmailAccess || {}),
+    };
+  }
+
+  return { config, permissions, excludePermissions, emailPermissions };
+};
+
+const buildActionPermissionsPayload = async (config) => {
+  const permissions = sanitizeActionRoleAccess(config.actionRoleAccess || {});
+  const emailPermissions = sanitizeActionEmailAccess(config.actionEmailAccess || {});
+  const missingRoleKeys = ACTION_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(config.actionRoleAccess || {}, key));
+  const missingEmailKeys = ACTION_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(config.actionEmailAccess || {}, key));
+
+  if (missingRoleKeys.length || missingEmailKeys.length) {
+    const refreshed = await persistSystemConfigFields(config, {
+      actionRoleAccess: { ...(config.actionRoleAccess || {}), ...permissions },
+      actionEmailAccess: { ...(config.actionEmailAccess || {}), ...emailPermissions },
+    }, config.updatedBy || config.lastUpdatedBy || '', 'action_permissions_backfill');
+    return {
+      config: refreshed,
+      permissions: sanitizeActionRoleAccess(refreshed.actionRoleAccess || {}),
+      emailPermissions: sanitizeActionEmailAccess(refreshed.actionEmailAccess || {}),
+    };
+  }
+
+  return { config, permissions, emailPermissions };
+};
+
+const buildGraphConfigPayload = (config) => ({
+  success: true,
+  shareLink: config.shareLink || '',
+  driveId: config.driveId || '',
+  fileId: config.fileId || '',
+  worksheetName: config.worksheetName || '',
+  dataRange: config.dataRange || '',
+  headerRowOffset: Number(config.headerRowOffset || 0),
+  syncIntervalMinutes: config.syncIntervalMinutes || 10,
+  fieldMapping: config.fieldMapping || {},
+  lastResolvedAt: config.lastResolvedAt || null,
+  lastSyncAt: config.lastSyncAt || null,
+});
+
+const buildGraphAuthStatusPayload = (config) => ({
+  success: true,
+  authMode: config.graphAuthMode || 'application',
+  accountUsername: config.graphAccountUsername || '',
+  hasRefreshToken: Boolean(config.graphRefreshTokenEnc),
+  tokenUpdatedAt: config.graphTokenUpdatedAt || null,
+});
+
+const buildTelecastConfigPayload = (config) => {
+  const groupRecipients = {
+    GES: normalizeEmailList(config?.telecastGroupRecipients?.GES || []),
+    GDS: normalizeEmailList(config?.telecastGroupRecipients?.GDS || []),
+    GTS: normalizeEmailList(config?.telecastGroupRecipients?.GTS || []),
+  };
+  return {
+    success: true,
+    templateSubject: config.telecastTemplateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}',
+    templateBody: config.telecastTemplateBody || '',
+    templateStyle: getTelecastTemplateStyle(config.telecastTemplateStyle).key,
+    approvalAlertEnabled: Boolean(config.approvalAlertEnabled),
+    approvalTemplateSubject: config.approvalAlertTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}',
+    approvalTemplateBody: config.approvalAlertTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.',
+    approvalTemplateStyle: getTelecastTemplateStyle(config.approvalAlertTemplateStyle).key,
+    deadlineAlertEnabled: Boolean(config.deadlineAlertEnabled),
+    deadlineTemplateSubject: config.deadlineAlertTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}',
+    deadlineTemplateBody: config.deadlineAlertTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.',
+    deadlineTemplateStyle: getTelecastTemplateStyle(config.deadlineAlertTemplateStyle).key,
+    deadlineAlertClients: Array.isArray(config.deadlineAlertClients) ? config.deadlineAlertClients : [],
+    telecastSendDelayMinutes: Number.isFinite(Number(config.telecastSendDelayMinutes))
+      ? Number(config.telecastSendDelayMinutes)
+      : 10,
+    templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
+      key: style.key,
+      label: style.label,
+      description: style.description,
+      colors: style.colors,
+    })),
+    groupRecipients,
+    keywords: TELECAST_TEMPLATE_KEYWORDS,
+    weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
+  };
+};
+
+const buildReportingConfigPayload = (config) => ({
+  success: true,
+  templateStyle: getTelecastTemplateStyle(config.issueReportTemplateStyle).key,
+  templateStyles: Object.values(TELECAST_TEMPLATE_STYLES).map((style) => ({
+    key: style.key,
+    label: style.label,
+    description: style.description,
+    colors: style.colors,
+  })),
+});
+
+const buildExportTemplatePayload = (config) => {
+  const payload = {
+    sheetName: config.exportTemplateSheetName,
+    title: config.exportTemplateTitle,
+    introText: config.exportTemplateIntroText,
+    showLogo: config.exportTemplateShowLogo,
+    logoDataUrl: config.exportTemplateLogoDataUrl,
+    logoRow: config.exportTemplateLogoRow,
+    logoColumn: config.exportTemplateLogoColumn,
+    logoWidth: config.exportTemplateLogoWidth,
+    logoHeight: config.exportTemplateLogoHeight,
+    titleRow: config.exportTemplateTitleRow,
+    titleColumn: config.exportTemplateTitleColumn,
+    titleRowSpan: config.exportTemplateTitleRowSpan,
+    titleColumnSpan: config.exportTemplateTitleColumnSpan,
+    titleHorizontalAlign: config.exportTemplateTitleHorizontalAlign,
+    titleVerticalAlign: config.exportTemplateTitleVerticalAlign,
+    introRow: config.exportTemplateIntroRow,
+    introColumn: config.exportTemplateIntroColumn,
+    introRowSpan: config.exportTemplateIntroRowSpan,
+    introColumnSpan: config.exportTemplateIntroColumnSpan,
+    introHorizontalAlign: config.exportTemplateIntroHorizontalAlign,
+    introVerticalAlign: config.exportTemplateIntroVerticalAlign,
+    headerRow: config.exportTemplateHeaderRow,
+    headerColumn: config.exportTemplateHeaderColumn,
+    headerHorizontalAlign: config.exportTemplateHeaderHorizontalAlign,
+    headerVerticalAlign: config.exportTemplateHeaderVerticalAlign,
+    headerBackgroundColor: config.exportTemplateHeaderBackgroundColor,
+    headerTextColor: config.exportTemplateHeaderTextColor,
+    titleColor: config.exportTemplateTitleColor,
+    introColor: config.exportTemplateIntroColor,
+    columnWidths: config.exportTemplateColumnWidths,
+    rowHeights: config.exportTemplateRowHeights,
+  };
+  return {
+    success: true,
+    ...payload,
+    exportTemplateSheetName: payload.sheetName,
+    exportTemplateTitle: payload.title,
+    exportTemplateIntroText: payload.introText,
+    exportTemplateShowLogo: payload.showLogo,
+    exportTemplateLogoDataUrl: payload.logoDataUrl,
+    exportTemplateLogoRow: payload.logoRow,
+    exportTemplateLogoColumn: payload.logoColumn,
+    exportTemplateLogoWidth: payload.logoWidth,
+    exportTemplateLogoHeight: payload.logoHeight,
+    exportTemplateTitleRow: payload.titleRow,
+    exportTemplateTitleColumn: payload.titleColumn,
+    exportTemplateTitleRowSpan: payload.titleRowSpan,
+    exportTemplateTitleColumnSpan: payload.titleColumnSpan,
+    exportTemplateTitleHorizontalAlign: payload.titleHorizontalAlign,
+    exportTemplateTitleVerticalAlign: payload.titleVerticalAlign,
+    exportTemplateIntroRow: payload.introRow,
+    exportTemplateIntroColumn: payload.introColumn,
+    exportTemplateIntroRowSpan: payload.introRowSpan,
+    exportTemplateIntroColumnSpan: payload.introColumnSpan,
+    exportTemplateIntroHorizontalAlign: payload.introHorizontalAlign,
+    exportTemplateIntroVerticalAlign: payload.introVerticalAlign,
+    exportTemplateHeaderRow: payload.headerRow,
+    exportTemplateHeaderColumn: payload.headerColumn,
+    exportTemplateHeaderHorizontalAlign: payload.headerHorizontalAlign,
+    exportTemplateHeaderVerticalAlign: payload.headerVerticalAlign,
+    exportTemplateHeaderBackgroundColor: payload.headerBackgroundColor,
+    exportTemplateHeaderTextColor: payload.headerTextColor,
+    exportTemplateTitleColor: payload.titleColor,
+    exportTemplateIntroColor: payload.introColor,
+    exportTemplateColumnWidths: payload.columnWidths,
+    exportTemplateRowHeights: payload.rowHeights,
+  };
+};
+
+const buildNotificationStatusPayload = async (config) => {
+  const [alertedTracked, alertedKeysTracked, alertedPreviewRows] = await Promise.all([
+    SyncedOpportunity.countDocuments({ telecastAlerted: true }),
+    SyncedOpportunity.distinct('telecastAlertedKey', { telecastAlerted: true, telecastAlertedKey: { $ne: '' } }),
+    SyncedOpportunity.find(
+      { telecastAlerted: true, telecastAlertedRefNo: { $ne: '' } },
+      { telecastAlertedRefNo: 1, telecastAlertedAt: 1 }
+    ).sort({ telecastAlertedAt: -1 }).limit(50).lean(),
+  ]);
+  const alertedRefNosPreview = alertedPreviewRows
+    .map((row) => normalizeRefNo(row?.telecastAlertedRefNo || ''))
+    .filter(Boolean);
+
+  return {
+    success: true,
+    lastCheckedAt: config.notificationLastCheckedAt || null,
+    lastNewRowsCount: Number(config.notificationLastNewRowsCount || 0),
+    lastNewRows: Array.isArray(config.notificationLastNewRows) ? config.notificationLastNewRows : [],
+    lastNewRowsPreview: Array.isArray(config.notificationLastNewRowsPreview) ? config.notificationLastNewRowsPreview : [],
+    trackedRows: Array.isArray(config.notificationRowSignatures) ? config.notificationRowSignatures.length : 0,
+    alertWindowDays: TELECAST_RECENT_WINDOW_DAYS,
+    alertSeededAt: config.telecastAlertSeededAt || null,
+    alertSeededCount: Number(config.telecastAlertSeededCount || 0),
+    alertedKeysTracked: alertedKeysTracked.length,
+    alertedRefNosTracked: alertedTracked,
+    alertedRefNosPreview,
+    telecastEligibleRowsPreview: Array.isArray(config.telecastLastEligibleRowsPreview) ? config.telecastLastEligibleRowsPreview : [],
+    weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
+  };
+};
+
+const buildCollectionStats = async () => {
+  const [result] = await SyncedOpportunity.aggregate([
+    {
+      $facet: {
+        summary: [
+          {
+            $group: {
+              _id: null,
+              totalTenders: { $sum: 1 },
+              totalValue: { $sum: { $ifNull: ['$opportunityValue', 0] } },
+              lastSync: { $max: '$syncedAt' },
+            },
+          },
+        ],
+        statusDistribution: [
+          {
+            $group: {
+              _id: { $ifNull: ['$avenirStatus', 'UNKNOWN'] },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ],
+      },
+    },
+  ]);
+
+  const summary = Array.isArray(result?.summary) && result.summary.length ? result.summary[0] : {};
+  const statusDistribution = Array.isArray(result?.statusDistribution)
+    ? result.statusDistribution.reduce((acc, entry) => {
+        acc[String(entry?._id || 'UNKNOWN')] = Number(entry?.count || 0);
+        return acc;
+      }, {})
+    : {};
+
+  return {
+    totalTenders: Number(summary?.totalTenders || 0),
+    totalValue: Number(summary?.totalValue || 0),
+    lastSync: summary?.lastSync || null,
+    statusDistribution,
+  };
+};
+
 const requireActionPermission = async (req, res, actionKey) => {
   const { config, permissions, emailPermissions } = await getActionPermissions();
   // Master is the supreme role: always allowed to perform any action.
@@ -4507,6 +4766,39 @@ app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
   }
 });
 
+app.get('/api/permissions/bootstrap', verifyToken, async (req, res) => {
+  try {
+    const config = await getSystemConfig();
+    const [pagePermissionsResult, actionPermissionsResult] = await Promise.allSettled([
+      buildPagePermissionsPayload(config),
+      buildActionPermissionsPayload(config),
+    ]);
+
+    const response = {
+      success: true,
+      pagePermissions: pagePermissionsResult.status === 'fulfilled' ? pagePermissionsResult.value.permissions : null,
+      pageExcludePermissions: pagePermissionsResult.status === 'fulfilled' ? pagePermissionsResult.value.excludePermissions : null,
+      pageEmailPermissions: pagePermissionsResult.status === 'fulfilled' ? pagePermissionsResult.value.emailPermissions : null,
+      actionPermissions: actionPermissionsResult.status === 'fulfilled' ? actionPermissionsResult.value.permissions : null,
+      actionEmailPermissions: actionPermissionsResult.status === 'fulfilled' ? actionPermissionsResult.value.emailPermissions : null,
+    };
+
+    const errors = [
+      ['pagePermissions', pagePermissionsResult],
+      ['actionPermissions', actionPermissionsResult],
+    ].flatMap(([key, result]) => (result.status === 'fulfilled'
+      ? []
+      : [{ key, message: result.reason?.message || String(result.reason || 'Unknown error') }]));
+
+    res.json({
+      ...response,
+      errors,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to load permissions bootstrap data' });
+  }
+});
+
 app.get('/api/action-permissions', verifyToken, async (_req, res) => {
   try {
     const { permissions, emailPermissions } = await getActionPermissions();
@@ -4558,6 +4850,82 @@ app.post('/api/action-permissions', verifyToken, async (req, res) => {
     res.json({ success: true, permissions, emailPermissions, ...meta });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/bootstrap', verifyToken, async (req, res) => {
+  try {
+    if (!(req.user?.role === 'Master' || req.user?.role === 'Admin')) {
+      return res.status(403).json({ error: 'Only Master/Admin can load admin bootstrap data' });
+    }
+
+    const [systemConfig, graphConfig, users, collectionStats] = await Promise.all([
+      getSystemConfig(),
+      getGraphConfig(),
+      AuthorizedUser.find().sort({ createdAt: -1 }).lean(),
+      buildCollectionStats(),
+    ]);
+
+    const [pagePermissionsResult, actionPermissionsResult, worksheetsResult, notificationStatusResult] = await Promise.allSettled([
+      buildPagePermissionsPayload(systemConfig),
+      buildActionPermissionsPayload(systemConfig),
+      (graphConfig.driveId && graphConfig.fileId)
+        ? getWorksheets({ driveId: graphConfig.driveId, fileId: graphConfig.fileId, config: graphConfig })
+        : Promise.resolve([]),
+      buildNotificationStatusPayload(systemConfig),
+    ]);
+
+    const bootstrap = {
+      success: true,
+      backendHealth: {
+        ok: mongoose.connection.readyState === 1,
+        dbState: mongoose.connection.readyState,
+        timestamp: new Date().toISOString(),
+      },
+      users: users.map(mapIdField),
+      collectionStats,
+      graphConfig: buildGraphConfigPayload(graphConfig),
+      graphAuthStatus: buildGraphAuthStatusPayload(graphConfig),
+      consentUrl: buildDelegatedConsentUrl({}),
+      telecastConfig: buildTelecastConfigPayload(systemConfig),
+      eoiDuplicateConfig: {
+        success: true,
+        showConvertedEoiRowsDefault: Boolean(systemConfig.showConvertedEoiRowsDefault),
+      },
+      reportingConfig: buildReportingConfigPayload(systemConfig),
+      exportTemplateConfig: buildExportTemplatePayload(systemConfig),
+      navigationPermissions: pagePermissionsResult.status === 'fulfilled'
+        ? {
+            permissions: pagePermissionsResult.value.permissions,
+            excludePermissions: pagePermissionsResult.value.excludePermissions,
+            emailPermissions: pagePermissionsResult.value.emailPermissions,
+          }
+        : null,
+      actionPermissions: actionPermissionsResult.status === 'fulfilled'
+        ? {
+            permissions: actionPermissionsResult.value.permissions,
+            emailPermissions: actionPermissionsResult.value.emailPermissions,
+          }
+        : null,
+      worksheets: worksheetsResult.status === 'fulfilled' ? worksheetsResult.value : [],
+      notificationStatus: notificationStatusResult.status === 'fulfilled' ? notificationStatusResult.value : null,
+    };
+
+    const errors = [
+      ['navigationPermissions', pagePermissionsResult],
+      ['actionPermissions', actionPermissionsResult],
+      ['worksheets', worksheetsResult],
+      ['notificationStatus', notificationStatusResult],
+    ].flatMap(([key, result]) => (result.status === 'fulfilled'
+      ? []
+      : [{ key, message: result.reason?.message || String(result.reason || 'Unknown error') }]));
+
+    res.json({
+      ...bootstrap,
+      errors,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to load admin bootstrap data' });
   }
 });
 
@@ -7584,17 +7952,7 @@ app.post('/api/clients/seed', verifyToken, async (req, res) => {
 
 app.get('/api/opportunities/stats', verifyToken, async (req, res) => {
   try {
-    const opportunities = await SyncedOpportunity.find().lean();
-    const totalTenders = opportunities.length;
-    const totalValue = opportunities.reduce((sum, opp) => sum + (opp.opportunityValue || 0), 0);
-    const lastSync = opportunities[0]?.syncedAt || null;
-    const statusDistribution = opportunities.reduce((acc, opp) => {
-      const key = opp.avenirStatus || 'UNKNOWN';
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
-
-    res.json({ totalTenders, totalValue, lastSync, statusDistribution });
+    res.json(await buildCollectionStats());
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

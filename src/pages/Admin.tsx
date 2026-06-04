@@ -215,6 +215,59 @@ interface SystemConfigMeta {
   systemConfigFingerprint: string | null;
 }
 
+interface AdminBootstrapResponse {
+  success: boolean;
+  backendHealth?: {
+    ok: boolean;
+    dbState: number;
+    timestamp?: string;
+  };
+  users?: AuthorizedUser[];
+  collectionStats?: CollectionStats;
+  graphConfig?: Partial<GraphConfig>;
+  graphAuthStatus?: GraphAuthStatus;
+  consentUrl?: string;
+  telecastConfig?: {
+    templateSubject?: string;
+    templateBody?: string;
+    templateStyle?: string;
+    approvalAlertEnabled?: boolean;
+    approvalTemplateSubject?: string;
+    approvalTemplateBody?: string;
+    approvalTemplateStyle?: string;
+    deadlineAlertEnabled?: boolean;
+    deadlineTemplateSubject?: string;
+    deadlineTemplateBody?: string;
+    deadlineTemplateStyle?: string;
+    deadlineAlertClients?: string[];
+    telecastSendDelayMinutes?: number;
+    templateStyles?: TelecastTemplateStyle[];
+    groupRecipients?: Record<'GES' | 'GDS' | 'GTS', string[]>;
+    keywords?: string[];
+    weeklyStats?: WeeklyTelecastStat[];
+  };
+  eoiDuplicateConfig?: {
+    showConvertedEoiRowsDefault?: boolean;
+  };
+  reportingConfig?: {
+    templateStyle?: string;
+    templateStyles?: TelecastTemplateStyle[];
+  };
+  exportTemplateConfig?: Partial<ExportTemplateConfig>;
+  navigationPermissions?: {
+    permissions?: Record<PageKey, UserRole[]>;
+    excludePermissions?: Record<PageKey, UserRole[]>;
+    emailPermissions?: Record<PageKey, string[]>;
+  } | null;
+  actionPermissions?: {
+    permissions?: Record<ActionKey, UserRole[]>;
+    emailPermissions?: Record<ActionKey, string[]>;
+  } | null;
+  worksheets?: Array<{ id: string; name: string }>;
+  notificationStatus?: NotificationSyncStatus | null;
+  errors?: Array<{ key: string; message: string }>;
+}
+
 const EXPORT_TEMPLATE_PREVIEW_HEADERS = ['Avenir Ref', 'Tender Name', 'Client', 'Status', 'RFP Received'];
 const EXPORT_TEMPLATE_PREVIEW_ROW = ['AC26144', 'HSE MONITORING SYSTEM', 'L&T', 'Submitted', '2026-04-07'];
 const EXPORT_PREVIEW_GRID_COLUMNS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -559,26 +612,37 @@ export default function Admin() {
   // Telecast mail auth is env-driven (server-side ROPC). UI should not handle credentials/tokens.
   const telecastMailReady = true;
 
-	  useEffect(() => {
-	    if (canAccessPanel) {
-	      loadBackendHealth();
-	      loadUsers();
-	      loadCollectionStats();
-	      loadGraphConfig();
-	      loadGraphAuthStatus();
-      loadTelecastConfig();
-      loadEoiDuplicateConfig();
-      loadReportingConfig();
-      loadExportTemplateConfig();
-      loadNotificationStatus();
-      fetchConsentUrl();
-      if (diag.enabled) {
+  useEffect(() => {
+    if (!canAccessPanel) return;
+
+    let cancelled = false;
+    const run = async () => {
+      const bootstrapped = await loadAdminBootstrap();
+      if (!cancelled && !bootstrapped) {
+        loadBackendHealth();
+        loadUsers();
+        loadCollectionStats();
+        loadGraphConfig();
+        loadGraphAuthStatus();
+        loadTelecastConfig();
+        loadEoiDuplicateConfig();
+        loadReportingConfig();
+        loadExportTemplateConfig();
+        loadNotificationStatus();
+        fetchConsentUrl();
+      }
+      if (!cancelled && diag.enabled) {
         fetch(API_URL + '/version', { headers: token ? { Authorization: 'Bearer ' + token } : undefined })
           .then((r) => r.json())
           .then((data) => statusConsole.info('backend version', data))
           .catch(() => {});
       }
-    }
+    };
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
   }, [canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -727,6 +791,125 @@ export default function Admin() {
     [users],
   );
   const exportTemplateLogoPreview = exportTemplate.logoDataUrl || defaultExportLogo;
+
+  const loadAdminBootstrap = async () => {
+    if (!token) return false;
+    setBackendHealthLoading(true);
+    try {
+      const response = await fetch(API_URL + '/admin/bootstrap', {
+        headers: {
+          Authorization: 'Bearer ' + token,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(parseApiErrorPayload(data, 'Failed to load admin bootstrap data'));
+      }
+
+      const bootstrap = data as AdminBootstrapResponse;
+      if (bootstrap.backendHealth) {
+        setBackendHealth({
+          ok: Boolean(bootstrap.backendHealth.ok),
+          dbState: Number.isFinite(Number(bootstrap.backendHealth.dbState)) ? Number(bootstrap.backendHealth.dbState) : -1,
+          timestamp: bootstrap.backendHealth.timestamp,
+        });
+      }
+      if (Array.isArray(bootstrap.users)) {
+        setUsers(bootstrap.users);
+      }
+      if (bootstrap.collectionStats) {
+        setCollectionStats(bootstrap.collectionStats);
+      }
+      if (bootstrap.graphConfig) {
+        const next: GraphConfig = {
+          shareLink: String(bootstrap.graphConfig.shareLink || ''),
+          driveId: String(bootstrap.graphConfig.driveId || ''),
+          fileId: String(bootstrap.graphConfig.fileId || ''),
+          worksheetName: String(bootstrap.graphConfig.worksheetName || ''),
+          dataRange: String(bootstrap.graphConfig.dataRange || ''),
+          headerRowOffset: Number(bootstrap.graphConfig.headerRowOffset || 0),
+          syncIntervalMinutes: Number(bootstrap.graphConfig.syncIntervalMinutes || 10),
+          fieldMapping: (bootstrap.graphConfig.fieldMapping || {}) as Record<string, string | string[]>,
+          lastResolvedAt: bootstrap.graphConfig.lastResolvedAt,
+          lastSyncAt: bootstrap.graphConfig.lastSyncAt,
+        };
+        setGraphConfig(next);
+        setMappingText(JSON.stringify(next.fieldMapping || {}, null, 2));
+      }
+      if (Array.isArray(bootstrap.worksheets)) {
+        setWorksheets(bootstrap.worksheets);
+      }
+      if (bootstrap.graphAuthStatus) {
+        setGraphAuthStatus({
+          authMode: bootstrap.graphAuthStatus.authMode || 'application',
+          accountUsername: bootstrap.graphAuthStatus.accountUsername || '',
+          hasRefreshToken: Boolean(bootstrap.graphAuthStatus.hasRefreshToken),
+          tokenUpdatedAt: bootstrap.graphAuthStatus.tokenUpdatedAt || null,
+        });
+      }
+      if (bootstrap.consentUrl !== undefined) {
+        setConsentUrl(bootstrap.consentUrl || '');
+      }
+      if (bootstrap.telecastConfig) {
+        setTelecastTemplateSubject(bootstrap.telecastConfig.templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
+        setTelecastTemplateBody(bootstrap.telecastConfig.templateBody || 'A new tender row was detected for {{CLIENT}} in {{GROUP}}.');
+        setTelecastTemplateStyle(bootstrap.telecastConfig.templateStyle || DEFAULT_TELECAST_TEMPLATE_STYLE.key);
+        setApprovalAlertEnabled(Boolean(bootstrap.telecastConfig.approvalAlertEnabled));
+        setApprovalTemplateSubject(bootstrap.telecastConfig.approvalTemplateSubject || 'Tender Approved by Tender Manager: {{TENDER_NO}} - {{TENDER_NAME}}');
+        setApprovalTemplateBody(bootstrap.telecastConfig.approvalTemplateBody || 'A tender has been approved by the Tender Manager and is ready for SVP review.');
+        setApprovalTemplateStyle(bootstrap.telecastConfig.approvalTemplateStyle || DEFAULT_TELECAST_TEMPLATE_STYLE.key);
+        setDeadlineAlertEnabled(Boolean(bootstrap.telecastConfig.deadlineAlertEnabled));
+        setDeadlineTemplateSubject(bootstrap.telecastConfig.deadlineTemplateSubject || 'Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}');
+        setDeadlineTemplateBody(bootstrap.telecastConfig.deadlineTemplateBody || 'Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.');
+        setDeadlineTemplateStyle(bootstrap.telecastConfig.deadlineTemplateStyle || 'sunset_alert');
+        setDeadlineAlertClients(Array.isArray(bootstrap.telecastConfig.deadlineAlertClients) ? bootstrap.telecastConfig.deadlineAlertClients : []);
+        const delayValue = Number(bootstrap.telecastConfig.telecastSendDelayMinutes);
+        setTelecastSendDelayMinutes(Number.isFinite(delayValue) ? delayValue : 10);
+        setTelecastTemplateStyles(Array.isArray(bootstrap.telecastConfig.templateStyles) && bootstrap.telecastConfig.templateStyles.length ? bootstrap.telecastConfig.templateStyles : [DEFAULT_TELECAST_TEMPLATE_STYLE]);
+        setTelecastKeywords(Array.isArray(bootstrap.telecastConfig.keywords) ? bootstrap.telecastConfig.keywords : []);
+        setTelecastGroupRecipients({
+          GES: normalizeRecipientList(bootstrap.telecastConfig.groupRecipients?.GES),
+          GDS: normalizeRecipientList(bootstrap.telecastConfig.groupRecipients?.GDS),
+          GTS: normalizeRecipientList(bootstrap.telecastConfig.groupRecipients?.GTS),
+        });
+        setTelecastWeeklyStats(Array.isArray(bootstrap.telecastConfig.weeklyStats) ? bootstrap.telecastConfig.weeklyStats : []);
+      }
+      if (bootstrap.eoiDuplicateConfig) {
+        setShowConvertedEoiRowsDefault(Boolean(bootstrap.eoiDuplicateConfig.showConvertedEoiRowsDefault));
+      }
+      if (bootstrap.reportingConfig) {
+        setIssueReportTemplateStyle(bootstrap.reportingConfig.templateStyle || DEFAULT_TELECAST_TEMPLATE_STYLE.key);
+        setIssueReportTemplateStyles(Array.isArray(bootstrap.reportingConfig.templateStyles) && bootstrap.reportingConfig.templateStyles.length ? bootstrap.reportingConfig.templateStyles : [DEFAULT_TELECAST_TEMPLATE_STYLE]);
+      }
+      if (bootstrap.exportTemplateConfig) {
+        setExportTemplate(normalizeExportTemplate(bootstrap.exportTemplateConfig as ExportTemplateConfig));
+      }
+      if (bootstrap.notificationStatus) {
+        setNotificationSyncStatus({
+          lastCheckedAt: bootstrap.notificationStatus.lastCheckedAt || null,
+          lastNewRowsCount: Number(bootstrap.notificationStatus.lastNewRowsCount || 0),
+          trackedRows: Number(bootstrap.notificationStatus.trackedRows || 0),
+          alertWindowDays: Number(bootstrap.notificationStatus.alertWindowDays || 28),
+          alertSeededAt: bootstrap.notificationStatus.alertSeededAt || null,
+          alertSeededCount: Number(bootstrap.notificationStatus.alertSeededCount || 0),
+          alertedKeysTracked: Number(bootstrap.notificationStatus.alertedKeysTracked || 0),
+          alertedRefNosTracked: Number(bootstrap.notificationStatus.alertedRefNosTracked || 0),
+          alertedRefNosPreview: Array.isArray(bootstrap.notificationStatus.alertedRefNosPreview) ? bootstrap.notificationStatus.alertedRefNosPreview : [],
+          weeklyStats: Array.isArray(bootstrap.notificationStatus.weeklyStats) ? bootstrap.notificationStatus.weeklyStats : [],
+          lastNewRowsPreview: Array.isArray(bootstrap.notificationStatus.lastNewRowsPreview) ? bootstrap.notificationStatus.lastNewRowsPreview : [],
+          telecastEligibleRowsPreview: Array.isArray(bootstrap.notificationStatus.telecastEligibleRowsPreview) ? bootstrap.notificationStatus.telecastEligibleRowsPreview : [],
+        });
+      }
+
+      setBackendHealthLoading(false);
+      setLoading(false);
+
+      return true;
+    } catch (error) {
+      return false;
+    }
+  };
 
   const loadBackendHealth = async () => {
     setBackendHealthLoading(true);
@@ -921,9 +1104,11 @@ export default function Admin() {
         if (!response.ok) {
           throw new Error(data?.error || 'Failed to save export template');
         }
-        setProgress(80, 'Reloading persisted template');
-        const persisted = await loadExportTemplateConfig();
-        if (!configsMatch(normalizeExportTemplate(exportTemplate), normalizeExportTemplate(persisted))) {
+        applySystemConfigMeta(data, response);
+        setProgress(80, 'Applying persisted template');
+        const persisted = normalizeExportTemplate(data);
+        setExportTemplate(persisted);
+        if (!configsMatch(normalizeExportTemplate(exportTemplate), persisted)) {
           throw new Error('Export template save did not persist');
         }
         setProgress(95, 'Applying updates');

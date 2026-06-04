@@ -76,6 +76,15 @@ interface RefreshTokenResponse {
   sessionToken?: string;
   error?: string;
 }
+interface PermissionsBootstrapResponse {
+  success: boolean;
+  pagePermissions?: Record<PageKey, UserRole[]>;
+  pageExcludePermissions?: Record<PageKey, UserRole[]>;
+  pageEmailPermissions?: Record<PageKey, string[]>;
+  actionPermissions?: Record<ActionKey, UserRole[]>;
+  actionEmailPermissions?: Record<ActionKey, string[]>;
+  errors?: Array<{ key: string; message: string }>;
+}
 interface CurrentUserResponse {
   email: string;
   displayName?: string;
@@ -127,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [pageEmailPermissions, setPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
   const [actionPermissions, setActionPermissions] = useState<Record<ActionKey, UserRole[]>>(DEFAULT_ACTION_ROLE_ACCESS as Record<ActionKey, UserRole[]>);
   const [actionEmailPermissions, setActionEmailPermissions] = useState<Record<ActionKey, string[]>>({} as Record<ActionKey, string[]>);
+  const permissionsRefreshRef = React.useRef<Promise<void> | null>(null);
 
   const authHeaders = useCallback(
     () => token ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token } : { 'Content-Type': 'application/json' },
@@ -339,58 +349,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchUsers();
   }, [fetchUsers]);
 
-  const loadPagePermissions = useCallback(async () => {
+  const loadPermissionsBundle = useCallback(async () => {
     if (!token) return;
-    try {
-      const response = await fetch(API_URL + '/navigation/permissions', { headers: authHeaders() });
-      if (!response.ok) return;
-      const data = await response.json();
-      if (data?.permissions) {
-        setPagePermissions(data.permissions);
+    if (permissionsRefreshRef.current) return permissionsRefreshRef.current;
+
+    const request = (async () => {
+      try {
+        const response = await fetch(API_URL + '/permissions/bootstrap', { headers: authHeaders() });
+        if (!response.ok) {
+          throw new Error('Failed to load permissions');
+        }
+
+        const data = (await response.json()) as PermissionsBootstrapResponse;
+        if (data?.pagePermissions) setPagePermissions(data.pagePermissions);
+        if (data?.pageExcludePermissions) setPageExcludePermissions(data.pageExcludePermissions);
+        if (data?.pageEmailPermissions) setPageEmailPermissions(data.pageEmailPermissions);
+        if (data?.actionPermissions) setActionPermissions(data.actionPermissions);
+        if (data?.actionEmailPermissions) setActionEmailPermissions(data.actionEmailPermissions);
+        return;
+      } catch (error) {
+        try {
+          const [pageResponse, actionResponse] = await Promise.all([
+            fetch(API_URL + '/navigation/permissions', { headers: authHeaders() }),
+            fetch(API_URL + '/action-permissions', { headers: authHeaders() }),
+          ]);
+
+          if (pageResponse.ok) {
+            const pageData = await pageResponse.json();
+            if (pageData?.permissions) setPagePermissions(pageData.permissions);
+            if (pageData?.excludePermissions) setPageExcludePermissions(pageData.excludePermissions);
+            if (pageData?.emailPermissions) setPageEmailPermissions(pageData.emailPermissions);
+          }
+
+          if (actionResponse.ok) {
+            const actionData = await actionResponse.json();
+            if (actionData?.permissions) setActionPermissions(actionData.permissions);
+            if (actionData?.emailPermissions) setActionEmailPermissions(actionData.emailPermissions);
+          }
+        } catch {
+          // Keep console quiet; permissions failures should not spam console in prod.
+        }
       }
-      if (data?.excludePermissions) {
-        setPageExcludePermissions(data.excludePermissions);
-      }
-      if (data?.emailPermissions) {
-        setPageEmailPermissions(data.emailPermissions);
-      }
-    } catch (error) {
-      // Keep console quiet; permissions failures should not spam console in prod.
-    }
+    })().finally(() => {
+      permissionsRefreshRef.current = null;
+    });
+
+    permissionsRefreshRef.current = request;
+    return request;
   }, [authHeaders, token]);
 
   useEffect(() => {
-    loadPagePermissions();
-  }, [loadPagePermissions]);
+    loadPermissionsBundle();
+  }, [loadPermissionsBundle]);
 
-  const loadActionPermissions = useCallback(async () => {
-    if (!token) return;
-    try {
-      const response = await fetch(API_URL + '/action-permissions', { headers: authHeaders() });
-      if (!response.ok) return;
-      const data = await response.json();
-      if (data?.permissions) {
-        setActionPermissions(data.permissions);
-      }
-      if (data?.emailPermissions) {
-        setActionEmailPermissions(data.emailPermissions);
-      }
-    } catch (error) {
-      // Keep console quiet; permissions failures should not spam console in prod.
-    }
-  }, [authHeaders, token]);
-
-  useEffect(() => {
-    loadActionPermissions();
-  }, [loadActionPermissions]);
-
+  const reloadPermissionsBundle = useCallback(async () => {
+    await loadPermissionsBundle();
+  }, [loadPermissionsBundle]);
   useEffect(() => {
     if (!token || !user?.email || user.status !== 'approved') return;
 
     const refresh = () => {
       if (document.visibilityState !== 'visible') return;
-      loadPagePermissions();
-      loadActionPermissions();
+      loadPermissionsBundle();
     };
 
     const intervalId = window.setInterval(refresh, PERMISSIONS_REFRESH_INTERVAL_MS);
@@ -409,7 +429,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('app:config-updated', onConfigUpdated as EventListener);
     };
-  }, [loadActionPermissions, loadPagePermissions, token, user?.email, user?.status]);
+  }, [loadPermissionsBundle, token, user?.email, user?.status]);
 
   const updatePagePermissions = useCallback(async (
     permissions: Record<PageKey, UserRole[]>,
@@ -554,12 +574,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pageEmailPermissions,
         canAccessPage,
         updatePagePermissions,
-        reloadPagePermissions: loadPagePermissions,
+        reloadPagePermissions: reloadPermissionsBundle,
         actionPermissions,
         actionEmailPermissions,
         canPerformAction,
         updateActionPermissions,
-        reloadActionPermissions: loadActionPermissions,
+        reloadActionPermissions: reloadPermissionsBundle,
       }}
     >
       {authError && (
