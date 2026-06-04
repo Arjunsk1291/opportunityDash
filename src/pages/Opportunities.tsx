@@ -682,7 +682,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       // Refresh data in background to ensure everything is in sync
       void (async () => {
         const refreshStartedAt = performance.now();
-        await refreshData({ background: true, force: true });
+        await refreshData({ background: true });
         const refreshMs = Math.round(performance.now() - refreshStartedAt);
         const conflictsStartedAt = performance.now();
         await loadConflicts();
@@ -772,7 +772,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || 'Failed to resolve conflict');
       toast.success(action === 'use_sheet' ? 'Sheet value applied.' : 'Existing value kept.');
-      await refreshData({ background: true, force: true });
+      await refreshData({ background: true });
       await loadConflicts();
     } catch (error) {
       console.error('[opportunities.conflict.resolve.error]', error);

@@ -508,6 +508,65 @@ const mapIdField = (doc) => {
   };
 };
 
+const OPPORTUNITY_LITE_PROJECTION = {
+  rawGoogleData: 0,
+  rawGraphData: 0,
+  updateHistory: 0,
+};
+
+const OPPORTUNITY_FULL_PROJECTION = {
+  rawGoogleData: 0,
+};
+
+const getOpportunityProjection = (view = 'full') => (
+  String(view || '').trim().toLowerCase() === 'lite'
+    ? OPPORTUNITY_LITE_PROJECTION
+    : OPPORTUNITY_FULL_PROJECTION
+);
+
+const opportunityStreamClients = new Set();
+let opportunityStreamHeartbeat = null;
+
+const publishOpportunityEvent = (payload = {}) => {
+  if (!opportunityStreamClients.size) return;
+  const message = `event: opportunities\ndata: ${JSON.stringify({
+    ts: new Date().toISOString(),
+    ...payload,
+  })}\n\n`;
+
+  for (const client of Array.from(opportunityStreamClients)) {
+    try {
+      client.write(message);
+    } catch {
+      opportunityStreamClients.delete(client);
+    }
+  }
+};
+
+const ensureOpportunityStreamHeartbeat = () => {
+  if (opportunityStreamHeartbeat) return;
+  opportunityStreamHeartbeat = setInterval(() => {
+    for (const client of Array.from(opportunityStreamClients)) {
+      try {
+        client.write(': keep-alive\n\n');
+      } catch {
+        opportunityStreamClients.delete(client);
+      }
+    }
+    if (!opportunityStreamClients.size && opportunityStreamHeartbeat) {
+      clearInterval(opportunityStreamHeartbeat);
+      opportunityStreamHeartbeat = null;
+    }
+  }, 25000);
+};
+
+const getLatestOpportunitySnapshotAt = async () => {
+  const latest = await SyncedOpportunity.findOne({}, { syncedAt: 1 })
+    .sort({ syncedAt: -1, updatedAt: -1 })
+    .lean();
+  return latest?.syncedAt || null;
+};
+
 const getMergedReportStatus = (item = {}) => {
   const rawStatus = item.tenderResult || item.avenirStatus || item.canonicalStage || item.status || '';
   return String(rawStatus || '').trim().toUpperCase();
@@ -2090,6 +2149,12 @@ const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
     telecastAlertedRefNos: nextSystemConfig.telecastAlertedRefNos,
     telecastWeeklyStats: nextSystemConfig.telecastWeeklyStats,
   }, source, 'telecast_sync_refresh');
+  publishOpportunityEvent({
+    type: 'full-reload',
+    source,
+    snapshotAt: now.toISOString(),
+    insertedCount: inserted.length,
+  });
 
   console.log(JSON.stringify({
     source,
@@ -5861,20 +5926,106 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
 app.get('/api/opportunities', verifyToken, async (req, res) => {
   const start = performance.now();
   try {
-    // Performance: Optimize payload by excluding the unused large rawGoogleData field.
-    // We keep rawGraphData as it might be used by components like the Spreadsheet.
-    const opportunities = await SyncedOpportunity.find({}, { rawGoogleData: 0 })
+    const view = String(req.query?.view || 'full').trim().toLowerCase();
+    const projection = getOpportunityProjection(view);
+    const opportunities = await SyncedOpportunity.find({}, projection)
       .sort({ createdAt: -1 })
       .lean();
 
     const mapped = opportunities.map(opp => mapIdField(opp));
+    const snapshotAt = mapped.reduce((latest, opp) => {
+      const syncedAt = opp?.syncedAt ? new Date(opp.syncedAt).getTime() : 0;
+      const updatedAt = opp?.updatedAt ? new Date(opp.updatedAt).getTime() : 0;
+      return Math.max(latest, syncedAt, updatedAt);
+    }, 0);
 
     const totalMs = Math.round(performance.now() - start);
     res.setHeader('X-Opps-Total-Ms', totalMs);
+    res.setHeader('X-Opps-View', view === 'lite' ? 'lite' : 'full');
+    if (snapshotAt > 0) {
+      res.setHeader('X-Opps-Snapshot-At', new Date(snapshotAt).toISOString());
+    }
     res.json(mapped);
   } catch (error) {
     console.error('[api.opportunities.get.error]', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/opportunities/changes', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'opportunities_view')) return;
+    const view = String(req.query?.view || 'lite').trim().toLowerCase();
+    const sinceRaw = String(req.query?.since || '').trim();
+    const since = sinceRaw ? new Date(sinceRaw) : null;
+    if (!since || Number.isNaN(since.getTime())) {
+      return res.status(400).json({ error: 'since is required and must be a valid ISO date or timestamp' });
+    }
+
+    const projection = getOpportunityProjection(view);
+    const rows = await SyncedOpportunity.find({ syncedAt: { $gt: since } }, projection)
+      .sort({ syncedAt: 1, updatedAt: 1, createdAt: 1 })
+      .lean();
+    const mapped = rows.map((opp) => mapIdField(opp));
+    const snapshotAt = mapped.reduce((latest, opp) => {
+      const syncedAt = opp?.syncedAt ? new Date(opp.syncedAt).getTime() : 0;
+      const updatedAt = opp?.updatedAt ? new Date(opp.updatedAt).getTime() : 0;
+      return Math.max(latest, syncedAt, updatedAt);
+    }, since.getTime());
+    const latestSnapshotAt = await getLatestOpportunitySnapshotAt();
+
+    if (latestSnapshotAt) {
+      res.setHeader('X-Opps-Snapshot-At', new Date(latestSnapshotAt).toISOString());
+    }
+    res.json({
+      success: true,
+      rows: mapped,
+      snapshotAt: snapshotAt > 0 ? new Date(snapshotAt).toISOString() : null,
+      latestSnapshotAt: latestSnapshotAt || null,
+      view: view === 'full' ? 'full' : 'lite',
+    });
+  } catch (error) {
+    console.error('[api.opportunities.changes.error]', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+app.get('/api/opportunities/stream', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'opportunities_view')) return;
+
+    res.status(200);
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+    res.write(`event: opportunities\ndata: ${JSON.stringify({
+      ts: new Date().toISOString(),
+      type: 'ready',
+    })}\n\n`);
+
+    opportunityStreamClients.add(res);
+    ensureOpportunityStreamHeartbeat();
+
+    req.on('close', () => {
+      opportunityStreamClients.delete(res);
+      if (!opportunityStreamClients.size && opportunityStreamHeartbeat) {
+        clearInterval(opportunityStreamHeartbeat);
+        opportunityStreamHeartbeat = null;
+      }
+    });
+  } catch (error) {
+    console.error('[api.opportunities.stream.error]', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message || 'Internal server error' });
+    } else {
+      try {
+        res.end();
+      } catch {
+        // ignore
+      }
+    }
   }
 });
 
@@ -7462,6 +7613,12 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
     const touchedRefs = Array.from(grouped.keys());
     const updatedDocs = await SyncedOpportunity.find({ opportunityRefNo: { $in: touchedRefs } }).lean();
     const touchedRows = updatedDocs.map(opp => mapIdField(opp));
+    publishOpportunityEvent({
+      type: 'incremental',
+      source: 'sheet-upload-commit',
+      snapshotAt: now.toISOString(),
+      refs: touchedRefs.slice(0, 100),
+    });
 
     res.json({
       success: true,
@@ -7536,6 +7693,7 @@ app.post('/api/opportunities/value-conflicts/resolve', verifyToken, async (req, 
     if (!decisions.length) return res.status(400).json({ error: 'No decisions provided' });
 
     let resolved = 0;
+    const touchedRefs = new Set();
 
     for (const decision of decisions) {
       const conflictId = String(decision?.conflictId || '').trim();
@@ -7553,6 +7711,7 @@ app.post('/api/opportunities/value-conflicts/resolve', verifyToken, async (req, 
             { opportunityRefNo },
             { $set: { [fieldKey]: conflict.sheetValue, syncedAt: new Date() } },
           );
+          touchedRefs.add(opportunityRefNo);
         }
       }
 
@@ -7562,6 +7721,15 @@ app.post('/api/opportunities/value-conflicts/resolve', verifyToken, async (req, 
       conflict.resolutionAction = action;
       await conflict.save();
       resolved += 1;
+    }
+
+    if (resolved > 0) {
+      publishOpportunityEvent({
+        type: 'incremental',
+        source: 'value-conflicts-resolve',
+        snapshotAt: new Date().toISOString(),
+        refs: Array.from(touchedRefs).slice(0, 100),
+      });
     }
 
     res.json({ success: true, resolved });
@@ -7758,6 +7926,13 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
     const changedFields = before
       ? Object.keys(payload).filter((key) => key !== 'opportunityRefNo' && toText(before?.[key]) !== toText(after?.[key])).length
       : Object.keys(payload).filter((key) => key !== 'opportunityRefNo' && toText(payload[key]) !== '').length;
+
+    publishOpportunityEvent({
+      type: 'incremental',
+      source: 'manual-entry-save',
+      snapshotAt: new Date().toISOString(),
+      refs: [opportunityRefNo],
+    });
 
     res.json({ success: true, changedFields, overwriteCount, row: mapIdField(after) });
   } catch (error) {
