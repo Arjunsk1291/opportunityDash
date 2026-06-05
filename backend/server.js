@@ -7900,10 +7900,14 @@ app.post('/api/opportunities/manual-entry/preview', verifyToken, async (req, res
       groupClassification: 'Group',
       dateTenderReceived: 'RFP Received',
       tenderPlannedSubmissionDate: 'Submission',
+      tenderSubmittedDate: 'Tender Submitted',
       internalLead: 'Lead',
       opportunityValue: 'Value',
       avenirStatus: 'Status',
       adnocRftNo: 'CLIENT Ref',
+      remarksReason: 'Remarks / Reason',
+      tenderResult: 'Tender Result',
+      tenderStatusRemark: 'Tender Status',
     };
 
     const FIELD_KEYS = Object.keys(LABELS);
@@ -7958,9 +7962,11 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
       'opportunityClassification',
       'dateTenderReceived',
       'tenderPlannedSubmissionDate',
+      'tenderSubmittedDate',
       'tenderResult',
       'rawTenderResult',
       'tenderStatusRemark',
+      'remarksReason',
       'opportunityValue',
       'avenirStatus',
     ]);
@@ -7976,10 +7982,12 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
         opportunityClassification: String(req.body?.opportunityClassification || '').trim(),
         dateTenderReceived: String(req.body?.dateTenderReceived || '').trim(),
         tenderPlannedSubmissionDate: String(req.body?.tenderPlannedSubmissionDate || '').trim(),
+        tenderSubmittedDate: String(req.body?.tenderSubmittedDate || '').trim(),
         avenirStatus: String(req.body?.avenirStatus || '').trim(),
         tenderResult: String(req.body?.tenderResult || '').trim(),
         rawTenderResult: String(req.body?.rawTenderResult || req.body?.tenderResult || '').trim(),
         tenderStatusRemark: String(req.body?.tenderStatusRemark || '').trim(),
+        remarksReason: String(req.body?.remarksReason || '').trim(),
       };
 
       const valueRaw = req.body?.opportunityValue;

@@ -6,6 +6,8 @@ export type Currency = 'USD' | 'AED';
 interface CurrencyContextType {
   currency: Currency;
   setCurrency: (currency: Currency) => void;
+  exchangeRate: number;
+  setExchangeRate: (rate: number) => void;
   formatCurrency: (value: number) => string;
   convertValue: (value: number) => number;
   aedSymbolUrl: string;
@@ -18,16 +20,26 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
     const saved = localStorage.getItem('currency');
     return (saved === 'AED' || saved === 'USD') ? saved : 'AED';
   });
+  const [exchangeRate, setExchangeRateState] = useState<number>(() => {
+    const saved = Number(localStorage.getItem('usd-to-aed-rate'));
+    return Number.isFinite(saved) && saved > 0 ? saved : 3.67;
+  });
 
   const setCurrency = useCallback((newCurrency: Currency) => {
     setCurrencyState(newCurrency);
     localStorage.setItem('currency', newCurrency);
   }, []);
 
-  const convertValue = useCallback((value: number): number => {
-    // Keep values exactly as extracted from Excel; no FX conversion.
-    return Number.isFinite(value) ? value : 0;
+  const setExchangeRate = useCallback((rate: number) => {
+    const normalized = Number.isFinite(rate) && rate > 0 ? rate : 3.67;
+    setExchangeRateState(normalized);
+    localStorage.setItem('usd-to-aed-rate', String(normalized));
   }, []);
+
+  const convertValue = useCallback((value: number): number => {
+    const base = Number.isFinite(value) ? value : 0;
+    return currency === 'AED' ? base * exchangeRate : base;
+  }, [currency, exchangeRate]);
 
   const formatCurrency = useCallback((value: number): string => {
     const convertedValue = convertValue(value);
@@ -39,10 +51,10 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   }, [currency, convertValue]);
 
   return (
-    <CurrencyContext.Provider value={{ currency, setCurrency, formatCurrency, convertValue, aedSymbolUrl: aedSymbol }}>
-      {children}
-    </CurrencyContext.Provider>
-  );
+      <CurrencyContext.Provider value={{ currency, setCurrency, exchangeRate, setExchangeRate, formatCurrency, convertValue, aedSymbolUrl: aedSymbol }}>
+        {children}
+      </CurrencyContext.Provider>
+    );
 }
 
 export function useCurrency() {

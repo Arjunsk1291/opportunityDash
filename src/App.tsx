@@ -15,7 +15,14 @@ import Clients from "./pages/Clients";
 import Analytics from "./pages/Analytics";
 import BDEngagements from "./pages/BDEngagements";
 import AdvancedAnalytics from "./pages/AdvancedAnalytics";
-import Admin from "./pages/Admin";
+import MasterOverviewRoute from "./routes/master.overview";
+import MasterUsersRoute from "./routes/master.users";
+import MasterPermissionsRoute from "./routes/master.permissions";
+import MasterDataSyncRoute from "./routes/master.data-sync";
+import MasterExportTemplatesRoute from "./routes/master.export-templates";
+import MasterTelecastRoute from "./routes/master.telecast";
+import MasterColumnsRoute from "./routes/master.columns";
+import MasterDiagnosticsRoute from "./routes/master.diagnostics";
 import PendingApproval from "./pages/PendingApproval";
 import NotFound from "./pages/NotFound";
 import TenderSpreadsheetV2 from "./pages/TenderSpreadsheetV2";
@@ -107,7 +114,15 @@ function AppRoutes() {
             <Route path="analytics" element={<PageAccessRoute pageKey="analytics"><Analytics /></PageAccessRoute>} />
             <Route path="bd-engagements" element={<PageAccessRoute pageKey="bd_engagements"><BDEngagements /></PageAccessRoute>} />
             <Route path="advanced-analytics" element={<PageAccessRoute pageKey="advanced_analytics"><AdvancedAnalytics /></PageAccessRoute>} />
-            <Route path="master" element={<PageAccessRoute pageKey="master"><Admin /></PageAccessRoute>} />
+            <Route path="master" element={<PageAccessRoute pageKey="master"><Navigate to="/master/overview" replace /></PageAccessRoute>} />
+            <Route path="master/overview" element={<PageAccessRoute pageKey="master"><MasterOverviewRoute /></PageAccessRoute>} />
+            <Route path="master/users" element={<PageAccessRoute pageKey="master"><MasterUsersRoute /></PageAccessRoute>} />
+            <Route path="master/permissions" element={<PageAccessRoute pageKey="master"><MasterPermissionsRoute /></PageAccessRoute>} />
+            <Route path="master/data-sync" element={<PageAccessRoute pageKey="master"><MasterDataSyncRoute /></PageAccessRoute>} />
+            <Route path="master/export-templates" element={<PageAccessRoute pageKey="master"><MasterExportTemplatesRoute /></PageAccessRoute>} />
+            <Route path="master/telecast" element={<PageAccessRoute pageKey="master"><MasterTelecastRoute /></PageAccessRoute>} />
+            <Route path="master/columns" element={<PageAccessRoute pageKey="master"><MasterColumnsRoute /></PageAccessRoute>} />
+            <Route path="master/diagnostics" element={<PageAccessRoute pageKey="master"><MasterDiagnosticsRoute /></PageAccessRoute>} />
             <Route path="hireflow" element={<PageAccessRoute pageKey="master"><HireFlow /></PageAccessRoute>} />
 
             <Route path="status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />

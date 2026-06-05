@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Separator } from '@/components/ui/separator';
 import { Opportunity } from '@/data/opportunityData';
 import { getDisplayResult, getDisplayStatus, isEoiNormalizedOpportunity, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
+import { OPPORTUNITY_COLUMN_HEADERS } from '@/lib/opportunities/columns';
 
 interface OpportunityDetailDialogProps {
   opportunity: Opportunity | null;
@@ -20,39 +21,7 @@ const DetailRow = ({ label, value }: { label: string; value: string | React.Reac
 
 const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
 
-const RAW_COLUMN_HEADERS = [
-  'Sr.no',
-  'Year',
-  'Tender no',
-  'Tender name',
-  'Client',
-  'END USER',
-  'ADNOC RFT NO',
-  'Tender Location (Execution)',
-  'GDS/GES',
-  'Assigned Person',
-  'Stage of project, Concept, FEED, DE',
-  'Tender Type',
-  'date tender recd',
-  'Tender Due  date',
-  'Tender  Submitted  date',
-  'AVENIR STATUS',
-  'REMARKS/REASON',
-  'TENDER RESULT',
-  'TENDER STATUS -',
-  'Currency, USD/AED',
-  'GM%',
-  'Tender value',
-  'Sub-contract value',
-  'GM Value',
-  'Go%',
-  'Get %',
-  'GO/Get %',
-  'go/get value',
-  'USD to AED',
-  'who was awarded the project',
-  'final awarded price',
-] as const;
+const RAW_COLUMN_HEADERS = OPPORTUNITY_COLUMN_HEADERS;
 
 function getSnapshotValue(opportunity: Opportunity, headerLabel: string): string {
   const snapshot = opportunity.rawGraphData?.rowSnapshot;

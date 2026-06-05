@@ -402,7 +402,11 @@ const MAX_MANUAL_UPDATE_ROWS = 5000;
 const renderTemplatePreview = (template: string, values: Record<string, string>) =>
   Object.entries(values).reduce((output, [key, value]) => output.split(`{{${key}}}`).join(value), String(template || ''));
 
-export default function Admin() {
+interface AdminProps {
+  initialTab?: string;
+}
+
+export default function Admin({ initialTab }: AdminProps = {}) {
   const {
     user,
     isMaster,
@@ -549,7 +553,7 @@ export default function Admin() {
   const [leadEmailEditKey, setLeadEmailEditKey] = useState<string | null>(null);
   const [leadEmailEditValue, setLeadEmailEditValue] = useState('');
   const [leadEmailSaving, setLeadEmailSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState(initialTab || 'general');
   const [draftPagePermissions, setDraftPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
   const [draftPageExcludePermissions, setDraftPageExcludePermissions] = useState<Record<PageKey, UserRole[]>>({} as Record<PageKey, UserRole[]>);
   const [draftPageEmailPermissions, setDraftPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
@@ -579,6 +583,10 @@ export default function Admin() {
   const [permissionsBusy, setPermissionsBusy] = useState(false);
   const [tempCredentialSelection, setTempCredentialSelection] = useState<string[]>([]);
   const [tempCredentialConfirmOpen, setTempCredentialConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
   const copyAuthDiagnostic = async (row: AuthDiagnosticLogRow) => {
     const payload = JSON.stringify(row, null, 2);
     await navigator.clipboard.writeText(payload);

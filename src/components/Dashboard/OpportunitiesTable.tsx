@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import styles from './OpportunitiesTable.module.css';
 import { CANONICAL_STATUS_ORDER, getDisplayStatus, getStatusBadgeClass, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 import { getSearchMatchInfo } from '@/lib/opportunitySearchMatch';
+import { OPPORTUNITY_COLUMN_HEADERS } from '@/lib/opportunities/columns';
 
 interface OpportunitiesTableProps {
   data: Opportunity[];
@@ -118,39 +119,7 @@ const getDisplayColumnValue = (opp: Opportunity, headerLabel: string) => {
   if (primary) return primary;
   return getSnapshotValue(opp, headerLabel);
 };
-const ALL_COLUMN_HEADERS = [
-  'Sr.no',
-  'Year',
-  'Tender no',
-  'Tender name',
-  'Client',
-  'END USER',
-  'ADNOC RFT NO',
-  'Tender Location (Execution)',
-  'GDS/GES',
-  'Assigned Person',
-  'Stage of project, Concept, FEED, DE',
-  'Tender Type',
-  'date tender recd',
-  'Tender Due  date',
-  'Tender  Submitted  date',
-  'AVENIR STATUS',
-  'REMARKS/REASON',
-  'TENDER RESULT',
-  'TENDER STATUS -',
-  'Currency, USD/AED',
-  'GM%',
-  'Tender value',
-  'Sub-contract value',
-  'GM Value',
-  'Go%',
-  'Get %',
-  'GO/Get %',
-  'go/get value',
-  'USD to AED',
-  'who was awarded the project',
-  'final awarded price',
-] as const;
+const ALL_COLUMN_HEADERS = OPPORTUNITY_COLUMN_HEADERS;
 const TABLE_DENSITY_STYLES = [
   { cell: 'px-1 sm:px-1.5', text: 'text-[10px] sm:text-[11px]' },
   { cell: 'px-1.5 sm:px-2', text: 'text-[10px] sm:text-[11px]' },

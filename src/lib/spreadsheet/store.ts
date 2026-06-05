@@ -2,6 +2,16 @@ import { create } from "zustand";
 import { DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT } from "./types";
 import type { Cell, CellAddr, CellFormat, Merge, Sheet, Workbook } from "./types";
 import { a1, cellKey, clamp, normalizeRange, tsvToMatrix } from "./utils";
+import {
+  HEADER_PRIMARY,
+  HEADER_COMPUTED,
+  HEADER_AWARD,
+  ROW_GES,
+  ROW_GDS,
+  STATUS_LOST,
+  TENDER_FLAG_LOST,
+  STATUS_WON,
+} from "@/lib/opportunities/colors";
 
 type Selection = { anchor: CellAddr; focus: CellAddr };
 type Editing = { r: number; c: number; value: string } | null;
@@ -154,21 +164,21 @@ function applyFiltersToSheet(sheet: Sheet) {
 }
 
 const HEX = {
-  headerBand: "#9BC2E6",
-  banner: "#D9E1F2",
-  grey: "#D9D9D9",
-  softYellow: "#FFF2CC",
-  hardYellow: "#FFFF00",
-  softOrange: "#FCE4D6",
-  softRed: "#FFC7CE",
-  hardRed: "#FF0000",
-  softGreen: "#C6E0B4",
-  medGreen: "#A9D08E",
-  coolGrey: "#D0CECE",
-  white: "#FFFFFF",
-  darkRedText: "#9C0006",
-  black: "#000000",
-  whiteText: "#FFFFFF",
+  headerBand: HEADER_PRIMARY,
+  banner: ROW_GDS,
+  grey: ROW_GES,
+  softYellow: STATUS_LOST,
+  hardYellow: HEADER_COMPUTED,
+  softOrange: HEADER_AWARD,
+  softRed: TENDER_FLAG_LOST,
+  hardRed: '#FF0000',
+  softGreen: '#C6E0B4',
+  medGreen: STATUS_WON,
+  coolGrey: '#D0CECE',
+  white: '#FFFFFF',
+  darkRedText: '#9C0006',
+  black: '#000000',
+  whiteText: '#FFFFFF',
 } as const;
 
 function normalizeStatusText(value: string) {

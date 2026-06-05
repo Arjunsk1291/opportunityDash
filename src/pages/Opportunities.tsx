@@ -2,9 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
-import { Spreadsheet } from '@/components/spreadsheet/Spreadsheet';
-import { useSpreadsheet } from '@/lib/spreadsheet/store';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { SpreadsheetOpportunitiesTable } from '@/components/Opportunities/SpreadsheetOpportunitiesTable';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,7 +21,6 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { getFirstWorksheet, loadWorkbookFromArrayBuffer } from '@/lib/excelWorkbook';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
-import { Progress } from '@/components/ui/progress';
 
 interface OpportunitiesProps {
   statusFilter?: string;
@@ -39,12 +36,14 @@ type FormState = {
   groupClassification: string;
   dateTenderReceived: string;
   tenderPlannedSubmissionDate: string;
+  tenderSubmittedDate: string;
   tenderResult: string;
   tenderStatusRemark: string;
   internalLead: string;
   opportunityValue: string;
   avenirStatus: string;
   adnocRftNo: string;
+  remarksReason: string;
 };
 
 type PreviewDiff = {
@@ -111,12 +110,14 @@ const EMPTY_FORM: FormState = {
   groupClassification: '',
   dateTenderReceived: '',
   tenderPlannedSubmissionDate: '',
+  tenderSubmittedDate: '',
   tenderResult: '',
   tenderStatusRemark: '',
   internalLead: '',
   opportunityValue: '',
   avenirStatus: '',
   adnocRftNo: '',
+  remarksReason: '',
 };
 
 const LABELS: Record<keyof FormState, string> = {
@@ -127,12 +128,14 @@ const LABELS: Record<keyof FormState, string> = {
   groupClassification: 'Group',
   dateTenderReceived: 'RFP Received',
   tenderPlannedSubmissionDate: 'Submission',
+  tenderSubmittedDate: 'Tender Submitted',
   tenderResult: 'Tender Result',
   tenderStatusRemark: 'Tender Status',
   internalLead: 'Lead',
   opportunityValue: 'Value',
   avenirStatus: 'Status',
   adnocRftNo: 'CLIENT Ref',
+  remarksReason: 'Remarks / Reason',
 };
 
 const NORMALIZE_HEADER = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
@@ -358,12 +361,14 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         groupClassification: ['gds/ges', 'group', 'vertical', 'group classification'],
         dateTenderReceived: ['date tender recd', 'date tender received', 'rfp received', 'date received'],
         tenderPlannedSubmissionDate: ['tender due date', 'tender due  date', 'submission', 'planned submission', 'submission date'],
+        tenderSubmittedDate: ['tender submitted', 'tender submitted date', 'submitted date'],
         tenderResult: ['tender result', 'result', 'outcome', 'final result', 'tender outcome'],
         tenderStatusRemark: ['tender status -', 'tender status-', 'tender status'],
         internalLead: ['assigned person', 'lead', 'internal lead'],
         opportunityValue: ['tender value', 'value', 'opportunity value'],
         avenirStatus: ['avenir status', 'status'],
         adnocRftNo: ['adnoc rft no', 'client ref', 'client ref.', 'adnoc rft'],
+        remarksReason: ['remarks/reason', 'remarks / reason', 'remarks and reason', 'reason'],
       };
 
       const scoreHeaderRow = (rowIndex: number) => {
@@ -427,12 +432,14 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
           groupClassification: getCellText(excelRow, 'groupClassification'),
           dateTenderReceived: getCellText(excelRow, 'dateTenderReceived'),
           tenderPlannedSubmissionDate: getCellText(excelRow, 'tenderPlannedSubmissionDate'),
+          tenderSubmittedDate: getCellText(excelRow, 'tenderSubmittedDate'),
           tenderResult: getCellText(excelRow, 'tenderResult'),
           tenderStatusRemark: getCellText(excelRow, 'tenderStatusRemark'),
           internalLead: getCellText(excelRow, 'internalLead'),
           opportunityValue: getCellText(excelRow, 'opportunityValue'),
           avenirStatus: getCellText(excelRow, 'avenirStatus'),
           adnocRftNo: getCellText(excelRow, 'adnocRftNo'),
+          remarksReason: getCellText(excelRow, 'remarksReason'),
         });
       }
 
@@ -452,10 +459,12 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
           isSame(existing.opportunityClassification, row.opportunityClassification) &&
           isSame(existing.dateTenderReceived, row.dateTenderReceived) &&
           isSame(existing.tenderPlannedSubmissionDate, row.tenderPlannedSubmissionDate) &&
+          isSame(existing.tenderSubmittedDate, row.tenderSubmittedDate) &&
           isSame(existing.tenderResult, row.tenderResult) &&
           isSame(existing.tenderStatusRemark, row.tenderStatusRemark) &&
           isSame(existing.avenirStatus, row.avenirStatus) &&
           isSame(existing.adnocRftNo, row.adnocRftNo) &&
+          isSame(existing.remarksReason, row.remarksReason) &&
           isSame(String(existing.opportunityValue ?? ''), row.opportunityValue)
         );
       };
@@ -543,12 +552,14 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       groupClassification: String(opp.groupClassification || ''),
       dateTenderReceived: String(opp.dateTenderReceived || ''),
       tenderPlannedSubmissionDate: String(opp.tenderPlannedSubmissionDate || ''),
+      tenderSubmittedDate: String(opp.tenderSubmittedDate || ''),
       tenderResult: String(opp.tenderResult || ''),
       tenderStatusRemark: String(opp.tenderStatusRemark || ''),
       internalLead: String(opp.internalLead || ''),
       opportunityValue: opp.opportunityValue !== null && opp.opportunityValue !== undefined ? String(opp.opportunityValue) : '',
       avenirStatus: String(opp.avenirStatus || ''),
       adnocRftNo: String(opp.adnocRftNo || ''),
+      remarksReason: String(opp.remarksReason || ''),
     });
 
     const nextSnapshots: Record<string, string> = {};
@@ -872,25 +883,14 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
             maxHeight="max-h-[calc(100vh-18rem)]"
           />
         ) : (
-          <ErrorBoundary
-            onError={(error) => {
-              console.error('[opportunities.spreadsheet.crash]', error);
-              setSpreadsheetCrashed(true);
-              toast.error('Spreadsheet view crashed. Falling back to table view.');
-            }}
-            fallback={(
-              <OpportunitiesTable
-                data={filteredData}
-                onSelectOpportunity={setSelectedRow}
-                onRowDoubleClick={(row) => editFromRow(row)}
-                columnPreset="sheet"
-                responsiveMode="default"
-                maxHeight="max-h-[calc(100vh-18rem)]"
-              />
-            )}
-          >
-            <SpreadsheetMount token={token} />
-          </ErrorBoundary>
+          <SpreadsheetOpportunitiesTable
+            data={filteredData}
+            onSelectOpportunity={setSelectedRow}
+            onRowDoubleClick={(row) => editFromRow(row)}
+            token={token}
+            canEdit={canEdit}
+            onUpsertRow={(row) => upsertOpportunities([row])}
+          />
         )}
       </div>
 
@@ -1211,39 +1211,5 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
     </div>
   );
 };
-
-function SpreadsheetMount({ token }: { token?: string | null }) {
-  const hydrate = useSpreadsheet((s) => s.hydrateFromWorkbookPayload);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      if (!token) return;
-      setError(null);
-      try {
-        const res = await fetch(`${API_URL}/spreadsheet/workbook/opportunities`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          const maybeError = (data && typeof data === 'object' && 'error' in data) ? (data as { error?: unknown }).error : undefined;
-          throw new Error(String(maybeError || 'Failed to load workbook'));
-        }
-        if (!cancelled) hydrate(data);
-      } catch (e) {
-        if (!cancelled) setError((e as Error).message);
-      }
-    };
-    void run();
-    return () => { cancelled = true; };
-  }, [token, hydrate]);
-
-  if (error) {
-    return <div className="p-4 text-sm text-destructive">{error}</div>;
-  }
-
-  return <Spreadsheet />;
-}
 
 export default Opportunities;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DataGrid, type GridColDef, type GridRowModel, type GridRowId } from '@mui/x-data-grid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,7 @@ import { Minus, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { getDisplayStatus, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 import { toast } from 'sonner';
+import { OPPORTUNITY_COLUMN_HEADERS } from '@/lib/opportunities/columns';
 import styles from './SpreadsheetOpportunitiesTable.module.css';
 
 type Column = {
@@ -36,6 +37,7 @@ type SheetRow = {
 };
 
 type PendingCellKey = `${string}:${string}`;
+type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
 type ConfirmationState = null | {
   rowId: string;
@@ -52,39 +54,42 @@ const TAIL_DRAFT_ID_PREFIX = 'tail-draft-';
 
 const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
 
-const ALL_COLUMN_HEADERS: Column[] = [
-  { header: 'Sr.no', widthPx: 72 },
-  { header: 'Year', widthPx: 80 },
-  { header: 'Tender no', widthPx: 140 },
-  { header: 'Tender name', widthPx: 320 },
-  { header: 'Client', widthPx: 220 },
-  { header: 'END USER', widthPx: 220 },
-  { header: 'ADNOC RFT NO', widthPx: 160 },
-  { header: 'Tender Location (Execution)', widthPx: 220 },
-  { header: 'GDS/GES', widthPx: 110 },
-  { header: 'Assigned Person', widthPx: 200 },
-  { header: 'Stage of project, Concept, FEED, DE', widthPx: 240 },
-  { header: 'Tender Type', widthPx: 140 },
-  { header: 'date tender recd', widthPx: 140 },
-  { header: 'Tender Due  date', widthPx: 140 },
-  { header: 'Tender  Submitted  date', widthPx: 160 },
-  { header: 'AVENIR STATUS', widthPx: 140 },
-  { header: 'REMARKS/REASON', widthPx: 340 },
-  { header: 'TENDER RESULT', widthPx: 140 },
-  { header: 'TENDER STATUS -', widthPx: 240 },
-  { header: 'Currency, USD/AED', widthPx: 150 },
-  { header: 'GM%', widthPx: 90 },
-  { header: 'Tender value', widthPx: 160 },
-  { header: 'Sub-contract value', widthPx: 180 },
-  { header: 'GM Value', widthPx: 140 },
-  { header: 'Go%', widthPx: 90 },
-  { header: 'Get %', widthPx: 90 },
-  { header: 'GO/Get %', widthPx: 100 },
-  { header: 'go/get value', widthPx: 140 },
-  { header: 'USD to AED', widthPx: 120 },
-  { header: 'who was awarded the project', widthPx: 260 },
-  { header: 'final awarded price', widthPx: 180 },
-] as const;
+const ALL_COLUMN_HEADERS: Column[] = OPPORTUNITY_COLUMN_HEADERS.map((header) => ({
+  header,
+  widthPx:
+    header === 'Sr.no' ? 72 :
+    header === 'Year' ? 80 :
+    header === 'Tender no' ? 140 :
+    header === 'Tender name' ? 320 :
+    header === 'Client' ? 220 :
+    header === 'END USER' ? 220 :
+    header === 'ADNOC RFT NO' ? 160 :
+    header === 'Tender Location (Execution)' ? 220 :
+    header === 'GDS/GES' ? 110 :
+    header === 'Assigned Person' ? 200 :
+    header === 'Stage of project, Concept, FEED, DE' ? 240 :
+    header === 'Tender Type' ? 140 :
+    header === 'date tender recd' ? 140 :
+    header === 'Tender Due  date' ? 140 :
+    header === 'Tender  Submitted  date' ? 160 :
+    header === 'AVENIR STATUS' ? 140 :
+    header === 'REMARKS/REASON' ? 340 :
+    header === 'TENDER RESULT' ? 140 :
+    header === 'TENDER STATUS' ? 240 :
+    header === 'Currency, USD/AED' ? 150 :
+    header === 'GM%' ? 90 :
+    header === 'Tender value' ? 160 :
+    header === 'Sub-contract value' ? 180 :
+    header === 'GM Value' ? 140 :
+    header === 'Go%' ? 90 :
+    header === 'Get %' ? 90 :
+    header === 'GO/Get %' ? 100 :
+    header === 'go/get value' ? 140 :
+    header === 'USD to AED' ? 120 :
+    header === 'who was awarded the project' ? 260 :
+    header === 'final awarded price' ? 180 :
+    120,
+})) as const;
 
 // Sensitive mapping: keep as-is (do not change semantics).
 const EDITABLE_HEADER_TO_FIELD: Record<string, keyof Opportunity> = {
@@ -228,14 +233,23 @@ export function SpreadsheetOpportunitiesTable({
   const [rows, setRows] = useState<SheetRow[]>([]);
   const existingByGridId = useRef(new Map<string, Opportunity>());
   const [pendingCells, setPendingCells] = useState<Set<PendingCellKey>>(() => new Set());
+  const [rowSaveStates, setRowSaveStates] = useState<Record<string, SaveState>>({});
   const [confirmState, setConfirmState] = useState<ConfirmationState>(null);
-  const [tailDraftCount, setTailDraftCount] = useState(INITIAL_TAIL_DRAFT_ROWS);
+  const [tailDraftCount, setTailDraftCount] = useState(1);
+  const saveTimersRef = useRef<Map<string, number>>(new Map());
+  const dirtyOriginalRowsRef = useRef<Map<string, SheetRow>>(new Map());
+  const pendingPatchRef = useRef<Map<string, Partial<SheetRow>>>(new Map());
+  const latestRowsRef = useRef<SheetRow[]>([]);
 
   useEffect(() => {
     existingByGridId.current = new Map(
       data.map((opp, idx) => [String(opp.id || opp._id || `${idx}`), opp]),
     );
   }, [data]);
+
+  useEffect(() => {
+    latestRowsRef.current = rows;
+  }, [rows]);
 
   const filteredData = useMemo(() => {
     if (!normalizedQuery) return data;
@@ -298,6 +312,107 @@ export function SpreadsheetOpportunitiesTable({
       return next;
     });
   };
+
+  const setRowState = useCallback((rowId: string, state: SaveState) => {
+    setRowSaveStates((previous) => (previous[rowId] === state ? previous : { ...previous, [rowId]: state }));
+  }, []);
+
+  const clearRowTimer = useCallback((rowId: string) => {
+    const timer = saveTimersRef.current.get(rowId);
+    if (timer) window.clearTimeout(timer);
+    saveTimersRef.current.delete(rowId);
+  }, []);
+
+  const rollbackRow = useCallback((rowId: string) => {
+    const original = dirtyOriginalRowsRef.current.get(rowId);
+    if (!original) return;
+    setRows((previous) => previous.map((row) => (row.__gridId === rowId ? original : row)));
+  }, []);
+
+  const flushRowSave = useCallback(async (rowId: string) => {
+    clearRowTimer(rowId);
+    const patch = pendingPatchRef.current.get(rowId);
+    if (!patch || Object.keys(patch).length === 0) return;
+    const currentRow = latestRowsRef.current.find((row) => row.__gridId === rowId) || null;
+    if (!currentRow) return;
+    setRowState(rowId, 'saving');
+
+    try {
+      if (!token) throw new Error('Not authenticated.');
+      const response = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: currentRow.__kind === 'draft' ? 'new' : 'update',
+          confirmed: true,
+          opportunityRefNo: String(currentRow.opportunityRefNo || '').trim(),
+          ...(currentRow.__kind === 'draft'
+            ? {
+                tenderName: currentRow.tenderName,
+                clientName: currentRow.clientName,
+                groupClassification: currentRow.groupClassification,
+                internalLead: currentRow.internalLead,
+                opportunityClassification: currentRow.opportunityClassification,
+                dateTenderReceived: currentRow.dateTenderReceived,
+                tenderPlannedSubmissionDate: currentRow.tenderPlannedSubmissionDate,
+                tenderSubmittedDate: '',
+                opportunityValue: currentRow.opportunityValue,
+                avenirStatus: currentRow.avenirStatus,
+                adnocRftNo: currentRow.adnocRftNo,
+              }
+            : { patch }),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(data?.error || 'Failed to save'));
+      if (data?.row) onUpsertRow?.(data.row);
+      if (currentRow.__kind === 'draft' && data?.row) {
+        const createdRow = buildExistingRow(data.row as Opportunity, 0);
+        setRows((previous) => previous.map((row) => (row.__gridId === rowId ? createdRow : row)));
+      }
+      dirtyOriginalRowsRef.current.delete(rowId);
+      pendingPatchRef.current.delete(rowId);
+      setRowState(rowId, 'saved');
+      window.setTimeout(() => {
+        setRowState(rowId, 'idle');
+      }, 900);
+      toast.success(currentRow.__kind === 'draft' ? 'New row saved.' : 'Saved.');
+    } catch (error) {
+      pendingPatchRef.current.delete(rowId);
+      rollbackRow(rowId);
+      setRowState(rowId, 'error');
+      toast.error((error as Error).message || 'Failed to save.');
+      window.setTimeout(() => {
+        setRowState(rowId, 'dirty');
+      }, 1200);
+    }
+  }, [clearRowTimer, onUpsertRow, rollbackRow, setRowState, token]);
+
+  const queueRowSave = useCallback((rowId: string, patch: Partial<SheetRow>, originalRow: SheetRow) => {
+    pendingPatchRef.current.set(rowId, { ...(pendingPatchRef.current.get(rowId) || {}), ...patch });
+    if (!dirtyOriginalRowsRef.current.has(rowId)) dirtyOriginalRowsRef.current.set(rowId, originalRow);
+    setRowState(rowId, 'dirty');
+    clearRowTimer(rowId);
+    const timer = window.setTimeout(() => {
+      void flushRowSave(rowId);
+    }, 600);
+    saveTimersRef.current.set(rowId, timer);
+  }, [clearRowTimer, flushRowSave, setRowState]);
+
+  const flushAllRowSaves = useCallback(() => {
+    Array.from(saveTimersRef.current.keys()).forEach((rowId) => {
+      void flushRowSave(rowId);
+    });
+  }, [flushRowSave]);
+
+  useEffect(() => {
+    const onBeforeUnload = () => flushAllRowSaves();
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      flushAllRowSaves();
+    };
+  }, [flushAllRowSaves]);
 
   const saveExistingPatch = async (row: SheetRow, field: keyof Opportunity, value: unknown, confirmed: boolean) => {
     if (!token) throw new Error('Not authenticated.');
@@ -400,132 +515,69 @@ export function SpreadsheetOpportunitiesTable({
 
     if (!changedKeys.length) return newRow;
 
-    // Only one field changes in cell edit mode; pick first.
-    const key = changedKeys[0] as keyof SheetRow;
+    const patch = changedKeys.reduce<Partial<SheetRow>>((acc, key) => {
+      if (key === 'rawSnapshot') return acc;
+      acc[key] = (newRow as SheetRow)[key];
+      return acc;
+    }, {});
 
     try {
-      setPending(rowId, String(key), true);
-
       if (!canEdit) throw new Error('You do not have permission to edit rows.');
+      changedKeys.forEach((key) => setPending(rowId, String(key), true));
+
+      setRows((previous) => previous.map((row) => (row.__gridId === rowId ? newRow : row)));
 
       if (newRow.__kind === 'draft') {
-        if (key !== 'opportunityRefNo' && !String(newRow.opportunityRefNo || '').trim()) {
-          // keep draft local until ref is present
+        if (!String(newRow.opportunityRefNo || '').trim()) {
+          setRowState(rowId, 'dirty');
           return newRow;
         }
-
-        // attempt create once ref is present (or when ref itself is edited)
-        const created = await createDraftAsNew(newRow, false);
-        const createdRow = created?.row as Opportunity | undefined;
-        if (createdRow) {
-          toast.success('New row added.');
-          return buildExistingRow(createdRow, 0);
-        }
+        queueRowSave(rowId, patch, oldRow);
         return newRow;
       }
 
-      // existing row
-      const headerLabel = (() => {
-        if (key === 'opportunityRefNo') return 'Tender no';
-        if (key === 'tenderName') return 'Tender name';
-        if (key === 'clientName') return 'Client';
-        if (key === 'groupClassification') return 'GDS/GES';
-        if (key === 'internalLead') return 'Assigned Person';
-        if (key === 'opportunityClassification') return 'Tender Type';
-        if (key === 'dateTenderReceived') return 'date tender recd';
-        if (key === 'tenderPlannedSubmissionDate') return 'Tender Due  date';
-        if (key === 'avenirStatus') return 'AVENIR STATUS';
-        if (key === 'adnocRftNo') return 'ADNOC RFT NO';
-        if (key === 'opportunityValue') return 'Tender value';
-        return '';
-      })();
-
-      const normalized = headerLabel ? normalizeHeader(headerLabel) : '';
-      const fieldKey = normalized ? EDITABLE_HEADER_TO_FIELD[normalized] : undefined;
-      if (fieldKey) {
-        await saveExistingPatch(newRow, fieldKey, (newRow as any)[key], false);
-      } else if (headerLabel) {
-        await saveExistingSnapshot(newRow, headerLabel, (newRow as any)[key], false);
-      } else {
-        throw new Error('This column is not editable.');
-      }
-
-      toast.success('Saved.');
+      queueRowSave(rowId, patch, oldRow);
       return newRow;
     } catch (error) {
       const err = error as Error & { __payload?: any; __status?: number };
       const payload = (err as any).__payload;
       const message = err?.message || 'Failed to save.';
-
-      if (message === 'CONFIRMATION_REQUIRED') {
-        const fieldLabel = String(changedKeys[0] || 'field');
-        const requestBody = newRow.__kind === 'draft'
-          ? {
-              mode: 'new',
-              confirmed: true,
-              opportunityRefNo: newRow.opportunityRefNo,
-              tenderName: newRow.tenderName,
-              clientName: newRow.clientName,
-              groupClassification: newRow.groupClassification,
-              internalLead: newRow.internalLead,
-              opportunityClassification: newRow.opportunityClassification,
-              dateTenderReceived: newRow.dateTenderReceived,
-              tenderPlannedSubmissionDate: newRow.tenderPlannedSubmissionDate,
-              opportunityValue: newRow.opportunityValue,
-              avenirStatus: newRow.avenirStatus,
-              adnocRftNo: newRow.adnocRftNo,
-            }
-          : {
-              mode: 'update',
-              confirmed: true,
-              opportunityRefNo: newRow.opportunityRefNo,
-              patch: (() => {
-                const headerLabel = (() => {
-                  if (key === 'tenderName') return 'Tender name';
-                  if (key === 'clientName') return 'Client';
-                  if (key === 'groupClassification') return 'GDS/GES';
-                  if (key === 'internalLead') return 'Assigned Person';
-                  if (key === 'opportunityClassification') return 'Tender Type';
-                  if (key === 'dateTenderReceived') return 'date tender recd';
-                  if (key === 'tenderPlannedSubmissionDate') return 'Tender Due  date';
-                  if (key === 'avenirStatus') return 'AVENIR STATUS';
-                  if (key === 'adnocRftNo') return 'ADNOC RFT NO';
-                  if (key === 'opportunityValue') return 'Tender value';
-                  return '';
-                })();
-                const normalized = headerLabel ? normalizeHeader(headerLabel) : '';
-                const fieldKey = normalized ? EDITABLE_HEADER_TO_FIELD[normalized] : undefined;
-                if (fieldKey) return { [fieldKey]: (newRow as any)[key] };
-                if (headerLabel) return { snapshot: { header: headerLabel, value: (newRow as any)[key] } };
-                return {};
-              })(),
-            };
-
-        setConfirmState({
-          rowId,
-          fieldLabel,
-          requestBody,
-          previousRow: oldRow,
-          nextRow: newRow,
-        });
-        return oldRow;
-      }
-
-      if (newRow.__kind === 'draft' && (err as any).__status === 409) {
-        toast.error('Opportunity already exists for this Tender no.');
-        return oldRow;
-      }
-
       toast.error(String(payload?.error || message || 'Failed to save.'));
+      rollbackRow(rowId);
       return oldRow;
     } finally {
-      const key = changedKeys[0] ? String(changedKeys[0]) : '';
-      if (key) setPending(rowId, key, false);
+      changedKeys.forEach((key) => {
+        setPending(rowId, String(key), false);
+      });
     }
   };
 
   const columns = useMemo(() => {
     const cols: GridColDef<SheetRow>[] = [];
+
+    cols.push({
+      field: '__state',
+      headerName: '',
+      width: Math.round(22 * zoomScale),
+      sortable: false,
+      filterable: false,
+      disableColumnMenu: true,
+      renderCell: (params) => {
+        const state = rowSaveStates[params.row.__gridId] || 'idle';
+        const className = state === 'saving'
+          ? 'bg-blue-500'
+          : state === 'dirty'
+            ? 'bg-amber-500'
+            : state === 'saved'
+              ? 'bg-emerald-500'
+              : state === 'error'
+                ? 'bg-red-500'
+                : 'bg-transparent';
+        return (
+          <span className={`inline-block h-2.5 w-2.5 rounded-full ${className}`} title={state} />
+        );
+      },
+    });
 
     cols.push({
       field: '__actions',
@@ -651,7 +703,7 @@ export function SpreadsheetOpportunitiesTable({
     });
 
     return cols;
-  }, [canEdit, pendingCells, rows, zoomScale]);
+  }, [canEdit, pendingCells, rowSaveStates, rows, zoomScale]);
 
   const rowHeight = Math.round(34 * zoomScale);
   const headerHeight = Math.round(34 * zoomScale);

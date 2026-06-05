@@ -9,6 +9,10 @@ export const MANUAL_UPDATE_FIELD_KEYS = [
   'avenirStatus',
   'dateTenderReceived',
   'tenderPlannedSubmissionDate',
+  'tenderSubmittedDate',
+  'remarksReason',
+  'tenderResult',
+  'tenderStatusRemark',
 ];
 
 export const MANUAL_UPDATE_COLUMN_ALIASES = {
@@ -23,6 +27,10 @@ export const MANUAL_UPDATE_COLUMN_ALIASES = {
   avenirStatus: ['STATUS', 'AVENIR STATUS'],
   dateTenderReceived: ['RFP RECEIVED', 'DATE TENDER RECD', 'DATE RECEIVED'],
   tenderPlannedSubmissionDate: ['SUBMISSION', 'SUBMISSION DATE'],
+  tenderSubmittedDate: ['TENDER SUBMITTED', 'TENDER SUBMITTED DATE'],
+  remarksReason: ['REMARKS / REASON', 'REMARKS/REASON'],
+  tenderResult: ['TENDER RESULT'],
+  tenderStatusRemark: ['TENDER STATUS', 'TENDER STATUS -'],
 };
 
 const normalizeText = (value) => String(value ?? '').trim();
@@ -76,9 +84,10 @@ const normalizeFieldValue = (fieldKey, value) => {
   switch (fieldKey) {
     case 'opportunityValue':
       return parseNumericValue(value);
-    case 'dateTenderReceived':
-    case 'tenderPlannedSubmissionDate':
-      return parseDateValue(value);
+  case 'dateTenderReceived':
+  case 'tenderPlannedSubmissionDate':
+  case 'tenderSubmittedDate':
+    return parseDateValue(value);
     case 'opportunityClassification':
       return normalizeTenderType(value);
     default:
@@ -200,8 +209,12 @@ export const getManualTemplateColumns = () => [
   { key: 'groupClassification', label: 'Group', required: true },
   { key: 'dateTenderReceived', label: 'RFP Received', required: true },
   { key: 'tenderPlannedSubmissionDate', label: 'Submission', required: true },
+  { key: 'tenderSubmittedDate', label: 'Tender Submitted', required: false },
   { key: 'internalLead', label: 'Lead', required: true },
   { key: 'opportunityValue', label: 'Value (AED)', required: true },
   { key: 'avenirStatus', label: 'Status', required: true },
+  { key: 'remarksReason', label: 'Remarks / Reason', required: false },
+  { key: 'tenderResult', label: 'Tender Result', required: false },
+  { key: 'tenderStatusRemark', label: 'Tender Status', required: false },
   { key: 'adnocRftNo', label: 'CLIENT Ref', required: false },
 ];

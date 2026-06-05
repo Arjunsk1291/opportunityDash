@@ -6,6 +6,7 @@ import { Minus, Pencil, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { getDisplayStatus, getStatusBadgeClass, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 import { DataGrid, GridToolbar, useGridApiRef, type GridColDef } from '@mui/x-data-grid';
+import { OPPORTUNITY_COLUMN_HEADERS } from '@/lib/opportunities/columns';
 import styles from './ExcelOpportunitiesTable.module.css';
 
 type Column = {
@@ -21,39 +22,42 @@ type EditableOpportunityRow = Opportunity & {
 
 const normalizeHeader = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
 
-const ALL_COLUMN_HEADERS: Column[] = [
-  { header: 'Sr.no', widthPx: 72 },
-  { header: 'Year', widthPx: 80 },
-  { header: 'Tender no', widthPx: 140 },
-  { header: 'Tender name', widthPx: 320 },
-  { header: 'Client', widthPx: 220 },
-  { header: 'END USER', widthPx: 220 },
-  { header: 'ADNOC RFT NO', widthPx: 160 },
-  { header: 'Tender Location (Execution)', widthPx: 220 },
-  { header: 'GDS/GES', widthPx: 110 },
-  { header: 'Assigned Person', widthPx: 200 },
-  { header: 'Stage of project, Concept, FEED, DE', widthPx: 240 },
-  { header: 'Tender Type', widthPx: 140 },
-  { header: 'date tender recd', widthPx: 140 },
-  { header: 'Tender Due  date', widthPx: 140 },
-  { header: 'Tender  Submitted  date', widthPx: 160 },
-  { header: 'AVENIR STATUS', widthPx: 140 },
-  { header: 'REMARKS/REASON', widthPx: 340 },
-  { header: 'TENDER RESULT', widthPx: 140 },
-  { header: 'TENDER STATUS -', widthPx: 240 },
-  { header: 'Currency, USD/AED', widthPx: 150 },
-  { header: 'GM%', widthPx: 90 },
-  { header: 'Tender value', widthPx: 160 },
-  { header: 'Sub-contract value', widthPx: 180 },
-  { header: 'GM Value', widthPx: 140 },
-  { header: 'Go%', widthPx: 90 },
-  { header: 'Get %', widthPx: 90 },
-  { header: 'GO/Get %', widthPx: 100 },
-  { header: 'go/get value', widthPx: 140 },
-  { header: 'USD to AED', widthPx: 120 },
-  { header: 'who was awarded the project', widthPx: 260 },
-  { header: 'final awarded price', widthPx: 180 },
-] as const;
+const ALL_COLUMN_HEADERS: Column[] = OPPORTUNITY_COLUMN_HEADERS.map((header) => ({
+  header,
+  widthPx:
+    header === 'Sr.no' ? 72 :
+    header === 'Year' ? 80 :
+    header === 'Tender no' ? 140 :
+    header === 'Tender name' ? 320 :
+    header === 'Client' ? 220 :
+    header === 'END USER' ? 220 :
+    header === 'ADNOC RFT NO' ? 160 :
+    header === 'Tender Location (Execution)' ? 220 :
+    header === 'GDS/GES' ? 110 :
+    header === 'Assigned Person' ? 200 :
+    header === 'Stage of project, Concept, FEED, DE' ? 240 :
+    header === 'Tender Type' ? 140 :
+    header === 'date tender recd' ? 140 :
+    header === 'Tender Due  date' ? 140 :
+    header === 'Tender  Submitted  date' ? 160 :
+    header === 'AVENIR STATUS' ? 140 :
+    header === 'REMARKS/REASON' ? 340 :
+    header === 'TENDER RESULT' ? 140 :
+    header === 'TENDER STATUS' ? 240 :
+    header === 'Currency, USD/AED' ? 150 :
+    header === 'GM%' ? 90 :
+    header === 'Tender value' ? 160 :
+    header === 'Sub-contract value' ? 180 :
+    header === 'GM Value' ? 140 :
+    header === 'Go%' ? 90 :
+    header === 'Get %' ? 90 :
+    header === 'GO/Get %' ? 100 :
+    header === 'go/get value' ? 140 :
+    header === 'USD to AED' ? 120 :
+    header === 'who was awarded the project' ? 260 :
+    header === 'final awarded price' ? 180 :
+    120,
+})) as const;
 
 function getSnapshotValue(opp: Opportunity, headerLabel: string): string {
   const snapshot = opp.rawGraphData?.rowSnapshot;
