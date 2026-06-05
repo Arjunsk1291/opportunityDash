@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { getFirstWorksheet, loadWorkbookFromArrayBuffer } from '@/lib/excelWorkbook';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
+import { Textarea } from '@/components/ui/textarea';
+import { OPPORTUNITY_COLUMNS, OPPORTUNITY_COLUMNS_BY_GROUP } from '@/lib/opportunities/columns';
 
 interface OpportunitiesProps {
   statusFilter?: string;
@@ -29,6 +31,7 @@ interface OpportunitiesProps {
 type EditMode = 'new' | 'update';
 type OpportunityViewMode = 'dashboard_table' | 'spreadsheet';
 type FormState = {
+  rawSheetYear: string;
   opportunityRefNo: string;
   tenderName: string;
   opportunityClassification: string;
@@ -63,46 +66,16 @@ type ConflictGroup = {
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const REQUIRED_KEYS: Array<keyof FormState> = [
+  'rawSheetYear',
   'opportunityRefNo',
   'tenderName',
 ];
 
 // Full tender workbook headers (used for snapshot inputs). Keep literal labels to preserve workbook conventions.
-const SHEET_HEADERS: string[] = [
-  'Sr.no',
-  'Year',
-  'Tender no',
-  'Tender name',
-  'Client',
-  'END USER',
-  'ADNOC RFT NO',
-  'Tender Location (Execution)',
-  'GDS/GES',
-  'Assigned Person',
-  'Stage of project, Concept, FEED, DE',
-  'Tender Type',
-  'date tender recd',
-  'Tender Due  date',
-  'Tender  Submitted  date',
-  'AVENIR STATUS',
-  'REMARKS/REASON',
-  'TENDER RESULT',
-  'TENDER STATUS -',
-  'Currency, USD/AED',
-  'GM%',
-  'Tender value',
-  'Sub-contract value',
-  'GM Value',
-  'Go%',
-  'Get %',
-  'GO/Get %',
-  'go/get value',
-  'USD to AED',
-  'who was awarded the project',
-  'final awarded price',
-];
+const SHEET_HEADERS: string[] = OPPORTUNITY_COLUMNS.map((column) => column.header);
 
 const EMPTY_FORM: FormState = {
+  rawSheetYear: '',
   opportunityRefNo: '',
   tenderName: '',
   opportunityClassification: '',
@@ -121,6 +94,7 @@ const EMPTY_FORM: FormState = {
 };
 
 const LABELS: Record<keyof FormState, string> = {
+  rawSheetYear: 'Year',
   opportunityRefNo: 'Avenir Ref',
   tenderName: 'Tender Name',
   opportunityClassification: 'Tender Type',
@@ -139,26 +113,37 @@ const LABELS: Record<keyof FormState, string> = {
 };
 
 const NORMALIZE_HEADER = (value: string) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
-const FORM_BACKED_HEADERS = new Set([
-  'TENDER NO', // opportunityRefNo
-  'REF NO',
-  'TENDER NAME',
-  'CLIENT',
-  'GDS/GES',
-  'ASSIGNED PERSON',
-  'TENDER TYPE',
-  'DATE TENDER RECD',
-  'TENDER DUE  DATE',
-  'TENDER DUE DATE',
-  'TENDER VALUE',
-  'AVENIR STATUS',
-  'TENDER RESULT',
-  'TENDER STATUS -',
-  'TENDER STATUS',
-  'ADNOC RFT NO',
-].map(NORMALIZE_HEADER));
-
-const SNAPSHOT_HEADERS = SHEET_HEADERS.filter((h) => !FORM_BACKED_HEADERS.has(NORMALIZE_HEADER(h)));
+const GROUP_ORDER: Array<'Identification' | 'Client & Scope' | 'Timeline' | 'Status' | 'Commercials' | 'Award'> = [
+  'Identification',
+  'Client & Scope',
+  'Timeline',
+  'Status',
+  'Commercials',
+  'Award',
+];
+const DIRECT_FORM_KEYS = new Set<keyof FormState>([
+  'opportunityRefNo',
+  'tenderName',
+  'opportunityClassification',
+  'clientName',
+  'groupClassification',
+  'dateTenderReceived',
+  'tenderPlannedSubmissionDate',
+  'tenderSubmittedDate',
+  'tenderResult',
+  'tenderStatusRemark',
+  'internalLead',
+  'opportunityValue',
+  'avenirStatus',
+  'adnocRftNo',
+  'remarksReason',
+]);
+const COMBO_SELECT_OPTIONS: Record<string, string[]> = {
+  groupClassification: ['GDS', 'GES'],
+  opportunityClassification: ['Concept', 'FEED', 'DE', 'Other'],
+  tenderStatusRemark: ['WON', 'LOST', 'PENDING', 'AWARDED', 'DROPPED'],
+  avenirStatus: ['WORKING', 'SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'TO START', 'ONGOING', 'HOLD / CLOSED'],
+};
 
 const toDisplay = (value: unknown) => {
   if (value === null || value === undefined) return '—';
@@ -184,6 +169,13 @@ const getDateButtonLabel = (value: string, fieldLabel: string) => {
   const text = String(value || '').trim();
   return text || `Pick ${fieldLabel}`;
 };
+
+const normalizePercentInput = (value: string) => {
+  const parsed = Number(String(value || '').replace(/%/g, '').trim());
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const isDirectFormKey = (key: string): key is keyof FormState => DIRECT_FORM_KEYS.has(key as keyof FormState);
 
 type SearchableSelectFieldProps = {
   label: string;
@@ -253,7 +245,7 @@ function SearchableSelectField({ label, placeholder, value, options, onChange }:
 
 const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const { opportunities, refreshData, upsertOpportunities } = useData();
-  const { formatCurrency } = useCurrency();
+  const { exchangeRate } = useCurrency();
   const { token, canPerformAction } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -354,6 +346,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       setSheetUploadProgressLabel('Detecting headers…');
       const normalizeHeader = (value: unknown) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
       const headerCandidates: Record<keyof FormState, string[]> = {
+        rawSheetYear: ['year'],
         opportunityRefNo: ['tender no', 'ref no', 'ref no.', 'opportunity ref', 'avenir ref', 'avenir ref no'],
         tenderName: ['tender name', 'tender'],
         opportunityClassification: ['tender type', 'type'],
@@ -425,6 +418,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         if (!opportunityRefNo && !tenderName && !clientName) continue;
 
         parsed.push({
+          rawSheetYear: getCellText(excelRow, 'rawSheetYear'),
           opportunityRefNo,
           tenderName,
           opportunityClassification: getCellText(excelRow, 'opportunityClassification'),
@@ -451,6 +445,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       const isUpdated = (row: FormState, existing: Opportunity) => {
         if (!existing) return false;
         return !(
+          isSame(existing.rawSheetYear, row.rawSheetYear) &&
           isSame(existing.opportunityRefNo, row.opportunityRefNo) &&
           isSame(existing.tenderName, row.tenderName) &&
           isSame(existing.clientName, row.clientName) &&
@@ -517,11 +512,156 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
     return {
       opportunityClassification: dedupeSorted(opportunities.map((row) => row.opportunityClassification)),
       clientName: dedupeSorted(opportunities.map((row) => row.clientName)),
-      groupClassification: dedupeSorted(opportunities.map((row) => row.groupClassification)),
+      groupClassification: ['GDS', 'GES'],
       internalLead: dedupeSorted(opportunities.map((row) => row.internalLead)),
+      tenderStatusRemark: ['WON', 'LOST', 'PENDING', 'AWARDED', 'DROPPED'],
       avenirStatus: STATUS_OPTIONS,
     };
   }, [opportunities]);
+
+  const fieldDisplayValue = (key: string) => {
+    if (isDirectFormKey(key)) return form[key];
+    return snapshotEdits[key] ?? '';
+  };
+
+  const setFieldDisplayValue = (key: string, value: string) => {
+    if (isDirectFormKey(key)) {
+      setForm((prev) => ({ ...prev, [key]: value }));
+      return;
+    }
+    setSnapshotEdits((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const readNumericField = (key: string) => {
+    const raw = fieldDisplayValue(key);
+    const parsed = Number(String(raw || '').replace(/,/g, '').trim());
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const readPercentField = (key: string) => {
+    const raw = fieldDisplayValue(key);
+    const parsed = normalizePercentInput(raw);
+    if (!Number.isFinite(parsed)) return 0;
+    return parsed > 1 ? parsed / 100 : parsed;
+  };
+
+  const computedFieldValue = (key: string) => {
+    const tenderValue = readNumericField('opportunityValue');
+    const gmFraction = readPercentField('GM%');
+    const goFraction = readPercentField('Go%');
+    const getFraction = readPercentField('Get %');
+    const currency = String(fieldDisplayValue('Currency, USD/AED') || '').trim().toUpperCase();
+    switch (key) {
+      case 'Sr.no': {
+        if (!selectedRow) return 'Auto';
+        const index = opportunities.findIndex((opp) => opp.id === selectedRow.id);
+        return index >= 0 ? String(index + 1) : 'Auto';
+      }
+      case 'GM Value':
+        return tenderValue * gmFraction;
+      case 'GO/Get %':
+        return goFraction * getFraction;
+      case 'go/get value':
+        return tenderValue * (goFraction * getFraction);
+      case 'USD to AED':
+        return currency === 'USD' ? tenderValue * exchangeRate : tenderValue;
+      default:
+        return '';
+    }
+  };
+
+  const renderFieldControl = (column: (typeof OPPORTUNITY_COLUMNS)[number]) => {
+    const value = fieldDisplayValue(column.key);
+    const label = column.header;
+    const disabled = saving || previewing || column.readOnly;
+    const selectOptions = COMBO_SELECT_OPTIONS[column.key] || (column.key === 'clientName' ? formOptions.clientName : column.key === 'internalLead' ? formOptions.internalLead : column.key === 'opportunityClassification' ? formOptions.opportunityClassification : column.key === 'avenirStatus' ? formOptions.avenirStatus : []);
+
+    if (column.computed) {
+      const computedValue = computedFieldValue(column.key);
+      const display = column.key === 'GO/Get %'
+        ? `${(Number(computedValue || 0) * 100).toFixed(2)}%`
+        : column.key === 'Sr.no'
+          ? String(computedValue || 'Auto')
+          : typeof computedValue === 'number'
+            ? `${Number(computedValue).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+            : '—';
+      return (
+        <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+          <div className="mt-1 font-mono text-sm font-semibold">{display}</div>
+          <div className="mt-1 text-xs text-muted-foreground">Derived from current inputs only.</div>
+        </div>
+      );
+    }
+
+    if (column.key === 'remarksReason') {
+      return (
+        <Textarea
+          value={value}
+          onChange={(e) => setFieldDisplayValue(column.key, e.target.value)}
+          placeholder={label}
+          disabled={disabled}
+          rows={3}
+        />
+      );
+    }
+
+    if (column.key === 'dateTenderReceived' || column.key === 'tenderPlannedSubmissionDate' || column.key === 'tenderSubmittedDate') {
+      return (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button type="button" variant="outline" className="w-full justify-between font-normal" disabled={disabled}>
+              <span className="truncate text-left">{getDateButtonLabel(value, label)}</span>
+              <CalendarIcon className="ml-2 h-4 w-4 shrink-0 opacity-60" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <CalendarComponent
+              mode="single"
+              selected={parseDateValue(value)}
+              onSelect={(selected) => {
+                setFieldDisplayValue(column.key, selected ? format(selected, 'yyyy-MM-dd') : '');
+              }}
+              initialFocus
+            />
+            <div className="border-t p-2">
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full justify-center text-xs"
+                onClick={() => setFieldDisplayValue(column.key, '')}
+              >
+                Clear date
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+      );
+    }
+
+    if (selectOptions.length) {
+      return (
+        <SearchableSelectField
+          label={label}
+          placeholder={label}
+          value={value}
+          options={selectOptions}
+          onChange={(next) => setFieldDisplayValue(column.key, next)}
+        />
+      );
+    }
+
+    return (
+      <Input
+        type={column.type === 'number' || column.type === 'percent' ? 'number' : 'text'}
+        step={column.type === 'percent' ? '0.01' : undefined}
+        value={value}
+        onChange={(e) => setFieldDisplayValue(column.key, e.target.value)}
+        placeholder={label}
+        disabled={disabled}
+      />
+    );
+  };
 
   const searchableRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -545,6 +685,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
       return;
     }
     setForm({
+      rawSheetYear: String(opp.rawSheetYear || ''),
       opportunityRefNo: String(opp.opportunityRefNo || ''),
       tenderName: String(opp.tenderName || ''),
       opportunityClassification: String(opp.opportunityClassification || ''),
@@ -640,7 +781,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
     });
     try {
       const requestStartedAt = performance.now();
-      const response = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
+    const response = await fetch(`${API_URL}/opportunities/manual-entry/save`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, mode: editorMode, confirmed }),
@@ -1014,98 +1155,48 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
               )}
             </div>
             <div className="space-y-3 rounded-md border p-3">
-              <div className="grid gap-2 md:grid-cols-2">
-                {(Object.keys(form) as Array<keyof FormState>).map((key) => {
-                  const label = LABELS[key];
-                  const value = form[key];
-                  const isRequired = REQUIRED_KEYS.includes(key);
-                  const isSearchableSelect = ['opportunityClassification', 'clientName', 'groupClassification', 'internalLead', 'avenirStatus'].includes(key);
-                  const isCalendarDate = key === 'dateTenderReceived' || key === 'tenderPlannedSubmissionDate';
+              <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                Computed fields stay read-only and derive from the current form values using the active USD to AED rate.
+              </div>
 
+              <div className="space-y-3 max-h-[62vh] overflow-y-auto pr-1">
+                {GROUP_ORDER.map((group) => {
+                  const columns = OPPORTUNITY_COLUMNS_BY_GROUP[group];
+                  if (!columns.length) return null;
                   return (
-                    <div key={key} className="space-y-1">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {label} {isRequired ? <span className="text-destructive">*</span> : null}
+                    <div key={group} className="rounded-lg border p-3">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold">{group}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {group === 'Commercials'
+                              ? 'Money, percentages, and derived values.'
+                              : group === 'Status'
+                                ? 'Current status, reasons, and result notes.'
+                                : group === 'Award'
+                                  ? 'Awarded project and final price.'
+                                  : group === 'Timeline'
+                                    ? 'Tender timing and submission milestones.'
+                                    : 'Tender identity and scope fields.'}
+                          </div>
+                        </div>
                       </div>
-
-                      {isSearchableSelect ? (
-                        <SearchableSelectField
-                          label={label}
-                          placeholder={label}
-                          value={value}
-                          options={formOptions[key as 'opportunityClassification' | 'clientName' | 'groupClassification' | 'internalLead' | 'avenirStatus']}
-                          onChange={(next) => setForm((prev) => ({ ...prev, [key]: next }))}
-                        />
-                      ) : null}
-
-                      {isCalendarDate ? (
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button type="button" variant="outline" className="w-full justify-between font-normal">
-                              <span className="truncate text-left">
-                                {getDateButtonLabel(value, label)}
-                              </span>
-                              <CalendarIcon className="ml-2 h-4 w-4 shrink-0 opacity-60" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
-                            <CalendarComponent
-                              mode="single"
-                              selected={parseDateValue(value)}
-                              onSelect={(selected) => {
-                                setForm((prev) => ({
-                                  ...prev,
-                                  [key]: selected ? format(selected, 'yyyy-MM-dd') : '',
-                                }));
-                              }}
-                              initialFocus
-                            />
-                            <div className="border-t p-2">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                className="w-full justify-center text-xs"
-                                onClick={() => setForm((prev) => ({ ...prev, [key]: '' }))}
-                              >
-                                Clear date
-                              </Button>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {columns.map((column) => (
+                          <div key={column.key} className="space-y-1">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              {column.header}
+                              {REQUIRED_KEYS.includes(column.key as keyof FormState) ? <span className="text-destructive"> *</span> : null}
                             </div>
-                          </PopoverContent>
-                        </Popover>
-                      ) : null}
-
-                      {!isSearchableSelect && !isCalendarDate ? (
-                        <Input
-                          value={value}
-                          onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
-                          placeholder={label}
-                          disabled={saving || previewing}
-                        />
-                      ) : null}
+                            {renderFieldControl(column)}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   );
                 })}
               </div>
-              <Separator />
-              <div className="space-y-2">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Additional Sheet Columns (saved into raw snapshot)
-                </div>
-                <div className="grid gap-2 md:grid-cols-2 max-h-[30vh] overflow-y-auto pr-1">
-                  {SNAPSHOT_HEADERS.map((header) => (
-                    <div key={header} className="space-y-1">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{header}</div>
-                      <Input
-                        value={snapshotEdits[header] ?? ''}
-                        onChange={(e) => setSnapshotEdits((prev) => ({ ...prev, [header]: e.target.value }))}
-                        placeholder={header}
-                        disabled={saving || previewing}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <Separator />
+
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setEditorOpen(false)} disabled={saving || previewing}>Cancel</Button>
                 <Button

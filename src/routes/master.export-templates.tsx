@@ -1,6 +1,6 @@
 import Admin from '@/pages/Admin';
+import { MasterShell } from '@/components/MasterShell';
 
 export default function MasterExportTemplatesRoute() {
-  return <Admin initialTab="export" />;
+  return <MasterShell activeKey="export-templates"><Admin initialTab="export" /></MasterShell>;
 }
-

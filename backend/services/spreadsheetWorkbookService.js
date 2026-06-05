@@ -18,12 +18,13 @@ const MASTER_HEADERS = [
   'Stage of project, Concept, FEED, DE',
   'Tender Type',
   'date tender recd',
+  'BID / NO BID DECISION',
   'Tender Due  date',
   'Tender  Submitted  date',
   'AVENIR STATUS',
   'REMARKS/REASON',
   'TENDER RESULT',
-  'TENDER STATUS -',
+  'TENDER STATUS',
   'Currency, USD/AED',
   'GM%',
   'Tender value',
@@ -95,6 +96,9 @@ function buildMasterRow(opportunity, indexFromTop) {
       case 'TENDER  SUBMITTED  DATE':
         row.push(cellText(opportunity?.tenderSubmittedDate || opportunity?.rawGraphData?.tenderSubmittedDisplay || ''));
         break;
+      case 'BID / NO BID DECISION':
+        row.push(cellText(snapshotLookup(opportunity?.rawGraphData, header)));
+        break;
       case 'AVENIR STATUS':
         row.push(cellText(opportunity?.avenirStatus || opportunity?.rawAvenirStatus || ''));
         break;
@@ -104,10 +108,14 @@ function buildMasterRow(opportunity, indexFromTop) {
       case 'TENDER RESULT':
         row.push(cellText(opportunity?.tenderResult || opportunity?.rawTenderResult || ''));
         break;
-      case 'TENDER STATUS -':
-      case 'TENDER STATUS-':
       case 'TENDER STATUS':
         row.push(cellText(opportunity?.tenderStatusRemark || ''));
+        break;
+      case 'CURRENCY, USD/AED':
+        row.push(cellText(snapshotLookup(opportunity?.rawGraphData, header)));
+        break;
+      case 'GM%':
+        row.push(cellText(snapshotLookup(opportunity?.rawGraphData, header)));
         break;
       case 'ADNOC RFT NO':
         row.push(cellText(opportunity?.adnocRftNo || ''));
@@ -177,8 +185,10 @@ export async function buildOpportunitiesWorkbookForSpreadsheet() {
           ],
           cells: rows,
         },
+        { id: 'hit-ratio', name: 'HIT RATIO', rowCount: 0, colCount: 0, freezeRows: 0, cells: [] },
+        { id: 'as', name: 'AS', rowCount: 0, colCount: 0, freezeRows: 0, cells: [] },
+        { id: 'wd', name: 'WD', rowCount: 0, colCount: 0, freezeRows: 0, cells: [] },
       ],
     },
   };
 }
-

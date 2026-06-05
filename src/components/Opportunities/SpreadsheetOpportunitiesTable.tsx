@@ -22,6 +22,7 @@ type SheetRow = {
   __kind: RowKind;
   __gridId: string;
   __sourceId?: string;
+  rawSheetYear: string;
   opportunityRefNo: string;
   tenderName: string;
   clientName: string;
@@ -93,6 +94,7 @@ const ALL_COLUMN_HEADERS: Column[] = OPPORTUNITY_COLUMN_HEADERS.map((header) => 
 
 // Sensitive mapping: keep as-is (do not change semantics).
 const EDITABLE_HEADER_TO_FIELD: Record<string, keyof Opportunity> = {
+  [normalizeHeader('Year')]: 'rawSheetYear',
   [normalizeHeader('Tender name')]: 'tenderName',
   [normalizeHeader('Client')]: 'clientName',
   [normalizeHeader('GDS/GES')]: 'groupClassification',
@@ -107,6 +109,7 @@ const EDITABLE_HEADER_TO_FIELD: Record<string, keyof Opportunity> = {
 
 const EMPTY_ROW: Omit<SheetRow, '__kind' | '__gridId'> = {
   __sourceId: undefined,
+  rawSheetYear: '',
   opportunityRefNo: '',
   tenderName: '',
   clientName: '',
@@ -180,6 +183,7 @@ function buildExistingRow(opp: Opportunity, rowIndex: number): SheetRow {
     __kind: 'existing',
     __gridId: String(opp.id || opp._id || `${rowIndex}`),
     __sourceId: String(opp.id || opp._id || ''),
+    rawSheetYear: String(opp.rawSheetYear || opp.rawGraphData?.year || '').trim(),
     opportunityRefNo: String(opp.opportunityRefNo || opp.tenderNo || '').trim(),
     tenderName: String(opp.tenderName || '').trim(),
     clientName: String(opp.clientName || '').trim(),
@@ -348,6 +352,7 @@ export function SpreadsheetOpportunitiesTable({
           opportunityRefNo: String(currentRow.opportunityRefNo || '').trim(),
           ...(currentRow.__kind === 'draft'
             ? {
+                rawSheetYear: currentRow.rawSheetYear,
                 tenderName: currentRow.tenderName,
                 clientName: currentRow.clientName,
                 groupClassification: currentRow.groupClassification,
@@ -477,6 +482,7 @@ export function SpreadsheetOpportunitiesTable({
         mode: 'new',
         confirmed,
         opportunityRefNo,
+        rawSheetYear: row.rawSheetYear,
         tenderName: row.tenderName,
         clientName: row.clientName,
         groupClassification: row.groupClassification,
@@ -627,6 +633,21 @@ export function SpreadsheetOpportunitiesTable({
       valueGetter: (_value, row) => {
         const index = rows.findIndex((r) => r.__gridId === row.__gridId);
         return index >= 0 ? String(rows.length - index) : '';
+      },
+    });
+
+    cols.push({
+      field: 'rawSheetYear',
+      headerName: 'Year',
+      width: Math.round(80 * zoomScale),
+      editable: Boolean(canEdit),
+      renderCell: (params) => {
+        const pending = pendingCells.has(`${params.row.__gridId}:rawSheetYear`);
+        return (
+          <div className={`truncate ${pending ? 'opacity-60' : ''}`} title={String(params.value ?? '')}>
+            {String(params.value ?? '')}
+          </div>
+        );
       },
     });
 

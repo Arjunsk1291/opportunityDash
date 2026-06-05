@@ -1,6 +1,6 @@
 import Admin from '@/pages/Admin';
+import { MasterShell } from '@/components/MasterShell';
 
 export default function MasterTelecastRoute() {
-  return <Admin initialTab="telecast" />;
+  return <MasterShell activeKey="telecast"><Admin initialTab="telecast" /></MasterShell>;
 }
-

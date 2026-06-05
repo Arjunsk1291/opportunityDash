@@ -7954,6 +7954,7 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
     if (!opportunityRefNo) return res.status(400).json({ error: 'opportunityRefNo is required' });
 
     const ALLOWED_KEYS = new Set([
+      'rawSheetYear',
       'adnocRftNo',
       'tenderName',
       'clientName',
@@ -7974,6 +7975,7 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
     const buildFullPayload = () => {
       const base = {
         opportunityRefNo,
+        rawSheetYear: String(req.body?.rawSheetYear || '').trim(),
         adnocRftNo: String(req.body?.adnocRftNo || '').trim(),
         tenderName: String(req.body?.tenderName || '').trim(),
         clientName: String(req.body?.clientName || '').trim(),

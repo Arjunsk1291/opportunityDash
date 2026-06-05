@@ -13,12 +13,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Opportunity } from '@/data/opportunityData';
-import { useCurrency } from '@/contexts/CurrencyContext';
 import { getDisplayStatus } from '@/lib/opportunityStatus';
 import { useAuth } from '@/contexts/AuthContext';
 import defaultExportLogo from '@/assets/avenir-logo.png';
 import { DEFAULT_EXPORT_TEMPLATE, ExportTemplateConfig, normalizeExportTemplate } from '@/lib/exportTemplate';
 import { toast } from 'sonner';
+import { OPPORTUNITY_COLUMNS } from '@/lib/opportunities/columns';
+import { ROW_GDS, ROW_GES, STATUS_LOST, STATUS_WON, TENDER_FLAG_LOST } from '@/lib/opportunities/colors';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -69,22 +70,6 @@ const getSubmissionDisplay = (opp: Opportunity) => (
   || ''
 );
 
-const getPostBidDisplay = (opp: Opportunity) => {
-  const normalized = String(opp.postBidDetailType || '').trim().toUpperCase();
-  if (normalized === 'OTHER') {
-    const otherValue = String(opp.postBidDetailOther || '').trim();
-    return otherValue ? `Other: ${otherValue}` : 'Other';
-  }
-
-  const labels: Record<string, string> = {
-    TECHNICAL_CLARIFICATION_MEETING: 'Technical Clarification meeting',
-    TECHNICAL_PRESENTATION: 'Technical presentation',
-    NO_RESPONSE: 'No response',
-  };
-
-  return labels[normalized] || '';
-};
-
 const normalizeComparisonText = (value: string | null | undefined) => String(value || '').trim().toLowerCase();
 const getBaseRefNo = (value: string | null | undefined) => String(value || '').trim().replace(/_EOI$/i, '');
 const isEoiRefNo = (value: string | null | undefined) => /_EOI$/i.test(String(value || '').trim());
@@ -106,6 +91,95 @@ const getExportReceivedTimestamp = (opp: Opportunity) => {
   if (!Number.isNaN(displayTimestamp)) return displayTimestamp;
 
   return 0;
+};
+
+const getPercentFraction = (value: unknown) => {
+  const parsed = Number(String(value ?? '').replace(/%/g, '').trim());
+  if (!Number.isFinite(parsed)) return 0;
+  return parsed > 1 ? parsed / 100 : parsed;
+};
+
+const getOpportunityColumnValue = (opp: Opportunity, columnKey: string, index: number) => {
+  const header = String(columnKey || '').trim();
+  switch (header) {
+    case 'Sr.no':
+      return index + 1;
+    case 'rawSheetYear':
+      return String(opp.rawSheetYear || opp.rawGraphData?.year || '').trim();
+    case 'opportunityRefNo':
+      return getExportRefNo(opp);
+    case 'tenderName':
+      return opp.tenderName || '';
+    case 'clientName':
+      return opp.clientName || '';
+    case 'END USER':
+      return getSnapshotValue(opp, ['END USER']);
+    case 'adnocRftNo':
+      return getAdnocRftNo(opp);
+    case 'Tender Location (Execution)':
+      return getSnapshotValue(opp, ['Tender Location (Execution)']);
+    case 'groupClassification':
+      return opp.groupClassification || '';
+    case 'internalLead':
+      return opp.internalLead || '';
+    case 'Stage of project, Concept, FEED, DE':
+      return getSnapshotValue(opp, ['Stage of project, Concept, FEED, DE']);
+    case 'opportunityClassification':
+      return opp.opportunityClassification || '';
+    case 'dateTenderReceived':
+      return getRfpReceivedDisplay(opp);
+    case 'BID / NO BID DECISION':
+      return getSnapshotValue(opp, ['BID / NO BID DECISION']);
+    case 'tenderPlannedSubmissionDate':
+      return getSubmissionDisplay(opp);
+    case 'tenderSubmittedDate':
+      return opp.tenderSubmittedDate || getSnapshotValue(opp, ['Tender  Submitted  date', 'Tender Submitted date']);
+    case 'avenirStatus':
+      return opp.avenirStatus || '';
+    case 'remarksReason':
+      return opp.remarksReason || '';
+    case 'tenderResult':
+      return opp.tenderResult || getSnapshotValue(opp, ['TENDER RESULT']);
+    case 'tenderStatusRemark':
+      return opp.tenderStatusRemark || getSnapshotValue(opp, ['TENDER STATUS', 'TENDER STATUS -']);
+    case 'Currency, USD/AED':
+      return getSnapshotValue(opp, ['Currency, USD/AED']);
+    case 'GM%':
+      return getPercentFraction(getSnapshotValue(opp, ['GM%']));
+    case 'opportunityValue':
+      return opp.opportunityValue ?? '';
+    case 'Sub-contract value':
+      return getSnapshotValue(opp, ['Sub-contract value']);
+    case 'GM Value': {
+      const tenderValue = Number(opp.opportunityValue || 0);
+      return tenderValue * getPercentFraction(getSnapshotValue(opp, ['GM%']));
+    }
+    case 'Go%':
+      return getPercentFraction(getSnapshotValue(opp, ['Go%']));
+    case 'Get %':
+      return getPercentFraction(getSnapshotValue(opp, ['Get %']));
+    case 'GO/Get %': {
+      const go = getPercentFraction(getSnapshotValue(opp, ['Go%']));
+      const get = getPercentFraction(getSnapshotValue(opp, ['Get %']));
+      return go * get;
+    }
+    case 'go/get value': {
+      const tenderValue = Number(opp.opportunityValue || 0);
+      const go = getPercentFraction(getSnapshotValue(opp, ['Go%']));
+      const get = getPercentFraction(getSnapshotValue(opp, ['Get %']));
+      return tenderValue * go * get;
+    }
+    case 'USD to AED': {
+      const tenderValue = Number(opp.opportunityValue || 0);
+      return String(getSnapshotValue(opp, ['Currency, USD/AED'])).toUpperCase() === 'USD' ? tenderValue * 3.67 : tenderValue;
+    }
+    case 'who was awarded the project':
+      return getSnapshotValue(opp, ['who was awarded the project']);
+    case 'final awarded price':
+      return getSnapshotValue(opp, ['final awarded price']);
+    default:
+      return getSnapshotValue(opp, [columnKey]);
+  }
 };
 
 const stripHexHash = (value: string) => value.replace(/^#/, '').toUpperCase();
@@ -145,31 +219,19 @@ const getDefaultLogoDataUrl = async () => {
 };
 
 export function ExportButton({ data, filename = 'opportunities' }: ExportButtonProps) {
-  const { currency, convertValue } = useCurrency();
   const { token } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [includeConvertedEoiDuplicates, setIncludeConvertedEoiDuplicates] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportTemplate, setExportTemplate] = useState<ExportTemplateConfig>(DEFAULT_EXPORT_TEMPLATE);
 
-  const columns = useMemo<ExportColumn[]>(() => {
-    const currencySymbol = currency === 'AED' ? 'AED' : 'USD';
-
-    return [
-      { id: 'refNo', label: 'Avenir Ref', getValue: (opp) => getExportRefNo(opp) },
-      { id: 'adnocRftNo', label: 'CLIENT Ref', getValue: (opp) => getAdnocRftNo(opp) },
-      { id: 'tenderName', label: 'Tender Name', getValue: (opp) => opp.tenderName },
-      { id: 'tenderType', label: 'Tender Type', getValue: (opp) => opp.opportunityClassification || '' },
-      { id: 'client', label: 'Client', getValue: (opp) => opp.clientName },
-      { id: 'status', label: 'Status', getValue: (opp) => getDisplayStatus(opp) },
-      { id: 'group', label: 'Group', getValue: (opp) => opp.groupClassification },
-      { id: 'lead', label: 'Lead', getValue: (opp) => opp.internalLead || 'Unassigned' },
-      { id: 'value', label: `Value (${currencySymbol})`, getValue: (opp) => Math.round(convertValue(opp.opportunityValue)) },
-      { id: 'rfpReceived', label: 'RFP Received', getValue: (opp) => getRfpReceivedDisplay(opp) },
-      { id: 'submission', label: 'Submission', getValue: (opp) => getSubmissionDisplay(opp) },
-      { id: 'postBidDetails', label: 'Post bid details', getValue: (opp) => getPostBidDisplay(opp) },
-    ];
-  }, [convertValue, currency]);
+  const columns = useMemo<ExportColumn[]>(() => (
+    OPPORTUNITY_COLUMNS.map((column) => ({
+      id: column.key,
+      label: column.header,
+      getValue: (opp) => getOpportunityColumnValue(opp, column.key, 0),
+    }))
+  ), []);
 
   const [selectedColumnIds, setSelectedColumnIds] = useState<string[]>(() => columns.map((column) => column.id));
 
@@ -259,8 +321,11 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       });
 
       const seenSignatures = new Set<string>();
-      const exportData = orderedData.reduce<Array<Record<string, string | number>>>((rows, opp) => {
-        const row = Object.fromEntries(selectedColumns.map((column) => [column.label, column.getValue(opp)]));
+      const exportData = orderedData.reduce<Array<Record<string, string | number | undefined>>>((rows, opp, rowIndex) => {
+        const row = {
+          __status: getDisplayStatus(opp),
+          ...Object.fromEntries(selectedColumns.map((column) => [column.label, getOpportunityColumnValue(opp, column.id, rowIndex)])),
+        };
         const signature = JSON.stringify(row);
         if (seenSignatures.has(signature)) return rows;
         seenSignatures.add(signature);
@@ -312,8 +377,8 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
         }
       };
 
-      worksheet.columns = Array.from({ length: Math.max(12, headerEndColumn) }, (_, index) => ({
-        width: exportTemplate.columnWidths[index] || 18,
+      worksheet.columns = Array.from({ length: Math.max(12, headerEndColumn) }, (_unused, index) => ({
+        width: clamp(exportTemplate.columnWidths[index] || 18, 12, 60),
       }));
       exportTemplate.rowHeights.forEach((height, index) => {
         worksheet.getRow(index + 1).height = height;
@@ -382,19 +447,58 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
 
       exportData.forEach((rowData) => {
         const row = worksheet.addRow([]);
+        const rowStatus = String(rowData.__status || '').trim().toUpperCase();
         selectedColumns.forEach((column, index) => {
           row.getCell(headerStartColumn + index).value = rowData[column.label] ?? '';
         });
         selectedColumns.forEach((_, index) => {
           const cell = row.getCell(headerStartColumn + index);
           cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+          const columnLabel = selectedColumns[index].label;
+          const rowFill = rowStatus === 'LOST'
+            ? STATUS_LOST
+            : rowStatus === 'WON' || rowStatus === 'AWARDED'
+              ? STATUS_WON
+              : '';
+          if (columnLabel === 'GDS/GES') {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: `FF${stripHexHash(String(rowData['GDS/GES'] || '').toUpperCase() === 'GES' ? ROW_GES : ROW_GDS)}` },
+            };
+          } else if (columnLabel === 'Tender name' && rowStatus === 'LOST') {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: `FF${stripHexHash(TENDER_FLAG_LOST)}` },
+            };
+          } else if (rowFill) {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: `FF${stripHexHash(rowFill)}` },
+            };
+          }
           cell.border = {
             top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
             left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
             bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
             right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
           };
+          if (selectedColumns[index].label === 'GM%' || selectedColumns[index].label === 'Go%' || selectedColumns[index].label === 'Get %' || selectedColumns[index].label === 'GO/Get %') {
+            cell.numFmt = '0.00%';
+          } else if (selectedColumns[index].label === 'date tender recd' || selectedColumns[index].label === 'Tender Due  date' || selectedColumns[index].label === 'Tender  Submitted  date') {
+            cell.numFmt = 'dd-mmm-yy';
+          } else if (selectedColumns[index].label !== 'Sr.no' && selectedColumns[index].label !== 'Year' && selectedColumns[index].label !== 'Tender name' && selectedColumns[index].label !== 'Client' && selectedColumns[index].label !== 'END USER' && selectedColumns[index].label !== 'ADNOC RFT NO' && selectedColumns[index].label !== 'Tender Location (Execution)' && selectedColumns[index].label !== 'GDS/GES' && selectedColumns[index].label !== 'Assigned Person' && selectedColumns[index].label !== 'Stage of project, Concept, FEED, DE' && selectedColumns[index].label !== 'Tender Type' && selectedColumns[index].label !== 'AVENIR STATUS' && selectedColumns[index].label !== 'REMARKS/REASON' && selectedColumns[index].label !== 'TENDER RESULT' && selectedColumns[index].label !== 'TENDER STATUS' && selectedColumns[index].label !== 'Currency, USD/AED' && selectedColumns[index].label !== 'who was awarded the project') {
+            cell.numFmt = '#,##0.00';
+          } else if (selectedColumns[index].label === 'Tender value' || selectedColumns[index].label === 'Sub-contract value' || selectedColumns[index].label === 'GM Value' || selectedColumns[index].label === 'go/get value' || selectedColumns[index].label === 'USD to AED' || selectedColumns[index].label === 'final awarded price') {
+            cell.numFmt = '#,##0.00';
+          }
         });
+      });
+
+      ['HIT RATIO', 'AS', 'WD'].forEach((sheetName) => {
+        workbook.addWorksheet(sheetName);
       });
 
       worksheet.views = [{ state: 'frozen', ySplit: headerRowIndex }];

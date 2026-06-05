@@ -39,7 +39,7 @@ export const OPPORTUNITY_COLUMNS: OpportunityColumnDescriptor[] = [
   { key: 'dateTenderReceived', header: 'date tender recd', type: 'date', group: 'Timeline' },
   { key: 'BID / NO BID DECISION', header: 'BID / NO BID DECISION', type: 'enum', group: 'Timeline' },
   { key: 'tenderPlannedSubmissionDate', header: 'Tender Due  date', type: 'date', group: 'Timeline' },
-  { key: 'Tender  Submitted  date', header: 'Tender  Submitted  date', type: 'date', group: 'Timeline' },
+  { key: 'tenderSubmittedDate', header: 'Tender  Submitted  date', type: 'date', group: 'Timeline' },
   { key: 'avenirStatus', header: 'AVENIR STATUS', type: 'enum', group: 'Status' },
   { key: 'remarksReason', header: 'REMARKS/REASON', type: 'text', group: 'Status' },
   { key: 'tenderResult', header: 'TENDER RESULT', type: 'string', group: 'Status' },

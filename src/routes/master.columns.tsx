@@ -1,6 +1,6 @@
 import Admin from '@/pages/Admin';
+import { MasterShell } from '@/components/MasterShell';
 
 export default function MasterColumnsRoute() {
-  return <Admin initialTab="export" />;
+  return <MasterShell activeKey="columns"><Admin initialTab="export" /></MasterShell>;
 }
-
