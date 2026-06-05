@@ -583,6 +583,25 @@ export default function Admin({ initialTab }: AdminProps = {}) {
   const [permissionsBusy, setPermissionsBusy] = useState(false);
   const [tempCredentialSelection, setTempCredentialSelection] = useState<string[]>([]);
   const [tempCredentialConfirmOpen, setTempCredentialConfirmOpen] = useState(false);
+  const patchUserList = (nextUser: AuthorizedUser) => {
+    const normalizedEmail = String(nextUser.email || '').trim().toLowerCase();
+    setUsers((previous) => {
+      const index = previous.findIndex((candidate) => String(candidate.email || '').trim().toLowerCase() === normalizedEmail);
+      if (index >= 0) {
+        const next = previous.slice();
+        next[index] = { ...previous[index], ...nextUser };
+        return next;
+      }
+      return [nextUser, ...previous].sort((a, b) => new Date(String(b.createdAt || '')).getTime() - new Date(String(a.createdAt || '')).getTime());
+    });
+  };
+
+  const removeUserFromList = (email: string) => {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    setUsers((previous) => previous.filter((candidate) => String(candidate.email || '').trim().toLowerCase() !== normalizedEmail));
+  };
+
+  const snapshotUsers = () => users.map((candidate) => ({ ...candidate }));
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
@@ -2072,12 +2091,19 @@ export default function Admin({ initialTab }: AdminProps = {}) {
 
   const approveUser = async (email: string) => {
     if (!token) return;
+    let previousUsers: AuthorizedUser[] = [];
     try {
       if (!canManageUsers) {
         toast.error('You do not have permission to approve users.');
         return;
       }
       setUserManagementBusy(true);
+      previousUsers = snapshotUsers();
+      setUsers((current) => current.map((candidate) => (
+        String(candidate.email || '').trim().toLowerCase() === email.trim().toLowerCase()
+          ? { ...candidate, status: 'approved', approvedBy: user?.email || candidate.approvedBy, approvedAt: new Date().toISOString() }
+          : candidate
+      )));
       await runTrackedAction('Approve User', async (setProgress) => {
         setProgress(40, 'Sending approve request');
         const response = await fetch(API_URL + '/users/approve', {
@@ -2095,12 +2121,13 @@ export default function Admin({ initialTab }: AdminProps = {}) {
         }
 
         setProgress(75, 'Applying updates');
+        if (data?.user) patchUserList(data.user as AuthorizedUser);
         setMessage({ type: 'success', text: '✅ User approved: ' + email });
         setProgress(90, 'Refreshing user list');
-        await loadUsers();
         setTimeout(() => setMessage(null), 3000);
       });
     } catch (error) {
+      setUsers(previousUsers);
       setMessage({ type: 'error', text: '❌ Failed to approve user: ' + (error as Error).message });
     } finally {
       setUserManagementBusy(false);
@@ -2109,12 +2136,19 @@ export default function Admin({ initialTab }: AdminProps = {}) {
 
   const rejectUser = async (email: string) => {
     if (!token) return;
+    let previousUsers: AuthorizedUser[] = [];
     try {
       if (!canManageUsers) {
         toast.error('You do not have permission to reject users.');
         return;
       }
       setUserManagementBusy(true);
+      previousUsers = snapshotUsers();
+      setUsers((current) => current.map((candidate) => (
+        String(candidate.email || '').trim().toLowerCase() === email.trim().toLowerCase()
+          ? { ...candidate, status: 'rejected', approvedBy: user?.email || candidate.approvedBy, approvedAt: new Date().toISOString() }
+          : candidate
+      )));
       await runTrackedAction('Reject User', async (setProgress) => {
         setProgress(40, 'Sending reject request');
         const response = await fetch(API_URL + '/users/reject', {
@@ -2132,12 +2166,13 @@ export default function Admin({ initialTab }: AdminProps = {}) {
         }
 
         setProgress(75, 'Applying updates');
+        if (data?.user) patchUserList(data.user as AuthorizedUser);
         setMessage({ type: 'success', text: '❌ User rejected: ' + email });
         setProgress(90, 'Refreshing user list');
-        await loadUsers();
         setTimeout(() => setMessage(null), 3000);
       });
     } catch (error) {
+      setUsers(previousUsers);
       setMessage({ type: 'error', text: '❌ Failed to reject user: ' + (error as Error).message });
     } finally {
       setUserManagementBusy(false);
@@ -2147,12 +2182,22 @@ export default function Admin({ initialTab }: AdminProps = {}) {
   const changeUserRole = async (email: string, newRole: string, assignedGroup?: string | null) => {
     if (!token) return;
     setChangingRole(email);
+    let previousUsers: AuthorizedUser[] = [];
     try {
       if (!canManageUsers) {
         toast.error('You do not have permission to change user roles.');
         return;
       }
       setUserManagementBusy(true);
+      previousUsers = snapshotUsers();
+      setUsers((current) => current.map((candidate) => {
+        if (String(candidate.email || '').trim().toLowerCase() !== email.trim().toLowerCase()) return candidate;
+        return {
+          ...candidate,
+          role: newRole as UserRole,
+          assignedGroup: newRole === 'SVP' ? (assignedGroup || candidate.assignedGroup || 'GES') : null,
+        };
+      }));
       await runTrackedAction('Change User Role', async (setProgress) => {
         setProgress(40, 'Sending role update');
         const response = await fetch(API_URL + '/users/change-role', {
@@ -2170,12 +2215,13 @@ export default function Admin({ initialTab }: AdminProps = {}) {
         }
 
         setProgress(75, 'Applying updates');
+        if (data?.user) patchUserList(data.user as AuthorizedUser);
         setMessage({ type: 'success', text: '🔄 User role changed to ' + newRole + ': ' + email });
         setProgress(90, 'Refreshing user list');
-        await loadUsers();
         setTimeout(() => setMessage(null), 3000);
       });
     } catch (error) {
+      setUsers(previousUsers);
       setMessage({ type: 'error', text: '❌ Failed to change role: ' + (error as Error).message });
     } finally {
       setChangingRole(null);
@@ -2276,12 +2322,15 @@ export default function Admin({ initialTab }: AdminProps = {}) {
 
   const removeUser = async (email: string) => {
     if (!token || !confirm('Are you sure you want to remove ' + email + '?')) return;
+    let previousUsers: AuthorizedUser[] = [];
     try {
       if (!canManageUsers) {
         toast.error('You do not have permission to remove users.');
         return;
       }
       setUserManagementBusy(true);
+      previousUsers = snapshotUsers();
+      removeUserFromList(email);
       await runTrackedAction('Remove User', async (setProgress) => {
         setProgress(40, 'Sending remove request');
         const response = await fetch(API_URL + '/users/remove', {
@@ -2301,10 +2350,10 @@ export default function Admin({ initialTab }: AdminProps = {}) {
         setProgress(75, 'Applying updates');
         setMessage({ type: 'success', text: '🗑️ User removed: ' + email });
         setProgress(90, 'Refreshing user list');
-        await loadUsers();
         setTimeout(() => setMessage(null), 3000);
       });
     } catch (error) {
+      setUsers(previousUsers);
       setMessage({ type: 'error', text: '❌ Failed to remove user: ' + (error as Error).message });
     } finally {
       setUserManagementBusy(false);
@@ -2351,7 +2400,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
         setProgress(80, `Sent to ${data?.sentCount ?? 0} user(s)`);
         toast.success(`Temporary passwords sent to ${data?.sentCount ?? 0} user(s).`);
         setTempCredentialSelection([]);
-        await loadUsers();
+        await loadTempCredentialLogs();
       });
     } catch (error) {
       toast.error((error as Error).message);
@@ -2381,8 +2430,10 @@ export default function Admin({ initialTab }: AdminProps = {}) {
         return;
       }
     }
+    let previousUsers: AuthorizedUser[] = [];
     try {
       setUserManagementBusy(true);
+      previousUsers = snapshotUsers();
       await runTrackedAction('Add/Update Authorized User', async (setProgress) => {
         setProgress(25, 'Validating payload');
         const response = await fetch(API_URL + '/users/add', {
@@ -2402,12 +2453,13 @@ export default function Admin({ initialTab }: AdminProps = {}) {
         if (!response.ok) throw new Error(parseApiErrorPayload(data, 'Failed to add user'));
 
         setProgress(75, 'Resetting form');
+        if (data?.user) patchUserList(data.user as AuthorizedUser);
         toast.success('Authorized user added/updated');
         setNewAuthorizedUser({ email: '', displayName: '', role: 'Basic', assignedGroup: 'GES', status: 'approved', password: '', tempAccessExpiresAt: '' });
         setProgress(90, 'Refreshing user list');
-        await loadUsers();
       });
     } catch (error) {
+      setUsers(previousUsers);
       toast.error((error as Error).message);
     } finally {
       setUserManagementBusy(false);
