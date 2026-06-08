@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import KpiDiagnostics from "./pages/KpiDiagnostics";
 import Login from "./pages/Login";
 import Opportunities from "./pages/Opportunities";
+import BidDecision from "./pages/BidDecision";
 import PotentialOpportunities from "./pages/PotentialOpportunities";
 import VendorDirectory from "./pages/VendorDirectory";
 import Clients from "./pages/Clients";
@@ -105,6 +106,7 @@ function AppRoutes() {
           >
             <Route index element={<PageAccessRoute pageKey="dashboard"><Dashboard /></PageAccessRoute>} />
             <Route path="opportunities" element={<PageAccessRoute pageKey="opportunities"><Opportunities /></PageAccessRoute>} />
+            <Route path="bid-decision" element={<PageAccessRoute pageKey="bid_decision"><BidDecision /></PageAccessRoute>} />
             <Route path="tender-updates" element={<Navigate to="/potential-opportunities" replace />} />
             <Route path="potential-opportunities" element={<PageAccessRoute pageKey="tender_updates"><PotentialOpportunities /></PageAccessRoute>} />
             <Route path="pq-activities" element={<PageAccessRoute pageKey="pq_activities"><PqActivities /></PageAccessRoute>} />

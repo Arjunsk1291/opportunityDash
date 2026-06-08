@@ -24,6 +24,7 @@ import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
 import PqActivity, { getPqModel } from './models/PqActivity.js';
 import PotentialOpportunity from './models/PotentialOpportunity.js';
+import BidDecision from './models/BidDecision.js';
 import HfOffice from './models/HfOffice.js';
 import HfDiscipline from './models/HfDiscipline.js';
 import HfSalaryBand from './models/HfSalaryBand.js';
@@ -4207,6 +4208,7 @@ app.post('/api/graph/auth/clear', verifyToken, async (req, res) => {
 const PAGE_KEYS = [
   'dashboard',
   'opportunities',
+  'bid_decision',
   'tender_updates',
   'pq_activities',
   'vendor_directory',
@@ -4255,6 +4257,7 @@ const ACTION_KEYS = [
 const DEFAULT_PAGE_ROLE_ACCESS = {
   dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'],
   opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  bid_decision: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'],
   tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   pq_activities: ['Master', 'Admin', 'Basic'],
   vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
@@ -4861,6 +4864,32 @@ const requireActionPermission = async (req, res, actionKey) => {
     res.status(403).json({ error: `Role ${req.user.role} is not allowed to perform ${actionKey}` });
     return null;
   }
+  return config;
+};
+
+const requirePagePermission = async (req, res, pageKey) => {
+  const config = await getSystemConfig();
+  const permissions = sanitizePageRoleAccess(config.pageRoleAccess || {});
+  const excludePermissions = sanitizePageExcludeRoleAccess(config.pageRoleExcludeAccess || {});
+  const emailPermissions = sanitizePageEmailAccess(config.pageEmailAccess || {});
+  const userEmail = String(req.user?.email || '').trim().toLowerCase();
+  const allowedRoles = permissions[pageKey] || [];
+  const excludedRoles = excludePermissions[pageKey] || [];
+  const allowedEmails = emailPermissions[pageKey] || [];
+
+  if (String(req.user?.role || '') === 'Master') {
+    return config;
+  }
+
+  if (allowedEmails.includes(userEmail)) {
+    return config;
+  }
+
+  if (!allowedRoles.includes(req.user.role) || excludedRoles.includes(req.user.role)) {
+    res.status(403).json({ error: `Role ${req.user.role} is not allowed to access ${pageKey}` });
+    return null;
+  }
+
   return config;
 };
 
@@ -8084,6 +8113,182 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
 
     res.json({ success: true, changedFields, overwriteCount, row: mapIdField(after) });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+const normalizeBidDecisionState = (value) => {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  if (normalized === 'BID') return 'BID';
+  if (normalized === 'NO BID' || normalized === 'NOBID') return 'NO BID';
+  return 'BLANK';
+};
+
+const normalizeBidDecisionSourceMode = (value) => (
+  String(value ?? '').trim().toLowerCase() === 'dashboard' ? 'dashboard' : 'manual'
+);
+
+const normalizeBidDecisionCriteria = (criteriaValues) => (
+  Array.isArray(criteriaValues)
+    ? criteriaValues.map((criterion) => ({
+        key: String(criterion?.key || '').trim(),
+        label: String(criterion?.label || '').trim(),
+        rating: Number.isFinite(Number(criterion?.rating)) ? Number(criterion.rating) : null,
+        weight: Number.isFinite(Number(criterion?.weight)) ? Number(criterion.weight) : null,
+        notes: String(criterion?.notes || '').trim(),
+        included: criterion?.included !== false,
+      }))
+    : []
+);
+
+const buildBidDecisionRecord = (doc) => ({
+  ...mapIdField(doc?.toObject ? doc.toObject() : doc),
+  opportunityRefNo: String(doc?.opportunityRefNo || '').trim(),
+  bidDecision: normalizeBidDecisionState(doc?.bidDecision),
+  decisionScore: Number(doc?.decisionScore || 0),
+  criteriaValues: normalizeBidDecisionCriteria(doc?.criteriaValues),
+  sourceMode: normalizeBidDecisionSourceMode(doc?.sourceMode),
+  createdBy: String(doc?.createdBy || ''),
+  updatedBy: String(doc?.updatedBy || ''),
+  sourceOpportunitySyncedAt: doc?.sourceOpportunitySyncedAt ? new Date(doc.sourceOpportunitySyncedAt).toISOString() : null,
+  sourceOpportunityId: String(doc?.sourceOpportunityId || ''),
+  createdAt: doc?.createdAt ? new Date(doc.createdAt).toISOString() : null,
+  updatedAt: doc?.updatedAt ? new Date(doc.updatedAt).toISOString() : null,
+});
+
+app.get('/api/bid-decisions', verifyToken, async (req, res) => {
+  try {
+    if (!await requirePagePermission(req, res, 'bid_decision')) return;
+    const opportunityRefNo = String(req.query?.opportunityRefNo || '').trim();
+    const query = opportunityRefNo
+      ? { opportunityRefNo }
+      : {};
+    const records = await BidDecision.find(query).sort({ updatedAt: -1, createdAt: -1 }).lean();
+    const refs = records.map((record) => String(record.opportunityRefNo || '').trim()).filter(Boolean);
+    const opportunities = refs.length
+      ? await SyncedOpportunity.find({ opportunityRefNo: { $in: refs } }, {
+          opportunityRefNo: 1,
+          tenderName: 1,
+          clientName: 1,
+          groupClassification: 1,
+          internalLead: 1,
+          opportunityClassification: 1,
+          dateTenderReceived: 1,
+          tenderPlannedSubmissionDate: 1,
+          tenderSubmittedDate: 1,
+          opportunityValue: 1,
+          avenirStatus: 1,
+          tenderResult: 1,
+          tenderStatusRemark: 1,
+          remarksReason: 1,
+          rawGraphData: 1,
+          syncedAt: 1,
+        }).lean()
+      : [];
+    const opportunitiesByRef = opportunities.reduce((acc, item) => {
+      const ref = String(item.opportunityRefNo || '').trim();
+      if (ref) acc[ref] = mapIdField(item);
+      return acc;
+    }, {});
+    return res.json({
+      records: records.map(buildBidDecisionRecord),
+      opportunitiesByRef,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/bid-decisions/:opportunityRefNo', verifyToken, async (req, res) => {
+  try {
+    if (!await requirePagePermission(req, res, 'bid_decision')) return;
+    const opportunityRefNo = String(req.params.opportunityRefNo || '').trim();
+    if (!opportunityRefNo) return res.status(400).json({ error: 'opportunityRefNo is required' });
+
+    const [record, opportunity] = await Promise.all([
+      BidDecision.findOne({ opportunityRefNo }).lean(),
+      SyncedOpportunity.findOne({ opportunityRefNo }).select({
+        opportunityRefNo: 1,
+        tenderName: 1,
+        clientName: 1,
+        groupClassification: 1,
+        internalLead: 1,
+        opportunityClassification: 1,
+        dateTenderReceived: 1,
+        tenderPlannedSubmissionDate: 1,
+        tenderSubmittedDate: 1,
+        opportunityValue: 1,
+        avenirStatus: 1,
+        tenderResult: 1,
+        tenderStatusRemark: 1,
+        remarksReason: 1,
+        rawGraphData: 1,
+        syncedAt: 1,
+      }).lean(),
+    ]);
+
+    return res.json({
+      record: record ? buildBidDecisionRecord(record) : null,
+      opportunity: opportunity ? mapIdField(opportunity) : null,
+      opportunityExists: Boolean(opportunity),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/bid-decisions', verifyToken, async (req, res) => {
+  try {
+    if (!await requirePagePermission(req, res, 'bid_decision')) return;
+
+    const opportunityRefNo = String(req.body?.opportunityRefNo || '').trim();
+    const bidDecision = normalizeBidDecisionState(req.body?.bidDecision);
+    const sourceMode = normalizeBidDecisionSourceMode(req.body?.sourceMode);
+    const criteriaValues = normalizeBidDecisionCriteria(req.body?.criteriaValues);
+    const decisionScore = Number.isFinite(Number(req.body?.decisionScore)) ? Number(req.body.decisionScore) : 0;
+
+    if (!opportunityRefNo) {
+      return res.status(400).json({ error: 'opportunityRefNo is required' });
+    }
+
+    const sourceOpportunity = await SyncedOpportunity.findOne({ opportunityRefNo }).lean();
+    if (!sourceOpportunity) {
+      return res.status(404).json({ error: 'Opportunity not found in SyncedOpportunity' });
+    }
+
+    const updated = await BidDecision.findOneAndUpdate(
+      { opportunityRefNo },
+      {
+        $set: {
+          bidDecision,
+          decisionScore,
+          criteriaValues,
+          sourceMode,
+          updatedBy: String(req.user?.email || ''),
+          sourceOpportunitySyncedAt: sourceOpportunity.syncedAt ? new Date(sourceOpportunity.syncedAt) : null,
+          sourceOpportunityId: String(sourceOpportunity._id || ''),
+        },
+        $setOnInsert: {
+          opportunityRefNo,
+          createdBy: String(req.user?.email || ''),
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+
+    return res.json({
+      success: true,
+      record: buildBidDecisionRecord(updated),
+    });
+  } catch (error) {
+    if (String(error?.code || '') === '11000') {
+      return res.status(409).json({ error: 'A bid decision already exists for this opportunityRefNo' });
+    }
     res.status(500).json({ error: error.message });
   }
 });

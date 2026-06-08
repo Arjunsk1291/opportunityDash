@@ -11,7 +11,7 @@ const LIVE_REFRESH_INTERVAL = 5 * 60 * 1000;
 const MIN_BACKGROUND_REFRESH_GAP_MS = 45 * 1000;
 const OPPORTUNITIES_CACHE_KEY = 'opportunities-cache-v2';
 const OPPORTUNITIES_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
-const OPPORTUNITY_FULL_ROUTES = new Set(['/opportunities', '/tender-spreadsheet-v2']);
+const OPPORTUNITY_FULL_ROUTES = new Set(['/opportunities', '/bid-decision', '/tender-spreadsheet-v2']);
 
 type OpportunityApiRecord = Partial<Opportunity> & {
   _id?: string;

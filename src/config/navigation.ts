@@ -1,7 +1,8 @@
-import { BarChart3, BriefcaseBusiness, Building2, FileText, LayoutDashboard, Shield, Sparkles, Workflow } from 'lucide-react';
+import { BarChart3, BriefcaseBusiness, Building2, FileCheck2, FileText, LayoutDashboard, Shield, Sparkles, Workflow } from 'lucide-react';
 export type PageKey =
   | 'dashboard'
   | 'opportunities'
+  | 'bid_decision'
   | 'tender_updates'
   | 'pq_activities'
   | 'vendor_directory'
@@ -21,6 +22,7 @@ export type PageKey =
 export const PAGE_LABELS: Record<PageKey, string> = {
   dashboard: 'Dashboard',
   opportunities: 'Opportunities',
+  bid_decision: 'Bid Decision',
   tender_updates: 'Potential Opportunities',
   pq_activities: 'Pre-Qualification',
   vendor_directory: 'Partners',
@@ -38,13 +40,14 @@ export const PAGE_LABELS: Record<PageKey, string> = {
 };
 
 export const PAGE_GROUPS: Array<{ label: string; pages: PageKey[] }> = [
-  { label: 'Core Workspace', pages: ['dashboard', 'opportunities', 'tender_updates', 'pq_activities', 'vendor_directory', 'clients', 'analytics', 'bd_engagements', 'advanced_analytics'] },
+  { label: 'Core Workspace', pages: ['dashboard', 'opportunities', 'bid_decision', 'tender_updates', 'pq_activities', 'vendor_directory', 'clients', 'analytics', 'bd_engagements', 'advanced_analytics'] },
   { label: 'Master Panel', pages: ['master', 'master_general', 'master_users', 'master_data_sync', 'master_telecast', 'master_update', 'master_export'] },
 ];
 
 export const DEFAULT_PAGE_ROLE_ACCESS: Record<PageKey, string[]> = {
   dashboard: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'],
   opportunities: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  bid_decision: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'],
   tender_updates: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   pq_activities: ['Master', 'Admin', 'Basic'],
   vendor_directory: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
@@ -64,6 +67,7 @@ export const DEFAULT_PAGE_ROLE_ACCESS: Record<PageKey, string[]> = {
 export const NAV_ITEMS = [
   { title: 'Dashboard', url: '/', pageKey: 'dashboard' as const, icon: LayoutDashboard, section: 'main' as const },
   { title: 'Opportunities', url: '/opportunities', pageKey: 'opportunities' as const, icon: FileText, section: 'main' as const },
+  { title: 'Bid Decision', url: '/bid-decision', pageKey: 'bid_decision' as const, icon: FileCheck2, section: 'main' as const },
   { title: 'Potential Opportunities', url: '/potential-opportunities', pageKey: 'tender_updates' as const, icon: Sparkles, section: 'main' as const },
   { title: 'Pre-Qualification', url: '/pq-activities', pageKey: 'pq_activities' as const, icon: FileText, section: 'main' as const },
   { title: 'Partners', url: '/vendors', pageKey: 'vendor_directory' as const, icon: Building2, section: 'main' as const },
