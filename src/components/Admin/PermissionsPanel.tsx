@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { RefreshCw, Plus, X, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -30,8 +30,10 @@ export function PermissionsPanel({ token }: PermissionsPanelProps) {
   const [newOverrideAccess, setNewOverrideAccess] = useState<Partial<Record<PageKey, 'view' | 'edit'>>>({});
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
+  const isDirty = useRef(false);
 
   useEffect(() => {
+    if (isDirty.current) return;
     setDraftView({ ...pageViewAccess } as Record<PageKey, UserRole[]>);
     setDraftEdit({ ...pageEditAccess } as Record<PageKey, UserRole[]>);
     setDraftOverrides([...(userPageOverrides || [])]);
@@ -40,6 +42,7 @@ export function PermissionsPanel({ token }: PermissionsPanelProps) {
   const allPages = PAGE_GROUPS.flatMap((g) => g.pages);
 
   const toggleView = (pageKey: PageKey, role: UserRole, checked: boolean) => {
+    isDirty.current = true;
     setDraftView((prev) => {
       const current = prev[pageKey] || [];
       const next = checked ? [...current, role] : current.filter((r) => r !== role);
@@ -52,6 +55,7 @@ export function PermissionsPanel({ token }: PermissionsPanelProps) {
   };
 
   const toggleEdit = (pageKey: PageKey, role: UserRole, checked: boolean) => {
+    isDirty.current = true;
     const viewRoles = draftView[pageKey] || [];
     if (checked && !viewRoles.includes(role)) return;
     setDraftEdit((prev) => {
@@ -62,6 +66,7 @@ export function PermissionsPanel({ token }: PermissionsPanelProps) {
   };
 
   const addOverride = (pageKey: PageKey) => {
+    isDirty.current = true;
     const email = (newOverrideEmail[pageKey] || '').trim().toLowerCase();
     const access = newOverrideAccess[pageKey] || 'view';
     if (!email) return;
@@ -73,7 +78,15 @@ export function PermissionsPanel({ token }: PermissionsPanelProps) {
   };
 
   const removeOverride = (email: string, pageKey: PageKey) => {
+    isDirty.current = true;
     setDraftOverrides((prev) => prev.filter((o) => !(o.email === email && o.pageKey === pageKey)));
+  };
+
+  const discardChanges = () => {
+    isDirty.current = false;
+    setDraftView({ ...pageViewAccess } as Record<PageKey, UserRole[]>);
+    setDraftEdit({ ...pageEditAccess } as Record<PageKey, UserRole[]>);
+    setDraftOverrides([...(userPageOverrides || [])]);
   };
 
   const handleSave = useCallback(async () => {
@@ -86,6 +99,7 @@ export function PermissionsPanel({ token }: PermissionsPanelProps) {
       setProgress(90);
       await reloadPagePermissions();
       setProgress(100);
+      isDirty.current = false;
       toast.success('Permissions saved');
     } catch (e) {
       toast.error((e as Error).message || 'Failed to save permissions');
@@ -245,10 +259,15 @@ export function PermissionsPanel({ token }: PermissionsPanelProps) {
 
           {isMaster && (
             <div className="mt-4 space-y-2">
-              <Button onClick={handleSave} disabled={saving} className="gap-2">
-                {saving && <RefreshCw className="h-4 w-4 animate-spin" />}
-                {saving ? `Saving… ${progress}%` : 'Save Permissions'}
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={handleSave} disabled={saving} className="gap-2">
+                  {saving && <RefreshCw className="h-4 w-4 animate-spin" />}
+                  {saving ? `Saving… ${progress}%` : 'Save Permissions'}
+                </Button>
+                <Button variant="outline" onClick={discardChanges} disabled={saving}>
+                  Discard Changes
+                </Button>
+              </div>
               {progress > 0 && <Progress value={progress} className="h-1.5 max-w-xs transition-all" />}
             </div>
           )}

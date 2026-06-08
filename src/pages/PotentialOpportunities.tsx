@@ -326,22 +326,31 @@ export default function PotentialOpportunities() {
     <>
     <ActionProgressBar status={trackedStatus} />
     <div className="space-y-6 pb-20">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-2">
-            <Sparkles className="h-6 w-6 text-primary" />
-            Potential Opportunities
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Manage your shortlisted opportunities with ease. Select by vertical and edit high-level details.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => load('refresh')} loading={loading}>Refresh</Button>
-          <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={e => { if (e.target.files?.[0]) executeImport(e.target.files[0]); }} />
-          <Button variant="default" onClick={() => fileInputRef.current?.click()} disabled={!canWrite} loading={importing}>
-            <FileUp className="mr-2 h-4 w-4" /> Import Excel
-          </Button>
+      {/* Hero header */}
+      <div className="relative rounded-3xl overflow-hidden border border-border/50 bg-card shadow-xl">
+        <div className="absolute inset-0 bg-gradient-to-br from-violet-500/15 via-primary/8 to-cyan-500/10 pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent pointer-events-none" />
+        <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between p-6 md:p-8">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 border border-primary/25 px-3 py-1 text-xs font-bold text-primary uppercase tracking-widest">
+                <Sparkles className="h-3 w-3" /> Prospect Intelligence
+              </span>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-black tracking-tight bg-gradient-to-r from-foreground via-foreground to-muted-foreground bg-clip-text">
+              Potential Opportunities
+            </h1>
+            <p className="text-sm text-muted-foreground max-w-md">
+              Shortlisted high-value prospects. Track, edit, and manage your pipeline of incoming leads.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <Button variant="outline" onClick={() => load('refresh')} loading={loading} className="rounded-xl">Refresh</Button>
+            <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={e => { if (e.target.files?.[0]) executeImport(e.target.files[0]); }} />
+            <Button variant="default" onClick={() => fileInputRef.current?.click()} disabled={!canWrite} loading={importing} className="rounded-xl">
+              <FileUp className="mr-2 h-4 w-4" /> Import Excel
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -361,18 +370,31 @@ export default function PotentialOpportunities() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total', value: stats.total, color: 'primary' },
-          { label: 'GTS', value: stats.gts, color: 'cyan' },
-          { label: 'GDS', value: stats.gds, color: 'fuchsia' },
-          { label: 'GES', value: stats.ges, color: 'emerald' },
-        ].map(s => (
-          <Card key={s.label} className={cn("rounded-2xl border-2 transition-all", selectedVertical === s.label.toUpperCase() ? "border-primary shadow-md" : "border-transparent")}>
-             <CardContent className="p-4 flex flex-col items-center justify-center cursor-pointer" onClick={() => setSelectedVertical(s.label === 'Total' ? 'ALL' : s.label as Vertical)}>
-                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{s.label}</p>
-                <p className="text-3xl font-black mt-1">{s.value}</p>
-             </CardContent>
-          </Card>
-        ))}
+          { label: 'Total', value: stats.total, bg: 'from-violet-500/20 to-primary/10', ring: 'ring-primary', text: 'text-primary', key: 'ALL' },
+          { label: 'GTS', value: stats.gts, bg: 'from-cyan-500/20 to-cyan-400/5', ring: 'ring-cyan-400', text: 'text-cyan-500', key: 'GTS' },
+          { label: 'GDS', value: stats.gds, bg: 'from-fuchsia-500/20 to-fuchsia-400/5', ring: 'ring-fuchsia-400', text: 'text-fuchsia-500', key: 'GDS' },
+          { label: 'GES', value: stats.ges, bg: 'from-emerald-500/20 to-emerald-400/5', ring: 'ring-emerald-400', text: 'text-emerald-500', key: 'GES' },
+        ].map(s => {
+          const isActive = selectedVertical === s.key;
+          return (
+            <button
+              key={s.label}
+              type="button"
+              onClick={() => setSelectedVertical(s.key as Vertical | 'ALL')}
+              className={cn(
+                "relative rounded-2xl border-2 transition-all duration-200 overflow-hidden text-left",
+                isActive ? `${s.ring} ring-2 shadow-lg border-transparent` : "border-border/40 hover:border-border hover:shadow-md"
+              )}
+            >
+              <div className={cn("absolute inset-0 bg-gradient-to-br opacity-70", s.bg)} />
+              <div className="relative p-4 flex flex-col items-center justify-center">
+                <p className={cn("text-[10px] font-black uppercase tracking-widest", isActive ? s.text : "text-muted-foreground")}>{s.label}</p>
+                <p className={cn("text-3xl font-black mt-1", isActive ? s.text : "text-foreground")}>{s.value}</p>
+                {isActive && <div className="mt-1 h-0.5 w-6 rounded-full bg-current opacity-60" />}
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       <Tabs value={activeTab} onValueChange={v => setActiveTab(v as TabKey)}>
@@ -399,104 +421,105 @@ export default function PotentialOpportunities() {
                  const extraPairs = toExtraPairs(r.extras || {});
                  const topExtras = extraPairs.slice(0, 4);
                  const moreCount = Math.max(0, extraPairs.length - topExtras.length);
+                 const verticalAccent = vertical === 'GTS' ? {
+                   border: 'border-cyan-400/60', bar: 'bg-cyan-400', glow: 'shadow-cyan-500/20', gradient: 'from-cyan-500/20 via-cyan-400/5 to-transparent',
+                   badge: 'bg-cyan-500 text-white', ring: 'ring-cyan-400/40',
+                 } : vertical === 'GDS' ? {
+                   border: 'border-fuchsia-400/60', bar: 'bg-fuchsia-400', glow: 'shadow-fuchsia-500/20', gradient: 'from-fuchsia-500/20 via-fuchsia-400/5 to-transparent',
+                   badge: 'bg-fuchsia-500 text-white', ring: 'ring-fuchsia-400/40',
+                 } : vertical === 'GES' ? {
+                   border: 'border-emerald-400/60', bar: 'bg-emerald-400', glow: 'shadow-emerald-500/20', gradient: 'from-emerald-500/20 via-emerald-400/5 to-transparent',
+                   badge: 'bg-emerald-500 text-white', ring: 'ring-emerald-400/40',
+                 } : {
+                   border: 'border-violet-400/40', bar: 'bg-violet-400', glow: 'shadow-violet-500/15', gradient: 'from-violet-500/15 via-violet-400/5 to-transparent',
+                   badge: 'bg-violet-500 text-white', ring: 'ring-violet-400/30',
+                 };
                  return (
                <Card
                  key={r.id}
                  className={cn(
-                   "group relative rounded-3xl border-2 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 overflow-hidden",
-                   selectedIds.has(r.id) ? "border-primary bg-primary/5 shadow-inner" : "border-border/50 bg-card/50 backdrop-blur-sm"
+                   "group relative rounded-3xl border transition-all duration-300 overflow-hidden cursor-pointer",
+                   "hover:shadow-2xl hover:-translate-y-1.5",
+                   selectedIds.has(r.id)
+                     ? `border-primary/60 bg-primary/5 shadow-lg ring-2 ring-primary/30`
+                     : `${verticalAccent.border} bg-card/80 backdrop-blur-sm hover:${verticalAccent.glow} hover:shadow-xl`
                  )}
                  onClick={() => openDetails(r)}
                >
-                 <div className={cn(
-                   "absolute inset-x-0 top-0 h-24 opacity-80",
-                   vertical === 'GTS' ? "bg-gradient-to-br from-cyan-500/25 via-transparent to-transparent" :
-                   vertical === 'GDS' ? "bg-gradient-to-br from-fuchsia-500/25 via-transparent to-transparent" :
-                   vertical === 'GES' ? "bg-gradient-to-br from-emerald-500/25 via-transparent to-transparent" :
-                   "bg-gradient-to-br from-slate-500/20 via-transparent to-transparent"
-                 )} />
-                 <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon" className="rounded-full bg-background/80" onClick={(e) => { e.stopPropagation(); toggleSelect(r.id); }}>
-                       {selectedIds.has(r.id) ? <CheckCircle2 className="h-5 w-5 text-primary" /> : <div className="h-5 w-5 rounded-full border-2" />}
+                 {/* Colored left accent bar */}
+                 <div className={cn("absolute left-0 top-0 bottom-0 w-1 rounded-l-3xl", verticalAccent.bar)} />
+                 {/* Gradient fill */}
+                 <div className={cn("absolute inset-x-0 top-0 h-40 bg-gradient-to-b", verticalAccent.gradient)} />
+
+                 <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <Button variant="ghost" size="icon" className="rounded-full bg-background/80 h-8 w-8 shadow-md" onClick={(e) => { e.stopPropagation(); toggleSelect(r.id); }}>
+                       {selectedIds.has(r.id) ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/50" />}
                     </Button>
                  </div>
-                 <CardHeader className="pb-2">
-                   <div className="flex justify-between items-start">
-                     <Badge variant="outline" className="font-mono text-[10px]">{r.opportunityRefNo}</Badge>
-                     <Badge className={cn(
-                       "uppercase text-[10px] font-bold tracking-tighter",
-                       vertical === 'GTS' ? "bg-cyan-500/10 text-cyan-600 border-cyan-200" :
-                       vertical === 'GDS' ? "bg-fuchsia-500/10 text-fuchsia-600 border-fuchsia-200" :
-                       vertical === 'GES' ? "bg-emerald-500/10 text-emerald-600 border-emerald-200" : "bg-slate-500/10 text-slate-600 border-slate-200"
-                     )}>
+
+                 <CardHeader className="pb-2 pl-5 relative">
+                   <div className="flex justify-between items-center gap-2">
+                     <span className="font-mono text-[10px] text-muted-foreground">{r.opportunityRefNo}</span>
+                     <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", verticalAccent.badge)}>
                        {vertical || 'Other'}
-                     </Badge>
+                     </span>
                    </div>
-                   <CardTitle className="text-lg font-bold leading-tight mt-2 line-clamp-2 min-h-[3rem]">
+                   <CardTitle className="text-base font-bold leading-snug mt-2 line-clamp-2 min-h-[2.8rem]">
                      {tenderTitle}
                    </CardTitle>
+                   <p className="text-xs text-muted-foreground font-medium truncate">{clientTitle}</p>
                  </CardHeader>
-                 <CardContent className="space-y-4">
-                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span className="font-medium text-foreground">{clientTitle}</span>
-                   </div>
-                   <div className="p-3 rounded-2xl bg-muted/30 border border-border/50">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Overview</p>
-                      <p className="text-xs line-clamp-3 text-foreground/80 italic">
-                        {r.extras?.overview || "No overview provided for this opportunity yet."}
-                      </p>
-                   </div>
-                   <div className="flex flex-wrap gap-2">
-                     {sowLink && (
-                       <div className="flex items-center gap-2">
-                         <Badge variant="secondary" className="text-[10px] py-0.5 rounded-full gap-1">
-                           <LinkIcon className="h-3 w-3" /> SOW
-                         </Badge>
-                         <Button
-                           variant="ghost"
-                           size="sm"
-                           className="h-7 px-2 rounded-full"
-                           onClick={(e) => {
-                             e.stopPropagation();
-                             setEditing(r);
-                             setEditSowLink(sowLink);
-                             setPreviewOpen(true);
-                           }}
-                         >
-                           <Eye className="h-3.5 w-3.5 mr-1" /> Preview
-                         </Button>
-                         <Button
-                           variant="ghost"
-                           size="sm"
-                           className="h-7 px-2 rounded-full"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (looksLikeUrl(sowLink)) window.open(sowLink, '_blank', 'noopener,noreferrer');
-                            }}
-                          >
-                            <ExternalLink className="h-3.5 w-3.5 mr-1" /> Open
-                          </Button>
-                       </div>
-                     )}
-                   </div>
+
+                 <CardContent className="space-y-3 pl-5 relative">
+                   {r.extras?.overview ? (
+                     <div className="p-3 rounded-2xl bg-muted/40 border border-border/40">
+                       <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1 flex items-center gap-1">
+                         <Wand2 className="h-3 w-3" /> Overview
+                       </p>
+                       <p className="text-xs line-clamp-3 text-foreground/80 leading-relaxed">
+                         {r.extras.overview as string}
+                       </p>
+                     </div>
+                   ) : (
+                     <div className="p-3 rounded-2xl border border-dashed border-border/40 bg-muted/20 flex items-center gap-2">
+                       <AlertCircle className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+                       <p className="text-xs text-muted-foreground/60 italic">No overview yet</p>
+                     </div>
+                   )}
+
+                   {sowLink && (
+                     <div className="flex items-center gap-1.5">
+                       <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary">
+                         <LinkIcon className="h-2.5 w-2.5" /> SOW
+                       </span>
+                       <Button variant="ghost" size="sm" className="h-6 px-2 rounded-full text-[10px] text-muted-foreground hover:text-foreground"
+                         onClick={(e) => { e.stopPropagation(); setEditing(r); setEditSowLink(sowLink); setPreviewOpen(true); }}>
+                         <Eye className="h-3 w-3 mr-1" /> Preview
+                       </Button>
+                       <Button variant="ghost" size="sm" className="h-6 px-2 rounded-full text-[10px] text-muted-foreground hover:text-foreground"
+                         onClick={(e) => { e.stopPropagation(); if (looksLikeUrl(sowLink)) window.open(sowLink, '_blank', 'noopener,noreferrer'); }}>
+                         <ExternalLink className="h-3 w-3 mr-1" /> Open
+                       </Button>
+                     </div>
+                   )}
 
                    {topExtras.length > 0 && (
-                     <div className="grid grid-cols-2 gap-2">
+                     <div className="grid grid-cols-2 gap-1.5">
                        {topExtras.map((p) => (
-                         <div key={p.key} className="rounded-2xl border bg-background/40 p-2">
-                           <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground line-clamp-1">{p.key}</div>
-                           <div className="text-xs font-medium text-foreground/90 line-clamp-2">{p.value}</div>
+                         <div key={p.key} className="rounded-xl border border-border/40 bg-background/50 px-2.5 py-1.5">
+                           <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground line-clamp-1">{p.key}</div>
+                           <div className="text-xs font-medium text-foreground/85 line-clamp-1 mt-0.5">{p.value}</div>
                          </div>
                        ))}
                        {moreCount > 0 && (
-                         <div className="rounded-2xl border border-dashed bg-background/20 p-2 flex items-center justify-center">
-                           <span className="text-xs text-muted-foreground">+{moreCount} more</span>
+                         <div className="rounded-xl border border-dashed border-border/30 bg-muted/20 px-2.5 py-1.5 flex items-center justify-center">
+                           <span className="text-[10px] text-muted-foreground">+{moreCount} more</span>
                          </div>
                        )}
                      </div>
                    )}
                  </CardContent>
-                 <CardFooter className="pt-2 border-t border-border/20 flex justify-between gap-2">
+                 <CardFooter className="pt-2 border-t border-border/20 flex justify-between gap-2 pl-5 relative">
                    <div className="text-[10px] text-muted-foreground">
                       Updated {r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : '—'}
                    </div>
