@@ -25,7 +25,6 @@ import MasterColumnsRoute from "./routes/master.columns";
 import MasterDiagnosticsRoute from "./routes/master.diagnostics";
 import PendingApproval from "./pages/PendingApproval";
 import NotFound from "./pages/NotFound";
-import TenderSpreadsheetV2 from "./pages/TenderSpreadsheetV2";
 import PqActivities from "./pages/PqActivities";
 import HireFlow from "./pages/HireFlow";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -109,7 +108,7 @@ function AppRoutes() {
             <Route path="tender-updates" element={<Navigate to="/potential-opportunities" replace />} />
             <Route path="potential-opportunities" element={<PageAccessRoute pageKey="tender_updates"><PotentialOpportunities /></PageAccessRoute>} />
             <Route path="pq-activities" element={<PageAccessRoute pageKey="pq_activities"><PqActivities /></PageAccessRoute>} />
-            <Route path="tender-spreadsheet-v2" element={<PageAccessRoute pageKey="opportunities"><TenderSpreadsheetV2 /></PageAccessRoute>} />
+            <Route path="tender-spreadsheet-v2" element={<Navigate to="/opportunities" replace />} />
             <Route path="vendors" element={<PageAccessRoute pageKey="vendor_directory"><VendorDirectory /></PageAccessRoute>} />
             <Route path="clients" element={<PageAccessRoute pageKey="clients"><Clients /></PageAccessRoute>} />
             <Route path="analytics" element={<PageAccessRoute pageKey="analytics"><Analytics /></PageAccessRoute>} />

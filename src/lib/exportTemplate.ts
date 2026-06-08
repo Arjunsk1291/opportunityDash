@@ -35,38 +35,44 @@ export interface ExportTemplateConfig {
   rowHeights: number[];
 }
 
+// Column widths (chars) from master template "29-Apr-26 Tender list.xlsx", cols B–AG (32 data cols)
+const MASTER_TEMPLATE_COLUMN_WIDTHS = [
+  9, 12, 17, 47, 33, 24, 24, 25, 17, 17, 34, 21, 15, 21, 20, 13,
+  24, 61, 29, 87, 18, 20, 22, 13, 12, 9, 11, 20, 46, 39, 14, 18,
+];
+
 export const DEFAULT_EXPORT_TEMPLATE: ExportTemplateConfig = {
-  sheetName: 'Opportunities',
-  title: 'Opportunity Export',
-  introText: 'Generated from the Avenir dashboard export.',
+  sheetName: 'MASTER TENDER LIST AVENIR',
+  title: 'Tender Information',
+  introText: '',
   showLogo: true,
   logoDataUrl: '',
   logoRow: 1,
   logoColumn: 1,
   logoWidth: 150,
   logoHeight: 46,
-  titleRow: 1,
-  titleColumn: 3,
+  titleRow: 2,
+  titleColumn: 12,
   titleRowSpan: 1,
-  titleColumnSpan: 4,
+  titleColumnSpan: 11,
   titleHorizontalAlign: 'left',
   titleVerticalAlign: 'middle',
-  introRow: 2,
-  introColumn: 3,
-  introRowSpan: 2,
-  introColumnSpan: 5,
+  introRow: 3,
+  introColumn: 1,
+  introRowSpan: 1,
+  introColumnSpan: 1,
   introHorizontalAlign: 'left',
   introVerticalAlign: 'top',
   headerRow: 4,
-  headerColumn: 1,
-  headerHorizontalAlign: 'left',
+  headerColumn: 2,
+  headerHorizontalAlign: 'center',
   headerVerticalAlign: 'middle',
-  headerBackgroundColor: '#1d4ed8',
-  headerTextColor: '#ffffff',
-  titleColor: '#0f172a',
+  headerBackgroundColor: '#9BC2E6',
+  headerTextColor: '#000000',
+  titleColor: '#000000',
   introColor: '#475569',
-  columnWidths: Array.from({ length: 12 }, () => 18),
-  rowHeights: Array.from({ length: 20 }, () => 24),
+  columnWidths: MASTER_TEMPLATE_COLUMN_WIDTHS,
+  rowHeights: Array.from({ length: 20 }, () => 20),
 };
 
 export const EXPORT_TEMPLATE_COLOR_FIELDS: Array<keyof Pick<
@@ -133,6 +139,6 @@ export const normalizeExportTemplate = (input?: Partial<ExportTemplateConfig> | 
   headerTextColor: normalizeColor(input?.headerTextColor, DEFAULT_EXPORT_TEMPLATE.headerTextColor),
   titleColor: normalizeColor(input?.titleColor, DEFAULT_EXPORT_TEMPLATE.titleColor),
   introColor: normalizeColor(input?.introColor, DEFAULT_EXPORT_TEMPLATE.introColor),
-  columnWidths: normalizeSizedArray(input?.columnWidths, DEFAULT_EXPORT_TEMPLATE.columnWidths, 8, 48),
+  columnWidths: normalizeSizedArray(input?.columnWidths, DEFAULT_EXPORT_TEMPLATE.columnWidths, 8, 200),
   rowHeights: normalizeSizedArray(input?.rowHeights, DEFAULT_EXPORT_TEMPLATE.rowHeights, 16, 80),
 });
