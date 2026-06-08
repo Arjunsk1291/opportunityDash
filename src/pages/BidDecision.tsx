@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTrackedAction } from '@/hooks/useTrackedAction';
+import { ActionProgressBar } from '@/components/ActionProgressBar';
 import {
   ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronRight,
   Download, FileText, Loader2, Plus, RefreshCw, Search, ShieldCheck, XCircle,
@@ -112,8 +114,10 @@ async function exportBidDecisionExcel(params: {
   opportunityRefNo: string; projectName: string; endUser: string;
   receivedFrom: string; enquiryDate: string; scopeOfWork: string;
   scores: ScoresMap; totalScore: number; decision: string;
+  svpReviewedBy?: string; svpFinalDecision?: string; gmApprovedBy?: string;
 }) {
-  const { opportunityRefNo, projectName, endUser, receivedFrom, enquiryDate, scopeOfWork, scores, totalScore, decision } = params;
+  const { opportunityRefNo, projectName, endUser, receivedFrom, enquiryDate, scopeOfWork, scores, totalScore, decision,
+    svpReviewedBy = '', svpFinalDecision = '', gmApprovedBy = '' } = params;
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Avenir Opportunity Dashboard';
@@ -249,7 +253,20 @@ async function exportBidDecisionExcel(params: {
   // ── R28:R34: Final Evaluation ──
   ws.mergeCells('C28:I34');
   ws.getRow(28).height = 140;
-  ws.getRow(28).getCell(3).value = 'Final Evaluation :\n\n\nReviewed by : SVP\n\nBID :\n\n\nApproved by: GM\n\nNO BID :';
+  const finalDecision = svpFinalDecision || decision;
+  const bidCheck = finalDecision === 'BID' ? '☑' : '☐';
+  const noBidCheck = finalDecision === 'NO BID' ? '☑' : '☐';
+  ws.getRow(28).getCell(3).value = [
+    'Final Evaluation :',
+    '',
+    `Reviewed by : SVP${svpReviewedBy ? '   ' + svpReviewedBy : ''}`,
+    '',
+    `BID :  ${bidCheck}`,
+    '',
+    `Approved by: GM${gmApprovedBy ? '   ' + gmApprovedBy : ''}`,
+    '',
+    `NO BID :  ${noBidCheck}`,
+  ].join('\n');
   ws.getRow(28).getCell(3).style = { font: { size: 11 }, border: bd, alignment: { wrapText: true, vertical: 'top' } };
 
   // ── Download ──
@@ -422,6 +439,7 @@ export default function BidDecision() {
   const { opportunities } = useData();
   const { token, canPerformAction } = useAuth();
   const canSave = canPerformAction('bid_decision_manage');
+  const { status: trackedStatus, run: runTracked } = useTrackedAction();
 
   const [records, setRecords] = useState<BidDecisionRecord[]>([]);
   const [loadingRecords, setLoadingRecords] = useState(true);
@@ -436,6 +454,9 @@ export default function BidDecision() {
   const [scores, setScores] = useState<ScoresMap>({});
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [svpReviewedBy, setSvpReviewedBy] = useState('');
+  const [svpFinalDecision, setSvpFinalDecision] = useState('');
+  const [gmApprovedBy, setGmApprovedBy] = useState('');
   const [editingRefNo, setEditingRefNo] = useState<string | null>(null); // null = new
 
   // ── load records ──────────────────────────────────────────────────────────
@@ -464,20 +485,23 @@ export default function BidDecision() {
     setDbSearch('');
     setDetails(EMPTY_DETAILS);
     setScores({});
+    setSvpReviewedBy('');
+    setSvpFinalDecision('');
+    setGmApprovedBy('');
     setWizardOpen(true);
   };
 
   const openEditWizard = (record: BidDecisionRecord) => {
     setEditingRefNo(record.opportunityRefNo);
     setStep('scoring');
-    setSourceMode((record.sourceMode as 'db' | 'manual') || 'manual');
+    setSourceMode(record.sourceMode === 'dashboard' ? 'db' : 'manual');
     setDetails({
       opportunityRefNo: record.opportunityRefNo,
-      projectName: (record as unknown as Record<string, string>).projectName || '',
-      endUser: (record as unknown as Record<string, string>).endUser || '',
-      receivedFrom: (record as unknown as Record<string, string>).receivedFrom || '',
-      enquiryDate: (record as unknown as Record<string, string>).enquiryDate || '',
-      scopeOfWork: (record as unknown as Record<string, string>).scopeOfWork || '',
+      projectName: record.projectName || '',
+      endUser: record.endUser || '',
+      receivedFrom: record.receivedFrom || '',
+      enquiryDate: record.enquiryDate || '',
+      scopeOfWork: record.scopeOfWork || '',
     });
     setScores(buildScoresFromRecord(record));
     setWizardOpen(true);
@@ -528,25 +552,29 @@ export default function BidDecision() {
     if (!details.opportunityRefNo.trim()) { toast.error('Opportunity reference number is required.'); return; }
     setSaving(true);
     try {
-      const record = await saveBidDecision(token!, {
-        opportunityRefNo: details.opportunityRefNo.trim(),
-        bidDecision: recommendation,
-        decisionScore: currentScore,
-        criteriaValues: buildCriteriaValues(scores),
-        sourceMode: sourceMode === 'db' ? 'dashboard' : 'manual',
-        projectName: details.projectName,
-        endUser: details.endUser,
-        receivedFrom: details.receivedFrom,
-        enquiryDate: details.enquiryDate,
-        scopeOfWork: details.scopeOfWork,
+      await runTracked('Save Bid Decision', async (setProgress) => {
+        setProgress(30, 'Saving…');
+        const record = await saveBidDecision(token!, {
+          opportunityRefNo: details.opportunityRefNo.trim(),
+          bidDecision: recommendation,
+          decisionScore: currentScore,
+          criteriaValues: buildCriteriaValues(scores),
+          sourceMode: sourceMode === 'db' ? 'dashboard' : 'manual',
+          projectName: details.projectName,
+          endUser: details.endUser,
+          receivedFrom: details.receivedFrom,
+          enquiryDate: details.enquiryDate,
+          scopeOfWork: details.scopeOfWork,
+        });
+        setProgress(90, 'Updating…');
+        setRecords((prev) => {
+          const idx = prev.findIndex((r) => r.opportunityRefNo === record.opportunityRefNo);
+          if (idx >= 0) { const next = [...prev]; next[idx] = record; return next; }
+          return [record, ...prev];
+        });
+        toast.success(`Saved: ${recommendation} — ${currentScore.toFixed(1)}%`);
+        closeWizard();
       });
-      setRecords((prev) => {
-        const idx = prev.findIndex((r) => r.opportunityRefNo === record.opportunityRefNo);
-        if (idx >= 0) { const next = [...prev]; next[idx] = record; return next; }
-        return [record, ...prev];
-      });
-      toast.success(`Saved: ${recommendation} — ${currentScore.toFixed(1)}%`);
-      closeWizard();
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -569,6 +597,9 @@ export default function BidDecision() {
         scores,
         totalScore: currentScore,
         decision: recommendation,
+        svpReviewedBy,
+        svpFinalDecision,
+        gmApprovedBy,
       });
     } catch (err) {
       toast.error('Export failed: ' + (err as Error).message);
@@ -923,6 +954,64 @@ export default function BidDecision() {
               {details.endUser && <p><span className="font-medium">End User:</span> {details.endUser}</p>}
             </div>
 
+            {/* Final Evaluation sign-off block */}
+            <Card className="border-dashed">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">Final Evaluation (for Excel export)</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Reviewed by (SVP)</label>
+                    <input
+                      type="text"
+                      className="w-full border rounded px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                      placeholder="SVP name / signature"
+                      value={svpReviewedBy}
+                      onChange={(e) => setSvpReviewedBy(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Approved by (GM)</label>
+                    <input
+                      type="text"
+                      className="w-full border rounded px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                      placeholder="GM name / signature"
+                      value={gmApprovedBy}
+                      onChange={(e) => setGmApprovedBy(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">SVP Final Decision</label>
+                  <div className="flex gap-3">
+                    {(['BID', 'NO BID'] as const).map((opt) => (
+                      <label key={opt} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="svpFinalDecision"
+                          value={opt}
+                          checked={svpFinalDecision === opt}
+                          onChange={() => setSvpFinalDecision(opt)}
+                          className="accent-primary"
+                        />
+                        <span className={`text-sm font-semibold ${opt === 'BID' ? 'text-green-600' : 'text-red-600'}`}>{opt}</span>
+                      </label>
+                    ))}
+                    {svpFinalDecision && (
+                      <button
+                        className="text-xs text-muted-foreground underline ml-2"
+                        onClick={() => setSvpFinalDecision('')}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Defaults to system recommendation ({recommendation}) if left blank.</p>
+                </div>
+              </CardContent>
+            </Card>
+
             <div className="flex justify-between">
               <Button variant="outline" onClick={() => setStep('scoring')}>
                 <ArrowLeft className="mr-2 h-4 w-4" />Revise Scores
@@ -968,6 +1057,8 @@ export default function BidDecision() {
   // ─── Records list view ────────────────────────────────────────────────────
 
   return (
+    <>
+    <ActionProgressBar status={trackedStatus} />
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -1032,11 +1123,10 @@ export default function BidDecision() {
                 </TableRow>
               )}
               {filteredRecords.map((rec) => {
-                const extra = rec as unknown as Record<string, string>;
                 return (
                   <TableRow key={rec.opportunityRefNo}>
                     <TableCell className="font-mono text-xs">{rec.opportunityRefNo}</TableCell>
-                    <TableCell className="text-sm max-w-[200px] truncate">{extra.projectName || '—'}</TableCell>
+                    <TableCell className="text-sm max-w-[200px] truncate">{rec.projectName || '—'}</TableCell>
                     <TableCell className="text-right font-semibold">
                       <span className={rec.decisionScore >= BID_DECISION_THRESHOLD ? 'text-green-600' : 'text-red-500'}>
                         {Number(rec.decisionScore).toFixed(1)}%
@@ -1068,11 +1158,11 @@ export default function BidDecision() {
                             const scores = buildScoresFromRecord(rec);
                             void exportBidDecisionExcel({
                               opportunityRefNo: rec.opportunityRefNo,
-                              projectName: extra.projectName || '',
-                              endUser: extra.endUser || '',
-                              receivedFrom: extra.receivedFrom || '',
-                              enquiryDate: extra.enquiryDate || '',
-                              scopeOfWork: extra.scopeOfWork || '',
+                              projectName: rec.projectName || '',
+                              endUser: rec.endUser || '',
+                              receivedFrom: rec.receivedFrom || '',
+                              enquiryDate: rec.enquiryDate || '',
+                              scopeOfWork: rec.scopeOfWork || '',
                               scores,
                               totalScore: Number(rec.decisionScore),
                               decision: rec.bidDecision,
@@ -1100,5 +1190,6 @@ export default function BidDecision() {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 }

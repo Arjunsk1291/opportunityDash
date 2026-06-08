@@ -4280,7 +4280,6 @@ const PAGE_KEYS = [
   'clients',
   'analytics',
   'bd_engagements',
-  'advanced_analytics',
   'master',
   'master_general',
   'master_users',
@@ -4329,7 +4328,6 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
   clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   bd_engagements: ['Master', 'Admin', 'BDTeam'],
-  advanced_analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam'],
   master: ['Master', 'Admin'],
   master_general: ['Master', 'Admin'],
   master_users: ['Master', 'Admin'],
@@ -4958,6 +4956,98 @@ const requirePagePermission = async (req, res, pageKey) => {
   return config;
 };
 
+const PAGE_EDIT_ACTION_MAP = {
+  opportunities: ['opportunities_write', 'opportunities_sync', 'opportunities_sheet_upload', 'manual_opportunity_updates_write'],
+  bid_decision: ['bid_decision_manage'],
+  pq_activities: ['pq_activities_manage'],
+  vendor_directory: ['vendors_write', 'vendors_import'],
+  clients: ['clients_write', 'clients_import', 'clients_seed'],
+  bd_engagements: ['bd_engagements_write'],
+  tender_updates: [],
+  dashboard: [],
+  analytics: [],
+  master: ['users_manage', 'navigation_permissions_write', 'graph_config_write', 'graph_auth_write',
+    'telecast_config_write', 'telecast_auth_write', 'export_template_write',
+    'notification_alert_flags_write', 'lead_email_manage', 'logs_cleanup'],
+  master_general: ['users_manage'],
+  master_users: ['users_manage'],
+  master_data_sync: ['graph_config_write', 'graph_auth_write'],
+  master_telecast: ['telecast_config_write', 'telecast_auth_write'],
+  master_update: ['export_template_write'],
+  master_export: ['export_template_write'],
+};
+
+const migratePermissionsV2 = async (config) => {
+  const existingView = config.pageViewAccess || {};
+  if (Object.keys(existingView).length > 0) return;
+
+  const pageView = sanitizePageRoleAccess(config.pageRoleAccess || {});
+  const actionPerms = sanitizeActionRoleAccess(config.actionRoleAccess || {});
+
+  const pageEdit = {};
+  for (const pageKey of PAGE_KEYS) {
+    const actionKeys = PAGE_EDIT_ACTION_MAP[pageKey] || [];
+    if (!actionKeys.length) {
+      pageEdit[pageKey] = [];
+      continue;
+    }
+    const roleSets = actionKeys.map((ak) => new Set(actionPerms[ak] || []));
+    if (!roleSets.length) { pageEdit[pageKey] = []; continue; }
+    const intersection = ROLE_KEYS.filter((r) => roleSets.every((s) => s.has(r)));
+    pageEdit[pageKey] = intersection;
+  }
+
+  await persistSystemConfigFields(config, {
+    pageViewAccess: pageView,
+    pageEditAccess: pageEdit,
+    userPageOverrides: [],
+  }, 'system_migration', 'permissions_v2_migration');
+};
+
+const getPermissionsV2 = async () => {
+  const config = await getSystemConfig();
+  if (!config.pageViewAccess || Object.keys(config.pageViewAccess).length === 0) {
+    await migratePermissionsV2(config);
+    return getSystemConfig({ force: true });
+  }
+  return config;
+};
+
+const requirePageView = async (req, res, pageKey) => {
+  const config = await getPermissionsV2();
+  if (String(req.user?.role || '') === 'Master') return config;
+  const userEmail = String(req.user?.email || '').trim().toLowerCase();
+  const viewRoles = (config.pageViewAccess || {})[pageKey] || [];
+  const overrides = Array.isArray(config.userPageOverrides) ? config.userPageOverrides : [];
+  const override = overrides.find((o) => String(o.email || '').trim().toLowerCase() === userEmail && o.pageKey === pageKey);
+  if (override) return config;
+  if (!viewRoles.includes(req.user?.role)) {
+    res.status(403).json({ error: `Role ${req.user.role} is not allowed to view ${pageKey}` });
+    return null;
+  }
+  return config;
+};
+
+const requirePageEdit = async (req, res, pageKey) => {
+  const config = await getPermissionsV2();
+  if (String(req.user?.role || '') === 'Master') return config;
+  const userEmail = String(req.user?.email || '').trim().toLowerCase();
+  const viewRoles = (config.pageViewAccess || {})[pageKey] || [];
+  const editRoles = (config.pageEditAccess || {})[pageKey] || [];
+  const overrides = Array.isArray(config.userPageOverrides) ? config.userPageOverrides : [];
+  const override = overrides.find((o) => String(o.email || '').trim().toLowerCase() === userEmail && o.pageKey === pageKey);
+  if (override?.access === 'edit') return config;
+  if (!viewRoles.includes(req.user?.role)) {
+    res.status(403).json({ error: `Role ${req.user.role} is not allowed to view ${pageKey}` });
+    return null;
+  }
+  if (!editRoles.includes(req.user?.role)) {
+    res.status(403).json({ error: `Role ${req.user.role} does not have edit access for ${pageKey}` });
+    return null;
+  }
+  return config;
+};
+
 const requireHireflowRole = (req, res) => {
   const allowed = ['Master', 'Admin', 'SVP'].includes(String(req.user?.role || ''));
   if (!allowed) {
@@ -5136,6 +5226,101 @@ app.post('/api/action-permissions', verifyToken, async (req, res) => {
 
     const meta = addConfigMetaHeaders(res, updated);
     res.json({ success: true, permissions, emailPermissions, ...meta });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/permissions/v2', verifyToken, async (req, res) => {
+  try {
+    const config = await getPermissionsV2();
+    const pageViewAccess = {};
+    const pageEditAccess = {};
+    for (const key of PAGE_KEYS) {
+      pageViewAccess[key] = (config.pageViewAccess || {})[key] || [];
+      pageEditAccess[key] = (config.pageEditAccess || {})[key] || [];
+    }
+    res.json({
+      success: true,
+      pageViewAccess,
+      pageEditAccess,
+      userPageOverrides: Array.isArray(config.userPageOverrides) ? config.userPageOverrides : [],
+      pageEditActionMap: PAGE_EDIT_ACTION_MAP,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/permissions/v2', verifyToken, async (req, res) => {
+  try {
+    if (req.user?.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can update permissions' });
+    }
+    const { pageViewAccess, pageEditAccess, userPageOverrides } = req.body || {};
+
+    const sanitizedView = {};
+    const sanitizedEdit = {};
+    for (const key of PAGE_KEYS) {
+      const viewRoles = Array.isArray(pageViewAccess?.[key]) ? pageViewAccess[key].filter((r) => ROLE_KEYS.includes(r)) : [];
+      const editRoles = Array.isArray(pageEditAccess?.[key]) ? pageEditAccess[key].filter((r) => ROLE_KEYS.includes(r) && viewRoles.includes(r)) : [];
+      sanitizedView[key] = viewRoles;
+      sanitizedEdit[key] = editRoles;
+    }
+
+    const sanitizedOverrides = Array.isArray(userPageOverrides)
+      ? userPageOverrides.filter((o) => o?.email && o?.pageKey && PAGE_KEYS.includes(o.pageKey) && ['view', 'edit'].includes(o.access))
+          .map((o) => ({ email: String(o.email).trim().toLowerCase(), pageKey: o.pageKey, access: o.access }))
+      : [];
+
+    const config = await getSystemConfig();
+    const updated = await persistSystemConfigFields(config, {
+      pageViewAccess: sanitizedView,
+      pageEditAccess: sanitizedEdit,
+      userPageOverrides: sanitizedOverrides,
+      pageRoleAccess: sanitizedView,
+    }, req.user.email, 'permissions_v2_save');
+
+    res.json({
+      success: true,
+      pageViewAccess: updated.pageViewAccess || {},
+      pageEditAccess: updated.pageEditAccess || {},
+      userPageOverrides: updated.userPageOverrides || [],
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/permissions/v2/override', verifyToken, async (req, res) => {
+  try {
+    if (req.user?.role !== 'Master') {
+      return res.status(403).json({ error: 'Only Master users can manage overrides' });
+    }
+    const { email, pageKey, access, remove } = req.body || {};
+    if (!email || !pageKey || !PAGE_KEYS.includes(pageKey)) {
+      return res.status(400).json({ error: 'Invalid override payload' });
+    }
+    const config = await getPermissionsV2();
+    const overrides = Array.isArray(config.userPageOverrides) ? [...config.userPageOverrides] : [];
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const existingIdx = overrides.findIndex((o) => String(o.email || '').trim().toLowerCase() === normalizedEmail && o.pageKey === pageKey);
+
+    if (remove) {
+      if (existingIdx !== -1) overrides.splice(existingIdx, 1);
+    } else {
+      if (!['view', 'edit'].includes(access)) return res.status(400).json({ error: 'access must be view or edit' });
+      const viewRoles = (config.pageViewAccess || {})[pageKey] || [];
+      const userRecord = await AuthorizedUser.findOne({ email: normalizedEmail }).lean();
+      if (userRecord && !viewRoles.includes(userRecord.role) && userRecord.role !== 'Master') {
+        return res.status(400).json({ error: 'User role does not have view access; grant role-level view first' });
+      }
+      if (existingIdx !== -1) overrides[existingIdx] = { email: normalizedEmail, pageKey, access };
+      else overrides.push({ email: normalizedEmail, pageKey, access });
+    }
+
+    const updated = await persistSystemConfigFields(config, { userPageOverrides: overrides }, req.user.email, 'permissions_v2_override');
+    res.json({ success: true, userPageOverrides: updated.userPageOverrides || [] });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -6404,6 +6589,7 @@ app.get('/api/spreadsheet/workbook/opportunities', verifyToken, async (_req, res
 // --- BD Engagements ---
 app.get('/api/bd-engagements', verifyToken, async (req, res) => {
   try {
+    res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     const rows = await BDEngagement.find().sort({ createdAt: -1 }).lean();
     res.json(rows.map(mapIdField));
   } catch (error) {
@@ -8383,6 +8569,7 @@ app.post('/api/bid-decisions', verifyToken, async (req, res) => {
 
 app.get('/api/vendors', verifyToken, async (_req, res) => {
   try {
+    res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     await cleanupDummyVendors();
     const vendors = await Vendor.find().sort({ updatedAt: -1, companyName: 1 }).lean();
     res.json(vendors.map((vendor) => mapIdField(vendor)));
@@ -8459,6 +8646,7 @@ app.post('/api/vendors/import', verifyToken, async (req, res) => {
 
 app.get('/api/clients', verifyToken, async (_req, res) => {
   try {
+    res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     const clients = await Client.find().sort({ updatedAt: -1 }).lean();
     res.json(clients.map((client) => mapIdField(client)));
   } catch (error) {

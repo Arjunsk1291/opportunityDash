@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -52,6 +53,7 @@ export function ReportIssueButton({ authToken, reporter, page }: ReportIssueButt
   const [steps, setSteps] = useState('');
   const [comments, setComments] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
   const canSubmit = useMemo(() => {
     if (!comments.trim()) return false;
@@ -122,12 +124,23 @@ export function ReportIssueButton({ authToken, reporter, page }: ReportIssueButt
     }
   };
 
+  if (dismissed) return null;
+
   return (
     <>
-      <div className="fixed bottom-5 right-5 z-50">
+      <div className="fixed bottom-5 right-5 z-50 flex items-center gap-1">
         <Button className="gap-2 shadow-lg" onClick={() => setOpen(true)}>
           <MessageSquareWarning className="h-4 w-4" />
           Report Issue
+        </Button>
+        <Button
+          size="icon"
+          variant="secondary"
+          className="h-9 w-9 shadow-lg rounded-full"
+          title="Dismiss"
+          onClick={() => setDismissed(true)}
+        >
+          <X className="h-4 w-4" />
         </Button>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>

@@ -18,6 +18,11 @@ export type BidDecisionRecord = {
   decisionScore: number;
   criteriaValues: BidDecisionCriterion[];
   sourceMode: BidDecisionSourceMode;
+  projectName: string;
+  endUser: string;
+  receivedFrom: string;
+  enquiryDate: string;
+  scopeOfWork: string;
   createdBy: string;
   updatedBy: string;
   sourceOpportunitySyncedAt?: string | null;
@@ -249,6 +254,11 @@ export const normalizeBidDecisionRecord = (input: Partial<BidDecisionRecord> | n
     ? input.criteriaValues.map((criterion) => normalizeBidDecisionCriterion(criterion))
     : [],
   sourceMode: normalizeBidDecisionSourceMode(input?.sourceMode),
+  projectName: String((input as Record<string, unknown>)?.projectName || ''),
+  endUser: String((input as Record<string, unknown>)?.endUser || ''),
+  receivedFrom: String((input as Record<string, unknown>)?.receivedFrom || ''),
+  enquiryDate: String((input as Record<string, unknown>)?.enquiryDate || ''),
+  scopeOfWork: String((input as Record<string, unknown>)?.scopeOfWork || ''),
   createdBy: normalizeText(input?.createdBy),
   updatedBy: normalizeText(input?.updatedBy),
   sourceOpportunitySyncedAt: input?.sourceOpportunitySyncedAt || null,

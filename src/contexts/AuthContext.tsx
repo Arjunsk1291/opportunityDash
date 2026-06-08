@@ -16,6 +16,8 @@ export interface User {
   lastLogin?: Date;
 }
 
+export type UserPageOverride = { email: string; pageKey: PageKey; access: 'view' | 'edit' };
+
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
@@ -38,10 +40,21 @@ interface AuthContextType {
   pageExcludePermissions: Record<PageKey, UserRole[]>;
   pageEmailPermissions: Record<PageKey, string[]>;
   canAccessPage: (pageKey: PageKey) => boolean;
+  canViewPage: (pageKey: PageKey) => boolean;
+  canEditPage: (pageKey: PageKey) => boolean;
+  pageViewAccess: Record<PageKey, UserRole[]>;
+  pageEditAccess: Record<PageKey, UserRole[]>;
+  userPageOverrides: UserPageOverride[];
+  pageEditActionMap: Record<string, string[]>;
   updatePagePermissions: (
     permissions: Record<PageKey, UserRole[]>,
     emailPermissions?: Record<PageKey, string[]>,
     excludePermissions?: Record<PageKey, UserRole[]>,
+  ) => Promise<void>;
+  updatePermissionsV2: (
+    pageViewAccess: Record<PageKey, UserRole[]>,
+    pageEditAccess: Record<PageKey, UserRole[]>,
+    userPageOverrides: UserPageOverride[],
   ) => Promise<void>;
   reloadPagePermissions: () => Promise<void>;
   actionPermissions: Record<ActionKey, UserRole[]>;
@@ -136,6 +149,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [pageEmailPermissions, setPageEmailPermissions] = useState<Record<PageKey, string[]>>({} as Record<PageKey, string[]>);
   const [actionPermissions, setActionPermissions] = useState<Record<ActionKey, UserRole[]>>(DEFAULT_ACTION_ROLE_ACCESS as Record<ActionKey, UserRole[]>);
   const [actionEmailPermissions, setActionEmailPermissions] = useState<Record<ActionKey, string[]>>({} as Record<ActionKey, string[]>);
+  const [pageViewAccess, setPageViewAccess] = useState<Record<PageKey, UserRole[]>>({} as Record<PageKey, UserRole[]>);
+  const [pageEditAccess, setPageEditAccess] = useState<Record<PageKey, UserRole[]>>({} as Record<PageKey, UserRole[]>);
+  const [userPageOverrides, setUserPageOverrides] = useState<UserPageOverride[]>([]);
+  const [pageEditActionMap, setPageEditActionMap] = useState<Record<string, string[]>>({});
   const permissionsRefreshRef = React.useRef<Promise<void> | null>(null);
 
   const authHeaders = useCallback(
@@ -355,19 +372,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const request = (async () => {
       try {
-        const response = await fetch(API_URL + '/permissions/bootstrap', { headers: authHeaders() });
-        if (!response.ok) {
-          throw new Error('Failed to load permissions');
+        const [bootstrapResponse, v2Response] = await Promise.all([
+          fetch(API_URL + '/permissions/bootstrap', { headers: authHeaders() }),
+          fetch(API_URL + '/permissions/v2', { headers: authHeaders() }),
+        ]);
+
+        if (bootstrapResponse.ok) {
+          const data = (await bootstrapResponse.json()) as PermissionsBootstrapResponse;
+          if (data?.pagePermissions) setPagePermissions(data.pagePermissions);
+          if (data?.pageExcludePermissions) setPageExcludePermissions(data.pageExcludePermissions);
+          if (data?.pageEmailPermissions) setPageEmailPermissions(data.pageEmailPermissions);
+          if (data?.actionPermissions) setActionPermissions(data.actionPermissions);
+          if (data?.actionEmailPermissions) setActionEmailPermissions(data.actionEmailPermissions);
         }
 
-        const data = (await response.json()) as PermissionsBootstrapResponse;
-        if (data?.pagePermissions) setPagePermissions(data.pagePermissions);
-        if (data?.pageExcludePermissions) setPageExcludePermissions(data.pageExcludePermissions);
-        if (data?.pageEmailPermissions) setPageEmailPermissions(data.pageEmailPermissions);
-        if (data?.actionPermissions) setActionPermissions(data.actionPermissions);
-        if (data?.actionEmailPermissions) setActionEmailPermissions(data.actionEmailPermissions);
-        return;
-      } catch (error) {
+        if (v2Response.ok) {
+          const v2Data = await v2Response.json() as {
+            pageViewAccess?: Record<PageKey, UserRole[]>;
+            pageEditAccess?: Record<PageKey, UserRole[]>;
+            userPageOverrides?: UserPageOverride[];
+            pageEditActionMap?: Record<string, string[]>;
+          };
+          if (v2Data?.pageViewAccess) setPageViewAccess(v2Data.pageViewAccess);
+          if (v2Data?.pageEditAccess) setPageEditAccess(v2Data.pageEditAccess);
+          if (v2Data?.userPageOverrides) setUserPageOverrides(v2Data.userPageOverrides);
+          if (v2Data?.pageEditActionMap) setPageEditActionMap(v2Data.pageEditActionMap);
+        }
+      } catch {
         try {
           const [pageResponse, actionResponse] = await Promise.all([
             fetch(API_URL + '/navigation/permissions', { headers: authHeaders() }),
@@ -508,6 +539,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return allowedRoles.includes(user.role) && !excludedRoles.includes(user.role);
   }, [pageEmailPermissions, pageExcludePermissions, pagePermissions, user]);
 
+  const canViewPage = useCallback((pageKey: PageKey) => {
+    if (!user || user.status !== 'approved') return false;
+    if (user.role === 'Master') return true;
+    const email = String(user.email || '').trim().toLowerCase();
+    const override = userPageOverrides.find((o) => o.email === email && o.pageKey === pageKey);
+    if (override) return true;
+    const viewRoles = pageViewAccess[pageKey] || [];
+    if (viewRoles.length > 0) return viewRoles.includes(user.role);
+    return canAccessPage(pageKey);
+  }, [canAccessPage, pageViewAccess, user, userPageOverrides]);
+
+  const canEditPage = useCallback((pageKey: PageKey) => {
+    if (!user || user.status !== 'approved') return false;
+    if (user.role === 'Master') return true;
+    const email = String(user.email || '').trim().toLowerCase();
+    const override = userPageOverrides.find((o) => o.email === email && o.pageKey === pageKey);
+    if (override?.access === 'edit') return true;
+    const editRoles = pageEditAccess[pageKey] || [];
+    return editRoles.includes(user.role);
+  }, [pageEditAccess, user, userPageOverrides]);
+
+  const updatePermissionsV2 = useCallback(async (
+    newPageViewAccess: Record<PageKey, UserRole[]>,
+    newPageEditAccess: Record<PageKey, UserRole[]>,
+    newUserPageOverrides: UserPageOverride[],
+  ) => {
+    if (!token || user?.role !== 'Master') throw new Error('Only Master users can update permissions');
+    const { response, data } = await fetchJsonWithTimeout<{
+      error?: string;
+      pageViewAccess?: Record<PageKey, UserRole[]>;
+      pageEditAccess?: Record<PageKey, UserRole[]>;
+      userPageOverrides?: UserPageOverride[];
+    }>(
+      API_URL + '/permissions/v2',
+      {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ pageViewAccess: newPageViewAccess, pageEditAccess: newPageEditAccess, userPageOverrides: newUserPageOverrides }),
+      },
+      { timeoutMs: 25000 },
+    );
+    if (!response.ok) throw new Error((data as { error?: string })?.error || 'Failed to update permissions');
+    if (data?.pageViewAccess) setPageViewAccess(data.pageViewAccess);
+    if (data?.pageEditAccess) setPageEditAccess(data.pageEditAccess);
+    if (data?.userPageOverrides) setUserPageOverrides(data.userPageOverrides);
+    await loadPermissionsBundle();
+  }, [authHeaders, loadPermissionsBundle, token, user?.role]);
+
   const canPerformAction = useCallback((actionKey: ActionKey) => {
     if (!user || user.status !== 'approved') return false;
     // Master is the supreme role: always allowed to perform any action (frontend gating).
@@ -573,7 +652,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pageExcludePermissions,
         pageEmailPermissions,
         canAccessPage,
+        canViewPage,
+        canEditPage,
+        pageViewAccess,
+        pageEditAccess,
+        userPageOverrides,
+        pageEditActionMap,
         updatePagePermissions,
+        updatePermissionsV2,
         reloadPagePermissions: reloadPermissionsBundle,
         actionPermissions,
         actionEmailPermissions,

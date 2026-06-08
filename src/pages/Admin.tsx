@@ -27,7 +27,10 @@ import { DEFAULT_EXPORT_TEMPLATE, ExportTemplateConfig, normalizeExportTemplate 
 import { ExportTemplateSpreadsheet } from '@/components/Admin/ExportTemplateSpreadsheet';
 import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToObjects } from '@/lib/excelWorkbook';
 import { UserMultiEmailPicker } from '@/components/Admin/UserMultiEmailPicker';
+import { PermissionsPanel } from '@/components/Admin/PermissionsPanel';
 import { diag } from '@/lib/diagnostics';
+import { useTrackedAction } from '@/hooks/useTrackedAction';
+import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { statusConsole } from '@/lib/statusConsole';
 import { UsersPanel } from '@/components/Admin/UsersPanel';
 
@@ -431,7 +434,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [changingRole, setChangingRole] = useState<string | null>(null);
   const [syncLoading, setSyncLoading] = useState(false);
-  const [liveActionStatus, setLiveActionStatus] = useState<LiveActionStatus | null>(null);
+  const { status: trackedStatus, run: runTrackedAction } = useTrackedAction();
   const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(null);
   const [graphConfig, setGraphConfig] = useState<GraphConfig>({
     shareLink: '',
@@ -644,44 +647,8 @@ export default function Admin({ initialTab }: AdminProps = {}) {
 
   const configsMatch = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
-  const runTrackedAction = async <T,>(
-    actionName: string,
-    runner: (setProgress: (percent: number, detail: string) => void) => Promise<T>,
-  ): Promise<T> => {
-    const startedAt = performance.now();
-
-    // Creep toward 85% so the bar is always moving while waiting for the API
-    const fakeAdvance = window.setInterval(() => {
-      setLiveActionStatus((current) => {
-        if (!current || current.name !== actionName || current.percent >= 85) return current;
-        const bump = Math.max(0.5, (85 - current.percent) * 0.08);
-        return { ...current, percent: Math.min(85, Math.round((current.percent + bump) * 10) / 10) };
-      });
-    }, 350);
-
-    const setProgress = (percent: number, detail: string) => {
-      const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
-      setLiveActionStatus({ name: actionName, percent: safePercent, detail, startedAt });
-    };
-
-    statusConsole.info(`${actionName}: started`);
-    setProgress(5, 'Starting…');
-    try {
-      const result = await runner(setProgress);
-      setProgress(100, 'Done');
-      statusConsole.success(`${actionName}: completed`, { elapsedMs: Math.round(performance.now() - startedAt) });
-      return result;
-    } catch (error) {
-      setProgress(100, `Failed: ${(error as Error)?.message || 'unknown error'}`);
-      statusConsole.error(`${actionName}: failed`, { elapsedMs: Math.round(performance.now() - startedAt), error: (error as Error)?.message || String(error) });
-      throw error;
-    } finally {
-      window.clearInterval(fakeAdvance);
-      setTimeout(() => {
-        setLiveActionStatus((current) => (current?.name === actionName ? null : current));
-      }, 2200);
-    }
-  };
+  // runTrackedAction now delegates to useTrackedAction hook (defined above as { status: trackedStatus, run: runTrackedAction })
+  // keeping the same call signature so all existing call sites work unchanged
 
   const tabConfig = useMemo(
     () => ([
@@ -2948,32 +2915,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
           <AlertDescription>{message.text}</AlertDescription>
         </Alert>
       )}
-      {liveActionStatus && (
-        <div className="fixed inset-x-0 top-0 z-[9999] pointer-events-none">
-          <div className="bg-primary/95 text-primary-foreground shadow-xl px-4 py-2.5 backdrop-blur-sm">
-            <div className="mx-auto max-w-4xl flex items-center gap-3">
-              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="font-semibold truncate">{liveActionStatus.name}</span>
-                  <span className="tabular-nums ml-2 shrink-0">{liveActionStatus.percent}%</span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-white/25 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-white transition-all duration-300 ease-out"
-                    style={{ width: `${liveActionStatus.percent}%` }}
-                  />
-                </div>
-              </div>
-              {liveActionStatus.detail && (
-                <span className="hidden sm:block text-xs opacity-75 shrink-0 max-w-48 truncate">
-                  {liveActionStatus.detail}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <ActionProgressBar status={trackedStatus} />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <Card className="border bg-card/70 backdrop-blur-sm">
@@ -3131,91 +3073,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
 
         {allowedTabValues.has('users') && (
         <TabsContent value="users" className="mt-6">
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Sidebar Page Visibility by Role</CardTitle>
-              <CardDescription>Choose which roles can view each page in the sidebar and access its route.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-2 pr-3">Page</th>
-                      <th className="text-center py-2 px-3" colSpan={ROLE_OPTIONS.length}>Allow Roles</th>
-                      <th className="text-center py-2 px-3" colSpan={ROLE_OPTIONS.length}>Exclude Roles</th>
-                      <th className="text-left py-2 pl-3 min-w-[260px]">Custom Emails</th>
-                    </tr>
-                    <tr className="border-b">
-                      <th className="text-left py-2 pr-3 text-xs text-muted-foreground"> </th>
-                      {ROLE_OPTIONS.map((role) => (
-                        <th key={`allow-${role}`} className="text-center py-2 px-3 text-xs">{role}</th>
-                      ))}
-                      {ROLE_OPTIONS.map((role) => (
-                        <th key={`exclude-${role}`} className="text-center py-2 px-3 text-xs">{role}</th>
-                      ))}
-                      <th className="text-left py-2 pl-3 min-w-[260px] text-xs text-muted-foreground">Always Allowed Emails</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {PAGE_GROUPS.map((group) => (
-                      group.pages.map((pageKey, index) => (
-                        <tr key={pageKey} className="border-b">
-                          <td className="py-2 pr-3">
-                            {index === 0 && (
-                              <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{group.label}</div>
-                            )}
-                            <div className="font-medium">{PAGE_LABELS[pageKey]}</div>
-                          </td>
-                          {ROLE_OPTIONS.map((role) => (
-                            <td key={role} className="text-center py-2 px-3">
-                              <Checkbox
-                                checked={(draftPagePermissions[pageKey] || []).includes(role)}
-                                onCheckedChange={(checked) => togglePagePermission(pageKey, role, Boolean(checked))}
-                                disabled={!isMaster}
-                              />
-                            </td>
-                          ))}
-                          {ROLE_OPTIONS.map((role) => (
-                            <td key={`exclude-${pageKey}-${role}`} className="text-center py-2 px-3">
-                              <Checkbox
-                                checked={(draftPageExcludePermissions[pageKey] || []).includes(role)}
-                                onCheckedChange={(checked) => togglePageExcludePermission(pageKey, role, Boolean(checked))}
-                                disabled={!isMaster}
-                              />
-                            </td>
-                          ))}
-                          <td className="py-2 pl-3">
-                            <Input
-                              value={(draftPageEmailPermissions[pageKey] || []).join(', ')}
-                              onChange={(e) => updatePageEmailPermission(pageKey, e.target.value)}
-                              placeholder="user1@company.com, user2@company.com"
-                              disabled={!isMaster}
-                              className="h-9 text-xs"
-                            />
-                          </td>
-                        </tr>
-                      ))
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="mt-3 text-xs text-muted-foreground">
-                Explicit email access overrides excluded roles. This lets you block a role from a page while still allowing specific users by email.
-              </p>
-              {isMaster && (
-                <div className="mt-4 space-y-2">
-                  <Button onClick={savePagePermissions} disabled={permissionsBusy} className="gap-2">
-                    {permissionsBusy && <RefreshCw className="h-4 w-4 animate-spin" />}
-                    {permissionsBusy ? `Saving… ${permissionsProgress}%` : 'Save Page Permissions'}
-                  </Button>
-                  {permissionsProgress > 0 && (
-                    <Progress value={permissionsProgress} className="h-1.5 max-w-xs transition-all" />
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <PermissionsPanel token={token} />
 
           <Card className="mt-6">
             <CardHeader>
@@ -3385,74 +3243,6 @@ export default function Admin({ initialTab }: AdminProps = {}) {
                   </Table>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>MongoDB Write Permissions by Role</CardTitle>
-              <CardDescription>Control which roles may perform write actions that persist changes into MongoDB.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-2 pr-3">Action</th>
-                      {ROLE_OPTIONS.map((role) => (
-                        <th key={role} className="text-center py-2 px-3">{role}</th>
-                      ))}
-                      <th className="text-left py-2 pl-3 min-w-[260px]">Custom Emails</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(Object.keys(ACTION_LABELS) as ActionKey[]).map((actionKey) => (
-                      <tr key={actionKey} className="border-b align-top">
-                        <td className="py-2 pr-3">
-                          <div className="font-medium">{ACTION_LABELS[actionKey]}</div>
-                          <div className="text-xs text-muted-foreground">{ACTION_DESCRIPTIONS[actionKey]}</div>
-                        </td>
-                        {ROLE_OPTIONS.map((role) => (
-                          <td key={role} className="text-center py-2 px-3">
-                            <Checkbox
-                              checked={(draftActionPermissions[actionKey] || []).includes(role)}
-                              onCheckedChange={(checked) => toggleActionPermission(actionKey, role, Boolean(checked))}
-                              disabled={!isMaster}
-                            />
-                          </td>
-	                        ))}
-	                        <td className="py-2 pl-3">
-	                          <UserMultiEmailPicker
-	                            title="Special Users"
-	                            description="Select one or more approved users who may perform this action (email-based override)."
-	                            selectedEmails={draftActionEmailPermissions[actionKey] || []}
-	                            onSelectionChange={(emails) => setDraftActionEmailPermissions((prev) => ({ ...prev, [actionKey]: emails }))}
-	                            allUsers={approvedUsers.map((candidate) => ({
-	                              id: candidate._id,
-	                              email: candidate.email,
-	                              displayName: (candidate as unknown as { displayName?: string }).displayName,
-	                              role: candidate.role,
-	                            }))}
-	                            disabled={!isMaster || permissionsBusy}
-	                            manualEntryPlaceholder="user@company.com"
-	                          />
-	                        </td>
-	                      </tr>
-	                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {isMaster && (
-                <div className="mt-4 space-y-2">
-                  <Button onClick={saveActionPermissions} disabled={permissionsBusy} className="gap-2">
-                    {permissionsBusy && <RefreshCw className="h-4 w-4 animate-spin" />}
-                    {permissionsBusy ? `Saving… ${permissionsProgress}%` : 'Save Action Permissions'}
-                  </Button>
-                  {permissionsProgress > 0 && (
-                    <Progress value={permissionsProgress} className="h-1.5 max-w-xs transition-all" />
-                  )}
-                </div>
-              )}
             </CardContent>
           </Card>
 

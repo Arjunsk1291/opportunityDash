@@ -49,9 +49,7 @@ export default {
       performedByRole,
     });
 
-    const approvals = await this.getApprovals();
-    const approvalStates = await this.getApprovalStates();
-    const logs = await this.getApprovalLogs();
+    const [approvals, approvalStates, logs] = await Promise.all([this.getApprovals(), this.getApprovalStates(), this.getApprovalLogs()]);
     return { success: true, approval: normalizeApproval(approval), approvals, approvalStates, approvalLogs: logs };
   },
 
@@ -81,9 +79,7 @@ export default {
       group: group || null,
     });
 
-    const approvals = await this.getApprovals();
-    const approvalStates = await this.getApprovalStates();
-    const logs = await this.getApprovalLogs();
+    const [approvals, approvalStates, logs] = await Promise.all([this.getApprovals(), this.getApprovalStates(), this.getApprovalLogs()]);
     return { success: true, approval: normalizeApproval(approval), approvals, approvalStates, approvalLogs: logs };
   },
 
@@ -119,9 +115,7 @@ export default {
       }))
     );
 
-    const approvals = await this.getApprovals();
-    const approvalStates = await this.getApprovalStates();
-    const logs = await this.getApprovalLogs();
+    const [approvals, approvalStates, logs] = await Promise.all([this.getApprovals(), this.getApprovalStates(), this.getApprovalLogs()]);
     return { success: true, updatedCount: refs.length, approvals, approvalStates, approvalLogs: logs };
   },
 
@@ -165,9 +159,7 @@ export default {
       );
     }
 
-    const approvals = await this.getApprovals();
-    const approvalStates = await this.getApprovalStates();
-    const logs = await this.getApprovalLogs();
+    const [approvals, approvalStates, logs] = await Promise.all([this.getApprovals(), this.getApprovalStates(), this.getApprovalLogs()]);
     return { success: true, updatedCount: toApprove.length, skipped, approvals, approvalStates, approvalLogs: logs };
   },
 
@@ -207,9 +199,7 @@ export default {
       }))
     );
 
-    const approvals = await this.getApprovals();
-    const approvalStates = await this.getApprovalStates();
-    const logs = await this.getApprovalLogs();
+    const [approvals, approvalStates, logs] = await Promise.all([this.getApprovals(), this.getApprovalStates(), this.getApprovalLogs()]);
     return { success: true, updatedCount: refs.length, approvals, approvalStates, approvalLogs: logs };
   },
 
@@ -237,9 +227,7 @@ export default {
       performedByRole,
     });
 
-    const approvals = await this.getApprovals();
-    const approvalStates = await this.getApprovalStates();
-    const logs = await this.getApprovalLogs();
+    const [approvals, approvalStates, logs] = await Promise.all([this.getApprovals(), this.getApprovalStates(), this.getApprovalLogs()]);
     return { success: true, approvals, approvalStates, approvalLogs: logs };
   },
 

@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
+import { useTrackedAction } from '@/hooks/useTrackedAction';
+import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import {
@@ -114,6 +116,7 @@ function formatIsoDate(value?: string | null) {
 
 export default function HireFlow() {
   const { token, user } = useAuth();
+  const { status: trackedStatus } = useTrackedAction();
   const role = user?.role || '';
   const canWrite = role === 'Master' || role === 'Admin';
 
@@ -330,6 +333,8 @@ export default function HireFlow() {
   }, [rows]);
 
   return (
+    <>
+    <ActionProgressBar status={trackedStatus} />
     <div className="min-h-[calc(100vh-64px)] bg-background text-foreground">
       <div className="mx-auto max-w-7xl px-3 sm:px-6 py-6 sm:py-10 space-y-6">
         <header className="flex flex-col gap-2">
@@ -693,6 +698,7 @@ export default function HireFlow() {
         </SheetContent>
       </Sheet>
     </div>
+    </>
   );
 }
 

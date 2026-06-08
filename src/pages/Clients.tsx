@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTrackedAction } from '@/hooks/useTrackedAction';
+import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { Check, Copy, Globe, MapPin, Plus, Search, Upload, UserCheck, Merge, AlertCircle, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -254,6 +256,7 @@ const CopyButton = ({ value, label }: { value: string; label: string }) => {
 
 const Clients = () => {
   const { clients, stats, addClient, importClients, updateClient, normalizeCompanyName, isLoading, error, refreshClients } = useClientStore();
+  const { status: trackedStatus, run: runTracked } = useTrackedAction();
   const { canPerformAction, token, isMaster } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -547,6 +550,8 @@ const Clients = () => {
   };
 
   return (
+    <>
+    <ActionProgressBar status={trackedStatus} />
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
@@ -1275,6 +1280,7 @@ const Clients = () => {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   );
 };
 

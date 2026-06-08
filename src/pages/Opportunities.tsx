@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTrackedAction } from '@/hooks/useTrackedAction';
+import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AdvancedFilters, FilterState, defaultFilters, applyFilters } from '@/components/Dashboard/AdvancedFilters';
 import { SpreadsheetOpportunitiesTable } from '@/components/Opportunities/SpreadsheetOpportunitiesTable';
@@ -247,6 +249,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const { opportunities, refreshData, upsertOpportunities } = useData();
   const { exchangeRate } = useCurrency();
   const { token, canPerformAction } = useAuth();
+  const { status: trackedStatus } = useTrackedAction();
   const location = useLocation();
   const navigate = useNavigate();
   const [filters, setFilters] = useState<FilterState>(() => ({
@@ -935,6 +938,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   };
 
   return (
+    <>
+    <ActionProgressBar status={trackedStatus} />
     <div className="flex flex-col h-[calc(100vh-5.5rem)] gap-4">
       <div className="flex items-center justify-between">
         <div>
@@ -1300,6 +1305,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   );
 };
 

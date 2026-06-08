@@ -1606,9 +1606,11 @@ const Analytics = () => {
       </section>
 
       {isLoading && opportunities.length === 0 && (
-        <Card className="mt-6">
-          <CardContent className="pt-6 text-sm text-slate-500">Loading analytics...</CardContent>
-        </Card>
+        <div className="mt-6 space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="rounded-lg border bg-card p-4 h-48 animate-pulse bg-muted/20" />
+          ))}
+        </div>
       )}
 
       <Dialog open={Boolean(drilldown)} onOpenChange={(open) => { if (!open) setDrilldown(null); }}>

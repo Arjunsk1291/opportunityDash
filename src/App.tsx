@@ -15,7 +15,6 @@ import VendorDirectory from "./pages/VendorDirectory";
 import Clients from "./pages/Clients";
 import Analytics from "./pages/Analytics";
 import BDEngagements from "./pages/BDEngagements";
-import AdvancedAnalytics from "./pages/AdvancedAnalytics";
 import MasterOverviewRoute from "./routes/master.overview";
 import MasterUsersRoute from "./routes/master.users";
 import MasterPermissionsRoute from "./routes/master.permissions";
@@ -115,7 +114,7 @@ function AppRoutes() {
             <Route path="clients" element={<PageAccessRoute pageKey="clients"><Clients /></PageAccessRoute>} />
             <Route path="analytics" element={<PageAccessRoute pageKey="analytics"><Analytics /></PageAccessRoute>} />
             <Route path="bd-engagements" element={<PageAccessRoute pageKey="bd_engagements"><BDEngagements /></PageAccessRoute>} />
-            <Route path="advanced-analytics" element={<PageAccessRoute pageKey="advanced_analytics"><AdvancedAnalytics /></PageAccessRoute>} />
+            <Route path="advanced-analytics" element={<Navigate to="/bd-engagements" replace />} />
             <Route path="master" element={<PageAccessRoute pageKey="master"><Navigate to="/master/overview" replace /></PageAccessRoute>} />
             <Route path="master/overview" element={<PageAccessRoute pageKey="master"><MasterOverviewRoute /></PageAccessRoute>} />
             <Route path="master/users" element={<PageAccessRoute pageKey="master"><MasterUsersRoute /></PageAccessRoute>} />

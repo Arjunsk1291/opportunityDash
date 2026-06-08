@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTrackedAction } from '@/hooks/useTrackedAction';
+import { ActionProgressBar } from '@/components/ActionProgressBar';
 import {
   downloadVendorTemplate,
   exportVendors,
@@ -381,6 +383,7 @@ function CompareBlock({ label, value }: { label: string; value: string }) {
 
 export default function VendorDirectory() {
   const { isMaster, canPerformAction } = useAuth();
+  const { status: trackedStatus, run: runTracked } = useTrackedAction();
   const { vendors, isLoading, error, addVendor, updateVendor, importVendors } = useVendorStore();
   const location = useLocation();
   const navigate = useNavigate();
@@ -529,6 +532,8 @@ export default function VendorDirectory() {
   ];
 
   return (
+    <>
+    <ActionProgressBar status={trackedStatus} />
     <div className="space-y-4 sm:space-y-6">
       <Card className="bg-card/80 p-4 backdrop-blur-sm sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -740,9 +745,18 @@ export default function VendorDirectory() {
       )}
 
       {isLoading && (
-        <Card className="bg-card/80 p-10 text-center text-muted-foreground backdrop-blur-sm">
-          Loading partners from MongoDB...
-        </Card>
+        <div className="space-y-3">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="rounded-lg border bg-card p-4 flex items-center gap-4">
+              <div className="h-10 w-10 rounded-full bg-muted animate-pulse shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-1/3 rounded bg-muted animate-pulse" />
+                <div className="h-3 w-1/2 rounded bg-muted animate-pulse" />
+              </div>
+              <div className="h-6 w-16 rounded bg-muted animate-pulse" />
+            </div>
+          ))}
+        </div>
       )}
 
       {error && !isLoading && (
@@ -919,6 +933,7 @@ export default function VendorDirectory() {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   );
 }
 

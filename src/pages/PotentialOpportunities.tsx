@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FileDown, FileUp, Plus, Search, Sparkles, Wand2, Edit2, Trash2, CheckCircle2, LayoutGrid, List as ListIcon, X, ExternalLink, Eye, Link as LinkIcon, AlertCircle } from 'lucide-react';
+import { useTrackedAction } from '@/hooks/useTrackedAction';
+import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import ExcelJS from 'exceljs';
@@ -109,6 +111,7 @@ type Vertical = typeof VERTICAL_OPTIONS[number];
 
 export default function PotentialOpportunities() {
   const { token, canPerformAction, isMaster } = useAuth();
+  const { status: trackedStatus } = useTrackedAction();
   const { opportunities, refreshData } = useData();
   const canWrite = Boolean(canPerformAction?.('opportunities_write'));
 
@@ -320,6 +323,8 @@ export default function PotentialOpportunities() {
   };
 
   return (
+    <>
+    <ActionProgressBar status={trackedStatus} />
     <div className="space-y-6 pb-20">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
@@ -948,5 +953,6 @@ export default function PotentialOpportunities() {
       </Dialog>
       </AnimatePresence>
     </div>
+    </>
   );
 }

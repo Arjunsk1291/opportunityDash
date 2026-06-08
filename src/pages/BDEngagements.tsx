@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell } from 'recharts';
-import { AlertTriangle, BarChart3, BriefcaseBusiness, Building2, CalendarDays, Database, FileCheck2, Plus, Search, Upload, Users, TrendingUp, Handshake, Target, Zap } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
+import { useTrackedAction } from '@/hooks/useTrackedAction';
+import { ActionProgressBar } from '@/components/ActionProgressBar';
+import { AlertTriangle, BarChart3, BriefcaseBusiness, Briefcase, Building2, CalendarDays, Database, FileCheck2, Globe, Plus, Search, Upload, Users, TrendingUp, Handshake, Target, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +24,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuth } from '@/contexts/AuthContext';
+import { useData } from '@/contexts/DataContext';
+import { STAGE_ORDER } from '@/data/opportunityData';
+import { normalizeCanonicalStatus, getDisplayStatus } from '@/lib/opportunityStatus';
 import { toast } from 'sonner';
 import {
   BD_ENGAGEMENTS_SEED,
@@ -212,8 +217,12 @@ const BULK_ADD_ACCESS_KEY = 'bd_engagement_bulk_add_access';
 const MAX_BD_UPLOAD_BYTES = 5 * 1024 * 1024;
 const MAX_BD_UPLOAD_ROWS = 5000;
 
+const MA_COLORS = ['#2dd4bf', '#818cf8', '#f59e0b', '#34d399', '#fb7185', '#38bdf8', '#a855f7', '#6366f1'];
+
 const BDEngagements = () => {
   const { isAdmin, isMaster, user, token } = useAuth();
+  const { opportunities: syncedOpportunities } = useData();
+  const { status: trackedStatus, run: runTracked } = useTrackedAction();
   const [rows, setRows] = useState<BDEngagement[]>([]);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [meetingTypeFilter, setMeetingTypeFilter] = useState<string>('ALL');
@@ -817,6 +826,39 @@ const BDEngagements = () => {
     }
   }, [selectedClient, selectedClientSummary]);
 
+  const maVerticalData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    syncedOpportunities.forEach(opp => {
+      const v = opp.groupClassification || 'Other';
+      counts[v] = (counts[v] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [syncedOpportunities]);
+
+  const maClientTypeData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    syncedOpportunities.forEach(opp => {
+      const t = opp.clientType || 'Other';
+      counts[t] = (counts[t] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [syncedOpportunities]);
+
+  const maStatusByVertical = useMemo(() => {
+    const map: Record<string, Record<string, number>> = {};
+    const verticals = Array.from(new Set(syncedOpportunities.map(o => o.groupClassification || 'Other')));
+    verticals.forEach(v => {
+      map[v] = {};
+      STAGE_ORDER.forEach(s => { map[v][s] = 0; });
+    });
+    syncedOpportunities.forEach(opp => {
+      const v = opp.groupClassification || 'Other';
+      const s = normalizeCanonicalStatus(getDisplayStatus(opp));
+      if (map[v] && map[v][s] !== undefined) map[v][s]++;
+    });
+    return Object.entries(map).map(([name, stats]) => ({ name, ...stats }));
+  }, [syncedOpportunities]);
+
   const openCreateDialog = () => {
     setEditingRow(null);
     setForm({
@@ -843,24 +885,28 @@ const BDEngagements = () => {
     }
     setSaving(true);
     try {
-      if (editingRow?._id || editingRow?.id) {
-        const response = await fetch(`${API_URL}/bd-engagements/${editingRow._id || editingRow.id}`, {
-          method: 'PUT',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(nextRow),
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data?.error || 'Failed to update engagement');
-        setRows((current) => current.map((row) => ((row as unknown as { _id?: string })._id === (editingRow as unknown as { _id?: string })._id || row.id === editingRow.id ? data.row : row)));
-      } else {
-        const created = await createEngagement(nextRow);
-        setRows((current) => [created, ...current]);
-      }
-      setRows((current) => [...current].sort((a, b) => sortByDateDesc(a.date, b.date)));
-      setDialogOpen(false);
+      await runTracked('Save Engagement', async (setProgress) => {
+        setProgress(30, 'Saving…');
+        if (editingRow?._id || editingRow?.id) {
+          const response = await fetch(`${API_URL}/bd-engagements/${editingRow._id || editingRow.id}`, {
+            method: 'PUT',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(nextRow),
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data?.error || 'Failed to update engagement');
+          setRows((current) => current.map((row) => ((row as unknown as { _id?: string })._id === (editingRow as unknown as { _id?: string })._id || row.id === editingRow.id ? data.row : row)));
+        } else {
+          const created = await createEngagement(nextRow);
+          setRows((current) => [created, ...current]);
+        }
+        setProgress(90, 'Updating…');
+        setRows((current) => [...current].sort((a, b) => sortByDateDesc(a.date, b.date)));
+        setDialogOpen(false);
+      });
     } catch (error) {
       toast.error((error as Error).message || 'Failed to save engagement');
     } finally {
@@ -960,6 +1006,8 @@ const BDEngagements = () => {
   ];
 
   return (
+    <>
+    <ActionProgressBar status={trackedStatus} />
     <div className="space-y-6 pb-10">
       <section className="relative overflow-hidden rounded-[28px] border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(45,212,191,0.16),_transparent_32%),radial-gradient(circle_at_top_right,_rgba(129,140,248,0.12),_transparent_28%),linear-gradient(180deg,_#020617,_#0f172a)] p-6 text-slate-50 shadow-2xl shadow-slate-950/40">
         <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'linear-gradient(rgba(148,163,184,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.08) 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
@@ -985,6 +1033,7 @@ const BDEngagements = () => {
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="engagements">Engagements</TabsTrigger>
           <TabsTrigger value="clients">Clients</TabsTrigger>
+          <TabsTrigger value="market-analysis">Market Analysis</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dashboard" className="space-y-6">
@@ -1368,6 +1417,99 @@ const BDEngagements = () => {
                     </div>
                   </button>
                 ))}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="market-analysis" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { label: 'Total Volume', value: syncedOpportunities.length, icon: Briefcase, color: 'text-blue-500' },
+              { label: 'Market Verticals', value: maVerticalData.length, icon: Globe, color: 'text-emerald-500' },
+              { label: 'Client Segments', value: maClientTypeData.length, icon: Users, color: 'text-amber-500' },
+              { label: 'Data Points', value: syncedOpportunities.length * 12, icon: Target, color: 'text-violet-500' },
+            ].map(stat => (
+              <Card key={stat.label} className="border-border/50 bg-card/50">
+                <CardContent className="p-6 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{stat.label}</p>
+                    <p className="text-3xl font-black mt-1">{stat.value}</p>
+                  </div>
+                  <div className={`p-3 rounded-2xl bg-muted/50 ${stat.color}`}>
+                    <stat.icon className="h-6 w-6" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card className="rounded-[2rem] border-border/50 shadow-xl overflow-hidden">
+              <CardHeader className="border-b bg-muted/10 p-6">
+                <CardTitle className="text-lg font-bold flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-primary" />
+                  Vertical Performance Distribution
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-8 h-[400px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={maVerticalData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+                    <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', borderRadius: '1rem', border: '1px solid hsl(var(--border))' }} />
+                    <Bar dataKey="value" fill="hsl(var(--primary))" radius={[10, 10, 0, 0]} barSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-[2rem] border-border/50 shadow-xl overflow-hidden">
+              <CardHeader className="border-b bg-muted/10 p-6">
+                <CardTitle className="text-lg font-bold flex items-center gap-2">
+                  <Users className="h-5 w-5 text-primary" />
+                  Client Segmentation
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-8 h-[400px]">
+                <ResponsiveContainer width="100%" height="80%">
+                  <PieChart>
+                    <Pie data={maClientTypeData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={5} dataKey="value">
+                      {maClientTypeData.map((_entry, index) => (
+                        <Cell key={`cell-${index}`} fill={MA_COLORS[index % MA_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', borderRadius: '1rem', border: '1px solid hsl(var(--border))' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-wrap justify-center gap-4 mt-2">
+                  {maClientTypeData.map((entry, index) => (
+                    <div key={entry.name} className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full" style={{ backgroundColor: MA_COLORS[index % MA_COLORS.length] }} />
+                      <span className="text-xs font-medium text-muted-foreground">{entry.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-[2rem] border-border/50 shadow-xl overflow-hidden lg:col-span-2">
+              <CardHeader className="border-b bg-muted/10 p-6">
+                <CardTitle className="text-lg font-bold">Market Vertical × Lifecycle Stage</CardTitle>
+              </CardHeader>
+              <CardContent className="p-8 h-[500px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={maStatusByVertical} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
+                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} width={120} />
+                    <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', borderRadius: '1rem', border: '1px solid hsl(var(--border))' }} />
+                    {STAGE_ORDER.map((stage, index) => (
+                      <Bar key={stage} dataKey={stage} stackId="a" fill={MA_COLORS[index % MA_COLORS.length]} />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
               </CardContent>
             </Card>
           </div>
@@ -1777,6 +1919,7 @@ const BDEngagements = () => {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </>
   );
 };
 

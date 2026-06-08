@@ -9,7 +9,6 @@ export type PageKey =
   | 'clients'
   | 'analytics'
   | 'bd_engagements'
-  | 'advanced_analytics'
   | 'master'
   | 'master_general'
   | 'master_users'
@@ -29,7 +28,6 @@ export const PAGE_LABELS: Record<PageKey, string> = {
   clients: 'Clients',
   analytics: 'Analytics',
   bd_engagements: 'BD Engagements',
-  advanced_analytics: 'Advanced Analytics',
   master: 'Master Panel',
   master_general: 'Master Panel · General',
   master_users: 'Master Panel · User Management',
@@ -40,7 +38,7 @@ export const PAGE_LABELS: Record<PageKey, string> = {
 };
 
 export const PAGE_GROUPS: Array<{ label: string; pages: PageKey[] }> = [
-  { label: 'Core Workspace', pages: ['dashboard', 'opportunities', 'bid_decision', 'tender_updates', 'pq_activities', 'vendor_directory', 'clients', 'analytics', 'bd_engagements', 'advanced_analytics'] },
+  { label: 'Core Workspace', pages: ['dashboard', 'opportunities', 'bid_decision', 'tender_updates', 'pq_activities', 'vendor_directory', 'clients', 'analytics', 'bd_engagements'] },
   { label: 'Master Panel', pages: ['master', 'master_general', 'master_users', 'master_data_sync', 'master_telecast', 'master_update', 'master_export'] },
 ];
 
@@ -54,7 +52,6 @@ export const DEFAULT_PAGE_ROLE_ACCESS: Record<PageKey, string[]> = {
   clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   bd_engagements: ['Master', 'Admin', 'BDTeam'],
-  advanced_analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam'],
   master: ['Master', 'Admin'],
   master_general: ['Master', 'Admin'],
   master_users: ['Master', 'Admin'],
@@ -74,7 +71,6 @@ export const NAV_ITEMS = [
   { title: 'Clients', url: '/clients', pageKey: 'clients' as const, icon: Building2, section: 'main' as const },
   { title: 'Analytics', url: '/analytics', pageKey: 'analytics' as const, icon: BarChart3, section: 'main' as const },
   { title: 'BD Engagements', url: '/bd-engagements', pageKey: 'bd_engagements' as const, icon: BriefcaseBusiness, section: 'main' as const },
-  { title: 'Advanced Analytics', url: '/advanced-analytics', pageKey: 'advanced_analytics' as const, icon: BarChart3, section: 'main' as const },
   { title: 'Master Panel', url: '/master', pageKey: 'master' as const, icon: Shield, section: 'admin' as const },
   { title: 'HireFlow', url: '/hireflow', pageKey: 'master' as const, icon: Workflow, section: 'admin' as const },
 ];

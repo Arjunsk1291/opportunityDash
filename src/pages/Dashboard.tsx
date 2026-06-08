@@ -1,4 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
+import { useTrackedAction } from '@/hooks/useTrackedAction';
+import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { FunnelChart } from '@/components/Dashboard/FunnelChart';
 import { OpportunitiesTable } from '@/components/Dashboard/OpportunitiesTable';
 import { AtRiskWidget } from '@/components/Dashboard/AtRiskWidget';
@@ -617,6 +619,7 @@ const tryStoreKpiDiagnostics = (reportId: string, report: KpiDiagnosticsReport) 
 
 const Dashboard = () => {
   const { opportunities, isLoading, error, lastSyncTime, isLiveRefreshActive } = useData();
+  const { status: trackedStatus } = useTrackedAction();
   const { isMaster } = useAuth();
   const { formatCurrency, currency, convertValue } = useCurrency();
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
@@ -1062,11 +1065,20 @@ const Dashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center space-y-4">
-          <Loader2 className="w-8 h-8 animate-spin mx-auto text-muted-foreground" />
-          <p className="text-muted-foreground">Loading opportunities from MongoDB...</p>
+      <div className="space-y-6 p-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="rounded-lg border bg-card p-4 space-y-2">
+              <div className="h-3 w-1/2 rounded bg-muted animate-pulse" />
+              <div className="h-8 w-3/4 rounded bg-muted animate-pulse" />
+            </div>
+          ))}
         </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border bg-card p-4 h-64 animate-pulse bg-muted/20" />
+          <div className="rounded-lg border bg-card p-4 h-64 animate-pulse bg-muted/20" />
+        </div>
+        <div className="rounded-lg border bg-card p-4 h-80 animate-pulse bg-muted/20" />
       </div>
     );
   }
@@ -1190,6 +1202,8 @@ const Dashboard = () => {
   ];
 
   return (
+    <>
+    <ActionProgressBar status={trackedStatus} />
     <div className="space-y-4 sm:space-y-6">
       {/* Sync Status Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 text-xs text-muted-foreground">
@@ -1492,6 +1506,7 @@ const Dashboard = () => {
         formatCurrency={formatCurrency}
       />
     </div>
+    </>
   );
 };
 
