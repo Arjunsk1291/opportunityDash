@@ -1,0 +1,834 @@
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, RefreshCw, Lock, Mail, Trash2, ChevronDown, CheckCircle, XCircle, Clock, Users } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { toast } from 'sonner';
+import type { UserRole } from '@/contexts/AuthContext';
+
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+const ROLE_OPTIONS: UserRole[] = ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'];
+const GROUP_OPTIONS = ['GES', 'GDS', 'GTS'] as const;
+
+function parseApiErrorPayload(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== 'object') return fallback;
+  const d = payload as { error?: string; message?: string; code?: string; troubleshooting?: string[] };
+  const base = d.message || d.error || fallback;
+  const codePart = d.code ? ` [${d.code}]` : '';
+  const tips = Array.isArray(d.troubleshooting) && d.troubleshooting.length
+    ? ` | Tips: ${d.troubleshooting.join(' | ')}` : '';
+  return `${base}${codePart}${tips}`;
+}
+
+interface AuthorizedUser {
+  _id: string;
+  email: string;
+  role: UserRole | 'MASTER' | 'PROPOSAL_HEAD';
+  assignedGroup?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  lastLogin?: string | Date;
+  createdAt: string | Date;
+  approvedBy?: string;
+  approvedAt?: string | Date;
+  tempAccessExpiresAt?: string | null;
+}
+
+interface TempCredentialLogRow {
+  _id: string;
+  createdBy: string;
+  createdByRole: string;
+  targetEmails: string[];
+  tempPasswords?: string[];
+  sentCount: number;
+  sentAt: string;
+  expiresAt: string;
+}
+
+interface AddUserForm {
+  email: string;
+  displayName: string;
+  role: UserRole;
+  assignedGroup: string;
+  status: 'approved' | 'pending';
+  password: string;
+  tempAccessExpiresAt: string;
+}
+
+interface SetPasswordForm {
+  newPassword: string;
+  confirmPassword: string;
+  requireChange: boolean;
+}
+
+interface UsersPanelProps {
+  token: string | null;
+  isMaster: boolean;
+  canManageUsers: boolean;
+}
+
+const DEFAULT_ADD_FORM: AddUserForm = {
+  email: '',
+  displayName: '',
+  role: 'Basic',
+  assignedGroup: 'GES',
+  status: 'approved',
+  password: '',
+  tempAccessExpiresAt: '',
+};
+
+const DEFAULT_SET_PASSWORD_FORM: SetPasswordForm = {
+  newPassword: '',
+  confirmPassword: '',
+  requireChange: false,
+};
+
+function getPasswordStrength(p: string): { level: 'weak' | 'medium' | 'strong'; score: number } {
+  if (!p) return { level: 'weak', score: 0 };
+  let score = 0;
+  if (p.length >= 8) score++;
+  if (p.length >= 12) score++;
+  if (/[A-Z]/.test(p)) score++;
+  if (/[0-9]/.test(p)) score++;
+  if (/[^A-Za-z0-9]/.test(p)) score++;
+  return { level: score <= 1 ? 'weak' : score <= 3 ? 'medium' : 'strong', score };
+}
+
+function PasswordStrengthBar({ password }: { password: string }) {
+  const { level, score } = getPasswordStrength(password);
+  if (!password) return null;
+  const colors = { weak: 'bg-red-500', medium: 'bg-yellow-400', strong: 'bg-green-500' };
+  const labels = { weak: 'Weak', medium: 'Medium', strong: 'Strong' };
+  const textColors = { weak: 'text-red-500', medium: 'text-yellow-600', strong: 'text-green-600' };
+  return (
+    <div className="mt-1 space-y-1">
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div
+            key={i}
+            className={`h-1 flex-1 rounded-full transition-colors ${i <= score ? colors[level] : 'bg-muted'}`}
+          />
+        ))}
+      </div>
+      <p className={`text-xs ${textColors[level]}`}>{labels[level]}</p>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'approved')
+    return <Badge className="bg-green-100 text-green-700 gap-1 hover:bg-green-100"><CheckCircle className="h-3 w-3" />Approved</Badge>;
+  if (status === 'pending')
+    return <Badge variant="secondary" className="gap-1"><Clock className="h-3 w-3" />Pending</Badge>;
+  return <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" />Rejected</Badge>;
+}
+
+export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps) {
+  const [users, setUsers] = useState<AuthorizedUser[]>([]);
+  const [tempCredentialLogs, setTempCredentialLogs] = useState<TempCredentialLogRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [logsExpanded, setLogsExpanded] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  const [addUserOpen, setAddUserOpen] = useState(false);
+  const [addForm, setAddForm] = useState<AddUserForm>(DEFAULT_ADD_FORM);
+
+  const [setPasswordOpen, setSetPasswordOpen] = useState(false);
+  const [setPasswordTarget, setSetPasswordTarget] = useState('');
+  const [setPwdForm, setSetPwdForm] = useState<SetPasswordForm>(DEFAULT_SET_PASSWORD_FORM);
+  const [setPwdBusy, setSetPwdBusy] = useState(false);
+
+  const [removeTarget, setRemoveTarget] = useState('');
+  const [removeOpen, setRemoveOpen] = useState(false);
+
+  const [sendTempTarget, setSendTempTarget] = useState('');
+  const [sendTempOpen, setSendTempOpen] = useState(false);
+
+  const authHeaders = () => ({
+    Authorization: 'Bearer ' + (token || ''),
+    'Content-Type': 'application/json',
+  });
+
+  const patchUserList = (updated: AuthorizedUser) => {
+    setUsers((prev) => {
+      const email = String(updated.email || '').toLowerCase();
+      const exists = prev.some((u) => u.email.toLowerCase() === email);
+      if (exists) return prev.map((u) => u.email.toLowerCase() === email ? { ...u, ...updated } : u);
+      return [updated, ...prev];
+    });
+  };
+
+  const removeUserFromList = (email: string) => {
+    setUsers((prev) => prev.filter((u) => u.email.toLowerCase() !== email.toLowerCase()));
+  };
+
+  const loadUsers = async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const res = await fetch(API_URL + '/users/authorized', { headers: authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(parseApiErrorPayload(data, 'Failed to load users'));
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadTempLogs = async () => {
+    if (!token || !isMaster) return;
+    setLogsLoading(true);
+    try {
+      const res = await fetch(API_URL + '/users/temp-credential-logs', { headers: authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(parseApiErrorPayload(data, 'Failed to load credential logs'));
+      setTempCredentialLogs(Array.isArray(data?.logs) ? data.logs : []);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  useEffect(() => { void loadUsers(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (logsExpanded && isMaster) void loadTempLogs(); }, [logsExpanded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const approveUser = async (email: string) => {
+    if (!canManageUsers) { toast.error('You do not have permission.'); return; }
+    const prev = [...users];
+    setUsers((u) => u.map((x) => x.email.toLowerCase() === email.toLowerCase() ? { ...x, status: 'approved' } : x));
+    setBusy(true);
+    try {
+      const res = await fetch(API_URL + '/users/approve', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ email }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(parseApiErrorPayload(data, 'Failed to approve user'));
+      if (data?.user) patchUserList(data.user as AuthorizedUser);
+      toast.success('User approved');
+    } catch (err) {
+      setUsers(prev);
+      toast.error((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rejectUser = async (email: string) => {
+    if (!canManageUsers) { toast.error('You do not have permission.'); return; }
+    const prev = [...users];
+    setUsers((u) => u.map((x) => x.email.toLowerCase() === email.toLowerCase() ? { ...x, status: 'rejected' } : x));
+    setBusy(true);
+    try {
+      const res = await fetch(API_URL + '/users/reject', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ email }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(parseApiErrorPayload(data, 'Failed to reject user'));
+      if (data?.user) patchUserList(data.user as AuthorizedUser);
+      toast.success('User rejected');
+    } catch (err) {
+      setUsers(prev);
+      toast.error((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changeRole = async (email: string, newRole: string, assignedGroup?: string) => {
+    if (!canManageUsers) { toast.error('You do not have permission.'); return; }
+    const prev = [...users];
+    setUsers((u) => u.map((x) =>
+      x.email.toLowerCase() === email.toLowerCase()
+        ? { ...x, role: newRole as UserRole, assignedGroup: assignedGroup ?? x.assignedGroup }
+        : x,
+    ));
+    setBusy(true);
+    try {
+      const res = await fetch(API_URL + '/users/change-role', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ email, newRole, assignedGroup }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(parseApiErrorPayload(data, 'Failed to change role'));
+      if (data?.user) patchUserList(data.user as AuthorizedUser);
+      toast.success('Role updated');
+    } catch (err) {
+      setUsers(prev);
+      toast.error((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeUser = async (email: string) => {
+    const prev = [...users];
+    removeUserFromList(email);
+    setBusy(true);
+    try {
+      const res = await fetch(API_URL + '/users/remove', {
+        method: 'DELETE', headers: authHeaders(), body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(parseApiErrorPayload(data, 'Failed to remove user'));
+      toast.success('User removed');
+    } catch (err) {
+      setUsers(prev);
+      toast.error((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addUser = async () => {
+    if (!canManageUsers) { toast.error('You do not have permission.'); return; }
+    if (!addForm.email.trim()) { toast.error('Email is required'); return; }
+    if (addForm.role === 'TempUser' && !addForm.password) { toast.error('Temp password is required for TempUser'); return; }
+    if (addForm.role === 'TempUser' && !addForm.tempAccessExpiresAt) { toast.error('Expiry is required for TempUser'); return; }
+    setBusy(true);
+    try {
+      const res = await fetch(API_URL + '/users/add', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({
+          ...addForm,
+          tempAccessExpiresAt: addForm.tempAccessExpiresAt
+            ? new Date(addForm.tempAccessExpiresAt).toISOString() : '',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(parseApiErrorPayload(data, 'Failed to add user'));
+      if (data?.user) patchUserList(data.user as AuthorizedUser);
+      toast.success('User added');
+      setAddForm(DEFAULT_ADD_FORM);
+      setAddUserOpen(false);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setPassword = async () => {
+    if (!setPwdForm.newPassword) { toast.error('Password is required'); return; }
+    if (setPwdForm.newPassword !== setPwdForm.confirmPassword) { toast.error('Passwords do not match'); return; }
+    setSetPwdBusy(true);
+    try {
+      const res = await fetch(API_URL + '/users/set-password', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({
+          email: setPasswordTarget,
+          newPassword: setPwdForm.newPassword,
+          requireChange: setPwdForm.requireChange,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(parseApiErrorPayload(data, 'Failed to set password'));
+      toast.success('Password set for ' + setPasswordTarget);
+      setSetPasswordOpen(false);
+      setSetPwdForm(DEFAULT_SET_PASSWORD_FORM);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setSetPwdBusy(false);
+    }
+  };
+
+  const sendTempCredential = async (email: string) => {
+    if (!isMaster) { toast.error('Only Master users can send temporary passwords.'); return; }
+    setBusy(true);
+    try {
+      const res = await fetch(API_URL + '/users/send-temp-credential', {
+        method: 'POST', headers: authHeaders(), body: JSON.stringify({ emails: [email] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(parseApiErrorPayload(data, 'Failed to send temporary password'));
+      toast.success(`Temporary password sent to ${email}`);
+      if (logsExpanded) void loadTempLogs();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return users.filter((u) => {
+      const matchesSearch = !q || u.email.toLowerCase().includes(q) || (u.assignedGroup || '').toLowerCase().includes(q);
+      const matchesStatus = statusFilter === 'all' || u.status === statusFilter;
+      const matchesRole = roleFilter === 'all' || u.role === roleFilter;
+      return matchesSearch && matchesStatus && matchesRole;
+    });
+  }, [users, search, statusFilter, roleFilter]);
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Users className="h-5 w-5 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">
+            Users
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              ({filteredUsers.length}{filteredUsers.length !== users.length ? ` of ${users.length}` : ''})
+            </span>
+          </h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={loadUsers} disabled={loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button size="sm" onClick={() => setAddUserOpen(true)} disabled={!canManageUsers}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add User
+          </Button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2">
+        <Input
+          placeholder="Search email or group…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-8 w-56"
+        />
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
+          <SelectTrigger className="h-8 w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={roleFilter} onValueChange={setRoleFilter}>
+          <SelectTrigger className="h-8 w-40"><SelectValue placeholder="Role" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Roles</SelectItem>
+            {ROLE_OPTIONS.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* User Table */}
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>User</TableHead>
+                  <TableHead>Role / Group</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Last Login</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                      Loading users…
+                    </TableCell>
+                  </TableRow>
+                )}
+                {!loading && filteredUsers.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                      {users.length === 0 ? 'No users found.' : 'No users match the current filters.'}
+                    </TableCell>
+                  </TableRow>
+                )}
+                {filteredUsers.map((u) => (
+                  <TableRow key={u._id || u.email}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold uppercase">
+                          {u.email[0]}
+                        </div>
+                        <span className="font-mono text-sm">{u.email}</span>
+                      </div>
+                    </TableCell>
+
+                    <TableCell>
+                      {isMaster || u.role !== 'Master' ? (
+                        <div className="space-y-1">
+                          <Select
+                            value={u.role}
+                            onValueChange={(newRole) =>
+                              changeRole(u.email, newRole, newRole === 'SVP' ? (u.assignedGroup || 'GES').toUpperCase() : undefined)
+                            }
+                            disabled={!canManageUsers || busy}
+                          >
+                            <SelectTrigger className="h-8 w-[150px]"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {isMaster && <SelectItem value="Master">Master</SelectItem>}
+                              <SelectItem value="Admin">Admin</SelectItem>
+                              <SelectItem value="ProposalHead">Tender Manager</SelectItem>
+                              <SelectItem value="SVP">SVP</SelectItem>
+                              <SelectItem value="BDTeam">BD Team</SelectItem>
+                              <SelectItem value="Basic">Basic</SelectItem>
+                              <SelectItem value="TempUser">Temp User</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {u.role === 'SVP' && (
+                            <Select
+                              value={(u.assignedGroup || 'GES').toUpperCase()}
+                              onValueChange={(group) => changeRole(u.email, 'SVP', group)}
+                              disabled={!canManageUsers || busy}
+                            >
+                              <SelectTrigger className="h-7 w-[100px]"><SelectValue placeholder="Group" /></SelectTrigger>
+                              <SelectContent>
+                                {GROUP_OPTIONS.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      ) : (
+                        <Badge variant="outline">Master</Badge>
+                      )}
+                    </TableCell>
+
+                    <TableCell><StatusBadge status={u.status} /></TableCell>
+
+                    <TableCell className="text-sm text-muted-foreground">
+                      {u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : '—'}
+                    </TableCell>
+
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {u.status === 'pending' && (
+                          <>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button size="sm" className="h-7 gap-1" onClick={() => approveUser(u.email)} disabled={!canManageUsers || busy}>
+                                  <CheckCircle className="h-3 w-3" /> Approve
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Approve user</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button size="sm" variant="destructive" className="h-7 gap-1" onClick={() => rejectUser(u.email)} disabled={!canManageUsers || busy}>
+                                  <XCircle className="h-3 w-3" /> Reject
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Reject user</TooltipContent>
+                            </Tooltip>
+                          </>
+                        )}
+                        {u.role !== 'Master' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon" variant="outline" className="h-7 w-7"
+                                onClick={() => {
+                                  setSetPasswordTarget(u.email);
+                                  setSetPwdForm(DEFAULT_SET_PASSWORD_FORM);
+                                  setSetPasswordOpen(true);
+                                }}
+                                disabled={busy}
+                              >
+                                <Lock className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Set Password</TooltipContent>
+                          </Tooltip>
+                        )}
+                        {isMaster && u.role !== 'Master' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon" variant="outline" className="h-7 w-7"
+                                onClick={() => { setSendTempTarget(u.email); setSendTempOpen(true); }}
+                                disabled={busy}
+                              >
+                                <Mail className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Send Temp Credential</TooltipContent>
+                          </Tooltip>
+                        )}
+                        {u.role !== 'Master' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon" variant="ghost"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                onClick={() => { setRemoveTarget(u.email); setRemoveOpen(true); }}
+                                disabled={!canManageUsers || busy}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Remove User</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Temp Credential History — Master only */}
+      {isMaster && (
+        <Collapsible open={logsExpanded} onOpenChange={setLogsExpanded}>
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-2">
+              <ChevronDown className={`h-4 w-4 transition-transform ${logsExpanded ? 'rotate-180' : ''}`} />
+              Temp Credential History ({tempCredentialLogs.length})
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <Card className="mt-2">
+              <CardContent className="pt-4">
+                {logsLoading ? (
+                  <p className="text-sm text-muted-foreground">Loading…</p>
+                ) : tempCredentialLogs.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No temporary passwords have been sent yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Sent At</TableHead>
+                          <TableHead>Expires At</TableHead>
+                          <TableHead>Created By</TableHead>
+                          <TableHead>Users</TableHead>
+                          <TableHead>Temp Passwords</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {tempCredentialLogs.map((log) => (
+                          <TableRow key={log._id}>
+                            <TableCell className="text-sm">{log.sentAt ? new Date(log.sentAt).toLocaleString() : '—'}</TableCell>
+                            <TableCell className="text-sm">{log.expiresAt ? new Date(log.expiresAt).toLocaleString() : '—'}</TableCell>
+                            <TableCell className="font-mono text-xs">{log.createdBy}</TableCell>
+                            <TableCell className="text-xs">{log.targetEmails.join(', ') || '—'}</TableCell>
+                            <TableCell className="font-mono text-xs">{(log.tempPasswords || []).join(', ') || '—'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
+      {/* Add User Dialog */}
+      <Dialog open={addUserOpen} onOpenChange={setAddUserOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add / Update Authorized User</DialogTitle>
+            <DialogDescription>Create a new user or update an existing one by email.</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Email</Label>
+              <Input
+                value={addForm.email}
+                onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="name@company.com"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Display Name</Label>
+              <Input
+                value={addForm.displayName}
+                onChange={(e) => setAddForm((f) => ({ ...f, displayName: e.target.value }))}
+                placeholder="Full name"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Role</Label>
+              <Select value={addForm.role} onValueChange={(v: UserRole) => setAddForm((f) => ({ ...f, role: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Admin">Admin</SelectItem>
+                  <SelectItem value="ProposalHead">Tender Manager</SelectItem>
+                  <SelectItem value="SVP">SVP</SelectItem>
+                  <SelectItem value="BDTeam">BD Team</SelectItem>
+                  <SelectItem value="Basic">Basic</SelectItem>
+                  <SelectItem value="TempUser">Temp User</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Status</Label>
+              <Select value={addForm.status} onValueChange={(v: 'approved' | 'pending') => setAddForm((f) => ({ ...f, status: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {addForm.role === 'SVP' && (
+              <div className="col-span-2 space-y-1">
+                <Label>SVP Group</Label>
+                <Select value={addForm.assignedGroup} onValueChange={(v) => setAddForm((f) => ({ ...f, assignedGroup: v }))}>
+                  <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {GROUP_OPTIONS.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {addForm.role === 'TempUser' && (
+              <>
+                <div className="space-y-1">
+                  <Label>Temp Password</Label>
+                  <Input
+                    type="password"
+                    value={addForm.password}
+                    onChange={(e) => setAddForm((f) => ({ ...f, password: e.target.value }))}
+                    placeholder="Set a temp password"
+                  />
+                  <PasswordStrengthBar password={addForm.password} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Expires At</Label>
+                  <Input
+                    type="datetime-local"
+                    value={addForm.tempAccessExpiresAt}
+                    onChange={(e) => setAddForm((f) => ({ ...f, tempAccessExpiresAt: e.target.value }))}
+                  />
+                </div>
+                <p className="col-span-2 text-xs text-muted-foreground">
+                  Temp users have view-only access and must log in during the expiry window.
+                </p>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddUserOpen(false)}>Cancel</Button>
+            <Button onClick={addUser} disabled={!canManageUsers || busy}>
+              {busy ? 'Saving…' : 'Add User'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Set Password Dialog */}
+      <Dialog open={setPasswordOpen} onOpenChange={setSetPasswordOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-4 w-4" />Set Password
+            </DialogTitle>
+            <DialogDescription>Assign a login password for this user.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <Label>User</Label>
+              <Input value={setPasswordTarget} readOnly className="bg-muted font-mono text-sm" />
+            </div>
+            <div className="space-y-1">
+              <Label>New Password</Label>
+              <Input
+                type="password"
+                value={setPwdForm.newPassword}
+                onChange={(e) => setSetPwdForm((f) => ({ ...f, newPassword: e.target.value }))}
+                placeholder="Enter new password"
+              />
+              <PasswordStrengthBar password={setPwdForm.newPassword} />
+            </div>
+            <div className="space-y-1">
+              <Label>Confirm Password</Label>
+              <Input
+                type="password"
+                value={setPwdForm.confirmPassword}
+                onChange={(e) => setSetPwdForm((f) => ({ ...f, confirmPassword: e.target.value }))}
+                placeholder="Confirm password"
+              />
+              {setPwdForm.confirmPassword && setPwdForm.newPassword !== setPwdForm.confirmPassword && (
+                <p className="text-xs text-destructive">Passwords do not match</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="require-change"
+                checked={setPwdForm.requireChange}
+                onCheckedChange={(v) => setSetPwdForm((f) => ({ ...f, requireChange: Boolean(v) }))}
+              />
+              <Label htmlFor="require-change" className="cursor-pointer font-normal">
+                Require password change on next login
+              </Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSetPasswordOpen(false)}>Cancel</Button>
+            <Button
+              onClick={setPassword}
+              disabled={setPwdBusy || !setPwdForm.newPassword || setPwdForm.newPassword !== setPwdForm.confirmPassword}
+            >
+              {setPwdBusy ? 'Saving…' : 'Set Password'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove Confirm Dialog */}
+      <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Remove User</DialogTitle>
+            <DialogDescription>
+              Remove <span className="font-mono font-medium">{removeTarget}</span>? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => { setRemoveOpen(false); void removeUser(removeTarget); }}
+              disabled={busy}
+            >
+              Remove
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send Temp Credential Confirm Dialog */}
+      <Dialog open={sendTempOpen} onOpenChange={setSendTempOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Send Temporary Credential</DialogTitle>
+            <DialogDescription>
+              Generate and email a 24-hour login code to{' '}
+              <span className="font-mono font-medium">{sendTempTarget}</span>?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSendTempOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => { setSendTempOpen(false); void sendTempCredential(sendTempTarget); }}
+              disabled={busy}
+            >
+              Send
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
