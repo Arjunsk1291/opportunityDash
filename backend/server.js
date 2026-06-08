@@ -6589,6 +6589,7 @@ app.get('/api/spreadsheet/workbook/opportunities', verifyToken, async (_req, res
 // --- BD Engagements ---
 app.get('/api/bd-engagements', verifyToken, async (req, res) => {
   try {
+    if (!await requirePageView(req, res, 'bd_engagements')) return;
     res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     const rows = await BDEngagement.find().sort({ createdAt: -1 }).lean();
     res.json(rows.map(mapIdField));
@@ -8567,8 +8568,9 @@ app.post('/api/bid-decisions', verifyToken, async (req, res) => {
   }
 });
 
-app.get('/api/vendors', verifyToken, async (_req, res) => {
+app.get('/api/vendors', verifyToken, async (req, res) => {
   try {
+    if (!await requirePageView(req, res, 'vendor_directory')) return;
     res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     await cleanupDummyVendors();
     const vendors = await Vendor.find().sort({ updatedAt: -1, companyName: 1 }).lean();
@@ -8644,8 +8646,9 @@ app.post('/api/vendors/import', verifyToken, async (req, res) => {
   }
 });
 
-app.get('/api/clients', verifyToken, async (_req, res) => {
+app.get('/api/clients', verifyToken, async (req, res) => {
   try {
+    if (!await requirePageView(req, res, 'clients')) return;
     res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     const clients = await Client.find().sort({ updatedAt: -1 }).lean();
     res.json(clients.map((client) => mapIdField(client)));

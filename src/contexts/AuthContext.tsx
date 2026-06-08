@@ -584,6 +584,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data?.pageViewAccess) setPageViewAccess(data.pageViewAccess);
     if (data?.pageEditAccess) setPageEditAccess(data.pageEditAccess);
     if (data?.userPageOverrides) setUserPageOverrides(data.userPageOverrides);
+    permissionsRefreshRef.current = null;
     await loadPermissionsBundle();
   }, [authHeaders, loadPermissionsBundle, token, user?.role]);
 
