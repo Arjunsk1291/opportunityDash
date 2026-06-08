@@ -25,7 +25,8 @@ export type ActionKey =
   | 'export_template_write'
   | 'notification_alert_flags_write'
   | 'lead_email_manage'
-  | 'logs_cleanup';
+  | 'logs_cleanup'
+  | 'bid_decision_manage';
 
 export const ACTION_LABELS: Record<ActionKey, string> = {
   opportunities_view: 'View Opportunities Data',
@@ -53,6 +54,7 @@ export const ACTION_LABELS: Record<ActionKey, string> = {
   notification_alert_flags_write: 'Update Telecast Alert Flags',
   lead_email_manage: 'Approve lead email mappings',
   logs_cleanup: 'Cleanup Login Logs',
+  bid_decision_manage: 'Create / Save Bid Decisions',
 };
 
 export const ACTION_DESCRIPTIONS: Record<ActionKey, string> = {
@@ -81,6 +83,7 @@ export const ACTION_DESCRIPTIONS: Record<ActionKey, string> = {
   notification_alert_flags_write: 'Persist telecast alert flag updates on synced tenders.',
   lead_email_manage: 'Approve lead name to email mappings for deadline alerts.',
   logs_cleanup: 'Delete old login logs.',
+  bid_decision_manage: 'Create and save Bid/No Bid decision records.',
 };
 
 export const DEFAULT_ACTION_ROLE_ACCESS: Record<ActionKey, UserRole[]> = {
@@ -109,4 +112,5 @@ export const DEFAULT_ACTION_ROLE_ACCESS: Record<ActionKey, UserRole[]> = {
   notification_alert_flags_write: ['Master', 'Admin'],
   lead_email_manage: ['Master', 'Admin'],
   logs_cleanup: ['Master'],
+  bid_decision_manage: ['Master', 'SVP'],
 };

@@ -1,758 +1,857 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Plus, RefreshCcw, Save, Search, Trash2, FileText, ShieldCheck } from 'lucide-react';
+import {
+  ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronRight,
+  FileText, Plus, RefreshCw, Search, ShieldCheck, XCircle,
+} from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useCurrency } from '@/contexts/CurrencyContext';
 import { useData } from '@/contexts/DataContext';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from 'sonner';
 import {
-  BID_DECISION_EXPORT_TEMPLATE_URL,
-  BID_DECISION_OPTIONS,
-  BID_DECISION_SOURCE_MODES,
-  type BidDecisionCriterion,
-  type BidDecisionOpportunity,
+  BID_CRITERIA_DEFINITIONS,
+  BID_DECISION_THRESHOLD,
+  type BidCriterionDefinition,
   type BidDecisionRecord,
-  type BidDecisionSourceMode,
   calculateDecisionScore,
   fetchBidDecisionRecords,
-  formatDecisionScore,
-  getOpportunityBidDecision,
-  normalizeBidDecisionCriterion,
-  normalizeBidDecisionRecord,
-  normalizeBidDecisionState,
-  normalizeBidDecisionSourceMode,
   saveBidDecision,
 } from '@/lib/bidDecision';
-import { toast } from 'sonner';
 
-type BidDecisionFormState = {
+// ─── types ───────────────────────────────────────────────────────────────────
+
+type WizardStep = 'source' | 'details' | 'scoring' | 'decision';
+
+interface OpportunityDetails {
   opportunityRefNo: string;
-  bidDecision: 'BID' | 'NO BID' | 'BLANK';
-  sourceMode: BidDecisionSourceMode;
-  criteriaValues: BidDecisionCriterion[];
+  projectName: string;
+  endUser: string;
+  receivedFrom: string;
+  enquiryDate: string;
+  scopeOfWork: string;
+}
+
+interface CriterionEntry {
+  selectedLabel: string;
+  score: number;
+  notes: string;
+  overrideScore: boolean; // user explicitly edited the number
+}
+
+type ScoresMap = Record<string, CriterionEntry>;
+
+const EMPTY_DETAILS: OpportunityDetails = {
+  opportunityRefNo: '',
+  projectName: '',
+  endUser: '',
+  receivedFrom: '',
+  enquiryDate: '',
+  scopeOfWork: '',
 };
 
-const normalizeRef = (value: unknown) => String(value ?? '').trim().toUpperCase();
+const STEPS: { key: WizardStep; label: string }[] = [
+  { key: 'source', label: 'Data Source' },
+  { key: 'details', label: 'Opportunity Details' },
+  { key: 'scoring', label: 'Scoring' },
+  { key: 'decision', label: 'Decision' },
+];
 
-const createCriteriaRow = (index: number): BidDecisionCriterion => ({
-  key: `criterion-${index + 1}`,
-  label: '',
-  rating: null,
-  weight: null,
-  notes: '',
-  included: true,
-});
+// ─── helpers ─────────────────────────────────────────────────────────────────
 
-const buildFormState = (
-  refNo: string,
-  record?: BidDecisionRecord | null,
-  sourceMode: BidDecisionSourceMode = 'dashboard',
-): BidDecisionFormState => {
-  const normalizedRecord = record ? normalizeBidDecisionRecord(record) : null;
-  return {
-    opportunityRefNo: refNo,
-    bidDecision: normalizedRecord?.bidDecision || 'BLANK',
-    sourceMode: normalizedRecord?.sourceMode || sourceMode,
-    criteriaValues: normalizedRecord?.criteriaValues?.length
-      ? normalizedRecord.criteriaValues.map((criterion, index) => ({
-          ...normalizeBidDecisionCriterion(criterion),
-          key: criterion.key || `criterion-${index + 1}`,
-        }))
-      : [createCriteriaRow(0)],
-  };
-};
-
-function getOpportunityDecisionLabel(opportunity: BidDecisionOpportunity, record?: BidDecisionRecord | null) {
-  if (record?.bidDecision) return record.bidDecision;
-  return getOpportunityBidDecision(opportunity);
+function totalScore(scores: ScoresMap): number {
+  return BID_CRITERIA_DEFINITIONS.reduce((sum, def) => {
+    const entry = scores[def.key];
+    const s = entry?.score ?? 0;
+    return sum + (def.weight / 100) * s;
+  }, 0);
 }
 
-function getOpportunitySourceLabel(record?: BidDecisionRecord | null) {
-  return normalizeBidDecisionSourceMode(record?.sourceMode || 'dashboard');
+function buildCriteriaValues(scores: ScoresMap) {
+  return BID_CRITERIA_DEFINITIONS.map((def) => {
+    const entry = scores[def.key];
+    return {
+      key: def.key,
+      label: def.label,
+      rating: entry?.score ?? 0,
+      weight: def.weight,
+      notes: entry
+        ? [entry.selectedLabel, entry.notes].filter(Boolean).join(' — ')
+        : '',
+      included: true,
+    };
+  });
 }
 
-function getBadgeVariant(decision: string) {
-  if (decision === 'BID') return 'default' as const;
-  if (decision === 'NO BID') return 'destructive' as const;
-  return 'secondary' as const;
+function buildScoresFromRecord(record: BidDecisionRecord): ScoresMap {
+  const map: ScoresMap = {};
+  for (const c of record.criteriaValues || []) {
+    const def = BID_CRITERIA_DEFINITIONS.find((d) => d.key === c.key);
+    if (!def) continue;
+    const score = c.rating ?? 0;
+    const noteParts = String(c.notes || '').split(' — ');
+    const selectedLabel = noteParts[0] || (def.options[0]?.label ?? '');
+    map[c.key] = {
+      selectedLabel,
+      score,
+      notes: noteParts.slice(1).join(' — '),
+      overrideScore: !def.options.some((o) => o.score === score),
+    };
+  }
+  return map;
 }
 
-function CriterionRow({
-  criterion,
-  index,
-  onChange,
-  onRemove,
-}: {
-  criterion: BidDecisionCriterion;
-  index: number;
-  onChange: (next: BidDecisionCriterion) => void;
-  onRemove: () => void;
-}) {
+// ─── sub-components ───────────────────────────────────────────────────────────
+
+function StepIndicator({ step }: { step: WizardStep }) {
+  const current = STEPS.findIndex((s) => s.key === step);
   return (
-    <div className="rounded-xl border bg-card p-3 sm:p-4 space-y-3">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex-1 space-y-2">
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">Criterion {index + 1}</Badge>
-            <Badge variant={criterion.included ? 'default' : 'secondary'}>{criterion.included ? 'Included' : 'Excluded'}</Badge>
+    <div className="flex items-center gap-0">
+      {STEPS.map((s, i) => {
+        const done = i < current;
+        const active = i === current;
+        return (
+          <div key={s.key} className="flex items-center">
+            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors
+              ${done ? 'bg-primary text-primary-foreground' : active ? 'bg-primary text-primary-foreground ring-2 ring-primary ring-offset-2' : 'bg-muted text-muted-foreground'}`}>
+              {done ? <Check className="h-4 w-4" /> : i + 1}
+            </div>
+            <span className={`ml-1.5 text-xs font-medium hidden sm:inline ${active ? 'text-foreground' : 'text-muted-foreground'}`}>
+              {s.label}
+            </span>
+            {i < STEPS.length - 1 && (
+              <ChevronRight className="mx-2 h-4 w-4 text-muted-foreground shrink-0" />
+            )}
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <Label className="text-xs">Label</Label>
-              <Input
-                value={criterion.label}
-                onChange={(event) => onChange({ ...criterion, label: event.target.value })}
-                placeholder="e.g. Client fit"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Key</Label>
-              <Input
-                value={criterion.key}
-                onChange={(event) => onChange({ ...criterion, key: event.target.value })}
-                placeholder="e.g. client_fit"
-              />
-            </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            <div>
-              <Label className="text-xs">Rating</Label>
-              <Input
-                type="number"
-                inputMode="decimal"
-                value={criterion.rating ?? ''}
-                onChange={(event) => onChange({ ...criterion, rating: event.target.value === '' ? null : Number(event.target.value) })}
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Weight</Label>
-              <Input
-                type="number"
-                inputMode="decimal"
-                value={criterion.weight ?? ''}
-                onChange={(event) => onChange({ ...criterion, weight: event.target.value === '' ? null : Number(event.target.value) })}
-                placeholder="1"
-              />
-            </div>
-            <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground">Included in score</p>
-                <p className="text-sm">{criterion.included ? 'Yes' : 'No'}</p>
-              </div>
-              <Switch
-                checked={criterion.included}
-                onCheckedChange={(checked) => onChange({ ...criterion, included: checked })}
-              />
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="ghost" size="icon" onClick={onRemove} aria-label={`Remove criterion ${index + 1}`}>
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-      <div>
-        <Label className="text-xs">Notes</Label>
-        <Input
-          value={criterion.notes}
-          onChange={(event) => onChange({ ...criterion, notes: event.target.value })}
-          placeholder="Optional notes or rationale"
-        />
-      </div>
+        );
+      })}
     </div>
   );
 }
 
+function DecisionBadge({ decision, score }: { decision: string; score: number }) {
+  if (decision === 'BID')
+    return <Badge className="bg-green-100 text-green-700 gap-1.5 text-sm px-3 py-1 hover:bg-green-100"><CheckCircle2 className="h-4 w-4" />BID — {score.toFixed(1)}%</Badge>;
+  if (decision === 'NO BID')
+    return <Badge variant="destructive" className="gap-1.5 text-sm px-3 py-1"><XCircle className="h-4 w-4" />NO BID — {score.toFixed(1)}%</Badge>;
+  return <Badge variant="secondary" className="text-sm px-3 py-1">—</Badge>;
+}
+
+function CriterionCard({
+  def,
+  entry,
+  onChange,
+  index,
+}: {
+  def: BidCriterionDefinition;
+  entry: CriterionEntry | undefined;
+  onChange: (e: CriterionEntry) => void;
+  index: number;
+}) {
+  const actualScore = entry ? (def.weight / 100) * entry.score : 0;
+  const maxActual = def.weight; // actual max = weight * 100/100
+
+  const handleOptionChange = (label: string) => {
+    const opt = def.options.find((o) => o.label === label);
+    onChange({
+      selectedLabel: label,
+      score: opt?.score ?? 0,
+      notes: entry?.notes ?? '',
+      overrideScore: false,
+    });
+  };
+
+  const handleScoreOverride = (val: string) => {
+    const n = Math.min(100, Math.max(0, Number(val) || 0));
+    onChange({
+      selectedLabel: entry?.selectedLabel ?? '',
+      score: n,
+      notes: entry?.notes ?? '',
+      overrideScore: true,
+    });
+  };
+
+  return (
+    <Card className={`transition-colors ${entry ? 'border-primary/30 bg-card' : 'border-border bg-muted/20'}`}>
+      <CardContent className="pt-4 pb-4">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-0.5">
+              <Badge variant="outline" className="text-xs">{index + 1}</Badge>
+              <span className="font-semibold text-sm">{def.label}</span>
+              {def.weight === 0 && <Badge variant="secondary" className="text-xs">Info only</Badge>}
+            </div>
+            <p className="text-xs text-muted-foreground">{def.description}</p>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="text-xs text-muted-foreground">Weight</p>
+            <p className="font-bold text-sm">{def.weight}%</p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs">Answer</Label>
+            <Select value={entry?.selectedLabel ?? ''} onValueChange={handleOptionChange}>
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Select an answer…" />
+              </SelectTrigger>
+              <SelectContent>
+                {def.options.map((opt) => (
+                  <SelectItem key={opt.label} value={opt.label}>
+                    {opt.label} {opt.hint ? `(${opt.hint})` : ''} → {opt.score}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">
+              Score (0–100)
+              {entry?.overrideScore && <span className="ml-1 text-amber-600">overridden</span>}
+            </Label>
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              value={entry?.score ?? ''}
+              onChange={(e) => handleScoreOverride(e.target.value)}
+              placeholder="0"
+              className="h-9"
+            />
+          </div>
+        </div>
+
+        {entry && (
+          <div className="mt-3 space-y-1">
+            <Label className="text-xs">Notes (optional)</Label>
+            <Input
+              value={entry.notes}
+              onChange={(e) => onChange({ ...entry, notes: e.target.value })}
+              placeholder="Remarks or rationale…"
+              className="h-8 text-xs"
+            />
+          </div>
+        )}
+
+        {entry && def.weight > 0 && (
+          <div className="mt-3">
+            <div className="flex justify-between text-xs text-muted-foreground mb-1">
+              <span>Contribution</span>
+              <span>{actualScore.toFixed(2)} / {maxActual}</span>
+            </div>
+            <Progress value={(actualScore / maxActual) * 100} className="h-1.5" />
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── main page ────────────────────────────────────────────────────────────────
+
 export default function BidDecision() {
-  const { opportunities, refreshData } = useData();
-  const { token } = useAuth();
-  const { formatCurrency } = useCurrency();
+  const { opportunities } = useData();
+  const { token, canPerformAction } = useAuth();
+  const canSave = canPerformAction('bid_decision_manage');
 
   const [records, setRecords] = useState<BidDecisionRecord[]>([]);
-  const [selectedRef, setSelectedRef] = useState('');
-  const [manualRefInput, setManualRefInput] = useState('');
-  const [search, setSearch] = useState('');
-  const [decisionFilter, setDecisionFilter] = useState<'ALL' | 'BID' | 'NO BID' | 'BLANK'>('ALL');
-  const [sourceFilter, setSourceFilter] = useState<'ALL' | BidDecisionSourceMode>('ALL');
-  const [selectionSourceMode, setSelectionSourceMode] = useState<BidDecisionSourceMode>('dashboard');
+  const [loadingRecords, setLoadingRecords] = useState(true);
+  const [listSearch, setListSearch] = useState('');
+
+  // Wizard state
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [step, setStep] = useState<WizardStep>('source');
+  const [sourceMode, setSourceMode] = useState<'db' | 'manual'>('db');
+  const [dbSearch, setDbSearch] = useState('');
+  const [details, setDetails] = useState<OpportunityDetails>(EMPTY_DETAILS);
+  const [scores, setScores] = useState<ScoresMap>({});
   const [saving, setSaving] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [templateReachable, setTemplateReachable] = useState(false);
-  const [form, setForm] = useState<BidDecisionFormState>({
-    opportunityRefNo: '',
-    bidDecision: 'BLANK',
-    sourceMode: 'dashboard',
-    criteriaValues: [createCriteriaRow(0)],
-  });
-  const [exportBlockedReason] = useState('The actual Bid Decision workbook template is not available in this workspace.');
+  const [editingRefNo, setEditingRefNo] = useState<string | null>(null); // null = new
 
-  useEffect(() => {
-    let cancelled = false;
-    const checkTemplate = async () => {
-      try {
-        const response = await fetch(BID_DECISION_EXPORT_TEMPLATE_URL, { method: 'HEAD' });
-        if (!cancelled) setTemplateReachable(response.ok);
-      } catch {
-        if (!cancelled) setTemplateReachable(false);
-      }
-    };
-    void checkTemplate();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // ── load records ──────────────────────────────────────────────────────────
 
-  useEffect(() => {
+  const loadRecords = async () => {
     if (!token) return;
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const next = await fetchBidDecisionRecords(token);
-        if (cancelled) return;
-        setRecords(next);
-      } catch (error) {
-        if (!cancelled) {
-          toast.error((error as Error).message || 'Failed to load bid decisions');
-        }
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
-
-  const opportunityMap = useMemo(() => {
-    const map = new Map<string, BidDecisionOpportunity>();
-    opportunities.forEach((opportunity) => {
-      map.set(normalizeRef(opportunity.opportunityRefNo), opportunity);
-    });
-    return map;
-  }, [opportunities]);
-
-  const recordMap = useMemo(() => {
-    const map = new Map<string, BidDecisionRecord>();
-    records.forEach((record) => {
-      map.set(normalizeRef(record.opportunityRefNo), record);
-    });
-    return map;
-  }, [records]);
-
-  const selectedOpportunity = selectedRef ? opportunityMap.get(normalizeRef(selectedRef)) || null : null;
-  const selectedRecord = selectedRef ? recordMap.get(normalizeRef(selectedRef)) || null : null;
-  const selectedSnapshotDecision = selectedOpportunity ? getOpportunityBidDecision(selectedOpportunity) : 'BLANK';
-  const selectedSourceMode = selectedRecord?.sourceMode || selectionSourceMode;
-
-  useEffect(() => {
-    if (!selectedRef) return;
-    setForm(buildFormState(selectedRef, selectedRecord || undefined, selectedSourceMode));
-  }, [selectedRecord, selectedRef, selectedSourceMode]);
-
-  const rows = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return [...opportunities]
-      .filter((opportunity) => {
-        const ref = normalizeRef(opportunity.opportunityRefNo);
-        const record = recordMap.get(ref);
-        const decision = getOpportunityDecisionLabel(opportunity, record);
-        const sourceMode = getOpportunitySourceLabel(record);
-        if (decisionFilter !== 'ALL' && decision !== decisionFilter) return false;
-        if (sourceFilter !== 'ALL' && sourceMode !== sourceFilter) return false;
-        if (!query) return true;
-        return [
-          opportunity.opportunityRefNo,
-          opportunity.tenderName,
-          opportunity.clientName,
-          opportunity.internalLead,
-          opportunity.opportunityClassification,
-          opportunity.avenirStatus,
-          opportunity.tenderResult,
-          opportunity.tenderStatusRemark,
-          decision,
-          sourceMode,
-        ].join(' ').toLowerCase().includes(query);
-      })
-      .sort((left, right) => {
-        const leftSaved = recordMap.has(normalizeRef(left.opportunityRefNo)) ? 0 : 1;
-        const rightSaved = recordMap.has(normalizeRef(right.opportunityRefNo)) ? 0 : 1;
-        if (leftSaved !== rightSaved) return leftSaved - rightSaved;
-        return normalizeRef(left.opportunityRefNo).localeCompare(normalizeRef(right.opportunityRefNo));
-      });
-  }, [decisionFilter, opportunities, recordMap, search, sourceFilter]);
-
-  const stats = useMemo(() => {
-    const saved = records.length;
-    const bid = records.filter((record) => record.bidDecision === 'BID').length;
-    const noBid = records.filter((record) => record.bidDecision === 'NO BID').length;
-    const blank = records.filter((record) => record.bidDecision === 'BLANK').length;
-    const averageScore = saved
-      ? records.reduce((sum, record) => sum + Number(record.decisionScore || 0), 0) / saved
-      : 0;
-    return {
-      total: opportunities.length,
-      saved,
-      bid,
-      noBid,
-      blank,
-      averageScore,
-    };
-  }, [opportunities.length, records]);
-
-  const editableCriteria = form.criteriaValues;
-  const decisionScore = useMemo(() => calculateDecisionScore(editableCriteria), [editableCriteria]);
-  const saveEligible = Boolean(selectedOpportunity && normalizeRef(form.opportunityRefNo));
-  const exportReady = templateReachable;
-
-  const loadOpportunity = (refNo: string, sourceMode: BidDecisionSourceMode) => {
-    const nextRef = normalizeRef(refNo);
-    if (!nextRef) {
-      toast.error('Enter an opportunityRefNo first.');
-      return;
-    }
-
-    const opportunity = opportunityMap.get(nextRef);
-    if (!opportunity) {
-      toast.error('Opportunity not found in dashboard data.');
-      return;
-    }
-
-    setSelectedRef(opportunity.opportunityRefNo);
-    setManualRefInput(opportunity.opportunityRefNo);
-    setSelectionSourceMode(sourceMode);
-    setForm(buildFormState(opportunity.opportunityRefNo, recordMap.get(nextRef) || undefined, sourceMode));
-  };
-
-  const handleRefresh = async () => {
-    if (!token) return;
-    setRefreshing(true);
+    setLoadingRecords(true);
     try {
-      await refreshData({ force: true });
-      const next = await fetchBidDecisionRecords(token);
-      setRecords(next);
-      toast.success('Bid Decision data refreshed.');
-    } catch (error) {
-      toast.error((error as Error).message || 'Failed to refresh Bid Decision data');
+      const list = await fetchBidDecisionRecords(token);
+      setRecords(list);
+    } catch (err) {
+      toast.error((err as Error).message);
     } finally {
-      setRefreshing(false);
+      setLoadingRecords(false);
     }
   };
 
-  const handleAddCriterion = () => {
-    setForm((current) => ({
-      ...current,
-      criteriaValues: [...current.criteriaValues, createCriteriaRow(current.criteriaValues.length)],
-    }));
+  useEffect(() => { void loadRecords(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── wizard helpers ────────────────────────────────────────────────────────
+
+  const openNewWizard = () => {
+    setEditingRefNo(null);
+    setStep('source');
+    setSourceMode('db');
+    setDbSearch('');
+    setDetails(EMPTY_DETAILS);
+    setScores({});
+    setWizardOpen(true);
   };
+
+  const openEditWizard = (record: BidDecisionRecord) => {
+    setEditingRefNo(record.opportunityRefNo);
+    setStep('scoring');
+    setSourceMode((record.sourceMode as 'db' | 'manual') || 'manual');
+    setDetails({
+      opportunityRefNo: record.opportunityRefNo,
+      projectName: (record as unknown as Record<string, string>).projectName || '',
+      endUser: (record as unknown as Record<string, string>).endUser || '',
+      receivedFrom: (record as unknown as Record<string, string>).receivedFrom || '',
+      enquiryDate: (record as unknown as Record<string, string>).enquiryDate || '',
+      scopeOfWork: (record as unknown as Record<string, string>).scopeOfWork || '',
+    });
+    setScores(buildScoresFromRecord(record));
+    setWizardOpen(true);
+  };
+
+  const closeWizard = () => {
+    setWizardOpen(false);
+  };
+
+  // ── DB opportunity search ─────────────────────────────────────────────────
+
+  const filteredOpportunities = useMemo(() => {
+    if (!dbSearch.trim()) return opportunities.slice(0, 50);
+    const q = dbSearch.toLowerCase();
+    return opportunities
+      .filter((o) => {
+        const ref = String(o.opportunityRefNo || o['Avenir Ref'] || '').toLowerCase();
+        const name = String(o.tenderName || o['Tender Name'] || '').toLowerCase();
+        const client = String(o.clientName || o['Client'] || '').toLowerCase();
+        return ref.includes(q) || name.includes(q) || client.includes(q);
+      })
+      .slice(0, 80);
+  }, [opportunities, dbSearch]);
+
+  const selectDbOpportunity = (opp: Record<string, unknown>) => {
+    const refNo = String(opp.opportunityRefNo || opp['Avenir Ref'] || '');
+    setDetails({
+      opportunityRefNo: refNo,
+      projectName: String(opp.tenderName || opp['Tender Name'] || ''),
+      endUser: String(opp.clientName || opp['Client'] || ''),
+      receivedFrom: String(opp.internalLead || opp['Internal Lead'] || ''),
+      enquiryDate: String(opp.dateTenderReceived || opp['Date Tender Received'] || ''),
+      scopeOfWork: '',
+    });
+    setStep('details');
+  };
+
+  // ── scoring helpers ───────────────────────────────────────────────────────
+
+  const allScored = BID_CRITERIA_DEFINITIONS.filter((d) => d.weight > 0).every((d) => scores[d.key]?.selectedLabel);
+  const currentScore = totalScore(scores);
+  const recommendation = currentScore >= BID_DECISION_THRESHOLD ? 'BID' : 'NO BID';
+
+  // ── save ──────────────────────────────────────────────────────────────────
 
   const handleSave = async () => {
-    if (!token) {
-      toast.error('Missing auth token.');
-      return;
-    }
-    if (!selectedOpportunity) {
-      toast.error('Select a valid opportunity before saving.');
-      return;
-    }
-
-    const opportunityRefNo = selectedOpportunity.opportunityRefNo;
-    const normalizedCriteria = editableCriteria.map((criterion, index) => ({
-      ...normalizeBidDecisionCriterion(criterion),
-      key: criterion.key || `criterion-${index + 1}`,
-    }));
-    const payload = {
-      opportunityRefNo,
-      bidDecision: normalizeBidDecisionState(form.bidDecision),
-      decisionScore,
-      criteriaValues: normalizedCriteria,
-      sourceMode: form.sourceMode,
-    };
-
+    if (!allScored) { toast.error('Score all criteria before saving.'); return; }
+    if (!details.opportunityRefNo.trim()) { toast.error('Opportunity reference number is required.'); return; }
     setSaving(true);
     try {
-      const saved = await saveBidDecision(token, payload);
-      setRecords((current) => {
-        const next = current.filter((record) => normalizeRef(record.opportunityRefNo) !== normalizeRef(saved.opportunityRefNo));
-        return [saved, ...next];
+      const record = await saveBidDecision(token!, {
+        opportunityRefNo: details.opportunityRefNo.trim(),
+        bidDecision: recommendation,
+        decisionScore: currentScore,
+        criteriaValues: buildCriteriaValues(scores),
+        sourceMode: sourceMode === 'db' ? 'dashboard' : 'manual',
+        projectName: details.projectName,
+        endUser: details.endUser,
+        receivedFrom: details.receivedFrom,
+        enquiryDate: details.enquiryDate,
+        scopeOfWork: details.scopeOfWork,
       });
-      setSelectedRef(saved.opportunityRefNo);
-      setForm(buildFormState(saved.opportunityRefNo, saved, saved.sourceMode));
-      toast.success('Bid Decision saved.');
-    } catch (error) {
-      toast.error((error as Error).message || 'Failed to save Bid Decision');
+      setRecords((prev) => {
+        const idx = prev.findIndex((r) => r.opportunityRefNo === record.opportunityRefNo);
+        if (idx >= 0) { const next = [...prev]; next[idx] = record; return next; }
+        return [record, ...prev];
+      });
+      toast.success(`Saved: ${recommendation} — ${currentScore.toFixed(1)}%`);
+      closeWizard();
+    } catch (err) {
+      toast.error((err as Error).message);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleExport = async () => {
-    toast.error(exportBlockedReason);
-  };
+  // ── filtered records list ─────────────────────────────────────────────────
 
-  const selectedOpportunityValue = selectedOpportunity?.opportunityValue ?? null;
-  const selectedDecisionRecord = selectedRef ? recordMap.get(normalizeRef(selectedRef)) || null : null;
+  const filteredRecords = useMemo(() => {
+    if (!listSearch.trim()) return records;
+    const q = listSearch.toLowerCase();
+    return records.filter((r) =>
+      r.opportunityRefNo.toLowerCase().includes(q) ||
+      String((r as unknown as Record<string, string>).projectName || '').toLowerCase().includes(q)
+    );
+  }, [records, listSearch]);
+
+  // ─── wizard render ────────────────────────────────────────────────────────
+
+  if (wizardOpen) {
+    return (
+      <div className="space-y-6">
+        {/* Wizard header */}
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="sm" onClick={closeWizard} className="gap-2">
+            <ArrowLeft className="h-4 w-4" />
+            Back to list
+          </Button>
+          <div className="flex-1">
+            <h1 className="text-xl font-semibold">
+              {editingRefNo ? `Editing: ${editingRefNo}` : 'New Bid / No Bid Decision'}
+            </h1>
+          </div>
+        </div>
+
+        <StepIndicator step={step} />
+
+        {/* ── Step 1: Data Source ─────────────────────────────────────────── */}
+        {step === 'source' && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Choose how to populate the opportunity details.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => { setSourceMode('db'); setStep('details'); }}
+                className={`rounded-xl border-2 p-6 text-left transition-all hover:border-primary hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-primary ${sourceMode === 'db' ? 'border-primary bg-primary/5' : 'border-border'}`}
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                    <Search className="h-5 w-5 text-primary" />
+                  </div>
+                  <span className="font-semibold">From Existing Opportunity</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Search and select from tenders already in the database. Details are pre-filled automatically.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setSourceMode('manual'); setStep('details'); }}
+                className={`rounded-xl border-2 p-6 text-left transition-all hover:border-primary hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-primary ${sourceMode === 'manual' ? 'border-primary bg-primary/5' : 'border-border'}`}
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                    <FileText className="h-5 w-5 text-primary" />
+                  </div>
+                  <span className="font-semibold">Manual Entry</span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Enter all opportunity details manually. Useful for enquiries not yet in the system.
+                </p>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 2: Details ─────────────────────────────────────────────── */}
+        {step === 'details' && (
+          <div className="space-y-5">
+            {sourceMode === 'db' && !details.opportunityRefNo && (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">Search for an opportunity from the database:</p>
+                <Input
+                  placeholder="Search by ref no, name, or client…"
+                  value={dbSearch}
+                  onChange={(e) => setDbSearch(e.target.value)}
+                  className="max-w-md"
+                />
+                <div className="rounded-lg border overflow-hidden max-h-72 overflow-y-auto">
+                  {filteredOpportunities.length === 0 ? (
+                    <p className="p-4 text-sm text-muted-foreground">No opportunities found.</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Ref No</TableHead>
+                          <TableHead>Project / Tender</TableHead>
+                          <TableHead>Client</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredOpportunities.map((opp) => {
+                          const refNo = String(opp.opportunityRefNo || opp['Avenir Ref'] || '');
+                          return (
+                            <TableRow
+                              key={refNo}
+                              className="cursor-pointer hover:bg-muted/50"
+                              onClick={() => selectDbOpportunity(opp as unknown as Record<string, unknown>)}
+                            >
+                              <TableCell className="font-mono text-xs">{refNo}</TableCell>
+                              <TableCell className="text-sm">{String(opp.tenderName || opp['Tender Name'] || '—')}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">{String(opp.clientName || opp['Client'] || '—')}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Opportunity Details</CardTitle>
+                <CardDescription>
+                  {sourceMode === 'db' ? 'Pre-filled from the database. Edit if needed.' : 'Enter the opportunity details manually.'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label>Avenir Reference No <span className="text-destructive">*</span></Label>
+                  <Input
+                    value={details.opportunityRefNo}
+                    onChange={(e) => setDetails((d) => ({ ...d, opportunityRefNo: e.target.value }))}
+                    placeholder="e.g. AC-26004"
+                    readOnly={sourceMode === 'db' && !!details.opportunityRefNo}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Project Name / Tender Name</Label>
+                  <Input
+                    value={details.projectName}
+                    onChange={(e) => setDetails((d) => ({ ...d, projectName: e.target.value }))}
+                    placeholder="e.g. ADNOC Pipeline Works"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>End User / Client</Label>
+                  <Input
+                    value={details.endUser}
+                    onChange={(e) => setDetails((d) => ({ ...d, endUser: e.target.value }))}
+                    placeholder="e.g. ADNOC"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Received From</Label>
+                  <Input
+                    value={details.receivedFrom}
+                    onChange={(e) => setDetails((d) => ({ ...d, receivedFrom: e.target.value }))}
+                    placeholder="e.g. Internal Lead / EPC Name"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Enquiry Date</Label>
+                  <Input
+                    type="date"
+                    value={details.enquiryDate}
+                    onChange={(e) => setDetails((d) => ({ ...d, enquiryDate: e.target.value }))}
+                  />
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <Label>Scope of Work</Label>
+                  <Textarea
+                    value={details.scopeOfWork}
+                    onChange={(e) => setDetails((d) => ({ ...d, scopeOfWork: e.target.value }))}
+                    placeholder="Brief description of the scope…"
+                    rows={3}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="flex justify-between">
+              <Button variant="outline" onClick={() => setStep('source')}>
+                <ArrowLeft className="mr-2 h-4 w-4" />Back
+              </Button>
+              <Button
+                onClick={() => setStep('scoring')}
+                disabled={!details.opportunityRefNo.trim()}
+              >
+                Next: Scoring
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 3: Scoring ──────────────────────────────────────────────── */}
+        {step === 'scoring' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Score each criterion. Weighted score updates live.
+              </p>
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">Running total</p>
+                <p className={`text-2xl font-bold ${currentScore >= BID_DECISION_THRESHOLD ? 'text-green-600' : 'text-red-500'}`}>
+                  {currentScore.toFixed(1)}%
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 rounded-lg border bg-muted/30 p-3">
+              <Progress value={currentScore} className="flex-1 h-2.5" />
+              <span className="text-xs font-medium w-10 text-right">{currentScore.toFixed(0)}%</span>
+              <Badge variant={currentScore >= BID_DECISION_THRESHOLD ? 'default' : 'secondary'} className="shrink-0">
+                Threshold: {BID_DECISION_THRESHOLD}%
+              </Badge>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {BID_CRITERIA_DEFINITIONS.map((def, i) => (
+                <CriterionCard
+                  key={def.key}
+                  def={def}
+                  index={i}
+                  entry={scores[def.key]}
+                  onChange={(entry) => setScores((prev) => ({ ...prev, [def.key]: entry }))}
+                />
+              ))}
+            </div>
+
+            <div className="flex justify-between pt-2">
+              <Button variant="outline" onClick={() => setStep('details')}>
+                <ArrowLeft className="mr-2 h-4 w-4" />Back
+              </Button>
+              <Button onClick={() => setStep('decision')} disabled={!allScored}>
+                Review Decision
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 4: Decision ─────────────────────────────────────────────── */}
+        {step === 'decision' && (
+          <div className="space-y-6">
+            {/* Score summary card */}
+            <Card className={`border-2 ${recommendation === 'BID' ? 'border-green-300 bg-green-50/30' : 'border-red-300 bg-red-50/30'}`}>
+              <CardContent className="pt-6 pb-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Total weighted score</p>
+                    <p className={`text-5xl font-black ${recommendation === 'BID' ? 'text-green-600' : 'text-red-500'}`}>
+                      {currentScore.toFixed(1)}%
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Threshold: {BID_DECISION_THRESHOLD}% — {currentScore >= BID_DECISION_THRESHOLD ? `${(currentScore - BID_DECISION_THRESHOLD).toFixed(1)}% above` : `${(BID_DECISION_THRESHOLD - currentScore).toFixed(1)}% below`}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-muted-foreground mb-2">Recommendation</p>
+                    <DecisionBadge decision={recommendation} score={currentScore} />
+                  </div>
+                </div>
+                <Progress value={currentScore} className="mt-4 h-3" />
+              </CardContent>
+            </Card>
+
+            {/* Criteria breakdown table */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Score Breakdown</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Criterion</TableHead>
+                      <TableHead className="text-right w-20">Weight</TableHead>
+                      <TableHead className="text-right w-20">Score</TableHead>
+                      <TableHead className="text-right w-24">Contribution</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {BID_CRITERIA_DEFINITIONS.map((def) => {
+                      const entry = scores[def.key];
+                      const contribution = entry ? (def.weight / 100) * entry.score : 0;
+                      return (
+                        <TableRow key={def.key}>
+                          <TableCell>
+                            <div>
+                              <p className="text-sm font-medium">{def.label}</p>
+                              {entry?.selectedLabel && (
+                                <p className="text-xs text-muted-foreground">{entry.selectedLabel}</p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right text-sm">{def.weight}%</TableCell>
+                          <TableCell className="text-right text-sm">{entry?.score ?? '—'}</TableCell>
+                          <TableCell className="text-right text-sm font-medium">
+                            {def.weight > 0 ? contribution.toFixed(2) : <span className="text-muted-foreground text-xs">info only</span>}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    <TableRow className="bg-muted/30 font-semibold">
+                      <TableCell>Total</TableCell>
+                      <TableCell className="text-right">100%</TableCell>
+                      <TableCell />
+                      <TableCell className="text-right">{currentScore.toFixed(2)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            {/* Notes: show name from details */}
+            <div className="rounded-lg border bg-muted/20 p-4 text-sm space-y-1">
+              <p><span className="font-medium">Ref:</span> {details.opportunityRefNo}</p>
+              {details.projectName && <p><span className="font-medium">Project:</span> {details.projectName}</p>}
+              {details.endUser && <p><span className="font-medium">End User:</span> {details.endUser}</p>}
+            </div>
+
+            <div className="flex justify-between">
+              <Button variant="outline" onClick={() => setStep('scoring')}>
+                <ArrowLeft className="mr-2 h-4 w-4" />Revise Scores
+              </Button>
+              <Button
+                onClick={handleSave}
+                disabled={saving || !canSave}
+                className={`gap-2 ${recommendation === 'BID' ? '' : 'bg-red-600 hover:bg-red-700'}`}
+              >
+                {saving ? (
+                  <><RefreshCw className="h-4 w-4 animate-spin" />Saving…</>
+                ) : (
+                  <><ShieldCheck className="h-4 w-4" />Save as {recommendation}</>
+                )}
+              </Button>
+            </div>
+
+            {!canSave && (
+              <p className="text-xs text-muted-foreground text-center">
+                You do not have permission to save bid decisions. Contact your administrator.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── Records list view ────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3">
-            <Badge variant="outline" className="gap-1">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Bid Decision
-            </Badge>
-            <Badge variant={saveEligible ? 'default' : 'secondary'}>{saveEligible ? 'Save eligible' : 'Select opportunity'}</Badge>
-            <Badge variant={exportReady ? 'default' : 'secondary'}>{exportReady ? 'Template reachable' : 'Template blocked'}</Badge>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight">Bid Decision</h1>
-          <p className="text-sm text-muted-foreground">
-            Search an opportunity, load its saved Bid Decision, and update the record without touching the core opportunity sync flow.
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Bid / No Bid Decisions</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Systematic evaluation against the Avenir bid-no-bid checklist.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" onClick={handleRefresh} disabled={refreshing || !token}>
-            <RefreshCcw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={loadRecords} disabled={loadingRecords}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loadingRecords ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button type="button" variant="outline" onClick={handleExport} disabled={!selectedOpportunity}>
-            <Download className="mr-2 h-4 w-4" />
-            Export
-          </Button>
-          <Button type="button" onClick={handleSave} disabled={saving || !selectedOpportunity || !selectedRef}>
-            <Save className="mr-2 h-4 w-4" />
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
+          {canSave && (
+            <Button size="sm" onClick={openNewWizard}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Decision
+            </Button>
+          )}
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total opportunities</CardDescription>
-            <CardTitle className="text-2xl">{stats.total}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Saved decisions</CardDescription>
-            <CardTitle className="text-2xl">{stats.saved}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Decision split</CardDescription>
-            <CardTitle className="text-2xl">{stats.bid} BID / {stats.noBid} NO BID</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Average score</CardDescription>
-            <CardTitle className="text-2xl">{formatDecisionScore(stats.averageScore)}</CardTitle>
-          </CardHeader>
-        </Card>
+      <div className="flex gap-2">
+        <Input
+          placeholder="Search by ref no or project name…"
+          value={listSearch}
+          onChange={(e) => setListSearch(e.target.value)}
+          className="h-8 max-w-xs"
+        />
+        <Badge variant="secondary">{filteredRecords.length} record{filteredRecords.length !== 1 ? 's' : ''}</Badge>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <Card className="min-w-0">
-          <CardHeader>
-            <CardTitle className="text-lg">Opportunity Finder</CardTitle>
-            <CardDescription>Search and select the source opportunity from dashboard data.</CardDescription>
-            <div className="grid gap-3 pt-2 md:grid-cols-3">
-              <div className="relative md:col-span-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search ref, tender, client..."
-                  className="pl-9"
-                />
-              </div>
-              <Select value={decisionFilter} onValueChange={(value) => setDecisionFilter(value as typeof decisionFilter)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Decision filter" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All decisions</SelectItem>
-                  {BID_DECISION_OPTIONS.map((option) => (
-                    <SelectItem key={option} value={option}>{option}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={sourceFilter} onValueChange={(value) => setSourceFilter(value as typeof sourceFilter)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Source filter" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All source modes</SelectItem>
-                  {BID_DECISION_SOURCE_MODES.map((option) => (
-                    <SelectItem key={option} value={option}>{option}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-xl border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Ref</TableHead>
-                    <TableHead>Tender</TableHead>
-                    <TableHead>Decision</TableHead>
-                    <TableHead>Score</TableHead>
-                    <TableHead>Source</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.length ? rows.map((opportunity) => {
-                    const ref = normalizeRef(opportunity.opportunityRefNo);
-                    const record = recordMap.get(ref) || null;
-                    const decision = getOpportunityDecisionLabel(opportunity, record);
-                    const sourceMode = getOpportunitySourceLabel(record);
-                    const saved = Boolean(record);
-                    return (
-                      <TableRow
-                        key={opportunity.opportunityRefNo}
-                        className="cursor-pointer"
-                        onClick={() => loadOpportunity(opportunity.opportunityRefNo, sourceMode)}
-                      >
-                        <TableCell className="font-mono text-xs">{opportunity.opportunityRefNo}</TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div className="font-medium">{opportunity.tenderName || '—'}</div>
-                            <div className="text-xs text-muted-foreground">{opportunity.clientName || '—'}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={getBadgeVariant(decision)}>{decision}</Badge>
-                        </TableCell>
-                        <TableCell>{saved ? formatDecisionScore(record?.decisionScore || 0) : '—'}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="outline">{sourceMode}</Badge>
-                            {saved ? <Badge variant="secondary">Saved</Badge> : <Badge variant="secondary">Draft</Badge>}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  }) : (
-                    <TableRow>
-                      <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                        No opportunities match the current filters.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="space-y-6">
-          <Card className="min-w-0">
-            <CardHeader>
-              <CardTitle className="text-lg">Source Lookup</CardTitle>
-              <CardDescription>Manual entry mode still requires a valid opportunityRefNo from SyncedOpportunity.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-                <div>
-                  <Label htmlFor="manual-ref">opportunityRefNo</Label>
-                  <Input
-                    id="manual-ref"
-                    value={manualRefInput}
-                    onChange={(event) => setManualRefInput(event.target.value)}
-                    placeholder="Enter Avenir ref"
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button type="button" variant="outline" onClick={() => loadOpportunity(manualRefInput, 'manual')}>
-                    <FileText className="mr-2 h-4 w-4" />
-                    Load
-                  </Button>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">Source mode: {form.sourceMode}</Badge>
-                <Badge variant={selectedRecord ? 'default' : 'secondary'}>{selectedRecord ? 'Saved record loaded' : 'No saved record'}</Badge>
-                <Badge variant={selectedSnapshotDecision === 'BLANK' ? 'secondary' : 'outline'}>Dashboard snapshot: {selectedSnapshotDecision}</Badge>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="min-w-0">
-            <CardHeader>
-              <CardTitle className="text-lg">Decision Editor</CardTitle>
-              <CardDescription>
-                {selectedOpportunity ? 'Update the decision and supporting criteria.' : 'Select a row or load a reference to begin.'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {selectedOpportunity ? (
-                <>
-                  <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2">
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground">Tender</p>
-                      <p className="font-medium">{selectedOpportunity.tenderName || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground">Ref</p>
-                      <p className="font-mono text-sm">{selectedOpportunity.opportunityRefNo}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground">Client</p>
-                      <p>{selectedOpportunity.clientName || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground">Internal lead</p>
-                      <p>{selectedOpportunity.internalLead || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground">Tender value</p>
-                      <p>{selectedOpportunityValue !== null && selectedOpportunityValue !== undefined ? formatCurrency(selectedOpportunityValue) : '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground">Saved updated</p>
-                      <p>{selectedDecisionRecord?.updatedAt ? new Date(selectedDecisionRecord.updatedAt).toLocaleString() : '—'}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <div>
-                      <Label>Bid decision</Label>
-                      <Select
-                        value={form.bidDecision}
-                        onValueChange={(value) => setForm((current) => ({ ...current, bidDecision: normalizeBidDecisionState(value) }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select decision" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {BID_DECISION_OPTIONS.map((option) => (
-                            <SelectItem key={option} value={option}>{option}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label>Decision score</Label>
-                      <Input value={formatDecisionScore(decisionScore)} readOnly />
-                    </div>
-                    <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground">Source mode</p>
-                        <p className="text-sm capitalize">{form.sourceMode}</p>
-                      </div>
-                      <Badge variant={form.sourceMode === 'dashboard' ? 'default' : 'secondary'}>
-                        {form.sourceMode}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">Criteria values</p>
-                      <p className="text-xs text-muted-foreground">Store the criteria as part of the saved decision record.</p>
-                    </div>
-                    <Button type="button" variant="outline" onClick={handleAddCriterion}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Add criterion
-                    </Button>
-                  </div>
-
-                  <div className="space-y-3">
-                    {form.criteriaValues.map((criterion, index) => (
-                      <CriterionRow
-                        key={`${criterion.key || 'criterion'}-${index}`}
-                        criterion={criterion}
-                        index={index}
-                        onChange={(next) => {
-                          setForm((current) => ({
-                            ...current,
-                            criteriaValues: current.criteriaValues.map((item, itemIndex) => (itemIndex === index ? next : item)),
-                          }));
-                        }}
-                        onRemove={() => {
-                          setForm((current) => {
-                            const next = current.criteriaValues.filter((_, itemIndex) => itemIndex !== index);
-                            return {
-                              ...current,
-                              criteriaValues: next.length ? next : [createCriteriaRow(0)],
-                            };
-                          });
-                        }}
-                      />
-                    ))}
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 p-4">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium">Save eligibility</p>
-                      <p className="text-xs text-muted-foreground">
-                        {selectedOpportunity ? 'This record maps to an existing opportunityRefNo in SyncedOpportunity.' : 'Select a valid opportunity first.'}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={saveEligible ? 'default' : 'secondary'}>{saveEligible ? 'Eligible' : 'Not eligible'}</Badge>
-                      <Badge variant={exportReady ? 'default' : 'secondary'}>{exportReady ? 'Template reachable' : 'Export blocked'}</Badge>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button type="button" variant="outline" onClick={() => setForm(buildFormState(selectedOpportunity.opportunityRefNo, selectedRecord || undefined, form.sourceMode))}>
-                      Reset
-                    </Button>
-                    <Button type="button" onClick={handleSave} disabled={saving || !selectedOpportunity}>
-                      <Save className="mr-2 h-4 w-4" />
-                      {saving ? 'Saving...' : 'Save decision'}
-                    </Button>
-                    <Button type="button" variant="outline" onClick={handleExport} disabled={!selectedOpportunity}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Export workbook
-                    </Button>
-                  </div>
-
-                  <div className="rounded-xl border p-4">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={getBadgeVariant(form.bidDecision)}>{form.bidDecision}</Badge>
-                      <Badge variant="outline">Score: {formatDecisionScore(decisionScore)}</Badge>
-                    </div>
-                    <p className="mt-3 text-sm text-muted-foreground">
-                      {form.sourceMode === 'dashboard'
-                        ? 'This decision was opened from dashboard data.'
-                        : 'This decision was opened from a manual reference lookup.'}
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <div className="flex min-h-[260px] items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
-                  Select an opportunity from the table or load a valid Avenir reference to begin.
-                </div>
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ref No</TableHead>
+                <TableHead>Project</TableHead>
+                <TableHead className="text-right">Score</TableHead>
+                <TableHead>Decision</TableHead>
+                <TableHead>Mode</TableHead>
+                <TableHead>Updated</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loadingRecords && (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                    Loading…
+                  </TableCell>
+                </TableRow>
               )}
-            </CardContent>
-          </Card>
-
-          <Card className="min-w-0">
-            <CardHeader>
-              <CardTitle className="text-lg">Template Fidelity</CardTitle>
-              <CardDescription>Excel export is guarded until the actual source template workbook is available in the workspace.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p>{exportBlockedReason}</p>
-              <p>
-                The page already reuses the opportunity data flow and stores Bid Decision records separately, but the template workbook asset is still required before we can preserve merged cells, formulas, and print settings.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+              {!loadingRecords && filteredRecords.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                    {records.length === 0
+                      ? 'No decisions saved yet. Click "New Decision" to start.'
+                      : 'No records match the search.'}
+                  </TableCell>
+                </TableRow>
+              )}
+              {filteredRecords.map((rec) => {
+                const extra = rec as unknown as Record<string, string>;
+                return (
+                  <TableRow key={rec.opportunityRefNo}>
+                    <TableCell className="font-mono text-xs">{rec.opportunityRefNo}</TableCell>
+                    <TableCell className="text-sm max-w-[200px] truncate">{extra.projectName || '—'}</TableCell>
+                    <TableCell className="text-right font-semibold">
+                      <span className={rec.decisionScore >= BID_DECISION_THRESHOLD ? 'text-green-600' : 'text-red-500'}>
+                        {Number(rec.decisionScore).toFixed(1)}%
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {rec.bidDecision === 'BID' && (
+                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100">BID</Badge>
+                      )}
+                      {rec.bidDecision === 'NO BID' && (
+                        <Badge variant="destructive">NO BID</Badge>
+                      )}
+                      {rec.bidDecision === 'BLANK' && (
+                        <Badge variant="secondary">—</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground capitalize">{rec.sourceMode}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {rec.updatedAt ? new Date(rec.updatedAt).toLocaleDateString() : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1"
+                        onClick={() => openEditWizard(rec)}
+                      >
+                        {canSave ? 'Edit' : 'View'}
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }

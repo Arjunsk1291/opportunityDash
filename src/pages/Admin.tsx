@@ -582,6 +582,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
   });
   const [userManagementBusy, setUserManagementBusy] = useState(false);
   const [permissionsBusy, setPermissionsBusy] = useState(false);
+  const [permissionsProgress, setPermissionsProgress] = useState(0);
   const [tempCredentialSelection, setTempCredentialSelection] = useState<string[]>([]);
   const [tempCredentialConfirmOpen, setTempCredentialConfirmOpen] = useState(false);
   const patchUserList = (nextUser: AuthorizedUser) => {
@@ -684,7 +685,6 @@ export default function Admin({ initialTab }: AdminProps = {}) {
       { value: 'general', label: 'General', pageKey: 'master_general' as PageKey },
       { value: 'users', label: 'User Management', pageKey: 'master_users' as PageKey },
       { value: 'auth-diagnostics', label: 'Auth Diagnostics', pageKey: 'master_users' as PageKey },
-      { value: 'data-sync', label: 'Data Sync', pageKey: 'master_data_sync' as PageKey },
       { value: 'telecast', label: '📣 Telecast', pageKey: 'master_telecast' as PageKey },
       { value: 'update', label: 'Update', pageKey: 'master_update' as PageKey },
       { value: 'export', label: 'Export', pageKey: 'master_export' as PageKey },
@@ -2263,17 +2263,24 @@ export default function Admin({ initialTab }: AdminProps = {}) {
     }
     try {
       setPermissionsBusy(true);
+      setPermissionsProgress(10);
       await runTrackedAction('Save Page Permissions', async (setProgress) => {
-        setProgress(40, 'Saving page visibility permissions');
+        setProgress(30, 'Saving page visibility permissions');
+        setPermissionsProgress(30);
         await updatePagePermissions(draftPagePermissions, draftPageEmailPermissions, draftPageExcludePermissions);
-        setProgress(75, 'Applying updates');
+        setProgress(65, 'Applying updates');
+        setPermissionsProgress(65);
         await reloadPagePermissions();
-        setMessage({ type: 'success', text: '✅ Page visibility permissions updated' });
         setProgress(90, 'Refreshing permissions state');
+        setPermissionsProgress(90);
         window.dispatchEvent(new CustomEvent('app:config-updated'));
+        toast.success('Page visibility permissions updated');
         setTimeout(() => setMessage(null), 3000);
       });
+      setPermissionsProgress(100);
+      setTimeout(() => setPermissionsProgress(0), 800);
     } catch (error) {
+      setPermissionsProgress(0);
       setMessage({ type: 'error', text: '❌ Failed to save page permissions: ' + (error as Error).message });
     } finally {
       setPermissionsBusy(false);
@@ -2304,17 +2311,24 @@ export default function Admin({ initialTab }: AdminProps = {}) {
     }
     try {
       setPermissionsBusy(true);
+      setPermissionsProgress(10);
       await runTrackedAction('Save Action Permissions', async (setProgress) => {
-        setProgress(40, 'Saving action permissions');
+        setProgress(30, 'Saving action permissions');
+        setPermissionsProgress(30);
         await updateActionPermissions(draftActionPermissions, draftActionEmailPermissions);
-        setProgress(75, 'Applying updates');
+        setProgress(65, 'Applying updates');
+        setPermissionsProgress(65);
         await reloadActionPermissions();
-        setMessage({ type: 'success', text: '✅ Action permissions updated' });
         setProgress(90, 'Refreshing permissions state');
+        setPermissionsProgress(90);
         window.dispatchEvent(new CustomEvent('app:config-updated'));
+        toast.success('Action permissions updated');
         setTimeout(() => setMessage(null), 3000);
       });
+      setPermissionsProgress(100);
+      setTimeout(() => setPermissionsProgress(0), 800);
     } catch (error) {
+      setPermissionsProgress(0);
       setMessage({ type: 'error', text: '❌ Failed to save action permissions: ' + (error as Error).message });
     } finally {
       setPermissionsBusy(false);
@@ -2890,7 +2904,6 @@ export default function Admin({ initialTab }: AdminProps = {}) {
     'auth-diagnostics': 'Login failures, temp credential checks, and authentication diagnostics.',
     update: 'Manual opportunity updates and update templates.',
     export: 'Export layout designer and template configuration.',
-    'data-sync': 'Graph workbook sync configuration and controls.',
     telecast: 'Telecast rules, template styles, and notification status.',
   };
 
@@ -3173,11 +3186,17 @@ export default function Admin({ initialTab }: AdminProps = {}) {
               <p className="mt-3 text-xs text-muted-foreground">
                 Explicit email access overrides excluded roles. This lets you block a role from a page while still allowing specific users by email.
               </p>
-	              {isMaster && (
-	                <div className="mt-4">
-	                  <Button onClick={savePagePermissions} disabled={permissionsBusy}>Save Page Permissions</Button>
-	                </div>
-	              )}
+              {isMaster && (
+                <div className="mt-4 space-y-2">
+                  <Button onClick={savePagePermissions} disabled={permissionsBusy} className="gap-2">
+                    {permissionsBusy && <RefreshCw className="h-4 w-4 animate-spin" />}
+                    {permissionsBusy ? `Saving… ${permissionsProgress}%` : 'Save Page Permissions'}
+                  </Button>
+                  {permissionsProgress > 0 && (
+                    <Progress value={permissionsProgress} className="h-1.5 max-w-xs transition-all" />
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -3406,11 +3425,17 @@ export default function Admin({ initialTab }: AdminProps = {}) {
                   </tbody>
                 </table>
               </div>
-	              {isMaster && (
-	                <div className="mt-4">
-	                  <Button onClick={saveActionPermissions} disabled={permissionsBusy}>Save Action Permissions</Button>
-	                </div>
-	              )}
+              {isMaster && (
+                <div className="mt-4 space-y-2">
+                  <Button onClick={saveActionPermissions} disabled={permissionsBusy} className="gap-2">
+                    {permissionsBusy && <RefreshCw className="h-4 w-4 animate-spin" />}
+                    {permissionsBusy ? `Saving… ${permissionsProgress}%` : 'Save Action Permissions'}
+                  </Button>
+                  {permissionsProgress > 0 && (
+                    <Progress value={permissionsProgress} className="h-1.5 max-w-xs transition-all" />
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -4047,274 +4072,6 @@ export default function Admin({ initialTab }: AdminProps = {}) {
         </TabsContent>
         )}
 
-        {allowedTabValues.has('data-sync') && (
-        <TabsContent value="data-sync" className="mt-6">
-          <div className="space-y-4 sm:space-y-6 md:space-y-8">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Database className="h-5 w-5" />
-                    <div>
-                      <CardTitle>Data Collection</CardTitle>
-                      <CardDescription>Configure and sync tender data from Microsoft Graph Excel to MongoDB</CardDescription>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-
-                <div className="border rounded-lg p-4 space-y-4">
-                  <h3 className="font-semibold">Graph Account Bootstrap (one-time)</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-2 sm:gap-3 md:gap-4">
-                    <div className="md:col-span-2 rounded border p-3 text-xs text-muted-foreground">
-                      Status: <strong>{graphAuthStatus.hasRefreshToken ? '✅ Excel Connected (Delegated Auth)' : '❌ Not Connected'}</strong>{' '}
-                      {graphAuthStatus.accountUsername ? `(${graphAuthStatus.accountUsername})` : ''}
-                      {graphAuthStatus.tokenUpdatedAt ? ` • token updated ${new Date(graphAuthStatus.tokenUpdatedAt).toLocaleString()}` : ''}
-                    </div>
-                    <div className="md:col-span-2 rounded border p-3 text-xs text-muted-foreground">
-                      Use one-time delegated bootstrap with your Microsoft account credentials. If this account has MFA enforced,
-                      use a non-MFA service account for bootstrap.
-                    </div>
-                    <div className="md:col-span-2 rounded border p-3 text-xs text-muted-foreground space-y-2">
-                      <p>If you get <strong>AADSTS65001</strong>, grant one-time consent for the service account, then retry bootstrap.</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={async () => {
-                            const url = consentUrl || await fetchConsentUrl(bootstrapUsername);
-                            if (url) window.open(url, '_blank', 'noopener,noreferrer');
-                          }}
-                          disabled={configSaving}
-                        >
-                          Open Consent URL
-                        </Button>
-                        {consentUrl && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => navigator.clipboard.writeText(consentUrl)}
-                            disabled={configSaving}
-                          >
-                            Copy Consent URL
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Microsoft Username</p>
-                      <Input value={bootstrapUsername} onChange={(e) => setBootstrapUsername(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Microsoft Password</p>
-                      <Input type="password" value={bootstrapPassword} onChange={(e) => setBootstrapPassword(e.target.value)} placeholder={DEFAULT_SERVICE_ACCOUNT} />
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={bootstrapGraphAuth} disabled={configSaving || !bootstrapUsername || !bootstrapPassword}>
-                      Connect Excel
-                    </Button>
-                    <Button variant="outline" onClick={clearGraphAuth} disabled={configSaving}>
-                      Clear Stored Token
-                    </Button>
-                  </div>
-
-                  <h3 className="font-semibold mt-6">Graph Excel Configuration</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div className="md:col-span-2 space-y-1">
-                      <p className="text-xs text-muted-foreground">Share Link</p>
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Paste SharePoint/OneDrive share link"
-                          value={graphConfig.shareLink}
-                          onChange={(e) => setGraphConfig((prev) => ({ ...prev, shareLink: e.target.value }))}
-                        />
-                        <Button variant="outline" onClick={resolveShareLink} disabled={configSaving || !graphConfig.shareLink}>
-                          Resolve
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Drive ID</p>
-                      <Input value={graphConfig.driveId} onChange={(e) => setGraphConfig((prev) => ({ ...prev, driveId: e.target.value }))} />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">File ID</p>
-                      <Input value={graphConfig.fileId} onChange={(e) => setGraphConfig((prev) => ({ ...prev, fileId: e.target.value }))} />
-                    </div>
-                      <p className="text-[11px] text-muted-foreground md:col-span-2">If Resolve fails for personal OneDrive shares, paste Drive ID and File ID from Python diagnostic tool and click "Load Sheets from IDs".</p>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Worksheet</p>
-                      <Select
-                        value={graphConfig.worksheetName || '__none__'}
-                        onValueChange={(value) => setGraphConfig((prev) => ({ ...prev, worksheetName: value === '__none__' ? '' : value }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select worksheet" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">Select worksheet</SelectItem>
-                          {worksheets.map((sheet) => (
-                            <SelectItem key={sheet.id || sheet.name} value={sheet.name}>{sheet.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Data Range (optional, leave blank for full used range)</p>
-                      <Input
-                        value={graphConfig.dataRange}
-                        onChange={(e) => setGraphConfig((prev) => ({ ...prev, dataRange: e.target.value }))}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Auto-sync Interval (minutes)</p>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={graphConfig.syncIntervalMinutes}
-                        onChange={(e) => setGraphConfig((prev) => ({ ...prev, syncIntervalMinutes: Number(e.target.value) || 10 }))}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Header Row Offset (0-based in preview)</p>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={graphConfig.headerRowOffset}
-                        onChange={(e) => setGraphConfig((prev) => ({ ...prev, headerRowOffset: Math.max(0, Number(e.target.value) || 0) }))}
-                      />
-                    </div>
-                    <div className="md:col-span-2 space-y-1">
-                      <p className="text-xs text-muted-foreground">Custom Field Mapping (JSON, optional)</p>
-                      <Textarea rows={8} value={mappingText} onChange={(e) => setMappingText(e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="secondary" onClick={loadSheetsFromIds} disabled={!graphConfig.driveId || !graphConfig.fileId}>
-                      Load Sheets from IDs
-                    </Button>
-                    <Button variant="outline" onClick={previewHeaderRows} disabled={!graphConfig.driveId || !graphConfig.fileId || !graphConfig.worksheetName || configSaving}>
-                      Preview Rows
-                    </Button>
-                    <Button onClick={saveGraphConfig} loading={configSaving}>
-                      Save Graph Config
-                    </Button>
-                  </div>
-                </div>
-
-                {previewRows.length > 0 && (
-                  <div className="border rounded-lg p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold">Header Row Detection</h3>
-                      <p className="text-xs text-muted-foreground">Select which row should be treated as the header.</p>
-                    </div>
-                    <div className="space-y-2 max-h-64 overflow-auto">
-                      {previewRows.map((row, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          className={`w-full text-left border rounded p-2 text-xs ${graphConfig.headerRowOffset === idx ? 'border-primary bg-primary/10' : 'border-border'}`}
-                          onClick={() => setGraphConfig((prev) => ({ ...prev, headerRowOffset: idx }))}
-                        >
-                          <span className="font-semibold mr-2">Row {idx}</span>
-                          {row.slice(0, 8).map((cell, i) => (
-                            <span key={i} className="mr-2">{String(cell || '').slice(0, 20)} |</span>
-                          ))}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="border rounded-lg p-4">
-                    <p className="text-sm text-muted-foreground">Total Tenders</p>
-                    <p className="text-2xl font-bold">{collectionStats?.totalTenders || 0}</p>
-                  </div>
-                  <div className="border rounded-lg p-4">
-                    <p className="text-sm text-muted-foreground">Total Value</p>
-                    <p className="text-2xl font-bold">${(collectionStats?.totalValue || 0).toLocaleString()}</p>
-                  </div>
-                  <div className="border rounded-lg p-4">
-                    <p className="text-sm text-muted-foreground">Last Sync</p>
-                    <p className="text-sm font-mono">
-                      {collectionStats?.lastSync 
-                        ? new Date(collectionStats.lastSync).toLocaleString() 
-                        : 'Never'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="border-t pt-6">
-                  <h3 className="font-semibold mb-3">Status Distribution</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {collectionStats?.statusDistribution && 
-                      Object.entries(collectionStats.statusDistribution).map(([status, count]) => (
-                        <div key={status} className="bg-muted p-3 rounded">
-                          <p className="text-xs text-muted-foreground">{status}</p>
-                          <p className="text-lg font-bold">{count}</p>
-                        </div>
-                      ))
-                    }
-                  </div>
-                </div>
-
-                <div className="border-t pt-6 space-y-3">
-                  <div className="grid gap-2">
-                    <Button 
-                      onClick={syncFromGraphExcel}
-                      loading={syncLoading}
-                      size="lg"
-                      className="w-full gap-2"
-                    >
-                      {!syncLoading && <Download className="h-4 w-4" />}
-                      Sync from Graph Excel
-                    </Button>
-                    <Button
-                      onClick={forceRefreshNotificationSync}
-                      disabled={syncLoading}
-                      variant="secondary"
-                      className="w-full"
-                    >
-                      Force Refresh New-Row Detection
-                    </Button>
-                    <Button
-                      onClick={seedClientsFromOpportunities}
-                      disabled={syncLoading}
-                      variant="outline"
-                      className="w-full"
-                    >
-                      Seed Clients from Opportunities
-                    </Button>
-                    <Button
-                      onClick={resetSyncedOpportunities}
-                      disabled={syncLoading}
-                      variant="destructive"
-                      className="w-full gap-2 border border-red-700 bg-red-700 text-white hover:bg-red-800"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Clear Synced Opportunities Before Fresh Sync
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Pulls latest tender data from your configured Microsoft Graph Excel and syncs to database
-                  </p>
-                  <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-                    Use the red clear action only when stored synced rows are polluted and you want the next Graph sync to rebuild everything from scratch.
-                  </p>
-                  <div className="rounded border p-3 text-xs text-muted-foreground">
-                    Notification tracker: last checked {notificationSyncStatus.lastCheckedAt ? new Date(notificationSyncStatus.lastCheckedAt).toLocaleString() : 'never'}
-                    {' '}• last new rows {notificationSyncStatus.lastNewRowsCount} • tracked rows {notificationSyncStatus.trackedRows}.
-                    Scheduled check runs daily at 5:00 PM server time.
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-        )}
 
         {allowedTabValues.has('telecast') && (
         <TabsContent value="telecast" className="mt-6">

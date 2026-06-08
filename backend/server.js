@@ -8148,6 +8148,11 @@ const buildBidDecisionRecord = (doc) => ({
   decisionScore: Number(doc?.decisionScore || 0),
   criteriaValues: normalizeBidDecisionCriteria(doc?.criteriaValues),
   sourceMode: normalizeBidDecisionSourceMode(doc?.sourceMode),
+  projectName: String(doc?.projectName || ''),
+  endUser: String(doc?.endUser || ''),
+  receivedFrom: String(doc?.receivedFrom || ''),
+  enquiryDate: String(doc?.enquiryDate || ''),
+  scopeOfWork: String(doc?.scopeOfWork || ''),
   createdBy: String(doc?.createdBy || ''),
   updatedBy: String(doc?.updatedBy || ''),
   sourceOpportunitySyncedAt: doc?.sourceOpportunitySyncedAt ? new Date(doc.sourceOpportunitySyncedAt).toISOString() : null,
@@ -8240,20 +8245,33 @@ app.get('/api/bid-decisions/:opportunityRefNo', verifyToken, async (req, res) =>
 app.post('/api/bid-decisions', verifyToken, async (req, res) => {
   try {
     if (!await requirePagePermission(req, res, 'bid_decision')) return;
+    if (!await requireActionPermission(req, res, 'bid_decision_manage')) return;
 
     const opportunityRefNo = String(req.body?.opportunityRefNo || '').trim();
     const bidDecision = normalizeBidDecisionState(req.body?.bidDecision);
     const sourceMode = normalizeBidDecisionSourceMode(req.body?.sourceMode);
     const criteriaValues = normalizeBidDecisionCriteria(req.body?.criteriaValues);
     const decisionScore = Number.isFinite(Number(req.body?.decisionScore)) ? Number(req.body.decisionScore) : 0;
+    const projectName = String(req.body?.projectName || '').trim();
+    const endUser = String(req.body?.endUser || '').trim();
+    const receivedFrom = String(req.body?.receivedFrom || '').trim();
+    const enquiryDate = String(req.body?.enquiryDate || '').trim();
+    const scopeOfWork = String(req.body?.scopeOfWork || '').trim();
 
     if (!opportunityRefNo) {
       return res.status(400).json({ error: 'opportunityRefNo is required' });
     }
 
-    const sourceOpportunity = await SyncedOpportunity.findOne({ opportunityRefNo }).lean();
-    if (!sourceOpportunity) {
-      return res.status(404).json({ error: 'Opportunity not found in SyncedOpportunity' });
+    // For dashboard mode, enrich with synced opportunity metadata; manual mode skips this
+    let sourceOpportunitySyncedAt = null;
+    let sourceOpportunityId = '';
+    if (sourceMode === 'dashboard') {
+      const sourceOpportunity = await SyncedOpportunity.findOne({ opportunityRefNo }).lean();
+      if (!sourceOpportunity) {
+        return res.status(404).json({ error: `Opportunity "${opportunityRefNo}" not found in the database. Use manual entry mode instead.` });
+      }
+      sourceOpportunitySyncedAt = sourceOpportunity.syncedAt ? new Date(sourceOpportunity.syncedAt) : null;
+      sourceOpportunityId = String(sourceOpportunity._id || '');
     }
 
     const updated = await BidDecision.findOneAndUpdate(
@@ -8264,9 +8282,14 @@ app.post('/api/bid-decisions', verifyToken, async (req, res) => {
           decisionScore,
           criteriaValues,
           sourceMode,
+          projectName,
+          endUser,
+          receivedFrom,
+          enquiryDate,
+          scopeOfWork,
           updatedBy: String(req.user?.email || ''),
-          sourceOpportunitySyncedAt: sourceOpportunity.syncedAt ? new Date(sourceOpportunity.syncedAt) : null,
-          sourceOpportunityId: String(sourceOpportunity._id || ''),
+          sourceOpportunitySyncedAt,
+          sourceOpportunityId,
         },
         $setOnInsert: {
           opportunityRefNo,

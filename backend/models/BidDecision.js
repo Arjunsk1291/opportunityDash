@@ -29,6 +29,12 @@ const bidDecisionSchema = new mongoose.Schema(
       default: 'manual',
       index: true,
     },
+    // Opportunity header fields (pre-filled from DB or entered manually)
+    projectName: { type: String, default: '' },
+    endUser: { type: String, default: '' },
+    receivedFrom: { type: String, default: '' },
+    enquiryDate: { type: String, default: '' },
+    scopeOfWork: { type: String, default: '' },
     createdBy: { type: String, default: '' },
     updatedBy: { type: String, default: '' },
     sourceOpportunitySyncedAt: { type: Date, default: null },

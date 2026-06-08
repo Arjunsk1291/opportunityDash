@@ -32,6 +32,12 @@ export type BidDecisionSaveInput = {
   decisionScore: number;
   criteriaValues: BidDecisionCriterion[];
   sourceMode: BidDecisionSourceMode;
+  // Optional header fields stored alongside the decision
+  projectName?: string;
+  endUser?: string;
+  receivedFrom?: string;
+  enquiryDate?: string;
+  scopeOfWork?: string;
 };
 
 export type BidDecisionOpportunity = {
@@ -73,6 +79,130 @@ export const DEFAULT_CRITERIA_ROW: BidDecisionCriterion = {
 
 export const BID_DECISION_OPTIONS: BidDecisionState[] = ['BID', 'NO BID', 'BLANK'];
 export const BID_DECISION_SOURCE_MODES: BidDecisionSourceMode[] = ['dashboard', 'manual'];
+export const BID_DECISION_THRESHOLD = 65; // % threshold: ≥65 = BID
+
+export interface BidCriterionOption {
+  label: string;
+  score: number;
+  hint?: string;
+}
+
+export interface BidCriterionDefinition {
+  key: string;
+  label: string;
+  description: string;
+  weight: number; // out of 100; 0 = informational only
+  options: BidCriterionOption[];
+}
+
+export const BID_CRITERIA_DEFINITIONS: BidCriterionDefinition[] = [
+  {
+    key: 'technical_feasibility',
+    label: 'Technical Feasibility',
+    description: 'Scope of service is inline with Avenir Capabilities',
+    weight: 20,
+    options: [
+      { label: 'YES – within capabilities', score: 100 },
+      { label: 'NO – outside capabilities', score: 0 },
+    ],
+  },
+  {
+    key: 'strategic_fit',
+    label: 'Strategic Fit',
+    description: 'Company strategic development / market growth opportunity',
+    weight: 10,
+    options: [
+      { label: 'YES – strategic value', score: 100 },
+      { label: 'NO – no strategic value', score: 0 },
+    ],
+  },
+  {
+    key: 'resource_availability',
+    label: 'Resource Availability',
+    description: 'Lead availability when project is awarded',
+    weight: 10,
+    options: [
+      { label: 'All leads available (≥100%)', score: 100 },
+      { label: '~50% leads available', score: 50 },
+      { label: 'Less than 50% leads', score: 25 },
+    ],
+  },
+  {
+    key: 'subcontract_portion',
+    label: 'Sub-contract Work Portion',
+    description: 'Percentage of work to be sub-contracted',
+    weight: 15,
+    options: [
+      { label: '26% – 50% sub-contracted', score: 100 },
+      { label: '51% – 79% sub-contracted', score: 50 },
+      { label: '>80% sub-contracted', score: 25 },
+    ],
+  },
+  {
+    key: 'client_reputation',
+    label: 'Client Reputation',
+    description: 'Existing or new client, and payment history',
+    weight: 10,
+    options: [
+      { label: 'Existing – good relationship', score: 100 },
+      { label: 'Existing – not so good', score: 50 },
+      { label: 'New client', score: 25 },
+      { label: 'Bad payment history', score: 0 },
+    ],
+  },
+  {
+    key: 'location',
+    label: 'Location',
+    description: 'Project geographic location',
+    weight: 10,
+    options: [
+      { label: 'UAE', score: 100 },
+      { label: 'Saudi Arabia / Oman / Qatar', score: 50 },
+      { label: 'Other location', score: 15 },
+    ],
+  },
+  {
+    key: 'win_ratio',
+    label: 'Win Ratio with Client',
+    description: 'Historical win rate with this client',
+    weight: 7,
+    options: [
+      { label: 'Good win record', score: 100 },
+      { label: 'Average win record', score: 50 },
+      { label: 'Low win record', score: 20 },
+    ],
+  },
+  {
+    key: 'bid_bond',
+    label: 'High Value Bid Bond',
+    description: 'Is there a high value bid bond requirement?',
+    weight: 0,
+    options: [
+      { label: 'No bid bond required', score: 0 },
+      { label: 'Yes – high value bid bond', score: 0, hint: 'May impact cash flow — proceed with caution' },
+    ],
+  },
+  {
+    key: 'end_user_epc',
+    label: 'End User / EPC',
+    description: 'Direct end user or via EPC contractor',
+    weight: 8,
+    options: [
+      { label: 'End User – direct from client', score: 100 },
+      { label: 'EPC Contractor', score: 50 },
+    ],
+  },
+  {
+    key: 'single_source',
+    label: 'Single Source Bid',
+    description: 'Is this a single source bid (no open competition)?',
+    weight: 10,
+    options: [
+      { label: 'Yes – single source (invited only)', score: 100 },
+      { label: 'No – open competition', score: 40 },
+    ],
+  },
+];
 
 const authHeaders = (token: string) => ({
   Authorization: `Bearer ${token}`,
