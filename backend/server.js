@@ -3415,7 +3415,19 @@ app.get('/api/users/authorized', verifyToken, async (req, res) => {
     }
 
     const users = await AuthorizedUser.find().sort({ createdAt: -1 }).lean();
-    res.json(users.map(mapIdField));
+    const safeUsers = users.map((u) => {
+      const mapped = mapIdField(u);
+      const { passwordHash: _ph, resetPasswordTokenHash: _rpth, ...rest } = mapped;
+      return {
+        ...rest,
+        hasPassword: Boolean(u.passwordHash),
+        isLocked: Boolean(u.accountLockedUntil && new Date(u.accountLockedUntil).getTime() > Date.now()),
+        failedLoginAttempts: u.failedLoginAttempts || 0,
+        accountLockedUntil: u.accountLockedUntil || null,
+        requiresPasswordChange: Boolean(u.requiresPasswordChange),
+      };
+    });
+    res.json(safeUsers);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -3460,6 +3472,25 @@ app.post('/api/users/set-password', verifyToken, async (req, res) => {
   }
 });
 
+app.post('/api/users/unlock-account', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'users_manage')) return;
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'email is required' });
+    const existing = await AuthorizedUser.findOne({ email });
+    if (!existing) return res.status(404).json({ error: 'User not found' });
+    const targetIsMaster = existing.role === 'Master' || existing.role === 'MASTER';
+    const requesterIsMaster = req.user.role === 'Master' || req.user.role === 'MASTER';
+    if (targetIsMaster && !requesterIsMaster) return res.status(403).json({ error: 'Only Master users can modify Master users' });
+    await AuthorizedUser.updateOne({ _id: existing._id }, {
+      $set: { failedLoginAttempts: 0, accountLockedUntil: null, lastFailedLoginAt: null },
+    });
+    console.info(`[users.unlock] email=${email} by=${req.user.email}`);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.post('/api/users/add', verifyToken, async (req, res) => {
   try {

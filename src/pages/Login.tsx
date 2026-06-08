@@ -67,25 +67,17 @@ export default function Login() {
   const getErrorMessage = (error: unknown): string => {
     const message = error instanceof Error ? error.message : String(error);
 
-    // Don't reveal sensitive information
-    if (message.includes('Invalid email format')) {
-      return 'Please enter a valid email address.';
-    }
-    if (message.includes('403') || message.includes('Invalid credentials')) {
-      return 'Authentication failed. Please check your credentials.';
-    }
-    if (message.includes('429') || message.includes('Too many requests')) {
-      return 'Too many login attempts. Please try again later.';
-    }
-    if (message.includes('pending')) {
-      return 'Your account is pending approval.';
-    }
-    if (message.includes('expired')) {
-      return 'Your temporary access has expired.';
-    }
-    
-    // Default non-revealing error
-    return 'Authentication failed. Please try again.';
+    if (message.includes('Invalid email format')) return 'Please enter a valid email address.';
+    if (message.includes('locked')) return 'Account locked after too many failed attempts. Wait 15 minutes or ask your admin to unlock it.';
+    if (message.includes('pending')) return 'Account is pending admin approval. Contact your administrator.';
+    if (message.includes('rejected')) return 'Account access has been rejected. Contact your administrator.';
+    if (message.includes('not approved')) return 'Account is not approved for login. Contact your administrator.';
+    if (message.includes('not configured') || message.includes('not set')) return 'No password has been configured for this account. Ask your admin to set one.';
+    if (message.includes('expired')) return 'Temporary access has expired. Contact your administrator.';
+    if (message.includes('offline') || message.includes('unavailable')) return 'Login service is temporarily unavailable.';
+    if (message.includes('429') || message.includes('Too many requests')) return 'Too many login attempts. Please try again later.';
+    if (message.includes('Invalid credentials') || message.includes('403')) return 'Invalid email or password.';
+    return `Authentication failed: ${message}`;
   };
 
   const handlePasswordLogin = useCallback(async () => {

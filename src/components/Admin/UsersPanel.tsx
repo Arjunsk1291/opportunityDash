@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, RefreshCw, Lock, Mail, Trash2, ChevronDown, CheckCircle, XCircle, Clock, Users } from 'lucide-react';
+import { Plus, RefreshCw, Lock, LockOpen, Mail, Trash2, ChevronDown, CheckCircle, XCircle, Clock, Users, AlertTriangle, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -39,6 +39,11 @@ interface AuthorizedUser {
   approvedBy?: string;
   approvedAt?: string | Date;
   tempAccessExpiresAt?: string | null;
+  hasPassword?: boolean;
+  isLocked?: boolean;
+  failedLoginAttempts?: number;
+  accountLockedUntil?: string | Date | null;
+  requiresPasswordChange?: boolean;
 }
 
 interface TempCredentialLogRow {
@@ -90,34 +95,34 @@ const DEFAULT_SET_PASSWORD_FORM: SetPasswordForm = {
   requireChange: false,
 };
 
-function getPasswordStrength(p: string): { level: 'weak' | 'medium' | 'strong'; score: number } {
-  if (!p) return { level: 'weak', score: 0 };
-  let score = 0;
-  if (p.length >= 8) score++;
-  if (p.length >= 12) score++;
-  if (/[A-Z]/.test(p)) score++;
-  if (/[0-9]/.test(p)) score++;
-  if (/[^A-Za-z0-9]/.test(p)) score++;
-  return { level: score <= 1 ? 'weak' : score <= 3 ? 'medium' : 'strong', score };
-}
+// Must match assertStrongPassword in backend/server.js exactly
+const PWD_RULES = [
+  { label: 'At least 10 characters', test: (p: string) => p.length >= 10 },
+  { label: 'Lowercase letter (a–z)', test: (p: string) => /[a-z]/.test(p) },
+  { label: 'Uppercase letter (A–Z)', test: (p: string) => /[A-Z]/.test(p) },
+  { label: 'Number (0–9)', test: (p: string) => /[0-9]/.test(p) },
+  { label: 'Special character (!@#$…)', test: (p: string) => /[^A-Za-z0-9]/.test(p) },
+];
 
-function PasswordStrengthBar({ password }: { password: string }) {
-  const { level, score } = getPasswordStrength(password);
-  if (!password) return null;
-  const colors = { weak: 'bg-red-500', medium: 'bg-yellow-400', strong: 'bg-green-500' };
-  const labels = { weak: 'Weak', medium: 'Medium', strong: 'Strong' };
-  const textColors = { weak: 'text-red-500', medium: 'text-yellow-600', strong: 'text-green-600' };
+function PasswordRequirements({ password }: { password: string }) {
+  if (!password) return (
+    <p className="mt-1 text-xs text-muted-foreground">Password must meet all requirements below.</p>
+  );
+  const met = PWD_RULES.filter((r) => r.test(password)).length;
   return (
-    <div className="mt-1 space-y-1">
-      <div className="flex gap-1">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div
-            key={i}
-            className={`h-1 flex-1 rounded-full transition-colors ${i <= score ? colors[level] : 'bg-muted'}`}
-          />
-        ))}
-      </div>
-      <p className={`text-xs ${textColors[level]}`}>{labels[level]}</p>
+    <div className="mt-2 space-y-0.5">
+      {PWD_RULES.map((rule) => {
+        const ok = rule.test(password);
+        return (
+          <div key={rule.label} className={`flex items-center gap-1.5 text-xs ${ok ? 'text-green-600' : 'text-muted-foreground'}`}>
+            {ok ? <CheckCircle className="h-3 w-3 shrink-0" /> : <XCircle className="h-3 w-3 shrink-0" />}
+            {rule.label}
+          </div>
+        );
+      })}
+      {met < PWD_RULES.length && (
+        <p className="text-[10px] text-amber-600 pt-0.5">{PWD_RULES.length - met} requirement{PWD_RULES.length - met > 1 ? 's' : ''} not met — password will be rejected</p>
+      )}
     </div>
   );
 }
@@ -342,6 +347,26 @@ export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps)
     }
   };
 
+  const unlockAccount = async (email: string) => {
+    setBusy(true);
+    try {
+      const res = await fetch(API_URL + '/users/unlock-account', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(parseApiErrorPayload(data, 'Failed to unlock account'));
+      setUsers((prev) => prev.map((u) => u.email === email
+        ? { ...u, isLocked: false, failedLoginAttempts: 0, accountLockedUntil: null }
+        : u));
+      toast.success(`Account unlocked: ${email}`);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const sendTempCredential = async (email: string) => {
     if (!isMaster) { toast.error('Only Master users can send temporary passwords.'); return; }
     setBusy(true);
@@ -500,7 +525,26 @@ export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps)
                       )}
                     </TableCell>
 
-                    <TableCell><StatusBadge status={u.status} /></TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-0.5">
+                        <StatusBadge status={u.status} />
+                        {u.isLocked && (
+                          <Badge variant="destructive" className="gap-1 text-[10px] px-1.5 py-0">
+                            <AlertTriangle className="h-2.5 w-2.5" />Locked
+                          </Badge>
+                        )}
+                        {!u.hasPassword && u.role !== 'Master' && (
+                          <Badge variant="outline" className="gap-1 text-[10px] px-1.5 py-0 text-amber-600 border-amber-300">
+                            <KeyRound className="h-2.5 w-2.5" />No password
+                          </Badge>
+                        )}
+                        {u.requiresPasswordChange && (
+                          <Badge variant="outline" className="gap-1 text-[10px] px-1.5 py-0 text-sky-600 border-sky-300">
+                            <Lock className="h-2.5 w-2.5" />Must change pwd
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
 
                     <TableCell className="text-sm text-muted-foreground">
                       {u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : '—'}
@@ -528,11 +572,27 @@ export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps)
                             </Tooltip>
                           </>
                         )}
+                        {u.isLocked && u.role !== 'Master' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon" variant="outline"
+                                className="h-7 w-7 border-amber-300 text-amber-600 hover:bg-amber-50"
+                                onClick={() => unlockAccount(u.email)}
+                                disabled={!canManageUsers || busy}
+                              >
+                                <LockOpen className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Unlock account ({u.failedLoginAttempts} failed attempts)</TooltipContent>
+                          </Tooltip>
+                        )}
                         {u.role !== 'Master' && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
-                                size="icon" variant="outline" className="h-7 w-7"
+                                size="icon" variant="outline"
+                                className={`h-7 w-7 ${!u.hasPassword ? 'border-amber-300 text-amber-600 hover:bg-amber-50' : ''}`}
                                 onClick={() => {
                                   setSetPasswordTarget(u.email);
                                   setSetPwdForm(DEFAULT_SET_PASSWORD_FORM);
@@ -543,7 +603,7 @@ export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps)
                                 <Lock className="h-3.5 w-3.5" />
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>Set Password</TooltipContent>
+                            <TooltipContent>{u.hasPassword ? 'Change Password' : 'Set Password (no password configured!)'}</TooltipContent>
                           </Tooltip>
                         )}
                         {isMaster && u.role !== 'Master' && (
@@ -702,7 +762,7 @@ export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps)
                     onChange={(e) => setAddForm((f) => ({ ...f, password: e.target.value }))}
                     placeholder="Set a temp password"
                   />
-                  <PasswordStrengthBar password={addForm.password} />
+                  <PasswordRequirements password={addForm.password} />
                 </div>
                 <div className="space-y-1">
                   <Label>Expires At</Label>
@@ -749,7 +809,7 @@ export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps)
                 onChange={(e) => setSetPwdForm((f) => ({ ...f, newPassword: e.target.value }))}
                 placeholder="Enter new password"
               />
-              <PasswordStrengthBar password={setPwdForm.newPassword} />
+              <PasswordRequirements password={setPwdForm.newPassword} />
             </div>
             <div className="space-y-1">
               <Label>Confirm Password</Label>
