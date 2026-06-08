@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Lock, Users, Trash2, CheckCircle, XCircle, Clock, RefreshCw, Download, Database, Send, Cpu, HardDrive, Server } from 'lucide-react';
+import { AlertCircle, Lock, Users, Trash2, CheckCircle, XCircle, Clock, RefreshCw, Download, Database, Send, Cpu, HardDrive, Server, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -649,23 +649,26 @@ export default function Admin({ initialTab }: AdminProps = {}) {
     runner: (setProgress: (percent: number, detail: string) => void) => Promise<T>,
   ): Promise<T> => {
     const startedAt = performance.now();
-    const slowTimer = window.setTimeout(() => {
+
+    // Creep toward 85% so the bar is always moving while waiting for the API
+    const fakeAdvance = window.setInterval(() => {
       setLiveActionStatus((current) => {
-        if (!current || current.name !== actionName) return current;
-        return { ...current, detail: `${current.detail} (taking longer than expected...)` };
+        if (!current || current.name !== actionName || current.percent >= 85) return current;
+        const bump = Math.max(0.5, (85 - current.percent) * 0.08);
+        return { ...current, percent: Math.min(85, Math.round((current.percent + bump) * 10) / 10) };
       });
-    }, 10000);
+    }, 350);
+
     const setProgress = (percent: number, detail: string) => {
       const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
-      const elapsedMs = Math.round(performance.now() - startedAt);
       setLiveActionStatus({ name: actionName, percent: safePercent, detail, startedAt });
     };
 
     statusConsole.info(`${actionName}: started`);
-    setProgress(0, 'Starting');
+    setProgress(5, 'Starting…');
     try {
       const result = await runner(setProgress);
-      setProgress(100, 'Completed');
+      setProgress(100, 'Done');
       statusConsole.success(`${actionName}: completed`, { elapsedMs: Math.round(performance.now() - startedAt) });
       return result;
     } catch (error) {
@@ -673,7 +676,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
       statusConsole.error(`${actionName}: failed`, { elapsedMs: Math.round(performance.now() - startedAt), error: (error as Error)?.message || String(error) });
       throw error;
     } finally {
-      window.clearTimeout(slowTimer);
+      window.clearInterval(fakeAdvance);
       setTimeout(() => {
         setLiveActionStatus((current) => (current?.name === actionName ? null : current));
       }, 2200);
@@ -2946,16 +2949,30 @@ export default function Admin({ initialTab }: AdminProps = {}) {
         </Alert>
       )}
       {liveActionStatus && (
-        <Card className="border border-sky-200 bg-sky-50/50">
-          <CardContent className="pt-4">
-            <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="font-medium">{liveActionStatus.name}</span>
-              <span>{liveActionStatus.percent}%</span>
+        <div className="fixed inset-x-0 top-0 z-[9999] pointer-events-none">
+          <div className="bg-primary/95 text-primary-foreground shadow-xl px-4 py-2.5 backdrop-blur-sm">
+            <div className="mx-auto max-w-4xl flex items-center gap-3">
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="font-semibold truncate">{liveActionStatus.name}</span>
+                  <span className="tabular-nums ml-2 shrink-0">{liveActionStatus.percent}%</span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-white/25 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-white transition-all duration-300 ease-out"
+                    style={{ width: `${liveActionStatus.percent}%` }}
+                  />
+                </div>
+              </div>
+              {liveActionStatus.detail && (
+                <span className="hidden sm:block text-xs opacity-75 shrink-0 max-w-48 truncate">
+                  {liveActionStatus.detail}
+                </span>
+              )}
             </div>
-            <Progress value={liveActionStatus.percent} className="h-2" />
-            <p className="mt-2 text-xs text-muted-foreground">{liveActionStatus.detail}</p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">

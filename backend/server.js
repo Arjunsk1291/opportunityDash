@@ -3443,6 +3443,15 @@ app.post('/api/users/set-password', verifyToken, async (req, res) => {
     existing.failedLoginAttempts = 0;
     existing.accountLockedUntil = null;
     existing.lastFailedLoginAt = null;
+
+    // Admin explicitly assigning a password implies the user should be able to log in
+    if (existing.status === 'pending') {
+      existing.status = 'approved';
+      existing.approvedBy = req.user.email;
+      existing.approvedAt = new Date();
+      console.info(`[set-password] auto-approved pending user ${existing.email} (set by ${req.user.email})`);
+    }
+
     await existing.save();
 
     res.json({ success: true });

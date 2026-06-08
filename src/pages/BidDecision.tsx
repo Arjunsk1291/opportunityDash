@@ -11,7 +11,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
@@ -143,7 +142,7 @@ function DecisionBadge({ decision, score }: { decision: string; score: number })
   return <Badge variant="secondary" className="text-sm px-3 py-1">—</Badge>;
 }
 
-function CriterionCard({
+function CriterionRow({
   def,
   entry,
   onChange,
@@ -154,16 +153,17 @@ function CriterionCard({
   onChange: (e: CriterionEntry) => void;
   index: number;
 }) {
-  const actualScore = entry ? (def.weight / 100) * entry.score : 0;
-  const maxActual = def.weight; // actual max = weight * 100/100
+  const listId = `bid-opts-${def.key}`;
+  const score = entry?.score ?? 0;
+  const actualScore = def.weight > 0 ? (def.weight / 100) * score : 0;
 
-  const handleOptionChange = (label: string) => {
-    const opt = def.options.find((o) => o.label === label);
+  const handleAnswer = (rawValue: string) => {
+    const matched = def.options.find((o) => o.label.toLowerCase() === rawValue.toLowerCase());
     onChange({
-      selectedLabel: label,
-      score: opt?.score ?? 0,
+      selectedLabel: rawValue,
+      score: matched !== undefined ? matched.score : (entry?.overrideScore ? score : 0),
       notes: entry?.notes ?? '',
-      overrideScore: false,
+      overrideScore: matched === undefined && Boolean(entry?.overrideScore),
     });
   };
 
@@ -178,80 +178,82 @@ function CriterionCard({
   };
 
   return (
-    <Card className={`transition-colors ${entry ? 'border-primary/30 bg-card' : 'border-border bg-muted/20'}`}>
-      <CardContent className="pt-4 pb-4">
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-0.5">
-              <Badge variant="outline" className="text-xs">{index + 1}</Badge>
-              <span className="font-semibold text-sm">{def.label}</span>
-              {def.weight === 0 && <Badge variant="secondary" className="text-xs">Info only</Badge>}
-            </div>
-            <p className="text-xs text-muted-foreground">{def.description}</p>
-          </div>
-          <div className="text-right shrink-0">
-            <p className="text-xs text-muted-foreground">Weight</p>
-            <p className="font-bold text-sm">{def.weight}%</p>
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1">
-            <Label className="text-xs">Answer</Label>
-            <Select value={entry?.selectedLabel ?? ''} onValueChange={handleOptionChange}>
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Select an answer…" />
-              </SelectTrigger>
-              <SelectContent>
-                {def.options.map((opt) => (
-                  <SelectItem key={opt.label} value={opt.label}>
-                    {opt.label} {opt.hint ? `(${opt.hint})` : ''} → {opt.score}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1">
-            <Label className="text-xs">
-              Score (0–100)
-              {entry?.overrideScore && <span className="ml-1 text-amber-600">overridden</span>}
-            </Label>
-            <Input
-              type="number"
-              min={0}
-              max={100}
-              value={entry?.score ?? ''}
-              onChange={(e) => handleScoreOverride(e.target.value)}
-              placeholder="0"
-              className="h-9"
-            />
-          </div>
-        </div>
-
-        {entry && (
-          <div className="mt-3 space-y-1">
-            <Label className="text-xs">Notes (optional)</Label>
-            <Input
-              value={entry.notes}
-              onChange={(e) => onChange({ ...entry, notes: e.target.value })}
-              placeholder="Remarks or rationale…"
-              className="h-8 text-xs"
-            />
-          </div>
+    <TableRow className={entry?.selectedLabel ? '' : 'opacity-60 bg-muted/10'}>
+      <TableCell className="text-center text-xs text-muted-foreground font-mono py-2 w-8">{index + 1}</TableCell>
+      <TableCell className="py-2 w-44">
+        <p className="text-xs font-semibold leading-snug">{def.label}</p>
+        <p className="text-[10px] text-muted-foreground leading-snug mt-0.5">{def.description}</p>
+        {def.weight === 0 && (
+          <Badge variant="secondary" className="text-[9px] px-1 py-0 mt-1">Info only</Badge>
         )}
-
-        {entry && def.weight > 0 && (
-          <div className="mt-3">
-            <div className="flex justify-between text-xs text-muted-foreground mb-1">
-              <span>Contribution</span>
-              <span>{actualScore.toFixed(2)} / {maxActual}</span>
-            </div>
-            <Progress value={(actualScore / maxActual) * 100} className="h-1.5" />
-          </div>
+      </TableCell>
+      <TableCell className="py-2">
+        <datalist id={listId}>
+          {def.options.map((opt) => (
+            <option key={opt.label} value={opt.label} />
+          ))}
+        </datalist>
+        <input
+          type="text"
+          list={listId}
+          value={entry?.selectedLabel ?? ''}
+          onChange={(e) => handleAnswer(e.target.value)}
+          placeholder="Type or select answer…"
+          className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 transition-colors"
+        />
+        {entry?.selectedLabel && (
+          <input
+            type="text"
+            value={entry.notes}
+            onChange={(e) => onChange({ ...entry, notes: e.target.value })}
+            placeholder="Notes / remarks (optional)"
+            className="mt-1 h-6 w-full rounded border border-input/40 bg-transparent px-2 text-[10px] text-muted-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+          />
         )}
-      </CardContent>
-    </Card>
+      </TableCell>
+      <TableCell className="text-center text-xs font-medium tabular-nums py-2 w-14">
+        {def.weight > 0 ? `${def.weight}%` : <span className="text-muted-foreground text-[10px]">—</span>}
+      </TableCell>
+      <TableCell className="py-2 w-20 text-center">
+        <input
+          type="number"
+          min={0}
+          max={100}
+          value={entry?.score ?? ''}
+          onChange={(e) => handleScoreOverride(e.target.value)}
+          placeholder="0"
+          className={`h-7 w-14 rounded border text-center text-xs font-mono transition-colors focus:outline-none focus:ring-1 focus:ring-ring ${
+            entry?.overrideScore
+              ? 'border-amber-400 bg-amber-50/60 text-amber-700'
+              : 'border-input bg-background'
+          }`}
+        />
+        {entry?.overrideScore && (
+          <div className="text-[9px] text-amber-500 mt-0.5">override</div>
+        )}
+      </TableCell>
+      <TableCell className="py-2 w-16 text-right">
+        {def.weight > 0 ? (
+          <div>
+            <span className={`text-xs font-bold tabular-nums ${
+              actualScore >= def.weight * 0.7 ? 'text-green-600' : actualScore > 0 ? 'text-amber-600' : 'text-muted-foreground'
+            }`}>
+              {actualScore.toFixed(1)}
+            </span>
+            <div className="mt-0.5 h-1 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-300 ${
+                  actualScore >= def.weight * 0.7 ? 'bg-green-500' : actualScore > 0 ? 'bg-amber-400' : ''
+                }`}
+                style={{ width: `${def.weight > 0 ? Math.min(100, (actualScore / def.weight) * 100) : 0}%` }}
+              />
+            </div>
+          </div>
+        ) : (
+          <span className="text-[10px] text-muted-foreground">—</span>
+        )}
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -590,36 +592,60 @@ export default function BidDecision() {
         {/* ── Step 3: Scoring ──────────────────────────────────────────────── */}
         {step === 'scoring' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                Score each criterion. Weighted score updates live.
-              </p>
-              <div className="text-right">
-                <p className="text-xs text-muted-foreground">Running total</p>
-                <p className={`text-2xl font-bold ${currentScore >= BID_DECISION_THRESHOLD ? 'text-green-600' : 'text-red-500'}`}>
+            {/* Live score header */}
+            <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Running Total — Threshold: {BID_DECISION_THRESHOLD}%</p>
+                <p className={`text-3xl font-black tabular-nums ${currentScore >= BID_DECISION_THRESHOLD ? 'text-green-600' : 'text-red-500'}`}>
                   {currentScore.toFixed(1)}%
                 </p>
               </div>
+              <div className="text-right space-y-1.5">
+                <Progress value={currentScore} className="w-32 h-3" />
+                <Badge
+                  className={`text-sm px-3 py-1 ${currentScore >= BID_DECISION_THRESHOLD ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-100' : 'bg-red-100 text-red-700 border-red-200 hover:bg-red-100'}`}
+                  variant="outline"
+                >
+                  {currentScore >= BID_DECISION_THRESHOLD ? '✓ BID' : '✗ NO BID'}
+                </Badge>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 rounded-lg border bg-muted/30 p-3">
-              <Progress value={currentScore} className="flex-1 h-2.5" />
-              <span className="text-xs font-medium w-10 text-right">{currentScore.toFixed(0)}%</span>
-              <Badge variant={currentScore >= BID_DECISION_THRESHOLD ? 'default' : 'secondary'} className="shrink-0">
-                Threshold: {BID_DECISION_THRESHOLD}%
-              </Badge>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {BID_CRITERIA_DEFINITIONS.map((def, i) => (
-                <CriterionCard
-                  key={def.key}
-                  def={def}
-                  index={i}
-                  entry={scores[def.key]}
-                  onChange={(entry) => setScores((prev) => ({ ...prev, [def.key]: entry }))}
-                />
-              ))}
+            {/* Excel-like scoring table */}
+            <div className="rounded-lg border overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/60 hover:bg-muted/60">
+                    <TableHead className="w-8 text-center">#</TableHead>
+                    <TableHead className="w-44">Criteria</TableHead>
+                    <TableHead>Answer / Assessment</TableHead>
+                    <TableHead className="w-14 text-center">Weight</TableHead>
+                    <TableHead className="w-20 text-center">Score</TableHead>
+                    <TableHead className="w-16 text-right">Points</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {BID_CRITERIA_DEFINITIONS.map((def, i) => (
+                    <CriterionRow
+                      key={def.key}
+                      def={def}
+                      index={i}
+                      entry={scores[def.key]}
+                      onChange={(entry) => setScores((prev) => ({ ...prev, [def.key]: entry }))}
+                    />
+                  ))}
+                  <TableRow className="bg-muted/50 border-t-2 border-border hover:bg-muted/50">
+                    <TableCell colSpan={5} className="text-right text-sm font-semibold pr-4 py-3">
+                      Total Weighted Score
+                    </TableCell>
+                    <TableCell className="text-right py-3">
+                      <span className={`text-base font-black tabular-nums ${currentScore >= BID_DECISION_THRESHOLD ? 'text-green-600' : 'text-red-500'}`}>
+                        {currentScore.toFixed(1)}%
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
             </div>
 
             <div className="flex justify-between pt-2">
