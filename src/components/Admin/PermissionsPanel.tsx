@@ -13,7 +13,7 @@ import { useAuth, UserRole, UserPageOverride } from '@/contexts/AuthContext';
 
 const ROLE_OPTIONS: UserRole[] = ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic', 'TempUser'];
 
-const VIEW_ONLY_PAGES = new Set<PageKey>(['dashboard', 'analytics', 'advanced_analytics', 'tender_updates']);
+const VIEW_ONLY_PAGES = new Set<PageKey>(['dashboard', 'analytics']);
 
 interface PermissionsPanelProps {
   token: string | null;

@@ -578,7 +578,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: authHeaders(),
         body: JSON.stringify({ pageViewAccess: newPageViewAccess, pageEditAccess: newPageEditAccess, userPageOverrides: newUserPageOverrides }),
       },
-      { timeoutMs: 25000 },
+      { timeoutMs: 60000 },
     );
     if (!response.ok) throw new Error((data as { error?: string })?.error || 'Failed to update permissions');
     if (data?.pageViewAccess) setPageViewAccess(data.pageViewAccess);

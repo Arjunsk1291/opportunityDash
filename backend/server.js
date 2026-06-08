@@ -4963,7 +4963,7 @@ const PAGE_EDIT_ACTION_MAP = {
   vendor_directory: ['vendors_write', 'vendors_import'],
   clients: ['clients_write', 'clients_import', 'clients_seed'],
   bd_engagements: ['bd_engagements_write'],
-  tender_updates: [],
+  tender_updates: ['opportunities_write'],
   dashboard: [],
   analytics: [],
   master: ['users_manage', 'navigation_permissions_write', 'graph_config_write', 'graph_auth_write',
