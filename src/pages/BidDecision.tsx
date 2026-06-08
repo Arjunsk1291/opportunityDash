@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronRight,
-  FileText, Plus, RefreshCw, Search, ShieldCheck, XCircle,
+  Download, FileText, Loader2, Plus, RefreshCw, Search, ShieldCheck, XCircle,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
@@ -104,6 +104,165 @@ function buildScoresFromRecord(record: BidDecisionRecord): ScoresMap {
     };
   }
   return map;
+}
+
+// ─── Excel export ─────────────────────────────────────────────────────────────
+
+async function exportBidDecisionExcel(params: {
+  opportunityRefNo: string; projectName: string; endUser: string;
+  receivedFrom: string; enquiryDate: string; scopeOfWork: string;
+  scores: ScoresMap; totalScore: number; decision: string;
+}) {
+  const { opportunityRefNo, projectName, endUser, receivedFrom, enquiryDate, scopeOfWork, scores, totalScore, decision } = params;
+  const ExcelJS = (await import('exceljs')).default;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Avenir Opportunity Dashboard';
+  wb.created = new Date();
+  const ws = wb.addWorksheet('BID OR NO BID FORM');
+
+  ws.columns = [
+    { width: 3 }, { width: 3 },   // A, B
+    { width: 52 },                  // C – criteria
+    { width: 24 },                  // D – answer
+    { width: 12 },                  // E – weightage
+    { width: 12 },                  // F – score
+    { width: 16 },                  // G – weightage factor
+    { width: 14 },                  // H – actual score
+    { width: 44 },                  // I – remarks
+  ];
+
+  const bd = { top: { style: 'thin' as const }, left: { style: 'thin' as const }, bottom: { style: 'thin' as const }, right: { style: 'thin' as const } };
+  const isGood = decision === 'BID';
+
+  // ── R4: Title ──
+  ws.mergeCells('C4:I4');
+  ws.getRow(4).height = 32;
+  ws.getRow(4).getCell(3).value = 'BID/ NO BID CHECKLIST';
+  ws.getRow(4).getCell(3).style = { font: { bold: true, size: 16, color: { argb: 'FFFFFFFF' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F3864' } }, alignment: { horizontal: 'center', vertical: 'middle' }, border: bd };
+
+  // ── R5-R10: Header fields ──
+  const fields: [number, string, string][] = [
+    [5, 'END USER :', endUser], [6, 'RECEIVED FROM :', receivedFrom],
+    [7, 'ENQUIRY DATED:', enquiryDate], [8, 'PROJECT NAME:', projectName],
+    [9, 'AVENIR REFERENCE NO:', opportunityRefNo], [10, 'SCOPE OF WORK:', scopeOfWork],
+  ];
+  for (const [rn, lbl, val] of fields) {
+    ws.getRow(rn).height = 18;
+    ws.getRow(rn).getCell(3).value = lbl;
+    ws.getRow(rn).getCell(3).style = { font: { bold: true, size: 11 }, border: bd, alignment: { vertical: 'middle' } };
+    ws.mergeCells(`D${rn}:I${rn}`);
+    ws.getRow(rn).getCell(4).value = val;
+    ws.getRow(rn).getCell(4).style = { font: { size: 11 }, border: bd, alignment: { vertical: 'middle', wrapText: true } };
+  }
+
+  // ── R11: EVALUATION CRITERIA ──
+  ws.mergeCells('C11:I11');
+  ws.getRow(11).height = 26;
+  ws.getRow(11).getCell(3).value = 'EVALUATION CRITERIA';
+  ws.getRow(11).getCell(3).style = { font: { bold: true, size: 12, color: { argb: 'FFFFFFFF' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } }, alignment: { horizontal: 'center', vertical: 'middle' }, border: bd };
+
+  // ── R12: Column headers ──
+  const colHdrs = ['Criteria', 'BID norms / Answer', 'Weightage', 'Score', 'Weightage factor', 'Actual score', 'Remarks'];
+  ws.getRow(12).height = 30;
+  [3, 4, 5, 6, 7, 8, 9].forEach((c, i) => {
+    ws.getRow(12).getCell(c).value = colHdrs[i];
+    ws.getRow(12).getCell(c).style = { font: { bold: true, size: 11, color: { argb: 'FF1F3864' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } }, alignment: { horizontal: 'center', vertical: 'middle', wrapText: true }, border: bd };
+  });
+
+  // ── R13-R25: Criterion rows (exact template layout) ──
+  type RowSpec = { rn: number; key?: string; section?: string };
+  const rowSpecs: RowSpec[] = [
+    { rn: 13, key: 'technical_feasibility' },
+    { rn: 14, section: 'Strategic Fit' },
+    { rn: 15, key: 'strategic_fit' },
+    { rn: 16, section: 'Resource Availability' },
+    { rn: 17, key: 'resource_availability' },
+    { rn: 18, key: 'subcontract_portion' },
+    { rn: 19, section: 'Client Reputation' },
+    { rn: 20, key: 'client_reputation' },
+    { rn: 21, key: 'location' },
+    { rn: 22, key: 'win_ratio' },
+    { rn: 23, key: 'bid_bond' },
+    { rn: 24, key: 'end_user_epc' },
+    { rn: 25, key: 'single_source' },
+  ];
+
+  for (const spec of rowSpecs) {
+    const row = ws.getRow(spec.rn);
+    row.height = 22;
+
+    if (spec.section) {
+      row.getCell(3).value = spec.section;
+      row.getCell(3).style = { font: { bold: true, size: 11, italic: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2EFDA' } }, alignment: { vertical: 'middle' }, border: bd };
+      for (let c = 4; c <= 8; c++) row.getCell(c).style = { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2EFDA' } }, border: bd };
+      row.getCell(9).value = 'Remarks';
+      row.getCell(9).style = { font: { bold: true, size: 10 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2EFDA' } }, alignment: { horizontal: 'center', vertical: 'middle' }, border: bd };
+      continue;
+    }
+
+    const def = BID_CRITERIA_DEFINITIONS.find((d) => d.key === spec.key)!;
+    const entry = scores[def.key];
+    const sv = entry?.score ?? 0;
+    const wf = def.weight > 0 ? def.weight / 100 : 0;
+    const as_ = wf * sv;
+    const bg = def.weight === 0 ? 'FFFFFF99' : 'FFFFFFFF';
+
+    row.getCell(3).value = def.description;
+    row.getCell(3).style = { font: { size: 10 }, border: bd, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }, alignment: { wrapText: true, vertical: 'middle' } };
+    row.getCell(4).value = entry?.selectedLabel ?? '';
+    row.getCell(4).style = { font: { size: 10 }, border: bd, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }, alignment: { horizontal: 'center', vertical: 'middle', wrapText: true } };
+    row.getCell(5).value = def.weight || null;
+    row.getCell(5).style = { font: { size: 10 }, border: bd, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }, alignment: { horizontal: 'center', vertical: 'middle' }, numFmt: '0' };
+    row.getCell(6).value = def.weight > 0 ? (sv || null) : null;
+    row.getCell(6).style = { font: { size: 10 }, border: bd, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }, alignment: { horizontal: 'center', vertical: 'middle' }, numFmt: '0' };
+    row.getCell(7).value = def.weight > 0 ? wf : null;
+    row.getCell(7).style = { font: { size: 10 }, border: bd, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }, alignment: { horizontal: 'center', vertical: 'middle' }, numFmt: '0.00' };
+    row.getCell(8).value = def.weight > 0 ? as_ : null;
+    row.getCell(8).style = { font: { size: 10 }, border: bd, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }, alignment: { horizontal: 'center', vertical: 'middle' }, numFmt: '0.00' };
+    row.getCell(9).value = entry?.notes ?? '';
+    row.getCell(9).style = { font: { size: 10 }, border: bd, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }, alignment: { wrapText: true, vertical: 'middle' } };
+  }
+
+  // ── R26: Total Score ──
+  ws.getRow(26).height = 26;
+  ws.mergeCells('C26:D26');
+  const decisionFg = isGood ? 'FFC6EFCE' : 'FFFFC7CE';
+  const decisionFont = isGood ? 'FF375623' : 'FF9C0006';
+  ws.getRow(26).getCell(3).value = 'Total Score (in %)';
+  ws.getRow(26).getCell(3).style = { font: { bold: true, size: 11, color: { argb: 'FFFFFFFF' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F3864' } }, border: bd, alignment: { horizontal: 'center', vertical: 'middle' } };
+  ws.getRow(26).getCell(5).value = 100;
+  ws.getRow(26).getCell(5).style = { font: { bold: true }, border: bd, alignment: { horizontal: 'center', vertical: 'middle' }, numFmt: '0' };
+  ws.getRow(26).getCell(6).style = { border: bd };
+  ws.getRow(26).getCell(7).value = 1;
+  ws.getRow(26).getCell(7).style = { font: { bold: true }, border: bd, alignment: { horizontal: 'center', vertical: 'middle' }, numFmt: '0.00' };
+  ws.getRow(26).getCell(8).value = totalScore;
+  ws.getRow(26).getCell(8).style = { font: { bold: true, size: 13, color: { argb: decisionFont } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: decisionFg } }, border: bd, alignment: { horizontal: 'center', vertical: 'middle' }, numFmt: '0.00' };
+  ws.getRow(26).getCell(9).value = decision;
+  ws.getRow(26).getCell(9).style = { font: { bold: true, size: 13, color: { argb: decisionFont } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: decisionFg } }, border: bd, alignment: { horizontal: 'center', vertical: 'middle' } };
+
+  // ── R27: Notes ──
+  ws.mergeCells('C27:I27');
+  ws.getRow(27).height = 90;
+  ws.getRow(27).getCell(3).value = 'NOTES:\n\nTotal score above 65% will be considered approval to proceed with the bid.\nTotal score below 65% will be considered not to proceed with the bid.\n\nTender Manager:\n\nFinal decision will be subject to Management approval.';
+  ws.getRow(27).getCell(3).style = { font: { size: 11 }, border: bd, alignment: { wrapText: true, vertical: 'top' } };
+
+  // ── R28:R34: Final Evaluation ──
+  ws.mergeCells('C28:I34');
+  ws.getRow(28).height = 140;
+  ws.getRow(28).getCell(3).value = 'Final Evaluation :\n\n\nReviewed by : SVP\n\nBID :\n\n\nApproved by: GM\n\nNO BID :';
+  ws.getRow(28).getCell(3).style = { font: { size: 11 }, border: bd, alignment: { wrapText: true, vertical: 'top' } };
+
+  // ── Download ──
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `BID-NO-BID-${opportunityRefNo || 'export'}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ─── sub-components ───────────────────────────────────────────────────────────
@@ -276,6 +435,7 @@ export default function BidDecision() {
   const [details, setDetails] = useState<OpportunityDetails>(EMPTY_DETAILS);
   const [scores, setScores] = useState<ScoresMap>({});
   const [saving, setSaving] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [editingRefNo, setEditingRefNo] = useState<string | null>(null); // null = new
 
   // ── load records ──────────────────────────────────────────────────────────
@@ -391,6 +551,29 @@ export default function BidDecision() {
       toast.error((err as Error).message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── download ──────────────────────────────────────────────────────────────
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      await exportBidDecisionExcel({
+        opportunityRefNo: details.opportunityRefNo,
+        projectName: details.projectName,
+        endUser: details.endUser,
+        receivedFrom: details.receivedFrom,
+        enquiryDate: details.enquiryDate,
+        scopeOfWork: details.scopeOfWork,
+        scores,
+        totalScore: currentScore,
+        decision: recommendation,
+      });
+    } catch (err) {
+      toast.error('Export failed: ' + (err as Error).message);
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -744,17 +927,31 @@ export default function BidDecision() {
               <Button variant="outline" onClick={() => setStep('scoring')}>
                 <ArrowLeft className="mr-2 h-4 w-4" />Revise Scores
               </Button>
-              <Button
-                onClick={handleSave}
-                disabled={saving || !canSave}
-                className={`gap-2 ${recommendation === 'BID' ? '' : 'bg-red-600 hover:bg-red-700'}`}
-              >
-                {saving ? (
-                  <><RefreshCw className="h-4 w-4 animate-spin" />Saving…</>
-                ) : (
-                  <><ShieldCheck className="h-4 w-4" />Save as {recommendation}</>
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleDownload}
+                  disabled={downloading}
+                  className="gap-2"
+                >
+                  {downloading ? (
+                    <><Loader2 className="h-4 w-4 animate-spin" />Exporting…</>
+                  ) : (
+                    <><Download className="h-4 w-4" />Download Excel</>
+                  )}
+                </Button>
+                <Button
+                  onClick={handleSave}
+                  disabled={saving || !canSave}
+                  className={`gap-2 ${recommendation === 'BID' ? '' : 'bg-red-600 hover:bg-red-700'}`}
+                >
+                  {saving ? (
+                    <><RefreshCw className="h-4 w-4 animate-spin" />Saving…</>
+                  ) : (
+                    <><ShieldCheck className="h-4 w-4" />Save as {recommendation}</>
+                  )}
+                </Button>
+              </div>
             </div>
 
             {!canSave && (
@@ -861,15 +1058,39 @@ export default function BidDecision() {
                       {rec.updatedAt ? new Date(rec.updatedAt).toLocaleDateString() : '—'}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 gap-1"
-                        onClick={() => openEditWizard(rec)}
-                      >
-                        {canSave ? 'Edit' : 'View'}
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          title="Download Excel"
+                          onClick={() => {
+                            const scores = buildScoresFromRecord(rec);
+                            void exportBidDecisionExcel({
+                              opportunityRefNo: rec.opportunityRefNo,
+                              projectName: extra.projectName || '',
+                              endUser: extra.endUser || '',
+                              receivedFrom: extra.receivedFrom || '',
+                              enquiryDate: extra.enquiryDate || '',
+                              scopeOfWork: extra.scopeOfWork || '',
+                              scores,
+                              totalScore: Number(rec.decisionScore),
+                              decision: rec.bidDecision,
+                            });
+                          }}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1"
+                          onClick={() => openEditWizard(rec)}
+                        >
+                          {canSave ? 'Edit' : 'View'}
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
