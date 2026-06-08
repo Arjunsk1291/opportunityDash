@@ -2980,7 +2980,11 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       return sendAuthFailure(res, req, 403, 'Password login not configured', 'password_not_configured', { email, role: user.role, status: user.status });
     }
 
-    if (user.tempAccessExpiresAt && new Date(user.tempAccessExpiresAt).getTime() <= Date.now()) {
+    // Only enforce temp-access expiry for TempUser role.
+    // Non-TempUser accounts may have a stale tempAccessExpiresAt from a previous role
+    // change — blocking them here would lock out users with a valid permanent password.
+    const isTempUserRole = String(user.role || '').trim() === 'TempUser';
+    if (isTempUserRole && user.tempAccessExpiresAt && new Date(user.tempAccessExpiresAt).getTime() <= Date.now()) {
       console.warn(`[auth.login.access-expired] email=${email}`);
       return sendAuthFailure(res, req, 403, 'Temporary access has expired', 'temp_access_expired', {
         email,
@@ -3456,12 +3460,33 @@ app.post('/api/users/set-password', verifyToken, async (req, res) => {
     existing.accountLockedUntil = null;
     existing.lastFailedLoginAt = null;
 
-    // Admin explicitly assigning a password implies the user should be able to log in
+    // Admin explicitly assigning a password implies the user should be able to log in.
+    // Fix every gate the login flow checks so the user can actually authenticate.
+
+    // 1. Approve pending users
     if (existing.status === 'pending') {
       existing.status = 'approved';
       existing.approvedBy = req.user.email;
       existing.approvedAt = new Date();
-      console.info(`[set-password] auto-approved pending user ${existing.email} (set by ${req.user.email})`);
+      console.info(`[set-password] auto-approved pending user ${existing.email}`);
+    }
+
+    // 2. Clear expired tempAccessExpiresAt — setting a permanent password means the
+    //    admin wants this user to have normal (non-expiring) login access.
+    //    Leaving an expired date here causes a 403 'temp_access_expired' on login.
+    if (existing.tempAccessExpiresAt && new Date(existing.tempAccessExpiresAt).getTime() <= Date.now()) {
+      existing.tempAccessExpiresAt = null;
+      console.info(`[set-password] cleared expired tempAccessExpiresAt for ${existing.email}`);
+    }
+
+    // 3. If the user is still TempUser role and there is no valid temp window, upgrade
+    //    to Basic so the hasValidTempAccess check in login does not gate them out.
+    if (existing.role === 'TempUser') {
+      const stillValidWindow = existing.tempAccessExpiresAt && new Date(existing.tempAccessExpiresAt).getTime() > Date.now();
+      if (!stillValidWindow) {
+        existing.role = 'Basic';
+        console.info(`[set-password] promoted TempUser→Basic for ${existing.email} (no valid temp window)`);
+      }
     }
 
     await existing.save();
