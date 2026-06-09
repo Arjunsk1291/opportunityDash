@@ -249,7 +249,7 @@ export const JspreadsheetGrid = forwardRef<JspreadsheetGridHandle, JspreadsheetG
 
     return (
       <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
-        <div ref={divRef} style={{ width: '100%' }} />
+        <div ref={divRef} style={{ width: '100%', height: '100%' }} />
       </div>
     );
   }

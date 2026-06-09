@@ -514,3 +514,17 @@
     }
   }
 }
+
+/* jspreadsheet: force container to fill its parent instead of shrinking to inline content */
+.jexcel_container {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+}
+
+.jexcel_content {
+  max-height: none !important;
+  overflow: auto !important;
+  width: 100% !important;
+}
