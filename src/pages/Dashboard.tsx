@@ -623,30 +623,27 @@ const Dashboard = () => {
   const { status: trackedStatus } = useTrackedAction();
   const { isMaster, token } = useAuth();
   const { formatCurrency, currency, convertValue } = useCurrency();
-  const [topPerformerVisible, setTopPerformerVisible] = useState(false);
+  const [topPerformerConfigVisible, setTopPerformerConfigVisible] = useState(false);
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
 
   useEffect(() => {
     if (!token) return;
     fetch(`${import.meta.env.VITE_API_URL || '/api'}/telecast/config`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data) return;
-        setTopPerformerVisible(isMaster || Boolean(data.topPerformerCardVisible));
-      })
+      .then(data => { if (data) setTopPerformerConfigVisible(Boolean(data.topPerformerCardVisible)); })
       .catch(() => {});
-  }, [token, isMaster]);
+  }, [token]);
 
-  const handleTopPerformerVisibilityToggle = async (visible: boolean) => {
+  const handleToggleShowForAll = async (show: boolean) => {
     if (!token || !isMaster) return;
     try {
       await fetch(`${import.meta.env.VITE_API_URL || '/api'}/telecast/config`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topPerformerCardVisible: visible }),
+        body: JSON.stringify({ topPerformerCardVisible: show }),
       });
-      setTopPerformerVisible(visible || isMaster);
-    } catch (e) { /* silent */ }
+      setTopPerformerConfigVisible(show);
+    } catch { /* silent */ }
   };
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [awardAuditOpen, setAwardAuditOpen] = useState(false);
@@ -1437,11 +1434,11 @@ const Dashboard = () => {
         </div>
       </section>
 
-      {(isMaster || topPerformerVisible) && (
+      {(isMaster || topPerformerConfigVisible) && (
         <section className="px-4 sm:px-6 lg:px-8 mt-4">
           <TopPerformerCard
-            visible={isMaster || topPerformerVisible}
-            onVisibilityToggle={isMaster ? handleTopPerformerVisibilityToggle : undefined}
+            showForAllUsers={topPerformerConfigVisible}
+            onToggleShowForAll={isMaster ? handleToggleShowForAll : undefined}
           />
         </section>
       )}

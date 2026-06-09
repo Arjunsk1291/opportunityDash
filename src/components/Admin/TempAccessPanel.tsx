@@ -67,7 +67,7 @@ export function TempAccessPanel({ token, isMaster }: Props) {
     try {
       const res = await fetch(`${API}/admin/temp-access`, { headers: headers() });
       const data = await res.json();
-      setItems(Array.isArray(data.items) ? data.items : []);
+      setItems(Array.isArray(data.records) ? data.records : []);
     } finally {
       setLoading(false);
     }

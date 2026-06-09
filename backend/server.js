@@ -1351,6 +1351,9 @@ const buildTelecastEmailHtml = ({ values, renderedBody = '', styleKey = 'avenir_
               </tbody>
             </table>
           </div>
+          <div style="margin-top:28px;text-align:center;">
+            <a href="${DASHBOARD_URL}" style="display:inline-block;padding:12px 28px;background:${colors.headerBg};color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;letter-spacing:0.04em;">Open Dashboard &rarr;</a>
+          </div>
         </div>
       </div>
     </div>
@@ -1399,6 +1402,57 @@ const buildAwardBatchEmailHtml = ({ rows = [], group = '', bodyText = '', styleK
             </thead>
             <tbody>${rowsHtml}</tbody>
           </table>
+          <div style="margin-top:28px;text-align:center;">
+            <a href="${DASHBOARD_URL}" style="display:inline-block;padding:12px 28px;background:${colors.headerBg};color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;letter-spacing:0.04em;">Open Dashboard &rarr;</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+const buildAwardValueReportEmailHtml = ({ missing = [], dateStr = '' }) => {
+  const style = getTelecastTemplateStyle('sunset_alert');
+  const colors = style.colors;
+  const rowsHtml = missing.map((o, i) => `
+    <tr style="background:${i % 2 === 0 ? '#ffffff' : colors.tableRowAlt};">
+      <td style="padding:10px 12px;font-size:13px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(o.opportunityRefNo || '—')}</td>
+      <td style="padding:10px 12px;font-size:13px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(o.tenderName || '—')}</td>
+      <td style="padding:10px 12px;font-size:13px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(o.clientName || '—')}</td>
+      <td style="padding:10px 12px;font-size:13px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(o.groupClassification || '—')}</td>
+      <td style="padding:10px 12px;font-size:13px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(o.internalLead || '—')}</td>
+      <td style="padding:10px 12px;font-size:13px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(o.awardedDate || '—')}</td>
+    </tr>
+  `).join('');
+  return `
+    <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
+      <div style="max-width:800px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+        <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Reports</div>
+          <h1 style="margin:0;font-size:24px;line-height:1.2;">&#128200; Award Value Report — ${escapeHtml(dateStr)}</h1>
+          <p style="margin:10px 0 0;font-size:14px;opacity:0.92;">Awarded tenders with missing or zero value requiring attention.</p>
+        </div>
+        <div style="padding:24px 28px;">
+          <div style="margin-bottom:18px;padding:14px 18px;border-radius:12px;background:${colors.summaryBg};border:1px solid ${colors.summaryBorder};">
+            <p style="margin:0;font-size:14px;color:${colors.summaryText};">
+              <strong>${missing.length} tender${missing.length !== 1 ? 's' : ''}</strong> with missing or zero value found as of ${escapeHtml(dateStr)}. Please update the opportunity value in the dashboard.
+              The full Excel report is attached to this email.
+            </p>
+          </div>
+          ${missing.length > 0 ? `
+          <table style="width:100%;border-collapse:collapse;border-spacing:0;border:1px solid ${colors.summaryBorder};border-radius:12px;overflow:hidden;">
+            <thead>
+              <tr style="background:${colors.tableHeaderBg};">
+                <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Ref No</th>
+                <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Tender Name</th>
+                <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Client</th>
+                <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Group</th>
+                <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Lead</th>
+                <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Awarded Date</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>` : ''}
           <div style="margin-top:28px;text-align:center;">
             <a href="${DASHBOARD_URL}" style="display:inline-block;padding:12px 28px;background:${colors.headerBg};color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;letter-spacing:0.04em;">Open Dashboard &rarr;</a>
           </div>
@@ -3622,7 +3676,7 @@ app.post('/api/admin/award-value-report', verifyToken, async (req, res) => {
       body: JSON.stringify({
         message: {
           subject,
-          body: { contentType: 'HTML', content: `<p>Please find attached the award value report as of ${dateStr}.</p><p>Awarded tenders with missing/zero value: <strong>${missing.length}</strong></p>` },
+          body: { contentType: 'HTML', content: buildAwardValueReportEmailHtml({ missing, dateStr }) },
           toRecipients,
           hasAttachments: true,
           attachments: [{
@@ -5808,6 +5862,35 @@ app.get('/api/admin/bootstrap', verifyToken, async (req, res) => {
   }
 });
 
+
+// ── EOI Duplicate Config ─────────────────────────────────────────────────────
+
+app.get('/api/eoi-duplicates/config', verifyToken, async (req, res) => {
+  try {
+    if (!isMasterOrAdmin(req)) return res.status(403).json({ error: 'Master/Admin only' });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const config = await getSystemConfig();
+    res.set('x-system-config-version', String(config.updatedAt?.getTime?.() || Date.now()));
+    res.json({ success: true, showConvertedEoiRowsDefault: Boolean(config.showConvertedEoiRowsDefault) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to load EOI config' });
+  }
+});
+
+app.post('/api/eoi-duplicates/config', verifyToken, express.json(), async (req, res) => {
+  try {
+    if (!isMasterOrAdmin(req)) return res.status(403).json({ error: 'Master/Admin only' });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const config = await getSystemConfig();
+    await persistSystemConfigFields(config, {
+      showConvertedEoiRowsDefault: Boolean(req.body?.showConvertedEoiRowsDefault),
+      lastUpdatedBy: String(req.user?.email || ''),
+    });
+    res.json({ success: true, showConvertedEoiRowsDefault: Boolean(req.body?.showConvertedEoiRowsDefault) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to save EOI config' });
+  }
+});
 
 app.get('/api/telecast/config', verifyToken, async (req, res) => {
   try {
@@ -8197,7 +8280,7 @@ app.get('/api/opportunities/top-performer', verifyToken, async (req, res) => {
     const cutoff = period === 'year' ? new Date(new Date().getFullYear(), 0, 1) : new Date(0);
 
     const query = { canonicalStage: 'AWARDED' };
-    if (period === 'year') query.awardedDate = { $gte: cutoff.toISOString().slice(0, 10) };
+    if (period === 'year') query.updatedAt = { $gte: cutoff };
 
     const awarded = await SyncedOpportunity.find(
       query,
