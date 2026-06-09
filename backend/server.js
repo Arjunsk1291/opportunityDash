@@ -467,8 +467,8 @@ mongoose.connect(MONGODB_URI, {
   monitorCommands: DIAG_LOGS,
   autoIndex: !IS_PROD,
   autoCreate: !IS_PROD,
-  serverSelectionTimeoutMS: IS_PROD ? 5000 : 30000,
-  socketTimeoutMS: IS_PROD ? 10000 : 45000,
+  serverSelectionTimeoutMS: IS_PROD ? 10000 : 30000,
+  socketTimeoutMS: IS_PROD ? 30000 : 45000,
 })
   .then(() => {
     if (DIAG_LOGS) {
@@ -6332,6 +6332,8 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
     res.json(mapped);
   } catch (error) {
     console.error('[api.opportunities.get.error]', error);
+    const isDbError = error?.name?.includes('Mongo') || /server selection|socket timeout|topology/i.test(error?.message || '');
+    if (isDbError) return respondDatabaseUnavailable(res);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
