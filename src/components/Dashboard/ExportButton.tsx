@@ -14,14 +14,12 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Opportunity } from '@/data/opportunityData';
 import { getDisplayStatus } from '@/lib/opportunityStatus';
-import { useAuth } from '@/contexts/AuthContext';
 import defaultExportLogo from '@/assets/avenir-logo.png';
-import { DEFAULT_EXPORT_TEMPLATE, ExportTemplateConfig, normalizeExportTemplate } from '@/lib/exportTemplate';
+import { DEFAULT_EXPORT_TEMPLATE, ExportTemplateConfig } from '@/lib/exportTemplate';
 import { toast } from 'sonner';
 import { OPPORTUNITY_COLUMNS } from '@/lib/opportunities/columns';
 import { ROW_GDS, ROW_GES, STATUS_LOST, STATUS_WON, TENDER_FLAG_LOST } from '@/lib/opportunities/colors';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 interface ExportButtonProps {
   data: Opportunity[];
@@ -219,11 +217,10 @@ const getDefaultLogoDataUrl = async () => {
 };
 
 export function ExportButton({ data, filename = 'opportunities' }: ExportButtonProps) {
-  const { token } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [includeConvertedEoiDuplicates, setIncludeConvertedEoiDuplicates] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [exportTemplate, setExportTemplate] = useState<ExportTemplateConfig>(DEFAULT_EXPORT_TEMPLATE);
+  const exportTemplate = DEFAULT_EXPORT_TEMPLATE;
 
   const columns = useMemo<ExportColumn[]>(() => (
     OPPORTUNITY_COLUMNS.map((column) => ({
@@ -242,40 +239,6 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       return retained.length ? retained : columns.map((column) => column.id);
     });
   }, [columns]);
-
-  useEffect(() => {
-    if (!token) {
-      setExportTemplate(DEFAULT_EXPORT_TEMPLATE);
-      return;
-    }
-
-    let cancelled = false;
-    const loadTemplate = async () => {
-      try {
-        const response = await fetch(API_URL + '/export-template/config', {
-          headers: {
-            Authorization: 'Bearer ' + token,
-            'Content-Type': 'application/json',
-          },
-        });
-        if (!response.ok) return;
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          const text = await response.text();
-          throw new Error(`Non-JSON response (${response.status}). ${text.slice(0, 80)}`);
-        }
-        const result = await response.json();
-        if (!cancelled) setExportTemplate(normalizeExportTemplate(result));
-      } catch (error) {
-        console.error('Failed to load export template:', error);
-      }
-    };
-
-    loadTemplate();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
 
   const exportableData = useMemo(() => {
     if (includeConvertedEoiDuplicates) return data;
@@ -378,7 +341,7 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       };
 
       worksheet.columns = Array.from({ length: Math.max(12, headerEndColumn) }, (_unused, index) => ({
-        width: clamp(exportTemplate.columnWidths[index] || 18, 12, 60),
+        width: clamp(exportTemplate.columnWidths[index] || 18, 8, 200),
       }));
       exportTemplate.rowHeights.forEach((height, index) => {
         worksheet.getRow(index + 1).height = height;

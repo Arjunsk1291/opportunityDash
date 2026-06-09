@@ -9,7 +9,6 @@ export type MasterSectionKey =
   | 'users'
   | 'permissions'
   | 'data-sync'
-  | 'export-templates'
   | 'telecast'
   | 'columns'
   | 'diagnostics';
@@ -26,8 +25,7 @@ const MASTER_NAV: MasterNavItem[] = [
   { key: 'users', label: 'Users', path: '/master/users', keywords: ['users', 'role', 'approval'] },
   { key: 'permissions', label: 'Permissions', path: '/master/permissions', keywords: ['permissions', 'matrix', 'access'] },
   { key: 'data-sync', label: 'Data Sync', path: '/master/data-sync', keywords: ['sync', 'graph', 'fxrate', 'rate'] },
-  { key: 'export-templates', label: 'Export Templates', path: '/master/export-templates', keywords: ['export', 'template', 'layout'] },
-  { key: 'telecast', label: 'Telecast', path: '/master/telecast', keywords: ['telecast', 'alerts', 'mail'] },
+{ key: 'telecast', label: 'Telecast', path: '/master/telecast', keywords: ['telecast', 'alerts', 'mail'] },
   { key: 'columns', label: 'Columns', path: '/master/columns', keywords: ['columns', 'visibility', 'color'] },
   { key: 'diagnostics', label: 'Diagnostics', path: '/master/diagnostics', keywords: ['diagnostics', 'latency', 'log', 'build'] },
 ];

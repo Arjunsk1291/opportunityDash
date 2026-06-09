@@ -185,7 +185,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         </div>
 
         {/* Grid */}
-        <div className="flex-1 min-h-0 overflow-hidden rounded-md border">
+        <div className="flex-1 min-h-0 rounded-md border">
           <JspreadsheetGrid
             ref={gridRef}
             opportunities={opportunities}

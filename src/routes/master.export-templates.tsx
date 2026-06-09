@@ -1,6 +1,5 @@
-import Admin from '@/pages/Admin';
-import { MasterShell } from '@/components/MasterShell';
+import { Navigate } from 'react-router-dom';
 
 export default function MasterExportTemplatesRoute() {
-  return <MasterShell activeKey="export-templates"><Admin initialTab="export" /></MasterShell>;
+  return <Navigate to="/master/overview" replace />;
 }

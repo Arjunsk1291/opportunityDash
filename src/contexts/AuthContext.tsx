@@ -300,16 +300,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
         return;
       }
-      setToken(saved);
+      // Validate before committing token so loadPermissionsBundle never fires with a stale token
       try {
         const response = await fetch(API_URL + '/auth/user', {
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + saved },
         });
         if (!response.ok) {
-          clearAuthState();
+          window.sessionStorage.removeItem('simpleAuthToken');
+          setIsLoading(false);
           return;
         }
         const data = (await response.json()) as CurrentUserResponse;
+        setToken(saved);
         setUser({
           email: data.email,
           displayName: data.displayName || data.email,
