@@ -949,6 +949,19 @@ export default function PqActivities() {
                         </FormItem>
                       )}
                     />
+                    <FormField
+                      control={form.control}
+                      name="workgroup"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Work Group</FormLabel>
+                          <FormControl>
+                            <Input placeholder="e.g. GES, GDS, Procurement" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
 
                   <FormField
@@ -1063,7 +1076,21 @@ export default function PqActivities() {
                       <FormItem>
                         <FormLabel>Notes</FormLabel>
                         <FormControl>
-                          <Textarea rows={4} {...field} />
+                          <Textarea rows={3} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="enquiries"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Enquiries</FormLabel>
+                        <FormControl>
+                          <Textarea rows={3} placeholder="Track enquiries or follow-ups for this entry" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
