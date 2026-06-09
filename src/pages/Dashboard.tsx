@@ -1095,7 +1095,7 @@ const Dashboard = () => {
             <strong>Next Steps:</strong>
             <ol className="list-decimal list-inside mt-2 space-y-1">
               <li>Go to Master Panel (/master)</li>
-              <li>Click "Sync from Graph Excel"</li>
+              <li>Upload the latest Excel sheet under "Sheet Upload"</li>
               <li>Wait for data to load</li>
             </ol>
           </AlertDescription>

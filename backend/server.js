@@ -6307,8 +6307,9 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
 });
 
 app.get('/api/opportunities', verifyToken, async (req, res) => {
-  const start = performance.now();
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const start = Date.now();
     const view = String(req.query?.view || 'full').trim().toLowerCase();
     const projection = getOpportunityProjection(view);
     const opportunities = await SyncedOpportunity.find({}, projection)
@@ -6322,7 +6323,7 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
       return Math.max(latest, syncedAt, updatedAt);
     }, 0);
 
-    const totalMs = Math.round(performance.now() - start);
+    const totalMs = Date.now() - start;
     res.setHeader('X-Opps-Total-Ms', totalMs);
     res.setHeader('X-Opps-View', view === 'lite' ? 'lite' : 'full');
     if (snapshotAt > 0) {
@@ -6337,6 +6338,7 @@ app.get('/api/opportunities', verifyToken, async (req, res) => {
 
 app.get('/api/opportunities/changes', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requireActionPermission(req, res, 'opportunities_view')) return;
     const view = String(req.query?.view || 'lite').trim().toLowerCase();
     const sinceRaw = String(req.query?.since || '').trim();
