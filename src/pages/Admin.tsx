@@ -33,6 +33,7 @@ import { useTrackedAction } from '@/hooks/useTrackedAction';
 import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { statusConsole } from '@/lib/statusConsole';
 import { UsersPanel } from '@/components/Admin/UsersPanel';
+import { TempAccessPanel } from '@/components/Admin/TempAccessPanel';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -505,6 +506,30 @@ export default function Admin({ initialTab }: AdminProps = {}) {
   const [awardRoleRecipients, setAwardRoleRecipients] = useState<string[]>(['Master', 'Admin']);
   const [awardGroupRecipients, setAwardGroupRecipients] = useState<Record<'GES' | 'GDS' | 'GTS', string[]>>({ GES: [], GDS: [], GTS: [] });
   const [approvalTemplateSending, setApprovalTemplateSending] = useState(false);
+  // F7 — TL assignment alert
+  const [tlAssignAlertEnabled, setTlAssignAlertEnabled] = useState(false);
+  const [tlAssignTemplateSubject, setTlAssignTemplateSubject] = useState('Action Required: TL Assignment for Awarded Tenders — {{GROUP}}');
+  const [tlAssignTemplateBody, setTlAssignTemplateBody] = useState('Please assign a Team Lead for the following newly awarded tenders in your vertical.');
+  const [tlAssignSeededAt, setTlAssignSeededAt] = useState<string | null>(null);
+  // F27 — PM assignment alert
+  const [pmAssignAlertEnabled, setPmAssignAlertEnabled] = useState(false);
+  const [pmAssignTemplateSubject, setPmAssignTemplateSubject] = useState('Action Required: PM Assignment for Awarded Tenders — {{GROUP}}');
+  const [pmAssignTemplateBody, setPmAssignTemplateBody] = useState('Please assign a Project Manager for the following newly awarded tenders in your vertical.');
+  const [pmAssignSeededAt, setPmAssignSeededAt] = useState<string | null>(null);
+  const [awardAssignSeedBusy, setAwardAssignSeedBusy] = useState(false);
+  // F16 — lead notification
+  const [leadNotifEnabled, setLeadNotifEnabled] = useState(false);
+  const [leadNotifTrigger, setLeadNotifTrigger] = useState<'new_row' | 'awarded' | 'any_stage'>('new_row');
+  const [leadNotifRecipients, setLeadNotifRecipients] = useState<string[]>([]);
+  const [leadNotifTemplateSubject, setLeadNotifTemplateSubject] = useState('Notification: New Tender — {{TENDER_NO}}');
+  const [leadNotifTemplateBody, setLeadNotifTemplateBody] = useState('This is an automated notification for the following opportunity.');
+  const [leadNotifSeededAt, setLeadNotifSeededAt] = useState<string | null>(null);
+  const [leadNotifSeedBusy, setLeadNotifSeedBusy] = useState(false);
+  const [leadNotifEmailInput, setLeadNotifEmailInput] = useState('');
+  // F22 — award value report
+  const [awardReportSending, setAwardReportSending] = useState(false);
+  // F25 — top performer card visibility
+  const [topPerformerCardVisible, setTopPerformerCardVisible] = useState(false);
   const [deadlineAlertEnabled, setDeadlineAlertEnabled] = useState(false);
   const [deadlineTemplateSubject, setDeadlineTemplateSubject] = useState('Tender Deadline Tomorrow: {{TENDER_NO}} - {{TENDER_NAME}}');
   const [deadlineTemplateBody, setDeadlineTemplateBody] = useState('Reminder: {{TENDER_NAME}} is due on {{SUBMISSION_DATE}} for {{CLIENT}}.');
@@ -656,6 +681,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
     () => ([
       { value: 'general', label: 'General', pageKey: 'master_general' as PageKey },
       { value: 'users', label: 'User Management', pageKey: 'master_users' as PageKey },
+      { value: 'temp-access', label: 'Temp Access', pageKey: 'master_users' as PageKey },
       { value: 'auth-diagnostics', label: 'Auth Diagnostics', pageKey: 'master_users' as PageKey },
       { value: 'telecast', label: '📣 Telecast', pageKey: 'master_telecast' as PageKey },
       { value: 'update', label: 'Update', pageKey: 'master_update' as PageKey },
@@ -1637,6 +1663,22 @@ export default function Admin({ initialTab }: AdminProps = {}) {
         GTS: normalizeRecipientList(data.groupRecipients?.GTS),
       });
       setTelecastWeeklyStats(Array.isArray(data.weeklyStats) ? data.weeklyStats : []);
+      // F7/F27/F16/F25 new fields
+      setTlAssignAlertEnabled(Boolean(data.tlAssignAlertEnabled));
+      setTlAssignTemplateSubject(data.tlAssignAlertTemplateSubject || 'Action Required: TL Assignment for Awarded Tenders — {{GROUP}}');
+      setTlAssignTemplateBody(data.tlAssignAlertTemplateBody || 'Please assign a Team Lead for the following newly awarded tenders in your vertical.');
+      setTlAssignSeededAt(data.tlAssignAlertSeededAt || null);
+      setPmAssignAlertEnabled(Boolean(data.pmAssignAlertEnabled));
+      setPmAssignTemplateSubject(data.pmAssignAlertTemplateSubject || 'Action Required: PM Assignment for Awarded Tenders — {{GROUP}}');
+      setPmAssignTemplateBody(data.pmAssignAlertTemplateBody || 'Please assign a Project Manager for the following newly awarded tenders in your vertical.');
+      setPmAssignSeededAt(data.pmAssignAlertSeededAt || null);
+      setLeadNotifEnabled(Boolean(data.leadNotifEnabled));
+      setLeadNotifTrigger(data.leadNotifTrigger || 'new_row');
+      setLeadNotifRecipients(Array.isArray(data.leadNotifRecipients) ? data.leadNotifRecipients : []);
+      setLeadNotifTemplateSubject(data.leadNotifTemplateSubject || 'Notification: New Tender — {{TENDER_NO}}');
+      setLeadNotifTemplateBody(data.leadNotifTemplateBody || 'This is an automated notification for the following opportunity.');
+      setLeadNotifSeededAt(data.leadNotifSeededAt || null);
+      setTopPerformerCardVisible(Boolean(data.topPerformerCardVisible));
       return data;
     } catch (error) {
       // Keep console quiet; surface toasts/messages instead.
@@ -2503,6 +2545,18 @@ export default function Admin({ initialTab }: AdminProps = {}) {
               GDS: normalizeRecipientList(telecastGroupRecipients.GDS),
               GTS: normalizeRecipientList(telecastGroupRecipients.GTS),
             },
+            tlAssignAlertEnabled,
+            tlAssignAlertTemplateSubject: tlAssignTemplateSubject,
+            tlAssignAlertTemplateBody: tlAssignTemplateBody,
+            pmAssignAlertEnabled,
+            pmAssignAlertTemplateSubject: pmAssignTemplateSubject,
+            pmAssignAlertTemplateBody: pmAssignTemplateBody,
+            leadNotifEnabled,
+            leadNotifTrigger,
+            leadNotifRecipients,
+            leadNotifTemplateSubject,
+            leadNotifTemplateBody,
+            topPerformerCardVisible,
           }),
         });
         const data = await response.json();
@@ -2521,6 +2575,44 @@ export default function Admin({ initialTab }: AdminProps = {}) {
     } finally {
       setConfigSaving(false);
     }
+  };
+
+  const seedAwardAlerts = async () => {
+    if (!token) return;
+    setAwardAssignSeedBusy(true);
+    try {
+      const res = await fetch(API_URL + '/telecast/seed-award-alerts', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Seed failed');
+      toast.success(`Seeded: ${data.seededCount ?? 0} awarded rows marked as notified`);
+      await loadTelecastConfig();
+    } catch (err) { toast.error((err as Error).message); }
+    finally { setAwardAssignSeedBusy(false); }
+  };
+
+  const seedLeadNotif = async () => {
+    if (!token) return;
+    setLeadNotifSeedBusy(true);
+    try {
+      const res = await fetch(API_URL + '/telecast/seed-lead-notif', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Seed failed');
+      toast.success(`Seeded: ${data.seededCount ?? 0} rows marked as notified`);
+      await loadTelecastConfig();
+    } catch (err) { toast.error((err as Error).message); }
+    finally { setLeadNotifSeedBusy(false); }
+  };
+
+  const sendAwardValueReport = async () => {
+    if (!token) return;
+    setAwardReportSending(true);
+    try {
+      const res = await fetch(API_URL + '/admin/award-value-report', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send');
+      toast.success(`Report sent to ${data.recipientCount} master(s) — ${data.missingCount} tenders missing value`);
+    } catch (err) { toast.error((err as Error).message); }
+    finally { setAwardReportSending(false); }
   };
 
   const saveEoiDuplicateConfig = async () => {
@@ -3327,6 +3419,12 @@ export default function Admin({ initialTab }: AdminProps = {}) {
 
           <UsersPanel token={token} isMaster={isMaster} canManageUsers={canManageUsers} />
 
+        </TabsContent>
+        )}
+
+        {allowedTabValues.has('temp-access') && (
+        <TabsContent value="temp-access" className="mt-6">
+          <TempAccessPanel token={token} isMaster={isMaster} />
         </TabsContent>
         )}
 
@@ -4395,6 +4493,176 @@ export default function Admin({ initialTab }: AdminProps = {}) {
                 <Button onClick={saveTelecastConfig} loading={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">
                   Save Award Alert
                 </Button>
+              </CardContent>
+            </Card>
+
+            {/* F7 — TL Assignment Alert */}
+            <Card>
+              <CardHeader>
+                <CardTitle>TL Assignment Alert (F7)</CardTitle>
+                <CardDescription>Sends a batch email to the SVP of each vertical when awarded tenders need a Team Lead assigned. Recipients are auto-detected from the SVP user directory by group.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl border p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Enable TL Assignment Alert</p>
+                    <p className="text-xs text-muted-foreground">Fires once per award event per group. Enable seeding below before turning this on to avoid backfill emails.</p>
+                  </div>
+                  <Switch checked={tlAssignAlertEnabled} onCheckedChange={setTlAssignAlertEnabled} disabled={configSaving} />
+                </div>
+                <div className="flex items-center gap-3 rounded-xl border p-4 bg-slate-50">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Seed Existing Awards</p>
+                    <p className="text-xs text-muted-foreground">{tlAssignSeededAt ? `Seeded at: ${new Date(tlAssignSeededAt).toLocaleString()}` : 'Not seeded yet — run this before enabling to avoid backfill emails.'}</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={seedAwardAlerts} disabled={awardAssignSeedBusy}>{awardAssignSeedBusy ? 'Seeding…' : 'Seed Now'}</Button>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Subject Template</p>
+                  <p className="text-xs text-muted-foreground">Use <code>{'{{GROUP}}'}</code> for the vertical name.</p>
+                  <Input value={tlAssignTemplateSubject} onChange={e => setTlAssignTemplateSubject(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Intro Body Text</p>
+                  <Textarea rows={3} value={tlAssignTemplateBody} onChange={e => setTlAssignTemplateBody(e.target.value)} />
+                </div>
+                <Button onClick={saveTelecastConfig} loading={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">Save TL Alert Settings</Button>
+              </CardContent>
+            </Card>
+
+            {/* F27 — PM Assignment Alert */}
+            <Card>
+              <CardHeader>
+                <CardTitle>PM Assignment Alert (F27)</CardTitle>
+                <CardDescription>Sends a batch email to the SVP of each vertical when awarded tenders need a Project Manager assigned. Fires together with the TL alert on award detection.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl border p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Enable PM Assignment Alert</p>
+                    <p className="text-xs text-muted-foreground">Fires once per award event per group. Uses the same seeded data as the TL alert.</p>
+                  </div>
+                  <Switch checked={pmAssignAlertEnabled} onCheckedChange={setPmAssignAlertEnabled} disabled={configSaving} />
+                </div>
+                <div className="flex items-center gap-3 rounded-xl border p-4 bg-slate-50">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Seed Status</p>
+                    <p className="text-xs text-muted-foreground">{pmAssignSeededAt ? `Seeded at: ${new Date(pmAssignSeededAt).toLocaleString()}` : 'Not seeded yet — use the "Seed Now" button in the TL Alert section above.'}</p>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Subject Template</p>
+                  <Input value={pmAssignTemplateSubject} onChange={e => setPmAssignTemplateSubject(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Intro Body Text</p>
+                  <Textarea rows={3} value={pmAssignTemplateBody} onChange={e => setPmAssignTemplateBody(e.target.value)} />
+                </div>
+                <Button onClick={saveTelecastConfig} loading={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">Save PM Alert Settings</Button>
+              </CardContent>
+            </Card>
+
+            {/* F16 — Lead Notification */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Lead Notification (F16)</CardTitle>
+                <CardDescription>Sends a notification to a configurable recipient list when a row matches the selected trigger. Uses the standard Telecast email format.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl border p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Enable Lead Notifications</p>
+                    <p className="text-xs text-muted-foreground">Fires once per row per trigger condition. Seed first to avoid backfill emails.</p>
+                  </div>
+                  <Switch checked={leadNotifEnabled} onCheckedChange={setLeadNotifEnabled} disabled={configSaving} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Trigger Type</p>
+                  <select
+                    value={leadNotifTrigger}
+                    onChange={e => setLeadNotifTrigger(e.target.value as 'new_row' | 'awarded' | 'any_stage')}
+                    className="w-full border rounded-md px-3 py-2 text-sm"
+                  >
+                    <option value="new_row">New Row from Sheet Upload</option>
+                    <option value="awarded">Transition to AWARDED</option>
+                    <option value="any_stage">Any Row (all unnotified)</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Recipients</p>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Add email…"
+                      value={leadNotifEmailInput}
+                      onChange={e => setLeadNotifEmailInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && leadNotifEmailInput.trim()) {
+                          setLeadNotifRecipients(r => Array.from(new Set([...r, leadNotifEmailInput.trim()])));
+                          setLeadNotifEmailInput('');
+                        }
+                      }}
+                    />
+                    <Button variant="outline" size="sm" onClick={() => { if (leadNotifEmailInput.trim()) { setLeadNotifRecipients(r => Array.from(new Set([...r, leadNotifEmailInput.trim()]))); setLeadNotifEmailInput(''); } }}>Add</Button>
+                  </div>
+                  {leadNotifRecipients.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {leadNotifRecipients.map(email => (
+                        <span key={email} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded-full">
+                          {email}
+                          <button onClick={() => setLeadNotifRecipients(r => r.filter(e => e !== email))} className="text-slate-400 hover:text-red-500">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 rounded-xl border p-4 bg-slate-50">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Seed Existing Rows</p>
+                    <p className="text-xs text-muted-foreground">{leadNotifSeededAt ? `Seeded at: ${new Date(leadNotifSeededAt).toLocaleString()}` : 'Not seeded yet — run before enabling to avoid backfill emails.'}</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={seedLeadNotif} disabled={leadNotifSeedBusy}>{leadNotifSeedBusy ? 'Seeding…' : 'Seed Now'}</Button>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Subject Template</p>
+                  <Input value={leadNotifTemplateSubject} onChange={e => setLeadNotifTemplateSubject(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Body Template</p>
+                  <Textarea rows={3} value={leadNotifTemplateBody} onChange={e => setLeadNotifTemplateBody(e.target.value)} />
+                </div>
+                <Button onClick={saveTelecastConfig} loading={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">Save Lead Notification Settings</Button>
+              </CardContent>
+            </Card>
+
+            {/* F22 — Award Value Report */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Award Value Report (F22)</CardTitle>
+                <CardDescription>Manually send an Excel report listing all AWARDED tenders with missing/zero value to all Master-role users.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-slate-600">The report will include all awarded tenders where the opportunity value, framework value, and call-off value are all empty or zero. The Excel file is sent as an attachment to all approved Master accounts.</p>
+                <Button onClick={sendAwardValueReport} disabled={awardReportSending} className="gap-2">
+                  {awardReportSending ? 'Sending…' : 'Send Award Value Report to Masters'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* F25 — Top Performer Card Visibility */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Top Performer KPI Card (F25)</CardTitle>
+                <CardDescription>Control who can see the Top Performer card on the Dashboard. Master users always see it. Toggle to show it to all users.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl border p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Show Top Performer Card for All Users</p>
+                    <p className="text-xs text-muted-foreground">When off, only Master-role users see the card.</p>
+                  </div>
+                  <Switch checked={topPerformerCardVisible} onCheckedChange={setTopPerformerCardVisible} disabled={configSaving} />
+                </div>
+                <Button onClick={saveTelecastConfig} loading={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">Save Visibility Setting</Button>
               </CardContent>
             </Card>
 

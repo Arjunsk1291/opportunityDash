@@ -1,4 +1,4 @@
-import { BarChart3, BriefcaseBusiness, Building2, FileCheck2, FileText, LayoutDashboard, Shield, Sparkles, Workflow } from 'lucide-react';
+import { BarChart3, BriefcaseBusiness, Building2, FileCheck2, FileText, LayoutDashboard, ListChecks, Shield, Sparkles } from 'lucide-react';
 export type PageKey =
   | 'dashboard'
   | 'opportunities'
@@ -16,7 +16,6 @@ export type PageKey =
   | 'master_telecast'
   | 'master_update'
   | 'master_export';
-  // NOTE: HireFlow is currently gated using existing master/admin access.
 
 export const PAGE_LABELS: Record<PageKey, string> = {
   dashboard: 'Dashboard',
@@ -72,5 +71,5 @@ export const NAV_ITEMS = [
   { title: 'Analytics', url: '/analytics', pageKey: 'analytics' as const, icon: BarChart3, section: 'main' as const },
   { title: 'BD Engagements', url: '/bd-engagements', pageKey: 'bd_engagements' as const, icon: BriefcaseBusiness, section: 'main' as const },
   { title: 'Master Panel', url: '/master', pageKey: 'master' as const, icon: Shield, section: 'admin' as const },
-  { title: 'HireFlow', url: '/hireflow', pageKey: 'master' as const, icon: Workflow, section: 'admin' as const },
+  { title: 'Upcoming', url: '/upcoming', pageKey: 'master' as const, icon: ListChecks, section: 'admin' as const },
 ];

@@ -120,6 +120,28 @@ const systemConfigSchema = new mongoose.Schema(
     exportTemplateIntroColor: { type: String, default: '#475569' },
     exportTemplateColumnWidths: { type: [Number], default: Array.from({ length: 12 }, () => 18) },
     exportTemplateRowHeights: { type: [Number], default: Array.from({ length: 20 }, () => 24) },
+    // Feature 7 — TL assignment alert to SVP on award detection
+    tlAssignAlertEnabled: { type: Boolean, default: false },
+    tlAssignAlertTemplateSubject: { type: String, default: 'Action Required: TL Assignment for Awarded Tenders — {{GROUP}}' },
+    tlAssignAlertTemplateBody: { type: String, default: 'Please assign a Team Lead for the following newly awarded tenders in your vertical.' },
+    tlAssignAlertTemplateStyle: { type: String, default: 'emerald_signal' },
+    tlAssignAlertSeededAt: { type: Date, default: null },
+    // Feature 27 — PM assignment alert to SVP on award detection
+    pmAssignAlertEnabled: { type: Boolean, default: false },
+    pmAssignAlertTemplateSubject: { type: String, default: 'Action Required: PM Assignment for Awarded Tenders — {{GROUP}}' },
+    pmAssignAlertTemplateBody: { type: String, default: 'Please assign a Project Manager for the following newly awarded tenders in your vertical.' },
+    pmAssignAlertTemplateStyle: { type: String, default: 'emerald_signal' },
+    pmAssignAlertSeededAt: { type: Date, default: null },
+    // Feature 16 — configurable lead notification
+    leadNotifEnabled: { type: Boolean, default: false },
+    leadNotifTrigger: { type: String, enum: ['new_row', 'awarded', 'any_stage'], default: 'new_row' },
+    leadNotifRecipients: { type: [String], default: [] },
+    leadNotifTemplateSubject: { type: String, default: 'Notification: New Tender — {{TENDER_NO}}' },
+    leadNotifTemplateBody: { type: String, default: 'This is an automated notification for the following opportunity.' },
+    leadNotifTemplateStyle: { type: String, default: 'avenir_blue' },
+    leadNotifSeededAt: { type: Date, default: null },
+    // Feature 25 — top performer card visibility
+    topPerformerCardVisible: { type: Boolean, default: false },
     lastUpdatedBy: { type: String, default: null },
     updatedBy: { type: String, default: null },
   },

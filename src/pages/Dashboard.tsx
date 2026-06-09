@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useTrackedAction } from '@/hooks/useTrackedAction';
 import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { FunnelChart } from '@/components/Dashboard/FunnelChart';
@@ -37,6 +37,7 @@ import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { getDisplayStatus, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
+import { TopPerformerCard } from '@/components/Dashboard/TopPerformerCard';
 import { isSubmissionWithinDays } from '@/lib/submissionDate';
 import aedSymbol from '@/assets/aed-symbol.png';
 
@@ -620,9 +621,33 @@ const tryStoreKpiDiagnostics = (reportId: string, report: KpiDiagnosticsReport) 
 const Dashboard = () => {
   const { opportunities, isLoading, error, lastSyncTime, isLiveRefreshActive } = useData();
   const { status: trackedStatus } = useTrackedAction();
-  const { isMaster } = useAuth();
+  const { isMaster, token } = useAuth();
   const { formatCurrency, currency, convertValue } = useCurrency();
+  const [topPerformerVisible, setTopPerformerVisible] = useState(false);
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${import.meta.env.VITE_API_URL || '/api'}/telecast/config`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        setTopPerformerVisible(isMaster || Boolean(data.topPerformerCardVisible));
+      })
+      .catch(() => {});
+  }, [token, isMaster]);
+
+  const handleTopPerformerVisibilityToggle = async (visible: boolean) => {
+    if (!token || !isMaster) return;
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL || '/api'}/telecast/config`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topPerformerCardVisible: visible }),
+      });
+      setTopPerformerVisible(visible || isMaster);
+    } catch (e) { /* silent */ }
+  };
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [awardAuditOpen, setAwardAuditOpen] = useState(false);
   const [awardAuditRows, setAwardAuditRows] = useState<AwardedValueAuditRow[]>([]);
@@ -1411,6 +1436,15 @@ const Dashboard = () => {
         ))}
         </div>
       </section>
+
+      {(isMaster || topPerformerVisible) && (
+        <section className="px-4 sm:px-6 lg:px-8 mt-4">
+          <TopPerformerCard
+            visible={isMaster || topPerformerVisible}
+            onVisibilityToggle={isMaster ? handleTopPerformerVisibilityToggle : undefined}
+          />
+        </section>
+      )}
 
       <Dialog open={awardAuditOpen} onOpenChange={setAwardAuditOpen}>
         <DialogContent className="max-w-5xl">

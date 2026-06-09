@@ -19,18 +19,13 @@ import Approval from './models/Approval.js';
 import AuthorizedUser from './models/AuthorizedUser.js';
 import AuthDiagnosticLog from './models/AuthDiagnosticLog.js';
 import LoginLog from './models/LoginLog.js';
-import TempCredentialLog from './models/TempCredentialLog.js';
+import TempAccess from './models/TempAccess.js';
 import Client from './models/Client.js';
 import Vendor from './models/Vendor.js';
 import PqActivity, { getPqModel } from './models/PqActivity.js';
 import PotentialOpportunity from './models/PotentialOpportunity.js';
 import BidDecision from './models/BidDecision.js';
-import HfOffice from './models/HfOffice.js';
-import HfDiscipline from './models/HfDiscipline.js';
-import HfSalaryBand from './models/HfSalaryBand.js';
-import HfCandidate from './models/HfCandidate.js';
-import HfCvFile from './models/HfCvFile.js';
-import HfOfferLetterTemplate from './models/HfOfferLetterTemplate.js';
+import UpcomingFeature from './models/UpcomingFeature.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import BDEngagement from './models/BDEngagement.js';
@@ -271,7 +266,40 @@ const authRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 20, ke
 const privilegedRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 120, keyPrefix: 'priv' });
 const pqImportRateLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 8, keyPrefix: 'pq-import' });
 const passwordResetRateLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 10, keyPrefix: 'pwd-reset' });
-const hireflowRateLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 120, keyPrefix: 'hireflow' });
+
+// Global mail rate limiter — max 5 emails per 10-minute window across all automated sends.
+const MAIL_RATE_WINDOW_MS = 10 * 60 * 1000;
+const MAIL_RATE_LIMIT = 5;
+const _mailRateWindow = { count: 0, windowStart: 0 };
+const _mailQueue = [];
+
+const canSendMail = () => {
+  const now = Date.now();
+  if (now - _mailRateWindow.windowStart > MAIL_RATE_WINDOW_MS) {
+    _mailRateWindow.count = 0;
+    _mailRateWindow.windowStart = now;
+  }
+  return _mailRateWindow.count < MAIL_RATE_LIMIT;
+};
+
+const queueMail = (label, sendFn) => {
+  _mailQueue.push({ fn: sendFn, label });
+};
+
+const drainMailQueue = async () => {
+  while (_mailQueue.length > 0 && canSendMail()) {
+    const item = _mailQueue.shift();
+    try {
+      _mailRateWindow.count++;
+      await item.fn();
+    } catch (e) {
+      console.error('[mailQueue.error]', item.label, e?.message);
+    }
+  }
+  if (_mailQueue.length > 0) {
+    console.log(`[mailQueue] ${_mailQueue.length} mail(s) queued — rate limit active, will retry next cycle`);
+  }
+};
 
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api/')) return next();
@@ -311,11 +339,12 @@ const upsertLocalAuthorizedUser = (email, updates = {}) => {
   return next;
 };
 
-const createSessionToken = (user) => {
+const createSessionToken = (user, extraPayload = {}) => {
   const secret = EFFECTIVE_JWT_SECRET;
   const payload = {
     email: String(user?.email || '').trim().toLowerCase(),
     role: String(user?.role || '').trim(),
+    ...extraPayload,
   };
   return jwt.sign(payload, secret, { expiresIn: '12h' });
 };
@@ -1328,6 +1357,57 @@ const buildTelecastEmailHtml = ({ values, renderedBody = '', styleKey = 'avenir_
   `;
 };
 
+const DASHBOARD_URL = String(process.env.APP_URL || 'https://avin.avenirenergy.me').replace(/\/$/, '');
+
+const buildAwardBatchEmailHtml = ({ rows = [], group = '', bodyText = '', styleKey = 'emerald_signal' }) => {
+  const style = getTelecastTemplateStyle(styleKey);
+  const colors = style.colors;
+  const formatValue = (v) => {
+    const n = Number(v);
+    if (!n) return '—';
+    return n >= 1_000_000 ? `AED ${(n / 1_000_000).toFixed(2)}M` : `AED ${n.toLocaleString()}`;
+  };
+  const rowsHtml = rows.map((r, i) => `
+    <tr style="background:${i % 2 === 0 ? '#ffffff' : colors.tableRowAlt};">
+      <td style="padding:10px 12px;font-size:13px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(r.opportunityRefNo || '—')}</td>
+      <td style="padding:10px 12px;font-size:13px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(r.tenderName || '—')}</td>
+      <td style="padding:10px 12px;font-size:13px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(r.clientName || '—')}</td>
+      <td style="padding:10px 12px;font-size:13px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(r.internalLead || '—')}</td>
+      <td style="padding:10px 12px;font-size:13px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(r.awardedDate || '—')}</td>
+      <td style="padding:10px 12px;font-size:13px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(formatValue(r.opportunityValue))}</td>
+    </tr>
+  `).join('');
+  return `
+    <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
+      <div style="max-width:800px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+        <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Award Alert</div>
+          <h1 style="margin:0;font-size:24px;line-height:1.2;">&#127942; Newly Awarded Tenders — ${escapeHtml(group)}</h1>
+        </div>
+        <div style="padding:24px 28px;">
+          ${bodyText ? `<p style="margin:0 0 18px;font-size:14px;line-height:1.7;color:#334155;">${nl2br(escapeHtml(bodyText))}</p>` : ''}
+          <table style="width:100%;border-collapse:collapse;border-spacing:0;border:1px solid ${colors.summaryBorder};border-radius:12px;overflow:hidden;">
+            <thead>
+              <tr style="background:${colors.tableHeaderBg};">
+                <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Ref No</th>
+                <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Tender Name</th>
+                <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Client</th>
+                <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Lead</th>
+                <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Awarded Date</th>
+                <th style="padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};border-bottom:1px solid ${colors.summaryBorder};">Value</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+          <div style="margin-top:28px;text-align:center;">
+            <a href="${DASHBOARD_URL}" style="display:inline-block;padding:12px 28px;background:${colors.headerBg};color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;letter-spacing:0.04em;">Open Dashboard &rarr;</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
 const buildIssueReportEmailHtml = ({
   styleKey = 'avenir_blue',
   reporter = '',
@@ -1749,6 +1829,135 @@ const sendBulkApprovalAlerts = async ({ opportunities = [], approvedBy = '', fil
   }
 
   return { success: true, results };
+};
+
+const sendAwardAlerts = async () => {
+  if (!isDatabaseReady()) return;
+  const config = await getSystemConfig();
+  if (!config.tlAssignAlertEnabled && !config.pmAssignAlertEnabled) return;
+
+  const newlyAwarded = await SyncedOpportunity.find({
+    canonicalStage: 'AWARDED',
+    awardEventNotified: { $ne: true },
+  }, {
+    opportunityRefNo: 1, tenderName: 1, clientName: 1, internalLead: 1,
+    awardedDate: 1, opportunityValue: 1, groupClassification: 1,
+  }).lean();
+  if (!newlyAwarded.length) return;
+
+  const byGroup = {};
+  for (const opp of newlyAwarded) {
+    const g = String(opp.groupClassification || 'OTHER').trim().toUpperCase();
+    if (!byGroup[g]) byGroup[g] = [];
+    byGroup[g].push(opp);
+  }
+
+  const { accessToken } = await getTelecastSendMailAccessToken();
+  const telecastSender = getTelecastSender();
+
+  for (const group of Object.keys(byGroup)) {
+    const rows = byGroup[group];
+    const svps = await AuthorizedUser.find({ role: 'SVP', assignedGroup: group, status: 'approved' }).lean();
+    const svpEmails = svps.map(s => String(s.email || '').trim().toLowerCase()).filter(Boolean);
+    if (!svpEmails.length) continue;
+
+    const toRecipients = svpEmails.map(e => ({ emailAddress: { address: e } }));
+
+    if (config.tlAssignAlertEnabled) {
+      const subject = (config.tlAssignAlertTemplateSubject || 'Action Required: TL Assignment — {{GROUP}}').replace('{{GROUP}}', group);
+      const html = buildAwardBatchEmailHtml({ rows, group, bodyText: config.tlAssignAlertTemplateBody, styleKey: config.tlAssignAlertTemplateStyle || 'emerald_signal' });
+      queueMail(`award-tl-${group}`, async () => {
+        const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: { subject, body: { contentType: 'HTML', content: html }, toRecipients }, saveToSentItems: true }),
+        });
+        if (!resp.ok) {
+          const p = await resp.json().catch(() => ({}));
+          throw new Error(p?.error?.message || `Graph sendMail failed ${resp.status}`);
+        }
+        console.log(`[award-tl-alert] Sent to ${svpEmails.join(',')} for group ${group}, ${rows.length} rows`);
+      });
+    }
+
+    if (config.pmAssignAlertEnabled) {
+      const subject = (config.pmAssignAlertTemplateSubject || 'Action Required: PM Assignment — {{GROUP}}').replace('{{GROUP}}', group);
+      const html = buildAwardBatchEmailHtml({ rows, group, bodyText: config.pmAssignAlertTemplateBody, styleKey: config.pmAssignAlertTemplateStyle || 'emerald_signal' });
+      queueMail(`award-pm-${group}`, async () => {
+        const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: { subject, body: { contentType: 'HTML', content: html }, toRecipients }, saveToSentItems: true }),
+        });
+        if (!resp.ok) {
+          const p = await resp.json().catch(() => ({}));
+          throw new Error(p?.error?.message || `Graph sendMail failed ${resp.status}`);
+        }
+        console.log(`[award-pm-alert] Sent to ${svpEmails.join(',')} for group ${group}, ${rows.length} rows`);
+      });
+    }
+  }
+
+  const ids = newlyAwarded.map(r => r._id);
+  await SyncedOpportunity.bulkWrite(ids.map(id => ({
+    updateOne: {
+      filter: { _id: id },
+      update: { $set: { awardEventNotified: true, awardEventNotifiedAt: new Date(), awardEventSource: 'award_batch_scheduler' } },
+    },
+  })), { ordered: false });
+};
+
+const sendLeadNotifications = async () => {
+  if (!isDatabaseReady()) return;
+  const config = await getSystemConfig();
+  if (!config.leadNotifEnabled) return;
+  const recipients = Array.isArray(config.leadNotifRecipients) ? config.leadNotifRecipients.filter(Boolean) : [];
+  if (!recipients.length) return;
+
+  let query;
+  if (config.leadNotifTrigger === 'awarded') {
+    query = { canonicalStage: 'AWARDED', leadNotifAlerted: { $ne: true } };
+  } else if (config.leadNotifTrigger === 'any_stage') {
+    query = { leadNotifAlerted: { $ne: true } };
+  } else {
+    const since = config.leadNotifSeededAt ? new Date(config.leadNotifSeededAt) : new Date(0);
+    query = { createdAt: { $gt: since }, leadNotifAlerted: { $ne: true } };
+  }
+
+  const rows = await SyncedOpportunity.find(query, {
+    opportunityRefNo: 1, tenderName: 1, clientName: 1, groupClassification: 1,
+    internalLead: 1, canonicalStage: 1, syncedAt: 1,
+  }).lean();
+  if (!rows.length) return;
+
+  const { accessToken } = await getTelecastSendMailAccessToken();
+  const toRecipients = recipients.map(e => ({ emailAddress: { address: e } }));
+
+  for (const row of rows) {
+    const values = getTemplateValues(row);
+    const subject = renderTemplate(config.leadNotifTemplateSubject || 'Notification: {{TENDER_NO}}', values);
+    const bodyRendered = renderTemplate(config.leadNotifTemplateBody || '{{TENDER_NAME}} — {{CLIENT}}', values);
+    const html = buildTelecastEmailHtml({ values, renderedBody: bodyRendered, styleKey: config.leadNotifTemplateStyle || 'avenir_blue' });
+    const refNo = String(row.opportunityRefNo || row._id);
+    queueMail(`lead-notif-${refNo}`, async () => {
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: { subject, body: { contentType: 'HTML', content: html }, toRecipients }, saveToSentItems: true }),
+      });
+      if (!resp.ok) {
+        const p = await resp.json().catch(() => ({}));
+        throw new Error(p?.error?.message || `Graph sendMail failed ${resp.status}`);
+      }
+    });
+  }
+
+  await SyncedOpportunity.bulkWrite(rows.map(r => ({
+    updateOne: {
+      filter: { _id: r._id },
+      update: { $set: { leadNotifAlerted: true, leadNotifAlertedAt: new Date(), leadNotifAlertedKey: `lead_notif_${r.opportunityRefNo || r._id}` } },
+    },
+  })), { ordered: false });
 };
 
 const sendDeadlineAlerts = async () => {
@@ -2275,12 +2484,16 @@ const scheduleDailyNotificationCheck = () => {
     notificationCheckRunning = true;
 
     try {
+      await drainMailQueue().catch(e => console.error('[mailQueue.drain.error]', e?.message));
       const deadlineResult = await sendDeadlineAlerts();
+      await sendAwardAlerts().catch(e => console.error('[award-alerts.error]', e?.message));
+      await sendLeadNotifications().catch(e => console.error('[lead-notif.error]', e?.message));
       const runKey = new Date().toISOString();
       console.log(JSON.stringify({
         runKey,
         deadlineSent: deadlineResult?.sent || 0,
         deadlineSkipped: deadlineResult?.skipped || 0,
+        mailQueued: _mailQueue.length,
       }));
     } catch (error) {
       const runKey = new Date().toISOString();
@@ -2339,6 +2552,38 @@ const verifyToken = async (req, res, next) => {
     const username = getUsernameFromRequest(req);
     if (!username) {
       return res.status(401).json({ error: 'Missing username authorization' });
+    }
+
+    // TempAccess users have TEMP-xxx email in the JWT
+    if (/^temp-\d+$/i.test(username)) {
+      const accessId = username.toUpperCase();
+      const tempRecord = await TempAccess.findOne({ accessId }).lean();
+      if (!tempRecord || !tempRecord.isActive) {
+        return res.status(403).json({ error: 'Temporary access not valid' });
+      }
+      if (tempRecord.validUntil && new Date(tempRecord.validUntil).getTime() <= Date.now()) {
+        return res.status(403).json({ error: 'Temporary access has expired' });
+      }
+      // Decode allowedPages from JWT (more reliable than DB since JWT is already validated)
+      const authHeader = req.headers.authorization;
+      let allowedPages = tempRecord.allowedPages || [];
+      if (authHeader?.startsWith('Bearer ')) {
+        try {
+          const decoded = jwt.verify(authHeader.substring(7), EFFECTIVE_JWT_SECRET);
+          if (Array.isArray(decoded?.allowedPages)) allowedPages = decoded.allowedPages;
+        } catch { /* use DB value */ }
+      }
+      req.user = {
+        email: accessId,
+        displayName: tempRecord.displayName || accessId,
+        role: 'TempUser',
+        status: 'approved',
+        assignedGroup: null,
+        userId: tempRecord._id,
+        isTempAccess: true,
+        allowedPages,
+      };
+      return next();
     }
 
     const user = await AuthorizedUser.findOne({ email: username });
@@ -2884,6 +3129,51 @@ app.post('/api/auth/login-password', authRateLimiter, async (req, res) => {
       return sendAuthFailure(res, req, 400, 'Email and password are required', 'missing_credentials', { requestedLogin: requestedLogin || '' });
     }
 
+    // TempAccess login — TEMP-001 style IDs bypass the regular AuthorizedUser flow
+    if (/^temp-\d+$/i.test(requestedLogin)) {
+      const accessId = requestedLogin.toUpperCase();
+      const tempRecord = await TempAccess.findOne({ accessId }).lean();
+      if (!tempRecord) {
+        return sendAuthFailure(res, req, 403, 'Invalid credentials', 'user_not_found', { requestedLogin });
+      }
+      if (!tempRecord.isActive) {
+        return sendAuthFailure(res, req, 403, 'Temporary access ID is inactive', 'temp_access_inactive', { accessId });
+      }
+      const now = Date.now();
+      if (tempRecord.validUntil && new Date(tempRecord.validUntil).getTime() <= now) {
+        return sendAuthFailure(res, req, 403, 'Temporary access has expired', 'temp_access_expired', { accessId, validUntil: tempRecord.validUntil });
+      }
+      if (tempRecord.validFrom && new Date(tempRecord.validFrom).getTime() > now) {
+        return sendAuthFailure(res, req, 403, 'Temporary access is not yet valid', 'temp_access_not_yet_valid', { accessId, validFrom: tempRecord.validFrom });
+      }
+      const passwordMatches = await verifyPassword(password, tempRecord.passwordHash);
+      if (!passwordMatches) {
+        return sendAuthFailure(res, req, 403, 'Invalid credentials', 'invalid_password', { accessId });
+      }
+      await TempAccess.updateOne({ _id: tempRecord._id }, { $set: { lastLoginAt: new Date() } });
+      const tempUser = { email: accessId, role: 'TempUser' };
+      const token = createSessionToken(tempUser, {
+        isTempAccess: true,
+        allowedPages: tempRecord.allowedPages || [],
+        validUntil: tempRecord.validUntil ? new Date(tempRecord.validUntil).getTime() : null,
+      });
+      return res.json({
+        success: true,
+        user: {
+          email: accessId,
+          displayName: tempRecord.displayName || accessId,
+          role: 'TempUser',
+          status: 'approved',
+          assignedGroup: null,
+          isTempAccess: true,
+          allowedPages: tempRecord.allowedPages || [],
+          validUntil: tempRecord.validUntil,
+          requiresPasswordChange: false,
+        },
+        sessionToken: token,
+      });
+    }
+
     const adminBypassEnabled = Boolean(DEFAULT_ADMIN_PASSWORD) && DEFAULT_ADMIN_PASSWORD.length >= 12;
     const adminBypassLogin = adminBypassEnabled && isConfiguredAdminUsername(email) && password === DEFAULT_ADMIN_PASSWORD;
 
@@ -3195,119 +3485,242 @@ app.post('/api/auth/password-reset/request', passwordResetRateLimiter, async (re
   }
 });
 
-app.post('/api/users/send-temp-credential', verifyToken, async (req, res) => {
+// ── TempAccess Management ─────────────────────────────────────────────────────
+
+const isMasterOrAdmin = (req) => ['Master', 'MASTER', 'Admin', 'ADMIN'].includes(req.user?.role);
+
+const generateTempAccessPassword = () => randomBytes(5).toString('hex').toUpperCase();
+
+const generateNextTempAccessId = async () => {
+  const last = await TempAccess.findOne({}, { accessId: 1 }).sort({ accessId: -1 }).lean();
+  if (!last?.accessId) return 'TEMP-001';
+  const num = parseInt(String(last.accessId).replace(/^TEMP-/i, ''), 10) || 0;
+  return `TEMP-${String(num + 1).padStart(3, '0')}`;
+};
+
+app.get('/api/admin/temp-access', verifyToken, async (req, res) => {
   try {
-    if (!await requireActionPermission(req, res, 'users_manage')) return;
-    if (!(req.user?.role === 'Master' || req.user?.role === 'MASTER')) {
-      return res.status(403).json({ error: 'Only Master users can send temporary credentials' });
-    }
-
-    const emails = Array.isArray(req.body?.emails) ? req.body.emails : [];
-    const uniqueEmails = Array.from(new Set(emails.map((value) => normalizeLoginEmail(value)).filter(Boolean)));
-    if (!uniqueEmails.length) return res.status(400).json({ error: 'No users selected' });
-
-    const expiryDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const expiryText = expiryDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
-    const telecastSender = getTelecastSender();
-    const { accessToken } = await getTelecastSendMailAccessToken();
-
-    const sent = [];
-    const tempPasswords = [];
-
-    for (const email of uniqueEmails) {
-      const user = await findAuthorizedUserByEmail(email);
-      if (!user) continue;
-      if (user.role === 'Master' || user.role === 'MASTER') {
-        continue;
-      }
-
-      const tempCode = generateTempCredential();
-      tempPasswords.push(tempCode);
-      const tempCodeHash = hashResetToken(tempCode);
-      user.passwordHash = await hashPassword(tempCode);
-      user.passwordChangedAt = new Date();
-      user.requiresPasswordChange = true;
-      user.failedLoginAttempts = 0;
-      user.accountLockedUntil = null;
-      user.lastFailedLoginAt = null;
-      user.tempAccessExpiresAt = expiryDate;
-      user.resetPasswordTokenHash = tempCodeHash;
-      user.resetPasswordExpiresAt = expiryDate;
-      await AuthorizedUser.updateOne(
-        { _id: user._id },
-        {
-          $set: {
-            passwordHash: user.passwordHash,
-            passwordChangedAt: user.passwordChangedAt,
-            requiresPasswordChange: true,
-            failedLoginAttempts: 0,
-            accountLockedUntil: null,
-            lastFailedLoginAt: null,
-            tempAccessExpiresAt: user.tempAccessExpiresAt,
-            resetPasswordTokenHash: user.resetPasswordTokenHash,
-            resetPasswordExpiresAt: user.resetPasswordExpiresAt,
-          },
-        },
-      );
-
-      const html = buildTempCredentialEmailHtml({
-        code: tempCode,
-        displayName: user.displayName || user.email,
-        expiresAt: expiryText,
-        styleKey: 'avenir_blue',
-      });
-
-      const graphResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${telecastSender}/sendMail`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: {
-            subject: 'Avenir Access · Temporary Password',
-            body: { contentType: 'HTML', content: html },
-            toRecipients: [{ emailAddress: { address: user.email } }],
-          },
-          saveToSentItems: 'true',
-        }),
-      });
-
-      if (!graphResponse.ok) {
-        const payload = await graphResponse.json().catch(() => ({}));
-        throw new Error(payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`);
-      }
-
-      sent.push(user.email);
-    }
-
-    await TempCredentialLog.create({
-      createdBy: String(req.user?.email || ''),
-      createdByRole: String(req.user?.role || ''),
-      targetEmails: sent,
-      tempPasswords,
-      sentCount: sent.length,
-      expiresAt: expiryDate,
-    });
-
-    return res.json({ success: true, sentCount: sent.length, sent });
+    if (!isMasterOrAdmin(req)) return res.status(403).json({ error: 'Master/Admin only' });
+    const records = await TempAccess.find({}).sort({ createdAt: -1 }).lean();
+    res.json({ success: true, records: records.map(r => ({ ...mapIdField(r), passwordHash: undefined })) });
   } catch (error) {
-    console.error('[users.send-temp-credential.error]', error?.message || String(error));
-    return res.status(500).json({ error: error?.message || 'Failed to send temporary credentials' });
+    res.status(500).json({ error: error?.message || 'Failed to load temp access records' });
   }
 });
 
-app.get('/api/users/temp-credential-logs', verifyToken, async (req, res) => {
+app.post('/api/admin/temp-access', verifyToken, async (req, res) => {
   try {
-    if (!await requireActionPermission(req, res, 'users_manage')) return;
-    if (!(req.user?.role === 'Master' || req.user?.role === 'MASTER')) {
-      return res.status(403).json({ error: 'Only Master users can view temporary credential logs' });
+    if (!isMasterOrAdmin(req)) return res.status(403).json({ error: 'Master/Admin only' });
+    const { displayName, allowedPages, validFrom, validUntil, notes } = req.body || {};
+    if (!validUntil) return res.status(400).json({ error: 'validUntil is required' });
+
+    const accessId = await generateNextTempAccessId();
+    const plainPassword = generateTempAccessPassword();
+    const passwordHash = await hashPassword(plainPassword);
+
+    const record = await TempAccess.create({
+      accessId,
+      displayName: String(displayName || '').trim(),
+      passwordHash,
+      allowedPages: Array.isArray(allowedPages) ? allowedPages : [],
+      validFrom: validFrom ? new Date(validFrom) : null,
+      validUntil: new Date(validUntil),
+      isActive: true,
+      createdBy: String(req.user?.email || ''),
+      notes: String(notes || '').trim(),
+    });
+
+    res.json({ success: true, accessId, password: plainPassword, record: { ...mapIdField(record.toObject()), passwordHash: undefined } });
+  } catch (error) {
+    console.error('[temp-access.create.error]', error?.message);
+    res.status(500).json({ error: error?.message || 'Failed to create temp access' });
+  }
+});
+
+app.put('/api/admin/temp-access/:id', verifyToken, async (req, res) => {
+  try {
+    if (!isMasterOrAdmin(req)) return res.status(403).json({ error: 'Master/Admin only' });
+    const { displayName, allowedPages, validFrom, validUntil, isActive, notes } = req.body || {};
+    const update = {};
+    if (displayName !== undefined) update.displayName = String(displayName || '').trim();
+    if (Array.isArray(allowedPages)) update.allowedPages = allowedPages;
+    if (validFrom !== undefined) update.validFrom = validFrom ? new Date(validFrom) : null;
+    if (validUntil !== undefined) update.validUntil = new Date(validUntil);
+    if (isActive !== undefined) update.isActive = Boolean(isActive);
+    if (notes !== undefined) update.notes = String(notes || '').trim();
+    const record = await TempAccess.findByIdAndUpdate(req.params.id, { $set: update }, { new: true }).lean();
+    if (!record) return res.status(404).json({ error: 'Record not found' });
+    res.json({ success: true, record: { ...mapIdField(record), passwordHash: undefined } });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to update temp access' });
+  }
+});
+
+app.delete('/api/admin/temp-access/:id', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'MASTER'].includes(req.user?.role)) return res.status(403).json({ error: 'Master only' });
+    await TempAccess.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to delete temp access' });
+  }
+});
+
+app.post('/api/admin/temp-access/:id/reset-password', verifyToken, async (req, res) => {
+  try {
+    if (!isMasterOrAdmin(req)) return res.status(403).json({ error: 'Master/Admin only' });
+    const plainPassword = generateTempAccessPassword();
+    const passwordHash = await hashPassword(plainPassword);
+    const record = await TempAccess.findByIdAndUpdate(req.params.id, { $set: { passwordHash } }, { new: true }).lean();
+    if (!record) return res.status(404).json({ error: 'Record not found' });
+    res.json({ success: true, accessId: record.accessId, password: plainPassword });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to reset password' });
+  }
+});
+
+// ── Feature 22: Award Value Report ───────────────────────────────────────────
+
+app.post('/api/admin/award-value-report', verifyToken, async (req, res) => {
+  try {
+    if (!isMasterOrAdmin(req)) return res.status(403).json({ error: 'Master/Admin only' });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+
+    const awarded = await SyncedOpportunity.find(
+      { canonicalStage: 'AWARDED' },
+      { opportunityRefNo: 1, tenderName: 1, clientName: 1, groupClassification: 1, internalLead: 1, awardedDate: 1, opportunityValue: 1, frameworkTotalValue: 1, callOffActualValue: 1 }
+    ).lean();
+
+    const missing = awarded.filter(o => {
+      const hasValue = (Number(o.opportunityValue) > 0) || (o.frameworkTotalValue != null && Number(o.frameworkTotalValue) > 0) || (o.callOffActualValue != null && Number(o.callOffActualValue) > 0);
+      return !hasValue;
+    });
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const headers = ['Ref No', 'Tender Name', 'Client', 'Group', 'Lead', 'Awarded Date', 'Opportunity Value', 'Framework Value', 'Call-Off Value'];
+    const dataRows = missing.length
+      ? missing.map(o => [o.opportunityRefNo || '', o.tenderName || '', o.clientName || '', o.groupClassification || '', o.internalLead || '', o.awardedDate || '', o.opportunityValue || '', o.frameworkTotalValue ?? '', o.callOffActualValue ?? ''])
+      : [['No awarded tenders with missing values as of ' + dateStr, '', '', '', '', '', '', '', '']];
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Missing Value Report');
+    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const contentBytes = excelBuffer.toString('base64');
+
+    const masters = await AuthorizedUser.find({ role: { $in: ['Master', 'MASTER', 'Admin', 'ADMIN'] }, status: 'approved' }).lean();
+    const masterEmails = masters.map(u => String(u.email || '').trim().toLowerCase()).filter(Boolean);
+    if (!masterEmails.length) return res.status(400).json({ error: 'No master/admin users found to send to' });
+
+    const { accessToken } = await getTelecastSendMailAccessToken();
+    const toRecipients = masterEmails.map(e => ({ emailAddress: { address: e } }));
+    const subject = `Award Value Report — ${dateStr} (${missing.length} tender${missing.length !== 1 ? 's' : ''} missing value)`;
+
+    const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: { contentType: 'HTML', content: `<p>Please find attached the award value report as of ${dateStr}.</p><p>Awarded tenders with missing/zero value: <strong>${missing.length}</strong></p>` },
+          toRecipients,
+          hasAttachments: true,
+          attachments: [{
+            '@odata.type': '#microsoft.graph.fileAttachment',
+            name: `award-value-report-${dateStr}.xlsx`,
+            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            contentBytes,
+          }],
+        },
+        saveToSentItems: true,
+      }),
+    });
+
+    if (!graphResponse.ok) {
+      const p = await graphResponse.json().catch(() => ({}));
+      throw new Error(p?.error?.message || `Graph sendMail failed ${graphResponse.status}`);
     }
 
-    const logs = await TempCredentialLog.find().sort({ sentAt: -1 }).limit(50).lean();
-    res.json({
-      success: true,
-      logs: logs.map(mapIdField),
-    });
+    res.json({ success: true, recipientCount: masterEmails.length, missingCount: missing.length, awardedTotal: awarded.length });
   } catch (error) {
-    res.status(500).json({ error: error?.message || 'Failed to load temporary credential logs' });
+    console.error('[award-value-report.error]', error?.message);
+    res.status(500).json({ error: error?.message || 'Failed to send award value report' });
+  }
+});
+
+// ── Upcoming Features Roadmap ─────────────────────────────────────────────────
+
+const UPCOMING_SEED = [
+  { title: 'Feature #12 — TBD', description: '', category: 'General', status: 'Planned', priority: 'Medium', sortOrder: 12 },
+  { title: 'Feature #13 — TBD', description: '', category: 'General', status: 'Planned', priority: 'Medium', sortOrder: 13 },
+  { title: 'Feature #14 — TBD', description: '', category: 'General', status: 'Planned', priority: 'Medium', sortOrder: 14 },
+  { title: 'Feature #15 — TBD', description: '', category: 'General', status: 'Planned', priority: 'Medium', sortOrder: 15 },
+  { title: 'Feature #17 — TBD', description: '', category: 'General', status: 'Planned', priority: 'Medium', sortOrder: 17 },
+  { title: 'Feature #18 — TBD', description: '', category: 'General', status: 'Planned', priority: 'Medium', sortOrder: 18 },
+  { title: 'Feature #21 — TBD', description: '', category: 'General', status: 'Planned', priority: 'Medium', sortOrder: 21 },
+  { title: 'Feature #23 — TBD', description: '', category: 'General', status: 'Planned', priority: 'Medium', sortOrder: 23 },
+];
+
+const ensureUpcomingSeed = async () => {
+  const count = await UpcomingFeature.countDocuments({});
+  if (count === 0) {
+    await UpcomingFeature.insertMany(UPCOMING_SEED);
+  }
+};
+
+app.get('/api/upcoming', verifyToken, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    await ensureUpcomingSeed();
+    const items = await UpcomingFeature.find({}).sort({ sortOrder: 1, createdAt: 1 }).lean();
+    res.json({ success: true, items: items.map(mapIdField) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to fetch upcoming features' });
+  }
+});
+
+app.post('/api/upcoming', verifyToken, async (req, res) => {
+  try {
+    if (!isMasterOrAdmin(req)) return res.status(403).json({ error: 'Master/Admin only' });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const { title, description = '', category = 'General', status = 'Planned', priority = 'Medium', sortOrder = 0 } = req.body || {};
+    if (!String(title || '').trim()) return res.status(400).json({ error: 'Title is required' });
+    const item = await UpcomingFeature.create({ title: String(title).trim(), description, category, status, priority, sortOrder: Number(sortOrder) || 0, updatedBy: req.user.email });
+    res.json({ success: true, item: mapIdField(item.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to create upcoming feature' });
+  }
+});
+
+app.put('/api/upcoming/:id', verifyToken, async (req, res) => {
+  try {
+    if (!isMasterOrAdmin(req)) return res.status(403).json({ error: 'Master/Admin only' });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const { title, description, category, status, priority, sortOrder } = req.body || {};
+    const update = {};
+    if (title !== undefined) update.title = String(title).trim();
+    if (description !== undefined) update.description = description;
+    if (category !== undefined) update.category = category;
+    if (status !== undefined) update.status = status;
+    if (priority !== undefined) update.priority = priority;
+    if (sortOrder !== undefined) update.sortOrder = Number(sortOrder) || 0;
+    update.updatedBy = req.user.email;
+    const item = await UpcomingFeature.findByIdAndUpdate(req.params.id, { $set: update }, { new: true });
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true, item: mapIdField(item.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to update upcoming feature' });
+  }
+});
+
+app.delete('/api/upcoming/:id', verifyToken, async (req, res) => {
+  try {
+    if (!['Master', 'MASTER'].includes(String(req.user?.role || ''))) return res.status(403).json({ error: 'Master only' });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    await UpcomingFeature.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Failed to delete upcoming feature' });
   }
 });
 
@@ -4914,6 +5327,16 @@ const requireActionPermission = async (req, res, actionKey) => {
 };
 
 const requirePagePermission = async (req, res, pageKey) => {
+  // TempAccess users: check their personal allowedPages list
+  if (req.user?.isTempAccess) {
+    const allowed = Array.isArray(req.user.allowedPages) ? req.user.allowedPages : [];
+    if (!allowed.includes(pageKey)) {
+      res.status(403).json({ error: `Temporary access does not include page: ${pageKey}` });
+      return null;
+    }
+    return {}; // allowed — return truthy config placeholder
+  }
+
   const config = await getSystemConfig();
   const permissions = sanitizePageRoleAccess(config.pageRoleAccess || {});
   const excludePermissions = sanitizePageExcludeRoleAccess(config.pageRoleExcludeAccess || {});
@@ -5031,14 +5454,6 @@ const requirePageEdit = async (req, res, pageKey) => {
   return config;
 };
 
-const requireHireflowRole = (req, res) => {
-  const allowed = ['Master', 'Admin', 'SVP'].includes(String(req.user?.role || ''));
-  if (!allowed) {
-    res.status(403).json({ error: 'HireFlow access is limited to Master/Admin/SVP.' });
-    return false;
-  }
-  return true;
-};
 
 const refreshSystemConfigAlertTrackingFromSyncedOpportunities = async (config, updatedBy = '') => {
   const [keys, refs] = await Promise.all([
@@ -5432,6 +5847,26 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
       groupRecipients,
       keywords: TELECAST_TEMPLATE_KEYWORDS,
       weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
+      // Award alert fields
+      tlAssignAlertEnabled: Boolean(config.tlAssignAlertEnabled),
+      tlAssignAlertTemplateSubject: config.tlAssignAlertTemplateSubject || '',
+      tlAssignAlertTemplateBody: config.tlAssignAlertTemplateBody || '',
+      tlAssignAlertTemplateStyle: getTelecastTemplateStyle(config.tlAssignAlertTemplateStyle).key,
+      tlAssignAlertSeededAt: config.tlAssignAlertSeededAt || null,
+      pmAssignAlertEnabled: Boolean(config.pmAssignAlertEnabled),
+      pmAssignAlertTemplateSubject: config.pmAssignAlertTemplateSubject || '',
+      pmAssignAlertTemplateBody: config.pmAssignAlertTemplateBody || '',
+      pmAssignAlertTemplateStyle: getTelecastTemplateStyle(config.pmAssignAlertTemplateStyle).key,
+      pmAssignAlertSeededAt: config.pmAssignAlertSeededAt || null,
+      // Lead notif fields
+      leadNotifEnabled: Boolean(config.leadNotifEnabled),
+      leadNotifTrigger: config.leadNotifTrigger || 'new_row',
+      leadNotifRecipients: Array.isArray(config.leadNotifRecipients) ? config.leadNotifRecipients : [],
+      leadNotifTemplateSubject: config.leadNotifTemplateSubject || '',
+      leadNotifTemplateBody: config.leadNotifTemplateBody || '',
+      leadNotifTemplateStyle: getTelecastTemplateStyle(config.leadNotifTemplateStyle).key,
+      leadNotifSeededAt: config.leadNotifSeededAt || null,
+      topPerformerCardVisible: Boolean(config.topPerformerCardVisible),
       ...meta,
     });
   } catch (error) {
@@ -5465,7 +5900,42 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
       GTS: normalizeEmailList(groupRecipientsInput.GTS || []),
     };
 
+    // New feature fields
+    const tlAssignAlertEnabled = Boolean(req.body?.tlAssignAlertEnabled);
+    const tlAssignAlertTemplateSubject = String(req.body?.tlAssignAlertTemplateSubject || '').trim();
+    const tlAssignAlertTemplateBody = String(req.body?.tlAssignAlertTemplateBody || '').trim();
+    const tlAssignAlertTemplateStyle = getTelecastTemplateStyle(req.body?.tlAssignAlertTemplateStyle);
+    const pmAssignAlertEnabled = Boolean(req.body?.pmAssignAlertEnabled);
+    const pmAssignAlertTemplateSubject = String(req.body?.pmAssignAlertTemplateSubject || '').trim();
+    const pmAssignAlertTemplateBody = String(req.body?.pmAssignAlertTemplateBody || '').trim();
+    const pmAssignAlertTemplateStyle = getTelecastTemplateStyle(req.body?.pmAssignAlertTemplateStyle);
+    const leadNotifEnabled = Boolean(req.body?.leadNotifEnabled);
+    const leadNotifTrigger = ['new_row', 'awarded', 'any_stage'].includes(req.body?.leadNotifTrigger) ? req.body.leadNotifTrigger : 'new_row';
+    const leadNotifRecipients = Array.isArray(req.body?.leadNotifRecipients) ? req.body.leadNotifRecipients.map(e => String(e || '').trim().toLowerCase()).filter(Boolean) : [];
+    const leadNotifTemplateSubject = String(req.body?.leadNotifTemplateSubject || '').trim();
+    const leadNotifTemplateBody = String(req.body?.leadNotifTemplateBody || '').trim();
+    const leadNotifTemplateStyle = getTelecastTemplateStyle(req.body?.leadNotifTemplateStyle);
+    const topPerformerCardVisible = req.body?.topPerformerCardVisible !== undefined ? Boolean(req.body.topPerformerCardVisible) : undefined;
+
     const config = await getSystemConfig({ force: true });
+    const extraFields = {
+      tlAssignAlertEnabled,
+      tlAssignAlertTemplateSubject: tlAssignAlertTemplateSubject || 'Action Required: TL Assignment for Awarded Tenders — {{GROUP}}',
+      tlAssignAlertTemplateBody: tlAssignAlertTemplateBody || 'Please assign a Team Lead for the following newly awarded tenders in your vertical.',
+      tlAssignAlertTemplateStyle: tlAssignAlertTemplateStyle.key,
+      pmAssignAlertEnabled,
+      pmAssignAlertTemplateSubject: pmAssignAlertTemplateSubject || 'Action Required: PM Assignment for Awarded Tenders — {{GROUP}}',
+      pmAssignAlertTemplateBody: pmAssignAlertTemplateBody || 'Please assign a Project Manager for the following newly awarded tenders in your vertical.',
+      pmAssignAlertTemplateStyle: pmAssignAlertTemplateStyle.key,
+      leadNotifEnabled,
+      leadNotifTrigger,
+      leadNotifRecipients,
+      leadNotifTemplateSubject: leadNotifTemplateSubject || 'Notification: New Tender — {{TENDER_NO}}',
+      leadNotifTemplateBody: leadNotifTemplateBody || 'This is an automated notification for the following opportunity.',
+      leadNotifTemplateStyle: leadNotifTemplateStyle.key,
+    };
+    if (topPerformerCardVisible !== undefined) extraFields.topPerformerCardVisible = topPerformerCardVisible;
+
     const updated = await persistSystemConfigFields(config, {
       telecastTemplateSubject: templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}',
       telecastTemplateBody: templateBody || 'New row detected for {{TENDER_NO}}',
@@ -5482,6 +5952,7 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
       telecastSendDelayMinutes: telecastSendDelayMinutes || 0,
       telecastGroupRecipients: groupRecipients,
       telecastKeywordHelp: TELECAST_TEMPLATE_KEYWORDS,
+      ...extraFields,
     }, req.user.email, 'telecast_config_write');
     const meta = addConfigMetaHeaders(res, updated);
 
@@ -5702,6 +6173,42 @@ app.get('/api/notifications/alerted', verifyToken, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Seed endpoints — mark existing rows as already notified so no backfill emails fire when enabling
+
+app.post('/api/telecast/seed-award-alerts', verifyToken, async (req, res) => {
+  try {
+    if (!isMasterOrAdmin(req)) return res.status(403).json({ error: 'Master/Admin only' });
+    const now = new Date();
+    const result = await SyncedOpportunity.updateMany(
+      { canonicalStage: 'AWARDED', awardEventNotified: { $ne: true } },
+      { $set: { awardEventNotified: true, awardEventNotifiedAt: now, awardEventSource: 'manual_seed' } }
+    );
+    const config = await getSystemConfig({ force: true });
+    await persistSystemConfigFields(config, { tlAssignAlertSeededAt: now, pmAssignAlertSeededAt: now }, req.user.email, 'telecast_config_write');
+    res.json({ success: true, seeded: result.modifiedCount });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Seed failed' });
+  }
+});
+
+app.post('/api/telecast/seed-lead-notif', verifyToken, async (req, res) => {
+  try {
+    if (!isMasterOrAdmin(req)) return res.status(403).json({ error: 'Master/Admin only' });
+    const config = await getSystemConfig({ force: true });
+    const trigger = config.leadNotifTrigger || 'new_row';
+    let query;
+    if (trigger === 'awarded') query = { canonicalStage: 'AWARDED', leadNotifAlerted: { $ne: true } };
+    else if (trigger === 'any_stage') query = { leadNotifAlerted: { $ne: true } };
+    else query = { leadNotifAlerted: { $ne: true } };
+    const now = new Date();
+    const result = await SyncedOpportunity.updateMany(query, { $set: { leadNotifAlerted: true, leadNotifAlertedAt: now, leadNotifAlertedKey: 'manual_seed' } });
+    await persistSystemConfigFields(config, { leadNotifSeededAt: now }, req.user.email, 'telecast_config_write');
+    res.json({ success: true, seeded: result.modifiedCount });
+  } catch (error) {
+    res.status(500).json({ error: error?.message || 'Seed failed' });
   }
 });
 
@@ -6797,1066 +7304,6 @@ const parseOptionalDate = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-// --- HireFlow (MongoDB) ---
-const HF_UPLOAD_ROOT = path.join(__dirname, 'uploads', 'hireflow', 'cvs');
-const ensureDir = async (dirPath) => {
-  await fs.promises.mkdir(dirPath, { recursive: true });
-};
-
-const HF_CANDIDATE_STATUS = ['new', 'reviewing', 'interview', 'offer', 'hired', 'rejected'];
-const HF_LOCATION_PREF = ['UAE', 'India', 'Either', ''];
-
-const hfOfficeSchema = z.object({
-  code: z.string().trim().min(1).max(12),
-  name: z.string().trim().min(1).max(80),
-  country: z.string().trim().min(1).max(80),
-  currency: z.string().trim().min(1).max(8),
-  active: z.boolean().optional().default(true),
-});
-
-const hfDisciplineSchema = z.object({
-  name: z.string().trim().min(1).max(80),
-  description: z.string().trim().max(300).optional().default(''),
-  active: z.boolean().optional().default(true),
-});
-
-const hfSalaryBandSchema = z.object({
-  officeId: z.string().trim().min(1),
-  disciplineId: z.string().trim().min(1),
-  minYears: z.coerce.number().min(0),
-  maxYears: z.coerce.number().min(0),
-  grade: z.string().trim().min(1).max(30),
-  salaryMin: z.coerce.number().min(0),
-  salaryMid: z.coerce.number().min(0),
-  salaryMax: z.coerce.number().min(0),
-  currency: z.string().trim().min(1).max(8),
-  effectiveFrom: z.union([z.string(), z.date()]).optional(),
-  active: z.boolean().optional().default(true),
-});
-
-const hfCandidatePatchSchema = z.object({
-  fullName: z.string().trim().min(1).max(120).optional(),
-  email: z.string().trim().max(200).optional(),
-  phone: z.string().trim().max(80).optional(),
-  currentLocation: z.string().trim().max(120).optional(),
-  nationality: z.string().trim().max(120).optional(),
-  disciplineId: z.string().trim().optional().nullable(),
-  officeId: z.string().trim().optional().nullable(),
-  locationPreference: z.enum(['UAE', 'India', 'Either', '']).optional(),
-  yearsExperience: z.coerce.number().min(0).max(80).optional().nullable(),
-  currentEmployer: z.string().trim().max(200).optional(),
-  currentPosition: z.string().trim().max(200).optional(),
-  currentSalary: z.coerce.number().min(0).optional().nullable(),
-  expectedSalary: z.coerce.number().min(0).optional().nullable(),
-  offeredSalary: z.coerce.number().min(0).optional().nullable(),
-  currency: z.string().trim().max(8).optional(),
-  noticePeriod: z.string().trim().max(120).optional(),
-  source: z.string().trim().max(120).optional(),
-  status: z.enum(['new', 'reviewing', 'interview', 'offer', 'hired', 'rejected']).optional(),
-  assignedTo: z.string().trim().max(200).optional(),
-  notes: z.string().trim().max(4000).optional(),
-});
-
-const HF_DISCIPLINE_KEYWORDS = {
-  'Project Management': ['project manager', 'pmp', 'planning engineer', 'primavera', 'project controls'],
-  'Procurement & Supply Chain': ['procurement', 'sourcing', 'supply chain', 'buyer', 'expeditor', 'logistics'],
-  Engineering: ['engineer', 'mechanical', 'electrical', 'civil', 'instrumentation', 'rotating', 'static', 'pipeline'],
-  'Finance & Accounts': ['accountant', 'accounts', 'finance', 'auditor', 'cpa', 'ifrs', 'sap fico'],
-  HR: ['human resources', 'hr', 'talent', 'recruiter', 'payroll', 'compensation'],
-  IT: ['developer', 'software', 'it support', 'sysadmin', 'network', 'devops', 'cloud', 'frontend', 'backend'],
-  'Sales & BD': ['business development', 'sales', 'account manager', 'tender', 'proposal', 'bid'],
-  Operations: ['operations', 'plant', 'production', 'facility', 'maintenance', 'hse'],
-};
-
-const splitSections = (text) => {
-  const headings = ['experience', 'education', 'skills', 'certifications', 'languages', 'summary'];
-  const lines = String(text || '').split(/\r?\n/);
-  const sections = { other: [] };
-  let current = 'other';
-  for (const line of lines) {
-    const raw = line.trim();
-    const key = headings.find((h) => raw.toLowerCase() === h || raw.toLowerCase().startsWith(`${h}:`));
-    if (key) {
-      current = key;
-      if (!sections[current]) sections[current] = [];
-      continue;
-    }
-    if (!sections[current]) sections[current] = [];
-    sections[current].push(line);
-  }
-  return sections;
-};
-
-const parseCvText = (text) => {
-  const rawText = String(text || '').replace(/\u0000/g, '').trim();
-  const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const topLines = lines.slice(0, 8);
-
-  const emailMatch = rawText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-  const email = emailMatch ? emailMatch[0].toLowerCase() : '';
-
-  const phoneMatch = rawText.match(/(\+?\d[\d\s().-]{7,}\d)/);
-  const phone = phoneMatch ? phoneMatch[1].replace(/\s+/g, ' ').trim() : '';
-
-  const nameLine = topLines.find((l) => {
-    if (/@/.test(l)) return false;
-    if ((l.match(/\d/g) || []).length >= 4) return false;
-    const words = l.split(/\s+/).filter(Boolean);
-    if (words.length < 2 || words.length > 5) return false;
-    const hasLetters = words.every((w) => /^[A-Za-z][A-Za-z'.-]*$/.test(w));
-    return hasLetters;
-  }) || '';
-
-  const fullName = nameLine
-    ? nameLine.replace(/\b\w/g, (m) => m.toUpperCase())
-    : '';
-
-  const locationLine = lines.find((l) => /\b(uae|dubai|abu dhabi|sharjah|india|mumbai|delhi|bengaluru|bangalore|chennai|hyderabad|pune)\b/i.test(l)) || '';
-  const currentLocation = locationLine ? locationLine.trim() : '';
-
-  let yearsExperience = null;
-  const yearsMatch = rawText.match(/(\d{1,2})\+?\s*years?\s*(of\s*)?experience/i);
-  if (yearsMatch) yearsExperience = Number(yearsMatch[1]);
-  if (yearsExperience == null) {
-    const yearMatches = rawText.match(/\b(19\d{2}|20\d{2})\b/g) || [];
-    const years = yearMatches.map((y) => Number(y)).filter((y) => y >= 1990 && y <= new Date().getFullYear());
-    const earliest = years.length ? Math.min(...years) : null;
-    if (earliest) yearsExperience = Math.max(0, new Date().getFullYear() - earliest);
-  }
-
-  const sections = splitSections(rawText);
-  const normalizeList = (valueLines) => String(valueLines || '')
-    .split(/\r?\n/)
-    .flatMap((l) => l.split(/[•·▪\u2022,\t]/g))
-    .map((s) => s.replace(/^\s*[-–—]\s*/, '').trim())
-    .filter(Boolean)
-    .slice(0, 80);
-
-  const skills = normalizeList((sections.skills || []).join('\n'));
-  const certifications = normalizeList((sections.certifications || []).join('\n'));
-  const education = normalizeList((sections.education || []).join('\n'));
-  const languages = normalizeList((sections.languages || []).join('\n'));
-
-  const periodRe = /((jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+)?(19\d{2}|20\d{2})\s*[-–—]\s*((jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+)?((19\d{2}|20\d{2})|present)/i;
-  const employmentHistory = [];
-  for (const line of sections.experience || []) {
-    if (periodRe.test(line)) employmentHistory.push(line.trim());
-    if (employmentHistory.length >= 20) break;
-  }
-
-  const lower = rawText.toLowerCase();
-  let disciplineGuess = '';
-  let bestScore = 0;
-  for (const [discipline, keywords] of Object.entries(HF_DISCIPLINE_KEYWORDS)) {
-    let score = 0;
-    for (const kw of keywords) if (lower.includes(kw)) score += 1;
-    if (score > bestScore) {
-      bestScore = score;
-      disciplineGuess = discipline;
-    }
-  }
-
-  const currentEmployer = employmentHistory.length ? employmentHistory[0] : '';
-  const currentPosition = '';
-
-  return {
-    fullName,
-    email,
-    phone,
-    currentLocation,
-    yearsExperience,
-    currentEmployer,
-    currentPosition,
-    skills,
-    certifications,
-    education,
-    languages,
-    employmentHistory,
-    disciplineGuess,
-    rawText,
-  };
-};
-
-const extractTextFromFile = async ({ filePath, mimeType }) => {
-  const buffer = await fs.promises.readFile(filePath);
-  const mt = String(mimeType || '').toLowerCase();
-  const ext = path.extname(filePath).toLowerCase();
-
-  if (mt.includes('pdf') || ext === '.pdf') {
-    const unpdf = await import('unpdf');
-    const result = await unpdf.extractText(buffer, { mergePages: true });
-    return String(result?.text || '');
-  }
-  if (mt.includes('word') || ext === '.docx') {
-    const mammoth = await import('mammoth');
-    const result = await mammoth.extractRawText({ buffer });
-    return String(result?.value || '');
-  }
-  if (mt.startsWith('text/') || ext === '.txt') {
-    return buffer.toString('utf8');
-  }
-  // Unsupported types -> empty text but still store file.
-  return '';
-};
-
-const ensureHireflowSeed = async () => {
-  const [officeCount, disciplineCount] = await Promise.all([
-    HfOffice.countDocuments({}),
-    HfDiscipline.countDocuments({}),
-  ]);
-  if (officeCount === 0) {
-    await HfOffice.insertMany([
-      { code: 'UAE', name: 'UAE', country: 'UAE', currency: 'AED', active: true },
-      { code: 'IND', name: 'India', country: 'India', currency: 'INR', active: true },
-    ]);
-  }
-  if (disciplineCount === 0) {
-    await HfDiscipline.insertMany([
-      { name: 'Project Management', description: '', active: true },
-      { name: 'Procurement & Supply Chain', description: '', active: true },
-      { name: 'Engineering', description: '', active: true },
-      { name: 'Finance & Accounts', description: '', active: true },
-      { name: 'HR', description: '', active: true },
-      { name: 'IT', description: '', active: true },
-      { name: 'Sales & BD', description: '', active: true },
-      { name: 'Operations', description: '', active: true },
-    ]);
-  }
-};
-
-const mapPqActivity = (doc) => {
-  const obj = doc && typeof doc.toObject === 'function' ? doc.toObject() : doc;
-  return mapIdField(obj);
-};
-
-app.get('/api/pq-activities', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'pq_activities_view')) return;
-    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
-
-    const q = clampString(req.query?.q, 200);
-    const status = clampString(req.query?.status, 64);
-    const tenant = normalizePqTenant(req.query?.tenant);
-    const filter = {};
-
-    filter.tenant = { $in: pqTenantAliases(tenant) };
-    if (status && PQ_STATUS_VALUES.includes(status)) {
-      filter.status = status;
-    }
-    if (q) {
-      filter.$or = [
-        { company: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
-        { registeredEmail: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
-      ];
-    }
-
-    const rows = await getPqModel(tenant).find(filter).sort({ lastUpdateDate: -1, updatedAt: -1, company: 1 }).lean();
-    res.json({ success: true, rows: rows.map(mapIdField) });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to load PQ activities' });
-  }
-});
-
-app.post('/api/pq-activities', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
-    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
-
-    const parsed = pqActivityCreateSchema.safeParse(req.body || {});
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
-
-    const value = parsed.data;
-    const tenant = normalizePqTenant(value.tenant);
-    const company = clampString(value.company, 120);
-    const registeredEmail = clampString(value.registeredEmail, 200);
-    const maxSnoDoc = await getPqModel(tenant).findOne({ tenant }).sort({ sNo: -1 }).select('sNo').lean();
-    const nextSno = ((maxSnoDoc?.sNo ?? 0) + 1);
-    const doc = await getPqModel(tenant).create({
-      tenant,
-      sNo: nextSno,
-      company,
-      status: value.status || 'Registration on Process',
-      workgroup: clampString(value.workgroup || '', 120),
-      registeredEmail,
-      userId: clampString(value.userId || '-', 200) || '-',
-      password: String(value.password || ''),
-      link: clampString(value.link || '-', 800) || '-',
-      imageLink: clampString(value.imageLink || '', 1200),
-      contactPerson: clampString(value.contactPerson || deriveContactPersonFromEmail(registeredEmail), 120),
-      renewalDate: parseOptionalDate(value.renewalDate),
-      lastUpdateDate: parseOptionalDate(value.lastUpdateDate),
-      notes: clampString(value.notes || '', 1000),
-      enquiries: clampString(value.enquiries || '', 2000),
-    });
-    res.json({ success: true, row: mapPqActivity(doc) });
-  } catch (error) {
-    const message = String(error?.message || error);
-    if (message.includes('E11000')) return res.status(409).json({ error: 'Company already exists' });
-    res.status(500).json({ error: message || 'Failed to create PQ activity' });
-  }
-});
-
-app.patch('/api/pq-activities/:id', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
-    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
-    const id = String(req.params.id || '').trim();
-    const tenant = normalizePqTenant(req.query?.tenant);
-    const parsed = pqActivityPatchSchema.safeParse(req.body || {});
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
-
-    const existing = await getPqModel(tenant).findById(id);
-    if (!existing) return res.status(404).json({ error: 'Not found' });
-    if (normalizePqTenant(existing.tenant) !== tenant) return res.status(404).json({ error: 'Not found' });
-
-    const next = parsed.data || {};
-    if (typeof next.sNo === 'number') existing.sNo = next.sNo;
-    if (typeof next.company === 'string') existing.company = clampString(next.company, 120);
-    if (typeof next.status === 'string') existing.status = next.status;
-    if (typeof next.workgroup === 'string') existing.workgroup = clampString(next.workgroup, 120);
-    if (typeof next.registeredEmail === 'string') existing.registeredEmail = clampString(next.registeredEmail, 200);
-    if (typeof next.userId === 'string') existing.userId = clampString(next.userId || '-', 200) || '-';
-    if (typeof next.password === 'string') existing.password = String(next.password);
-    if (typeof next.link === 'string') existing.link = clampString(next.link || '-', 800) || '-';
-    if (typeof next.imageLink === 'string') existing.imageLink = clampString(next.imageLink, 1200);
-    if (typeof next.contactPerson === 'string') existing.contactPerson = clampString(next.contactPerson, 120);
-    if ('renewalDate' in next) existing.renewalDate = parseOptionalDate(next.renewalDate);
-    if ('lastUpdateDate' in next) existing.lastUpdateDate = parseOptionalDate(next.lastUpdateDate);
-    if (typeof next.notes === 'string') existing.notes = clampString(next.notes, 1000);
-    if (typeof next.enquiries === 'string') existing.enquiries = clampString(next.enquiries, 2000);
-    await existing.save();
-    res.json({ success: true, row: mapPqActivity(existing) });
-  } catch (error) {
-    const message = String(error?.message || error);
-    if (message.includes('E11000')) return res.status(409).json({ error: 'Company already exists' });
-    res.status(500).json({ error: message || 'Failed to update PQ activity' });
-  }
-});
-
-app.delete('/api/pq-activities/:id', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
-    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
-    const id = String(req.params.id || '').trim();
-    const tenant = normalizePqTenant(req.query?.tenant);
-    const deleted = await getPqModel(tenant).findOneAndDelete({ _id: id, tenant });
-    if (!deleted) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to delete PQ activity' });
-  }
-});
-
-app.post(
-  '/api/pq-activities/import',
-  verifyToken,
-  pqImportRateLimiter,
-  express.raw({ type: ['application/octet-stream', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'], limit: '8mb' }),
-  async (req, res) => {
-    try {
-      if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
-      if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
-      const tenant = normalizePqTenant(req.query?.tenant);
-
-      const buffer = req.body instanceof Buffer ? req.body : Buffer.from([]);
-      if (!buffer.length) return res.status(400).json({ error: 'No file uploaded' });
-
-      const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
-      const firstSheetName = workbook.SheetNames[0];
-      if (!firstSheetName) return res.status(400).json({ error: 'Workbook has no sheets' });
-      const sheet = workbook.Sheets[firstSheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
-      if (!Array.isArray(rows) || rows.length < 2) return res.json({ success: true, added: 0, updated: 0 });
-
-      const headerRow = rows[0].map((h) => String(h || '').trim());
-      const normalizeHeader = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-      const headerMap = headerRow.reduce((acc, header, idx) => {
-        const key = normalizeHeader(header);
-        if (key) acc[key] = idx;
-        return acc;
-      }, {});
-
-      const colIdx = (candidates) => {
-        for (const c of candidates) {
-          const idx = headerMap[normalizeHeader(c)];
-          if (typeof idx === 'number') return idx;
-        }
-        return -1;
-      };
-
-      const idxSno = colIdx(['S.No', 'SNo', 'S No', 'S.No.']);
-      const idxCompany = colIdx(['Company']);
-      const idxStatus = colIdx(['Status']);
-      const idxWorkgroup = colIdx(['Workgroup', 'Work Group', 'Work Group/Dept', 'Department']);
-      const idxEmail = colIdx(['Registered Email', 'RegisteredEmail', 'Email']);
-      const idxUserId = colIdx(['User ID (Portal)', 'User ID Portal', 'User ID', 'Portal User ID']);
-      const idxPassword = colIdx(['Password(Portal)', 'Password (Portal)', 'Portal Password', 'Password']);
-      const idxLink = colIdx(['Link(Portal)', 'Link (Portal)', 'Portal Link', 'Link', 'URL']);
-      const idxImageLink = colIdx(['Image Link', 'Image', 'Logo', 'Logo Link', 'Image URL', 'Logo URL']);
-      const idxEnquiries = colIdx(['Enquiries', 'Enquiries/Notes', 'Inquiry', 'Inquiries', 'Queries']);
-
-      if (idxCompany < 0) return res.status(400).json({ error: 'Missing Company column' });
-
-      const ops = [];
-      for (let i = 1; i < rows.length; i += 1) {
-        const row = Array.isArray(rows[i]) ? rows[i] : [];
-        const company = clampString(row[idxCompany], 120);
-        if (!company) continue;
-
-        const registeredEmail = clampString(idxEmail >= 0 ? row[idxEmail] : '', 200);
-        const status = normalizePqStatus(idxStatus >= 0 ? row[idxStatus] : '');
-        const workgroup = clampString(idxWorkgroup >= 0 ? row[idxWorkgroup] : '', 120);
-        const sNoRaw = idxSno >= 0 ? Number(String(row[idxSno] || '').trim()) : NaN;
-        const userId = clampString(idxUserId >= 0 ? row[idxUserId] : '-', 200) || '-';
-        const password = String(idxPassword >= 0 ? row[idxPassword] : '');
-        const link = clampString(idxLink >= 0 ? row[idxLink] : '-', 800) || '-';
-        const imageLink = clampString(idxImageLink >= 0 ? row[idxImageLink] : '', 1200);
-        const enquiries = clampString(idxEnquiries >= 0 ? row[idxEnquiries] : '', 2000);
-        const contactPerson = deriveContactPersonFromEmail(registeredEmail);
-
-        const updateDoc = {
-          $set: {
-            status,
-            workgroup,
-            registeredEmail,
-            userId,
-            password,
-            link,
-            imageLink,
-            enquiries,
-          },
-          $setOnInsert: {
-            contactPerson: clampString(contactPerson, 120),
-            renewalDate: null,
-            notes: '',
-          },
-        };
-
-        if (Number.isFinite(sNoRaw)) {
-          updateDoc.$set.sNo = sNoRaw;
-        } else {
-          updateDoc.$setOnInsert.sNo = 0;
-        }
-
-        ops.push({
-          updateOne: {
-            filter: { tenant, company },
-            update: updateDoc,
-            upsert: true,
-            collation: { locale: 'en', strength: 2 },
-          },
-        });
-      }
-
-      let added = 0;
-      let updated = 0;
-      if (ops.length > 0) {
-        // Use bulkWrite for O(1) database trip instead of O(N) loop
-        const result = await getPqModel(tenant).bulkWrite(ops, { ordered: false });
-        added = result.upsertedCount;
-        updated = result.matchedCount;
-      }
-
-      res.json({ success: true, added, updated });
-    } catch (error) {
-      res.status(500).json({ error: error.message || 'Failed to import PQ activities' });
-    }
-  },
-);
-
-app.get('/api/pq-activities/export', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'pq_activities_view')) return;
-    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
-    const tenant = normalizePqTenant(req.query?.tenant);
-    const rows = await getPqModel(tenant).find({ tenant }).sort({ company: 1 }).lean();
-
-    const data = [
-      ['S.No', 'Company', 'Status', 'Workgroup', 'Registered Email', 'User ID (Portal)', 'Password(Portal)', 'Link(Portal)', 'Image Link', 'Renewal Date', 'Notes', 'Enquiries', 'Updated At'],
-      ...rows.map((r) => ([
-        r.sNo ?? '',
-        r.company ?? '',
-        r.status ?? '',
-        r.workgroup ?? '',
-        r.registeredEmail ?? '',
-        r.userId ?? '',
-        r.password ?? '',
-        r.link ?? '',
-        r.imageLink ?? '',
-        r.renewalDate ? new Date(r.renewalDate).toISOString().slice(0, 10) : '',
-        r.notes ?? '',
-        r.enquiries ?? '',
-        r.updatedAt ? new Date(r.updatedAt).toISOString() : '',
-      ])),
-    ];
-
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'PQ Activities');
-    const out = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=\"pq-activities-${tenant}-${new Date().toISOString().slice(0, 10)}.xlsx\"`);
-    res.send(out);
-  } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to export PQ activities' });
-  }
-});
-
-app.get('/api/eoi-duplicates/config', verifyToken, async (_req, res) => {
-  try {
-    const config = await getSystemConfig({ force: true });
-    const meta = addConfigMetaHeaders(res, config);
-    res.json({ success: true, showConvertedEoiRowsDefault: Boolean(config.showConvertedEoiRowsDefault), ...meta });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/eoi-duplicates/config', verifyToken, async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can update EOI duplicates config' });
-    }
-    const nextValue = Boolean(req.body?.showConvertedEoiRowsDefault);
-    const config = await getSystemConfig({ force: true });
-    const beforeHashes = { showConvertedEoiRowsDefault: hashJson(Boolean(config.showConvertedEoiRowsDefault)) };
-    const updated = await persistSystemConfigFields(config, {
-      showConvertedEoiRowsDefault: nextValue,
-    }, req.user.email, 'eoi_duplicates_config_write');
-    const meta = addConfigMetaHeaders(res, updated);
-
-    console.log(JSON.stringify({
-      tag: 'ADMIN_CONFIG_SAVE',
-      ts: new Date().toISOString(),
-      actor: req.user.email,
-      endpoint: '/api/eoi-duplicates/config',
-      before: beforeHashes,
-      after: { showConvertedEoiRowsDefault: hashJson(Boolean(updated.showConvertedEoiRowsDefault)) },
-    }));
-
-    res.json({ success: true, showConvertedEoiRowsDefault: Boolean(updated.showConvertedEoiRowsDefault), ...meta });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/export-template/config', verifyToken, async (_req, res) => {
-  try {
-    const config = await getSystemConfig();
-    const meta = addConfigMetaHeaders(res, config);
-    // Frontend expects the unprefixed ExportTemplateConfig shape.
-    const payload = {
-      sheetName: config.exportTemplateSheetName,
-      title: config.exportTemplateTitle,
-      introText: config.exportTemplateIntroText,
-      showLogo: config.exportTemplateShowLogo,
-      logoDataUrl: config.exportTemplateLogoDataUrl,
-      logoRow: config.exportTemplateLogoRow,
-      logoColumn: config.exportTemplateLogoColumn,
-      logoWidth: config.exportTemplateLogoWidth,
-      logoHeight: config.exportTemplateLogoHeight,
-      titleRow: config.exportTemplateTitleRow,
-      titleColumn: config.exportTemplateTitleColumn,
-      titleRowSpan: config.exportTemplateTitleRowSpan,
-      titleColumnSpan: config.exportTemplateTitleColumnSpan,
-      titleHorizontalAlign: config.exportTemplateTitleHorizontalAlign,
-      titleVerticalAlign: config.exportTemplateTitleVerticalAlign,
-      introRow: config.exportTemplateIntroRow,
-      introColumn: config.exportTemplateIntroColumn,
-      introRowSpan: config.exportTemplateIntroRowSpan,
-      introColumnSpan: config.exportTemplateIntroColumnSpan,
-      introHorizontalAlign: config.exportTemplateIntroHorizontalAlign,
-      introVerticalAlign: config.exportTemplateIntroVerticalAlign,
-      headerRow: config.exportTemplateHeaderRow,
-      headerColumn: config.exportTemplateHeaderColumn,
-      headerHorizontalAlign: config.exportTemplateHeaderHorizontalAlign,
-      headerVerticalAlign: config.exportTemplateHeaderVerticalAlign,
-      headerBackgroundColor: config.exportTemplateHeaderBackgroundColor,
-      headerTextColor: config.exportTemplateHeaderTextColor,
-      titleColor: config.exportTemplateTitleColor,
-      introColor: config.exportTemplateIntroColor,
-      columnWidths: config.exportTemplateColumnWidths,
-      rowHeights: config.exportTemplateRowHeights,
-    };
-    res.json({
-      success: true,
-      ...payload,
-      // Backward-compatible prefixed keys (older clients).
-      exportTemplateSheetName: payload.sheetName,
-      exportTemplateTitle: payload.title,
-      exportTemplateIntroText: payload.introText,
-      exportTemplateShowLogo: payload.showLogo,
-      exportTemplateLogoDataUrl: payload.logoDataUrl,
-      exportTemplateLogoRow: payload.logoRow,
-      exportTemplateLogoColumn: payload.logoColumn,
-      exportTemplateLogoWidth: payload.logoWidth,
-      exportTemplateLogoHeight: payload.logoHeight,
-      exportTemplateTitleRow: payload.titleRow,
-      exportTemplateTitleColumn: payload.titleColumn,
-      exportTemplateTitleRowSpan: payload.titleRowSpan,
-      exportTemplateTitleColumnSpan: payload.titleColumnSpan,
-      exportTemplateTitleHorizontalAlign: payload.titleHorizontalAlign,
-      exportTemplateTitleVerticalAlign: payload.titleVerticalAlign,
-      exportTemplateIntroRow: payload.introRow,
-      exportTemplateIntroColumn: payload.introColumn,
-      exportTemplateIntroRowSpan: payload.introRowSpan,
-      exportTemplateIntroColumnSpan: payload.introColumnSpan,
-      exportTemplateIntroHorizontalAlign: payload.introHorizontalAlign,
-      exportTemplateIntroVerticalAlign: payload.introVerticalAlign,
-      exportTemplateHeaderRow: payload.headerRow,
-      exportTemplateHeaderColumn: payload.headerColumn,
-      exportTemplateHeaderHorizontalAlign: payload.headerHorizontalAlign,
-      exportTemplateHeaderVerticalAlign: payload.headerVerticalAlign,
-      exportTemplateHeaderBackgroundColor: payload.headerBackgroundColor,
-      exportTemplateHeaderTextColor: payload.headerTextColor,
-      exportTemplateTitleColor: payload.titleColor,
-      exportTemplateIntroColor: payload.introColor,
-      exportTemplateColumnWidths: payload.columnWidths,
-      exportTemplateRowHeights: payload.rowHeights,
-      ...meta,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/export-template/config', verifyToken, async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can update export template config' });
-    }
-    const config = await getSystemConfig({ force: true });
-    const beforeHashes = {
-      exportTemplateTitle: hashJson(config.exportTemplateTitle || ''),
-      exportTemplateLogoDataUrl: hashJson(config.exportTemplateLogoDataUrl || ''),
-      exportTemplateColumnWidths: hashJson(config.exportTemplateColumnWidths || []),
-      exportTemplateRowHeights: hashJson(config.exportTemplateRowHeights || []),
-    };
-
-    const body = req.body || {};
-    // Persist fields used by the Master Panel export template designer.
-    // Support both unprefixed (current frontend) and prefixed (legacy) payloads.
-    const get = (key, legacyKey) => (body[key] !== undefined ? body[key] : body[legacyKey]);
-    if (get('sheetName', 'exportTemplateSheetName') !== undefined) config.exportTemplateSheetName = String(get('sheetName', 'exportTemplateSheetName') || '');
-    if (get('title', 'exportTemplateTitle') !== undefined) config.exportTemplateTitle = String(get('title', 'exportTemplateTitle') || '');
-    if (get('introText', 'exportTemplateIntroText') !== undefined) config.exportTemplateIntroText = String(get('introText', 'exportTemplateIntroText') || '');
-    if (get('showLogo', 'exportTemplateShowLogo') !== undefined) config.exportTemplateShowLogo = Boolean(get('showLogo', 'exportTemplateShowLogo'));
-    if (get('logoDataUrl', 'exportTemplateLogoDataUrl') !== undefined) config.exportTemplateLogoDataUrl = String(get('logoDataUrl', 'exportTemplateLogoDataUrl') || '');
-    if (get('logoRow', 'exportTemplateLogoRow') !== undefined) config.exportTemplateLogoRow = Number(get('logoRow', 'exportTemplateLogoRow')) || 1;
-    if (get('logoColumn', 'exportTemplateLogoColumn') !== undefined) config.exportTemplateLogoColumn = Number(get('logoColumn', 'exportTemplateLogoColumn')) || 1;
-    if (get('logoWidth', 'exportTemplateLogoWidth') !== undefined) config.exportTemplateLogoWidth = Number(get('logoWidth', 'exportTemplateLogoWidth')) || 150;
-    if (get('logoHeight', 'exportTemplateLogoHeight') !== undefined) config.exportTemplateLogoHeight = Number(get('logoHeight', 'exportTemplateLogoHeight')) || 46;
-    if (get('titleRow', 'exportTemplateTitleRow') !== undefined) config.exportTemplateTitleRow = Number(get('titleRow', 'exportTemplateTitleRow')) || 1;
-    if (get('titleColumn', 'exportTemplateTitleColumn') !== undefined) config.exportTemplateTitleColumn = Number(get('titleColumn', 'exportTemplateTitleColumn')) || 3;
-    if (get('titleRowSpan', 'exportTemplateTitleRowSpan') !== undefined) config.exportTemplateTitleRowSpan = Number(get('titleRowSpan', 'exportTemplateTitleRowSpan')) || 1;
-    if (get('titleColumnSpan', 'exportTemplateTitleColumnSpan') !== undefined) config.exportTemplateTitleColumnSpan = Number(get('titleColumnSpan', 'exportTemplateTitleColumnSpan')) || 4;
-    if (get('titleHorizontalAlign', 'exportTemplateTitleHorizontalAlign') !== undefined) config.exportTemplateTitleHorizontalAlign = String(get('titleHorizontalAlign', 'exportTemplateTitleHorizontalAlign') || 'left');
-    if (get('titleVerticalAlign', 'exportTemplateTitleVerticalAlign') !== undefined) config.exportTemplateTitleVerticalAlign = String(get('titleVerticalAlign', 'exportTemplateTitleVerticalAlign') || 'middle');
-    if (get('introRow', 'exportTemplateIntroRow') !== undefined) config.exportTemplateIntroRow = Number(get('introRow', 'exportTemplateIntroRow')) || 2;
-    if (get('introColumn', 'exportTemplateIntroColumn') !== undefined) config.exportTemplateIntroColumn = Number(get('introColumn', 'exportTemplateIntroColumn')) || 3;
-    if (get('introRowSpan', 'exportTemplateIntroRowSpan') !== undefined) config.exportTemplateIntroRowSpan = Number(get('introRowSpan', 'exportTemplateIntroRowSpan')) || 2;
-    if (get('introColumnSpan', 'exportTemplateIntroColumnSpan') !== undefined) config.exportTemplateIntroColumnSpan = Number(get('introColumnSpan', 'exportTemplateIntroColumnSpan')) || 5;
-    if (get('introHorizontalAlign', 'exportTemplateIntroHorizontalAlign') !== undefined) config.exportTemplateIntroHorizontalAlign = String(get('introHorizontalAlign', 'exportTemplateIntroHorizontalAlign') || 'left');
-    if (get('introVerticalAlign', 'exportTemplateIntroVerticalAlign') !== undefined) config.exportTemplateIntroVerticalAlign = String(get('introVerticalAlign', 'exportTemplateIntroVerticalAlign') || 'top');
-    if (get('headerRow', 'exportTemplateHeaderRow') !== undefined) config.exportTemplateHeaderRow = Number(get('headerRow', 'exportTemplateHeaderRow')) || 4;
-    if (get('headerColumn', 'exportTemplateHeaderColumn') !== undefined) config.exportTemplateHeaderColumn = Number(get('headerColumn', 'exportTemplateHeaderColumn')) || 1;
-    if (get('headerHorizontalAlign', 'exportTemplateHeaderHorizontalAlign') !== undefined) config.exportTemplateHeaderHorizontalAlign = String(get('headerHorizontalAlign', 'exportTemplateHeaderHorizontalAlign') || 'left');
-    if (get('headerVerticalAlign', 'exportTemplateHeaderVerticalAlign') !== undefined) config.exportTemplateHeaderVerticalAlign = String(get('headerVerticalAlign', 'exportTemplateHeaderVerticalAlign') || 'middle');
-    if (get('headerBackgroundColor', 'exportTemplateHeaderBackgroundColor') !== undefined) config.exportTemplateHeaderBackgroundColor = String(get('headerBackgroundColor', 'exportTemplateHeaderBackgroundColor') || '#1D4ED8');
-    if (get('headerTextColor', 'exportTemplateHeaderTextColor') !== undefined) config.exportTemplateHeaderTextColor = String(get('headerTextColor', 'exportTemplateHeaderTextColor') || '#FFFFFF');
-    if (get('titleColor', 'exportTemplateTitleColor') !== undefined) config.exportTemplateTitleColor = String(get('titleColor', 'exportTemplateTitleColor') || '#0F172A');
-    if (get('introColor', 'exportTemplateIntroColor') !== undefined) config.exportTemplateIntroColor = String(get('introColor', 'exportTemplateIntroColor') || '#475569');
-    const nextColumnWidths = get('columnWidths', 'exportTemplateColumnWidths');
-    const nextRowHeights = get('rowHeights', 'exportTemplateRowHeights');
-    if (Array.isArray(nextColumnWidths)) config.exportTemplateColumnWidths = nextColumnWidths.map((n) => Number(n) || 0);
-    if (Array.isArray(nextRowHeights)) config.exportTemplateRowHeights = nextRowHeights.map((n) => Number(n) || 0);
-
-    const updated = await persistSystemConfigFields(config, {
-      exportTemplateSheetName: config.exportTemplateSheetName,
-      exportTemplateTitle: config.exportTemplateTitle,
-      exportTemplateIntroText: config.exportTemplateIntroText,
-      exportTemplateShowLogo: config.exportTemplateShowLogo,
-      exportTemplateLogoDataUrl: config.exportTemplateLogoDataUrl,
-      exportTemplateLogoRow: config.exportTemplateLogoRow,
-      exportTemplateLogoColumn: config.exportTemplateLogoColumn,
-      exportTemplateLogoWidth: config.exportTemplateLogoWidth,
-      exportTemplateLogoHeight: config.exportTemplateLogoHeight,
-      exportTemplateTitleRow: config.exportTemplateTitleRow,
-      exportTemplateTitleColumn: config.exportTemplateTitleColumn,
-      exportTemplateTitleRowSpan: config.exportTemplateTitleRowSpan,
-      exportTemplateTitleColumnSpan: config.exportTemplateTitleColumnSpan,
-      exportTemplateTitleHorizontalAlign: config.exportTemplateTitleHorizontalAlign,
-      exportTemplateTitleVerticalAlign: config.exportTemplateTitleVerticalAlign,
-      exportTemplateIntroRow: config.exportTemplateIntroRow,
-      exportTemplateIntroColumn: config.exportTemplateIntroColumn,
-      exportTemplateIntroRowSpan: config.exportTemplateIntroRowSpan,
-      exportTemplateIntroColumnSpan: config.exportTemplateIntroColumnSpan,
-      exportTemplateIntroHorizontalAlign: config.exportTemplateIntroHorizontalAlign,
-      exportTemplateIntroVerticalAlign: config.exportTemplateIntroVerticalAlign,
-      exportTemplateHeaderRow: config.exportTemplateHeaderRow,
-      exportTemplateHeaderColumn: config.exportTemplateHeaderColumn,
-      exportTemplateHeaderHorizontalAlign: config.exportTemplateHeaderHorizontalAlign,
-      exportTemplateHeaderVerticalAlign: config.exportTemplateHeaderVerticalAlign,
-      exportTemplateHeaderBackgroundColor: config.exportTemplateHeaderBackgroundColor,
-      exportTemplateHeaderTextColor: config.exportTemplateHeaderTextColor,
-      exportTemplateTitleColor: config.exportTemplateTitleColor,
-      exportTemplateIntroColor: config.exportTemplateIntroColor,
-      exportTemplateColumnWidths: config.exportTemplateColumnWidths,
-      exportTemplateRowHeights: config.exportTemplateRowHeights,
-    }, req.user.email, 'export_template_config_write');
-    const meta = addConfigMetaHeaders(res, updated);
-
-    console.log(JSON.stringify({
-      tag: 'ADMIN_CONFIG_SAVE',
-      ts: new Date().toISOString(),
-      actor: req.user.email,
-      endpoint: '/api/export-template/config',
-      before: beforeHashes,
-      after: {
-        exportTemplateTitle: hashJson(config.exportTemplateTitle || ''),
-        exportTemplateLogoDataUrl: hashJson(config.exportTemplateLogoDataUrl || ''),
-        exportTemplateColumnWidths: hashJson(config.exportTemplateColumnWidths || []),
-        exportTemplateRowHeights: hashJson(config.exportTemplateRowHeights || []),
-      },
-    }));
-
-    res.json({ success: true, ...(await (async () => {
-      const payload = {
-        sheetName: config.exportTemplateSheetName,
-        title: updated.exportTemplateTitle,
-        introText: updated.exportTemplateIntroText,
-        showLogo: updated.exportTemplateShowLogo,
-        logoDataUrl: updated.exportTemplateLogoDataUrl,
-        logoRow: updated.exportTemplateLogoRow,
-        logoColumn: updated.exportTemplateLogoColumn,
-        logoWidth: updated.exportTemplateLogoWidth,
-        logoHeight: updated.exportTemplateLogoHeight,
-        titleRow: updated.exportTemplateTitleRow,
-        titleColumn: updated.exportTemplateTitleColumn,
-        titleRowSpan: updated.exportTemplateTitleRowSpan,
-        titleColumnSpan: updated.exportTemplateTitleColumnSpan,
-        titleHorizontalAlign: updated.exportTemplateTitleHorizontalAlign,
-        titleVerticalAlign: updated.exportTemplateTitleVerticalAlign,
-        introRow: updated.exportTemplateIntroRow,
-        introColumn: updated.exportTemplateIntroColumn,
-        introRowSpan: updated.exportTemplateIntroRowSpan,
-        introColumnSpan: updated.exportTemplateIntroColumnSpan,
-        introHorizontalAlign: updated.exportTemplateIntroHorizontalAlign,
-        introVerticalAlign: updated.exportTemplateIntroVerticalAlign,
-        headerRow: updated.exportTemplateHeaderRow,
-        headerColumn: updated.exportTemplateHeaderColumn,
-        headerHorizontalAlign: updated.exportTemplateHeaderHorizontalAlign,
-        headerVerticalAlign: updated.exportTemplateHeaderVerticalAlign,
-        headerBackgroundColor: updated.exportTemplateHeaderBackgroundColor,
-        headerTextColor: updated.exportTemplateHeaderTextColor,
-        titleColor: updated.exportTemplateTitleColor,
-        introColor: updated.exportTemplateIntroColor,
-        columnWidths: updated.exportTemplateColumnWidths,
-        rowHeights: updated.exportTemplateRowHeights,
-        ...meta,
-      };
-      return {
-        ...payload,
-        exportTemplateSheetName: payload.sheetName,
-        exportTemplateTitle: payload.title,
-        exportTemplateIntroText: payload.introText,
-        exportTemplateShowLogo: payload.showLogo,
-        exportTemplateLogoDataUrl: payload.logoDataUrl,
-        exportTemplateLogoRow: payload.logoRow,
-        exportTemplateLogoColumn: payload.logoColumn,
-        exportTemplateLogoWidth: payload.logoWidth,
-        exportTemplateLogoHeight: payload.logoHeight,
-        exportTemplateTitleRow: payload.titleRow,
-        exportTemplateTitleColumn: payload.titleColumn,
-        exportTemplateTitleRowSpan: payload.titleRowSpan,
-        exportTemplateTitleColumnSpan: payload.titleColumnSpan,
-        exportTemplateTitleHorizontalAlign: payload.titleHorizontalAlign,
-        exportTemplateTitleVerticalAlign: payload.titleVerticalAlign,
-        exportTemplateIntroRow: payload.introRow,
-        exportTemplateIntroColumn: payload.introColumn,
-        exportTemplateIntroRowSpan: payload.introRowSpan,
-        exportTemplateIntroColumnSpan: payload.introColumnSpan,
-        exportTemplateIntroHorizontalAlign: payload.introHorizontalAlign,
-        exportTemplateIntroVerticalAlign: payload.introVerticalAlign,
-        exportTemplateHeaderRow: payload.headerRow,
-        exportTemplateHeaderColumn: payload.headerColumn,
-        exportTemplateHeaderHorizontalAlign: payload.headerHorizontalAlign,
-        exportTemplateHeaderVerticalAlign: payload.headerVerticalAlign,
-        exportTemplateHeaderBackgroundColor: payload.headerBackgroundColor,
-        exportTemplateHeaderTextColor: payload.headerTextColor,
-        exportTemplateTitleColor: payload.titleColor,
-        exportTemplateIntroColor: payload.introColor,
-        exportTemplateColumnWidths: payload.columnWidths,
-        exportTemplateRowHeights: payload.rowHeights,
-      };
-    })()) });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// --- HireFlow API ---
-const hfUpload = multer({
-  storage: multer.diskStorage({
-    destination: async (_req, _file, cb) => {
-      try {
-        await ensureDir(path.join(__dirname, 'uploads', 'hireflow', 'tmp'));
-        cb(null, path.join(__dirname, 'uploads', 'hireflow', 'tmp'));
-      } catch (error) {
-        cb(error, path.join(__dirname, 'uploads', 'hireflow', 'tmp'));
-      }
-    },
-    filename: (_req, file, cb) => {
-      const safe = String(file.originalname || 'cv').replace(/[^a-z0-9._-]+/gi, '_').slice(0, 160);
-      cb(null, `${Date.now()}-${randomUUID()}-${safe}`);
-    },
-  }),
-  limits: { fileSize: 12 * 1024 * 1024 },
-});
-
-app.use('/api/hireflow', verifyToken, hireflowRateLimiter, async (req, res, next) => {
-  try {
-    if (!requireHireflowRole(req, res)) return;
-    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
-    await ensureHireflowSeed();
-    return next();
-  } catch (error) {
-    return res.status(500).json({ error: error?.message || 'HireFlow init failed' });
-  }
-});
-
-app.get('/api/hireflow/meta', async (_req, res) => {
-  const [offices, disciplines] = await Promise.all([
-    HfOffice.find({ active: true }).sort({ code: 1 }).lean(),
-    HfDiscipline.find({ active: true }).sort({ name: 1 }).lean(),
-  ]);
-  res.json({ success: true, offices: offices.map(mapIdField), disciplines: disciplines.map(mapIdField) });
-});
-
-app.get('/api/hireflow/candidates', async (req, res) => {
-  try {
-    const q = clampString(req.query?.q, 200);
-    const status = clampString(req.query?.status, 32);
-    const filter = {};
-    if (status && HF_CANDIDATE_STATUS.includes(status)) filter.status = status;
-    if (q) {
-      filter.$or = [
-        { fullName: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
-        { email: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
-        { currentEmployer: { $regex: q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } },
-      ];
-    }
-    const rows = await HfCandidate.find(filter).sort({ updatedAt: -1 }).limit(500).lean();
-    res.json({ success: true, rows: rows.map(mapIdField) });
-  } catch (error) {
-    res.status(500).json({ error: error?.message || 'Failed to load candidates' });
-  }
-});
-
-app.get('/api/hireflow/candidates/:id', async (req, res) => {
-  try {
-    const id = String(req.params.id || '').trim();
-    const candidate = await HfCandidate.findById(id).lean();
-    if (!candidate) return res.status(404).json({ error: 'Not found' });
-    const files = await HfCvFile.find({ candidateId: candidate._id }).sort({ createdAt: -1 }).lean();
-    res.json({ success: true, candidate: mapIdField(candidate), files: files.map(mapIdField) });
-  } catch (error) {
-    res.status(500).json({ error: error?.message || 'Failed to load candidate' });
-  }
-});
-
-app.patch('/api/hireflow/candidates/:id', async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Write access requires Master/Admin.' });
-    const id = String(req.params.id || '').trim();
-    const parsed = hfCandidatePatchSchema.safeParse(req.body || {});
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
-    const existing = await HfCandidate.findById(id);
-    if (!existing) return res.status(404).json({ error: 'Not found' });
-
-    const next = parsed.data;
-    for (const [key, value] of Object.entries(next)) {
-      if (key === 'locationPreference' && value && !HF_LOCATION_PREF.includes(value)) continue;
-      existing[key] = value;
-    }
-    await existing.save();
-    res.json({ success: true, candidate: mapIdField(existing.toObject()) });
-  } catch (error) {
-    res.status(500).json({ error: error?.message || 'Update failed' });
-  }
-});
-
-app.post('/api/hireflow/upload', hfUpload.single('file'), async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Upload requires Master/Admin.' });
-    const file = req.file;
-    if (!file) return res.status(400).json({ error: 'Missing file' });
-
-    const rawText = await extractTextFromFile({ filePath: file.path, mimeType: file.mimetype });
-    const parsed = parseCvText(rawText);
-
-    // Lookup discipline by guess (best effort).
-    let disciplineId = null;
-    if (parsed.disciplineGuess) {
-      const d = await HfDiscipline.findOne({ name: parsed.disciplineGuess }).lean();
-      if (d) disciplineId = d._id;
-    }
-
-    const candidate = await HfCandidate.create({
-      fullName: parsed.fullName || file.originalname.replace(/\.[a-z0-9]+$/i, '').slice(0, 120) || 'Unknown',
-      email: parsed.email || '',
-      phone: parsed.phone || '',
-      currentLocation: parsed.currentLocation || '',
-      disciplineId,
-      yearsExperience: typeof parsed.yearsExperience === 'number' ? parsed.yearsExperience : null,
-      currentEmployer: parsed.currentEmployer || '',
-      currentPosition: parsed.currentPosition || '',
-      status: 'new',
-      createdBy: req.user.email,
-      assignedTo: req.user.email,
-      extracted: JSON.parse(JSON.stringify(parsed || {})),
-      rawText: String(parsed.rawText || '').slice(0, 180000),
-      notes: '',
-    });
-
-    const candidateDir = path.join(HF_UPLOAD_ROOT, String(candidate._id));
-    await ensureDir(candidateDir);
-    const finalPath = path.join(candidateDir, file.filename);
-    await fs.promises.rename(file.path, finalPath);
-
-    const cv = await HfCvFile.create({
-      candidateId: candidate._id,
-      storagePath: finalPath,
-      fileName: file.originalname,
-      mimeType: file.mimetype,
-      sizeBytes: file.size,
-      uploadedBy: req.user.email,
-    });
-
-    res.json({ success: true, candidate: mapIdField(candidate.toObject()), file: mapIdField(cv.toObject()) });
-  } catch (error) {
-    res.status(500).json({ error: error?.message || 'Upload failed' });
-  }
-});
-
-app.get('/api/hireflow/cv-files/:id/content', async (req, res) => {
-  try {
-    const id = String(req.params.id || '').trim();
-    const file = await HfCvFile.findById(id).lean();
-    if (!file) return res.status(404).json({ error: 'Not found' });
-    if (!file.storagePath || !String(file.storagePath).startsWith(HF_UPLOAD_ROOT)) return res.status(403).json({ error: 'Forbidden' });
-    const stat = await fs.promises.stat(file.storagePath).catch(() => null);
-    if (!stat) return res.status(404).json({ error: 'Not found' });
-    res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename=\"${String(file.fileName || 'cv').replace(/\"/g, '')}\"`);
-    fs.createReadStream(file.storagePath).pipe(res);
-  } catch (error) {
-    res.status(500).json({ error: error?.message || 'Failed to load file' });
-  }
-});
-
-app.get('/api/hireflow/offices', async (_req, res) => {
-  const rows = await HfOffice.find({}).sort({ code: 1 }).lean();
-  res.json({ success: true, rows: rows.map(mapIdField) });
-});
-
-app.post('/api/hireflow/offices', async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Write access requires Master/Admin.' });
-    const parsed = hfOfficeSchema.safeParse(req.body || {});
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
-    const row = await HfOffice.create(parsed.data);
-    res.json({ success: true, row: mapIdField(row.toObject()) });
-  } catch (error) {
-    const msg = String(error?.message || error);
-    if (msg.includes('E11000')) return res.status(409).json({ error: 'Office code already exists' });
-    res.status(500).json({ error: msg });
-  }
-});
-
-app.patch('/api/hireflow/offices/:id', async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Write access requires Master/Admin.' });
-    const id = String(req.params.id || '').trim();
-    const parsed = hfOfficeSchema.partial().safeParse(req.body || {});
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
-    const row = await HfOffice.findByIdAndUpdate(id, { $set: parsed.data }, { new: true });
-    if (!row) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, row: mapIdField(row.toObject()) });
-  } catch (error) {
-    res.status(500).json({ error: error?.message || 'Update failed' });
-  }
-});
-
-app.get('/api/hireflow/disciplines', async (_req, res) => {
-  const rows = await HfDiscipline.find({}).sort({ name: 1 }).lean();
-  res.json({ success: true, rows: rows.map(mapIdField) });
-});
-
-app.post('/api/hireflow/disciplines', async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Write access requires Master/Admin.' });
-    const parsed = hfDisciplineSchema.safeParse(req.body || {});
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
-    const row = await HfDiscipline.create(parsed.data);
-    res.json({ success: true, row: mapIdField(row.toObject()) });
-  } catch (error) {
-    const msg = String(error?.message || error);
-    if (msg.includes('E11000')) return res.status(409).json({ error: 'Discipline already exists' });
-    res.status(500).json({ error: msg });
-  }
-});
-
-app.patch('/api/hireflow/disciplines/:id', async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Write access requires Master/Admin.' });
-    const id = String(req.params.id || '').trim();
-    const parsed = hfDisciplineSchema.partial().safeParse(req.body || {});
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
-    const row = await HfDiscipline.findByIdAndUpdate(id, { $set: parsed.data }, { new: true });
-    if (!row) return res.status(404).json({ error: 'Not found' });
-    res.json({ success: true, row: mapIdField(row.toObject()) });
-  } catch (error) {
-    res.status(500).json({ error: error?.message || 'Update failed' });
-  }
-});
-
-app.get('/api/hireflow/salary-bands', async (req, res) => {
-  try {
-    const officeId = clampString(req.query?.officeId, 64);
-    const disciplineId = clampString(req.query?.disciplineId, 64);
-    const years = req.query?.years !== undefined ? Number(req.query.years) : null;
-    const filter = { active: true };
-    if (officeId) filter.officeId = officeId;
-    if (disciplineId) filter.disciplineId = disciplineId;
-    if (Number.isFinite(years)) {
-      filter.minYears = { $lte: years };
-      filter.maxYears = { $gte: years };
-    }
-    const rows = await HfSalaryBand.find(filter).sort({ effectiveFrom: -1 }).limit(200).lean();
-    res.json({ success: true, rows: rows.map(mapIdField) });
-  } catch (error) {
-    res.status(500).json({ error: error?.message || 'Failed to load bands' });
-  }
-});
-
-app.post('/api/hireflow/salary-bands', async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) return res.status(403).json({ error: 'Write access requires Master/Admin.' });
-    const parsed = hfSalaryBandSchema.safeParse(req.body || {});
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', issues: parsed.error.issues });
-    const row = await HfSalaryBand.create({
-      ...parsed.data,
-      effectiveFrom: parsed.data.effectiveFrom ? new Date(parsed.data.effectiveFrom) : new Date(),
-      updatedBy: req.user.email,
-    });
-    res.json({ success: true, row: mapIdField(row.toObject()) });
-  } catch (error) {
-    res.status(500).json({ error: error?.message || 'Create failed' });
-  }
-});
-
 app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'opportunities_sheet_upload')) return;
@@ -8741,6 +8188,43 @@ app.get('/api/opportunities/stats', verifyToken, async (req, res) => {
   }
 });
 
+// ── Feature 25: Top Performer KPI ────────────────────────────────────────────
+
+app.get('/api/opportunities/top-performer', verifyToken, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const period = String(req.query.period || 'year');
+    const cutoff = period === 'year' ? new Date(new Date().getFullYear(), 0, 1) : new Date(0);
+
+    const query = { canonicalStage: 'AWARDED' };
+    if (period === 'year') query.awardedDate = { $gte: cutoff.toISOString().slice(0, 10) };
+
+    const awarded = await SyncedOpportunity.find(
+      query,
+      { internalLead: 1, opportunityRefNo: 1, tenderName: 1, clientName: 1, awardedDate: 1, opportunityValue: 1, frameworkTotalValue: 1, callOffActualValue: 1 }
+    ).lean();
+
+    if (!awarded.length) return res.json({ topPerformer: null, period });
+
+    const byLead = {};
+    for (const o of awarded) {
+      const lead = o.internalLead || 'Unknown';
+      if (!byLead[lead]) byLead[lead] = { name: lead, count: 0, totalValue: 0, tenders: [] };
+      const val = Number(o.callOffActualValue ?? o.frameworkTotalValue ?? o.opportunityValue ?? 0);
+      byLead[lead].count += 1;
+      byLead[lead].totalValue += val;
+      byLead[lead].tenders.push({ opportunityRefNo: o.opportunityRefNo, tenderName: o.tenderName, clientName: o.clientName, awardedDate: o.awardedDate, value: val });
+    }
+
+    const ranked = Object.values(byLead).sort((a, b) => b.count - a.count || b.totalValue - a.totalValue);
+    const topPerformer = ranked[0] || null;
+
+    res.json({ topPerformer, period, totalAwarded: awarded.length });
+  } catch (error) {
+    console.error('[top-performer.error]', error?.message);
+    res.status(500).json({ error: error?.message || 'Failed to compute top performer' });
+  }
+});
 
 app.post('/api/generate-report', verifyToken, express.json({ limit: '10mb' }), async (req, res) => {
   try {

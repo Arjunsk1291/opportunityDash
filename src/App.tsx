@@ -26,7 +26,7 @@ import MasterDiagnosticsRoute from "./routes/master.diagnostics";
 import PendingApproval from "./pages/PendingApproval";
 import NotFound from "./pages/NotFound";
 import PqActivities from "./pages/PqActivities";
-import HireFlow from "./pages/HireFlow";
+import Upcoming from "./pages/Upcoming";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
@@ -123,7 +123,7 @@ function AppRoutes() {
             <Route path="master/telecast" element={<PageAccessRoute pageKey="master"><MasterTelecastRoute /></PageAccessRoute>} />
             <Route path="master/columns" element={<PageAccessRoute pageKey="master"><MasterColumnsRoute /></PageAccessRoute>} />
             <Route path="master/diagnostics" element={<PageAccessRoute pageKey="master"><MasterDiagnosticsRoute /></PageAccessRoute>} />
-            <Route path="hireflow" element={<PageAccessRoute pageKey="master"><HireFlow /></PageAccessRoute>} />
+            <Route path="upcoming" element={<PageAccessRoute pageKey="master"><Upcoming /></PageAccessRoute>} />
 
             <Route path="status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />
             <Route path="status/in-progress" element={<Opportunities statusFilter="In Progress" />} />

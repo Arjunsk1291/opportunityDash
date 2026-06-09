@@ -56,6 +56,10 @@ const syncedOpportunitySchema = new mongoose.Schema(
     awardEventNotifiedAt: { type: Date, default: null },
     awardEventKey: { type: String, default: '' },
     awardEventSource: { type: String, default: '' },
+    // Feature 16 — lead notification tracking
+    leadNotifAlerted: { type: Boolean, default: false },
+    leadNotifAlertedAt: { type: Date, default: null },
+    leadNotifAlertedKey: { type: String, default: '' },
     rawGoogleData: mongoose.Schema.Types.Mixed,
     rawGraphData: mongoose.Schema.Types.Mixed,
     syncedAt: { type: Date, default: Date.now },
@@ -73,5 +77,7 @@ syncedOpportunitySchema.index({ internalLead: 1 });
 syncedOpportunitySchema.index({ avenirStatus: 1 });
 syncedOpportunitySchema.index({ deadlineAlerted: 1 });
 syncedOpportunitySchema.index({ leadEmail: 1 });
+syncedOpportunitySchema.index({ leadNotifAlerted: 1 });
+syncedOpportunitySchema.index({ awardEventNotified: 1 });
 
 export default mongoose.model('SyncedOpportunity', syncedOpportunitySchema);

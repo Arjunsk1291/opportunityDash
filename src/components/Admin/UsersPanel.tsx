@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, RefreshCw, Lock, LockOpen, Mail, Trash2, ChevronDown, CheckCircle, XCircle, Clock, Users, AlertTriangle, KeyRound } from 'lucide-react';
+import { Plus, RefreshCw, Lock, LockOpen, Trash2, CheckCircle, XCircle, Clock, Users, AlertTriangle, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
@@ -46,16 +45,6 @@ interface AuthorizedUser {
   requiresPasswordChange?: boolean;
 }
 
-interface TempCredentialLogRow {
-  _id: string;
-  createdBy: string;
-  createdByRole: string;
-  targetEmails: string[];
-  tempPasswords?: string[];
-  sentCount: number;
-  sentAt: string;
-  expiresAt: string;
-}
 
 interface AddUserForm {
   email: string;
@@ -137,14 +126,11 @@ function StatusBadge({ status }: { status: string }) {
 
 export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps) {
   const [users, setUsers] = useState<AuthorizedUser[]>([]);
-  const [tempCredentialLogs, setTempCredentialLogs] = useState<TempCredentialLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [logsExpanded, setLogsExpanded] = useState(false);
-  const [logsLoading, setLogsLoading] = useState(false);
 
   const [addUserOpen, setAddUserOpen] = useState(false);
   const [addForm, setAddForm] = useState<AddUserForm>(DEFAULT_ADD_FORM);
@@ -157,8 +143,6 @@ export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps)
   const [removeTarget, setRemoveTarget] = useState('');
   const [removeOpen, setRemoveOpen] = useState(false);
 
-  const [sendTempTarget, setSendTempTarget] = useState('');
-  const [sendTempOpen, setSendTempOpen] = useState(false);
 
   const authHeaders = () => ({
     Authorization: 'Bearer ' + (token || ''),
@@ -193,23 +177,8 @@ export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps)
     }
   };
 
-  const loadTempLogs = async () => {
-    if (!token || !isMaster) return;
-    setLogsLoading(true);
-    try {
-      const res = await fetch(API_URL + '/users/temp-credential-logs', { headers: authHeaders() });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(parseApiErrorPayload(data, 'Failed to load credential logs'));
-      setTempCredentialLogs(Array.isArray(data?.logs) ? data.logs : []);
-    } catch (err) {
-      toast.error((err as Error).message);
-    } finally {
-      setLogsLoading(false);
-    }
-  };
 
   useEffect(() => { void loadUsers(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (logsExpanded && isMaster) void loadTempLogs(); }, [logsExpanded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const approveUser = async (email: string) => {
     if (!canManageUsers) { toast.error('You do not have permission.'); return; }
@@ -367,23 +336,6 @@ export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps)
     }
   };
 
-  const sendTempCredential = async (email: string) => {
-    if (!isMaster) { toast.error('Only Master users can send temporary passwords.'); return; }
-    setBusy(true);
-    try {
-      const res = await fetch(API_URL + '/users/send-temp-credential', {
-        method: 'POST', headers: authHeaders(), body: JSON.stringify({ emails: [email] }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(parseApiErrorPayload(data, 'Failed to send temporary password'));
-      toast.success(`Temporary password sent to ${email}`);
-      if (logsExpanded) void loadTempLogs();
-    } catch (err) {
-      toast.error((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const filteredUsers = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -606,20 +558,7 @@ export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps)
                             <TooltipContent>{u.hasPassword ? 'Change Password' : 'Set Password (no password configured!)'}</TooltipContent>
                           </Tooltip>
                         )}
-                        {isMaster && u.role !== 'Master' && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                size="icon" variant="outline" className="h-7 w-7"
-                                onClick={() => { setSendTempTarget(u.email); setSendTempOpen(true); }}
-                                disabled={busy}
-                              >
-                                <Mail className="h-3.5 w-3.5" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Send Temp Credential</TooltipContent>
-                          </Tooltip>
-                        )}
+
                         {u.role !== 'Master' && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -645,53 +584,6 @@ export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps)
         </CardContent>
       </Card>
 
-      {/* Temp Credential History — Master only */}
-      {isMaster && (
-        <Collapsible open={logsExpanded} onOpenChange={setLogsExpanded}>
-          <CollapsibleTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2">
-              <ChevronDown className={`h-4 w-4 transition-transform ${logsExpanded ? 'rotate-180' : ''}`} />
-              Temp Credential History ({tempCredentialLogs.length})
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <Card className="mt-2">
-              <CardContent className="pt-4">
-                {logsLoading ? (
-                  <p className="text-sm text-muted-foreground">Loading…</p>
-                ) : tempCredentialLogs.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No temporary passwords have been sent yet.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Sent At</TableHead>
-                          <TableHead>Expires At</TableHead>
-                          <TableHead>Created By</TableHead>
-                          <TableHead>Users</TableHead>
-                          <TableHead>Temp Passwords</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {tempCredentialLogs.map((log) => (
-                          <TableRow key={log._id}>
-                            <TableCell className="text-sm">{log.sentAt ? new Date(log.sentAt).toLocaleString() : '—'}</TableCell>
-                            <TableCell className="text-sm">{log.expiresAt ? new Date(log.expiresAt).toLocaleString() : '—'}</TableCell>
-                            <TableCell className="font-mono text-xs">{log.createdBy}</TableCell>
-                            <TableCell className="text-xs">{log.targetEmails.join(', ') || '—'}</TableCell>
-                            <TableCell className="font-mono text-xs">{(log.tempPasswords || []).join(', ') || '—'}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
 
       {/* Add User Dialog */}
       <Dialog open={addUserOpen} onOpenChange={setAddUserOpen}>
@@ -868,27 +760,6 @@ export function UsersPanel({ token, isMaster, canManageUsers }: UsersPanelProps)
         </DialogContent>
       </Dialog>
 
-      {/* Send Temp Credential Confirm Dialog */}
-      <Dialog open={sendTempOpen} onOpenChange={setSendTempOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Send Temporary Credential</DialogTitle>
-            <DialogDescription>
-              Generate and email a 24-hour login code to{' '}
-              <span className="font-mono font-medium">{sendTempTarget}</span>?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSendTempOpen(false)}>Cancel</Button>
-            <Button
-              onClick={() => { setSendTempOpen(false); void sendTempCredential(sendTempTarget); }}
-              disabled={busy}
-            >
-              Send
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
