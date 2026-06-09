@@ -46,7 +46,6 @@ import {
   startDeviceCodeFlow,
   exchangeDeviceCodeForToken,
 } from './services/graphExcelService.js';
-import { initializeBootSync } from './services/bootSyncService.js';
 import { buildOpportunitiesWorkbookForSpreadsheet } from './services/spreadsheetWorkbookService.js';
 import SystemConfig from './models/SystemConfig.js';
 import { encryptSecret } from './services/cryptoService.js';
@@ -452,7 +451,6 @@ const startHttpServer = () => {
 if (DISABLE_MONGODB) {
   console.log('[startup] MongoDB disabled via environment variable.');
   startHttpServer();
-  initializeBootSync().catch(err => console.error('[startup.bootsync.error]', err));
 } else {
 mongoose.connect(MONGODB_URI, {
   monitorCommands: DIAG_LOGS,
@@ -511,9 +509,7 @@ mongoose.connect(MONGODB_URI, {
     }
     startHttpServer();
   })
-  .then(async () => {
-    await initializeBootSync();
-    // Graph auto-sync removed: MongoDB is updated only via Opportunities page upload/manual entry.
+  .then(() => {
     scheduleDailyNotificationCheck();
   })
   .catch(err => {
@@ -2236,39 +2232,7 @@ const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
   return syncInFlightPromise;
 };
 
-let graphAutoSyncTimer = null;
-let graphAutoSyncRunning = false;
-
-const scheduleGraphAutoSync = async () => {
-  try {
-    const config = await getGraphConfig();
-    const intervalMinutes = Math.max(1, Number(config.syncIntervalMinutes) || 10);
-
-    if (graphAutoSyncTimer) {
-      clearInterval(graphAutoSyncTimer);
-      graphAutoSyncTimer = null;
-    }
-
-    graphAutoSyncTimer = setInterval(async () => {
-      if (graphAutoSyncRunning) return;
-      graphAutoSyncRunning = true;
-      try {
-        const liveConfig = await getGraphConfig();
-        if (!liveConfig.driveId || !liveConfig.fileId || !liveConfig.worksheetName) {
-          return;
-        }
-        const syncResult = await syncFromConfiguredGraph({ source: 'auto_interval' });
-      } catch (error) {
-        console.error('❌ AUTO-SYNC failed:', error.message);
-      } finally {
-        graphAutoSyncRunning = false;
-      }
-    }, intervalMinutes * 60 * 1000);
-
-  } catch (error) {
-    console.error('Failed to schedule graph auto-sync:', error.message);
-  }
-};
+const scheduleGraphAutoSync = async () => {};
 
 let dailyNotificationTimer = null;
 let notificationCheckRunning = false;
@@ -2284,18 +2248,10 @@ const scheduleDailyNotificationCheck = () => {
     notificationCheckRunning = true;
 
     try {
-      const config = await getSystemConfig();
-      const lastCheckedAt = config?.notificationLastCheckedAt ? new Date(config.notificationLastCheckedAt) : null;
-      if (lastCheckedAt && (Date.now() - lastCheckedAt.getTime()) < (60 * 60 * 1000)) {
-        return;
-      }
-      const syncResult = await syncFromConfiguredGraph({ source: 'hourly_notification' });
       const deadlineResult = await sendDeadlineAlerts();
       const runKey = new Date().toISOString();
       console.log(JSON.stringify({
         runKey,
-        insertedCount: syncResult.insertedCount,
-        newRowsCount: syncResult.newRowsCount,
         deadlineSent: deadlineResult?.sent || 0,
         deadlineSkipped: deadlineResult?.skipped || 0,
       }));
@@ -5791,23 +5747,7 @@ app.post('/api/notifications/mark-unalerted', verifyToken, async (req, res) => {
 });
 
 app.post('/api/notifications/force-refresh', verifyToken, async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can force notification refresh' });
-    }
-
-    const syncResult = await syncFromConfiguredGraph({ source: `force_refresh:${req.user.email}` });
-    res.json({
-      success: true,
-      message: `Force refresh complete. ${syncResult.newRowsCount} new rows detected.`,
-      insertedCount: syncResult.insertedCount,
-      newRowsCount: syncResult.newRowsCount,
-      newRowSignatures: syncResult.newRowSignatures,
-      eligibleRows: syncResult.eligibleRows,
-    });
-  } catch (error) {
-    res.status(500).json(toApiError(error, 'NOTIFICATION_FORCE_REFRESH_FAILED'));
-  }
+  res.json({ success: true, message: 'Graph sync is disabled. Data is managed via sheet uploads.', newRowsCount: 0, insertedCount: 0 });
 });
 
 
