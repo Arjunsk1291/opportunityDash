@@ -7098,9 +7098,11 @@ app.post('/api/pq-activities', verifyToken, async (req, res) => {
     const tenant = normalizePqTenant(value.tenant);
     const company = clampString(value.company, 120);
     const registeredEmail = clampString(value.registeredEmail, 200);
+    const maxSnoDoc = await getPqModel(tenant).findOne({ tenant }).sort({ sNo: -1 }).select('sNo').lean();
+    const nextSno = ((maxSnoDoc?.sNo ?? 0) + 1);
     const doc = await getPqModel(tenant).create({
       tenant,
-      sNo: typeof value.sNo === 'number' ? value.sNo : 0,
+      sNo: nextSno,
       company,
       status: value.status || 'Registration on Process',
       workgroup: clampString(value.workgroup || '', 120),

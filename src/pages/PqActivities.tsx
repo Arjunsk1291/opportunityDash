@@ -5,7 +5,7 @@ import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { CalendarIcon, Copy, Eye, EyeOff, FileDown, FileUp, Plus, Search, Trash2, Pencil, AlertTriangle, FileText } from 'lucide-react';
+import { CalendarIcon, Copy, FileDown, FileUp, Plus, Search, Trash2, Pencil, AlertTriangle, FileText } from 'lucide-react';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -120,7 +120,6 @@ export default function PqActivities() {
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState<PqStatus | 'All'>('All');
 
-  const [passwordVisibleFor, setPasswordVisibleFor] = useState<Record<string, boolean>>({});
   const [detailRow, setDetailRow] = useState<PqActivityRow | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -473,10 +472,6 @@ export default function PqActivities() {
     }
   };
 
-  const togglePasswordVisibility = (id: string) => {
-    setPasswordVisibleFor((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
   const copyText = async (value: string, label: string) => {
     try {
       await navigator.clipboard.writeText(String(value || ''));
@@ -791,18 +786,11 @@ export default function PqActivities() {
 	                      <div className="flex items-center justify-between gap-2">
 	                        <div className="min-w-0">
 	                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Password</div>
-	                          <div className="mt-1 font-mono text-navytrust-foreground truncate">
-	                            {Boolean(passwordVisibleFor[detailRow.id]) ? (detailRow.password || '—') : (detailRow.password ? '••••••••' : '—')}
-	                          </div>
+	                          <div className="mt-1 font-mono text-navytrust-foreground truncate">{detailRow.password || '—'}</div>
 	                        </div>
-	                        <div className="flex items-center gap-2">
-	                          <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => togglePasswordVisibility(detailRow.id)} aria-label={Boolean(passwordVisibleFor[detailRow.id]) ? 'Hide password' : 'Show password'}>
-	                            {Boolean(passwordVisibleFor[detailRow.id]) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-	                          </Button>
-	                          <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => copyText(detailRow.password || '', 'Password')} aria-label="Copy password">
-	                            <Copy className="h-4 w-4" />
-	                          </Button>
-	                        </div>
+	                        <Button size="icon" variant="secondary" className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75" onClick={() => copyText(detailRow.password || '', 'Password')} aria-label="Copy password">
+	                          <Copy className="h-4 w-4" />
+	                        </Button>
 	                      </div>
 	                      <div className="flex items-center justify-between gap-2">
 	                        <div className="min-w-0">
@@ -941,19 +929,6 @@ export default function PqActivities() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
-                      name="sNo"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>S.No</FormLabel>
-                          <FormControl>
-                            <Input type="number" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
                       name="status"
                       render={({ field }) => (
                         <FormItem>
@@ -1027,7 +1002,7 @@ export default function PqActivities() {
                         <FormItem>
                           <FormLabel>Password (Portal)</FormLabel>
                           <FormControl>
-                            <Input type="password" {...field} autoComplete="new-password" />
+                            <Input type="text" {...field} autoComplete="off" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
