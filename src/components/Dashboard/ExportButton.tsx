@@ -408,8 +408,8 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
       });
       headerRow.height = 22;
 
-      exportData.forEach((rowData) => {
-        const row = worksheet.addRow([]);
+      exportData.forEach((rowData, rowIndex) => {
+        const row = worksheet.getRow(headerRowIndex + 1 + rowIndex);
         const rowStatus = String(rowData.__status || '').trim().toUpperCase();
         selectedColumns.forEach((column, index) => {
           row.getCell(headerStartColumn + index).value = rowData[column.label] ?? '';

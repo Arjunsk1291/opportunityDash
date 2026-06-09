@@ -164,7 +164,7 @@ export const JspreadsheetGrid = forwardRef<JspreadsheetGridHandle, JspreadsheetG
         }
       };
 
-      const inst = jspreadsheet(divRef.current, {
+      jspreadsheet(divRef.current, {
         data: [[]],
         columns: buildColumns(),
         tableOverflow: true,
@@ -194,7 +194,7 @@ export const JspreadsheetGrid = forwardRef<JspreadsheetGridHandle, JspreadsheetG
         },
       });
 
-      instanceRef.current = inst as unknown as HTMLDivElement;
+      instanceRef.current = divRef.current; // el.jspreadsheet = instance; inst is the raw obj
 
       return () => {
         if (divRef.current) jspreadsheet.destroy(divRef.current, true);
@@ -210,6 +210,6 @@ export const JspreadsheetGrid = forwardRef<JspreadsheetGridHandle, JspreadsheetG
       inst.jspreadsheet.setData(rows.length ? rows : [[]]);
     }, [opportunities, exchangeRate]);
 
-    return <div ref={divRef} />;
+    return <div ref={divRef} style={{ width: '100%' }} />;
   }
 );
