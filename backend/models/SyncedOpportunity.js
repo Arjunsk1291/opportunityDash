@@ -71,5 +71,7 @@ syncedOpportunitySchema.index({ createdAt: -1 });
 syncedOpportunitySchema.index({ clientName: 1 });
 syncedOpportunitySchema.index({ internalLead: 1 });
 syncedOpportunitySchema.index({ avenirStatus: 1 });
+syncedOpportunitySchema.index({ deadlineAlerted: 1 });
+syncedOpportunitySchema.index({ leadEmail: 1 });
 
 export default mongoose.model('SyncedOpportunity', syncedOpportunitySchema);

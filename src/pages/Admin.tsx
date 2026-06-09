@@ -258,6 +258,8 @@ interface BackendHealthSnapshot {
   dbState: number;
   timestamp?: string;
   system?: SystemHealthSnapshot;
+  dbPingMs?: number | null;
+  responseMs?: number;
 }
 
 interface AdminBootstrapResponse {
@@ -702,8 +704,13 @@ export default function Admin({ initialTab }: AdminProps = {}) {
     };
     void run();
 
+    const healthInterval = setInterval(() => {
+      if (!cancelled) loadBackendHealth();
+    }, 30000);
+
     return () => {
       cancelled = true;
+      clearInterval(healthInterval);
     };
   }, [canAccessPanel, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -980,12 +987,14 @@ export default function Admin({ initialTab }: AdminProps = {}) {
   const loadBackendHealth = async () => {
     setBackendHealthLoading(true);
     try {
+      const t0 = Date.now();
       const response = await fetch(API_URL + '/health', {
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: 'Bearer ' + token } : {}),
         },
       });
+      const responseMs = Date.now() - t0;
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(parseApiErrorPayload(data, 'Failed to load backend health'));
@@ -995,6 +1004,8 @@ export default function Admin({ initialTab }: AdminProps = {}) {
         dbState: Number.isFinite(Number(data?.dbState)) ? Number(data.dbState) : -1,
         timestamp: data?.timestamp ? String(data.timestamp) : undefined,
         system: data?.system || undefined,
+        dbPingMs: Number.isFinite(Number(data?.dbPingMs)) ? Number(data.dbPingMs) : null,
+        responseMs,
       });
     } catch (error) {
       setBackendHealth(null);
@@ -3002,6 +3013,12 @@ export default function Admin({ initialTab }: AdminProps = {}) {
 	                    <Badge variant="secondary">Unknown</Badge>
 	                  )}
 	                  <Badge variant="outline">dbState: {backendHealth ? backendHealth.dbState : '—'}</Badge>
+	                  {backendHealth?.dbPingMs != null && (
+	                    <Badge variant="outline">DB ping: {backendHealth.dbPingMs}ms</Badge>
+	                  )}
+	                  {backendHealth?.responseMs != null && (
+	                    <Badge variant="outline">API: {backendHealth.responseMs}ms</Badge>
+	                  )}
 	                  {backendHealth?.timestamp && (
 	                    <Badge variant="outline">{new Date(backendHealth.timestamp).toLocaleString()}</Badge>
 	                  )}

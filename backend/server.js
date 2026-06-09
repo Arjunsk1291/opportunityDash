@@ -403,13 +403,24 @@ app.get('/healthz', (_req, res) => {
   });
 });
 
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', async (_req, res) => {
   const dbReady = mongoose.connection.readyState === 1;
   const system = getSystemHealthSnapshot();
+  let dbPingMs = null;
+  if (dbReady) {
+    try {
+      const t0 = Date.now();
+      await mongoose.connection.db.command({ ping: 1 });
+      dbPingMs = Date.now() - t0;
+    } catch {
+      dbPingMs = null;
+    }
+  }
   res.status(dbReady ? 200 : 503).json({
     ok: dbReady,
     service: 'backend',
     dbState: mongoose.connection.readyState,
+    dbPingMs,
     system,
     timestamp: new Date().toISOString(),
   });
@@ -456,6 +467,8 @@ mongoose.connect(MONGODB_URI, {
   monitorCommands: DIAG_LOGS,
   autoIndex: !IS_PROD,
   autoCreate: !IS_PROD,
+  serverSelectionTimeoutMS: IS_PROD ? 5000 : 30000,
+  socketTimeoutMS: IS_PROD ? 10000 : 45000,
 })
   .then(() => {
     if (DIAG_LOGS) {
@@ -582,11 +595,17 @@ const ensureOpportunityStreamHeartbeat = () => {
   }, 25000);
 };
 
+const _snapshotAtCache = { value: null, expiresAt: 0 };
 const getLatestOpportunitySnapshotAt = async () => {
+  if (_snapshotAtCache.value && _snapshotAtCache.expiresAt > Date.now()) {
+    return _snapshotAtCache.value;
+  }
   const latest = await SyncedOpportunity.findOne({}, { syncedAt: 1 })
-    .sort({ syncedAt: -1, updatedAt: -1 })
+    .sort({ syncedAt: -1 })
     .lean();
-  return latest?.syncedAt || null;
+  _snapshotAtCache.value = latest?.syncedAt || null;
+  _snapshotAtCache.expiresAt = Date.now() + 5000;
+  return _snapshotAtCache.value;
 };
 
 const getMergedReportStatus = (item = {}) => {
@@ -1749,6 +1768,8 @@ const sendDeadlineAlerts = async () => {
 
   let sent = 0;
   let skipped = 0;
+  const bulkOps = [];
+  const now = new Date();
   for (const opportunity of opportunities) {
     try {
       const result = await sendDeadlineAlertForOpportunity({ opportunity, config, leadDirectory });
@@ -1758,20 +1779,22 @@ const sendDeadlineAlerts = async () => {
             leadEmail: result.leadEmail,
             leadEmailSource: 'mapping',
             leadEmailAssignedBy: 'system',
-            leadEmailAssignedAt: new Date(),
+            leadEmailAssignedAt: now,
           }
           : {};
-        await SyncedOpportunity.updateOne(
-          { _id: opportunity._id },
-          {
-            $set: {
-              deadlineAlerted: true,
-              deadlineAlertedAt: new Date(),
-              deadlineAlertedDateKey: result.deadlineKey,
-              ...leadEmailUpdate,
+        bulkOps.push({
+          updateOne: {
+            filter: { _id: opportunity._id },
+            update: {
+              $set: {
+                deadlineAlerted: true,
+                deadlineAlertedAt: now,
+                deadlineAlertedDateKey: result.deadlineKey,
+                ...leadEmailUpdate,
+              },
             },
-          }
-        );
+          },
+        });
         sent += 1;
       } else {
         skipped += 1;
@@ -1780,6 +1803,10 @@ const sendDeadlineAlerts = async () => {
       console.error('[deadline-alert.error]', error?.message || error);
       skipped += 1;
     }
+  }
+
+  if (bulkOps.length) {
+    await SyncedOpportunity.bulkWrite(bulkOps, { ordered: false });
   }
 
   return { success: true, sent, skipped };
@@ -7979,6 +8006,7 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
       source: 'sheet-upload-commit',
       snapshotAt: now.toISOString(),
       refs: touchedRefs.slice(0, 100),
+      rows: touchedRows,
     });
 
     res.json({
@@ -8298,14 +8326,16 @@ app.post('/api/opportunities/manual-entry/save', verifyToken, async (req, res) =
       ? Object.keys(payload).filter((key) => key !== 'opportunityRefNo' && toText(before?.[key]) !== toText(after?.[key])).length
       : Object.keys(payload).filter((key) => key !== 'opportunityRefNo' && toText(payload[key]) !== '').length;
 
+    const updatedRow = mapIdField(after);
     publishOpportunityEvent({
       type: 'incremental',
       source: 'manual-entry-save',
       snapshotAt: new Date().toISOString(),
       refs: [opportunityRefNo],
+      rows: [updatedRow],
     });
 
-    res.json({ success: true, changedFields, overwriteCount, row: mapIdField(after) });
+    res.json({ success: true, changedFields, overwriteCount, row: updatedRow });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

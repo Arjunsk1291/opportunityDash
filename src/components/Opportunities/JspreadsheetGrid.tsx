@@ -28,6 +28,8 @@ const ENUM_SOURCES: Record<string, string[]> = {
 
 const COL_WIDTHS = [40, 60, 100, 250, 180, 140, 140, 160, 80, 120, 160, 100, 110, 110, 120, 140, 120, 200, 120, 100, 90, 60, 100, 100, 80, 60, 60, 70, 90, 90, 160, 120];
 
+const EXTRA_EMPTY_ROWS = 50;
+
 function buildColumns() {
   return OPPORTUNITY_COLUMNS.map((col, idx) => {
     const base = {
@@ -52,7 +54,7 @@ function buildColumns() {
 }
 
 function buildRows(opportunities: Opportunity[], exchangeRate: number): string[][] {
-  return opportunities.map((opp, idx) => {
+  const dataRows = opportunities.map((opp, idx) => {
     const snap = (opp.rawGraphData?.rowSnapshot || {}) as Record<string, unknown>;
     const get = (key: string) => {
       if (DIRECT_DB_KEYS.has(key)) {
@@ -74,7 +76,7 @@ function buildRows(opportunities: Opportunity[], exchangeRate: number): string[]
     const goGetValue = opportunityValue * goGetPct;
     const usdToAed = currency === 'USD' ? opportunityValue * exchangeRate : opportunityValue;
 
-    return OPPORTUNITY_COLUMNS.map((col, colIdx): string => {
+    return OPPORTUNITY_COLUMNS.map((col): string => {
       if (col.key === 'Sr.no') return String(idx + 1);
       if (col.key === 'GM Value') return gmValue ? String(gmValue.toFixed(2)) : '';
       if (col.key === 'GO/Get %') return goGetPct ? String((goGetPct * 100).toFixed(2)) : '';
@@ -83,6 +85,9 @@ function buildRows(opportunities: Opportunity[], exchangeRate: number): string[]
       return get(col.key);
     });
   });
+
+  const emptyRow = Array(OPPORTUNITY_COLUMNS.length).fill('');
+  return [...dataRows, ...Array(EXTRA_EMPTY_ROWS).fill(emptyRow)];
 }
 
 export interface JspreadsheetGridHandle {
@@ -99,6 +104,7 @@ interface JspreadsheetGridProps {
 
 export const JspreadsheetGrid = forwardRef<JspreadsheetGridHandle, JspreadsheetGridProps>(
   function JspreadsheetGrid({ opportunities, exchangeRate, token, canEdit, onUpsertOpportunity }, ref) {
+    const containerRef = useRef<HTMLDivElement>(null);
     const divRef = useRef<HTMLDivElement>(null);
     const instanceRef = useRef<HTMLDivElement | null>(null);
     const rowColorsRef = useRef<string[]>([]);
@@ -128,6 +134,37 @@ export const JspreadsheetGrid = forwardRef<JspreadsheetGridHandle, JspreadsheetG
         return '';
       });
     }, [opportunities]);
+
+    // Sync jspreadsheet content height to actual container height
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      const syncHeight = () => {
+        const h = container.clientHeight;
+        if (!h) return;
+        const content = divRef.current?.querySelector<HTMLElement>('.jexcel_content');
+        if (content) content.style.height = `${h}px`;
+      };
+      const obs = new ResizeObserver(syncHeight);
+      obs.observe(container);
+      syncHeight();
+      return () => obs.disconnect();
+    }, []);
+
+    // Shift+wheel → horizontal scroll; Ctrl/Cmd+wheel → browser zoom (native)
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      const onWheel = (e: WheelEvent) => {
+        if (!e.shiftKey) return;
+        const content = divRef.current?.querySelector<HTMLElement>('.jexcel_content');
+        if (!content) return;
+        e.preventDefault();
+        content.scrollLeft += e.deltaY;
+      };
+      container.addEventListener('wheel', onWheel, { passive: false });
+      return () => container.removeEventListener('wheel', onWheel);
+    }, []);
 
     // Init grid once
     useEffect(() => {
@@ -169,7 +206,7 @@ export const JspreadsheetGrid = forwardRef<JspreadsheetGridHandle, JspreadsheetG
         columns: buildColumns(),
         tableOverflow: true,
         tableWidth: '100%',
-        tableHeight: 'calc(100vh - 280px)',
+        // tableHeight is intentionally omitted — ResizeObserver sets it from the real container height
         minDimensions: [32, 5],
         search: false,
         freezeColumns: 3,
@@ -194,7 +231,7 @@ export const JspreadsheetGrid = forwardRef<JspreadsheetGridHandle, JspreadsheetG
         },
       });
 
-      instanceRef.current = divRef.current; // el.jspreadsheet = instance; inst is the raw obj
+      instanceRef.current = divRef.current; // el.jspreadsheet = instance
 
       return () => {
         if (divRef.current) jspreadsheet.destroy(divRef.current, true);
@@ -210,6 +247,10 @@ export const JspreadsheetGrid = forwardRef<JspreadsheetGridHandle, JspreadsheetG
       inst.jspreadsheet.setData(rows.length ? rows : [[]]);
     }, [opportunities, exchangeRate]);
 
-    return <div ref={divRef} style={{ width: '100%' }} />;
+    return (
+      <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
+        <div ref={divRef} style={{ width: '100%' }} />
+      </div>
+    );
   }
 );

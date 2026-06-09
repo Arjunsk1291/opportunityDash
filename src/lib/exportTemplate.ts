@@ -49,8 +49,8 @@ export const DEFAULT_EXPORT_TEMPLATE: ExportTemplateConfig = {
   logoDataUrl: '',
   logoRow: 1,
   logoColumn: 1,
-  logoWidth: 150,
-  logoHeight: 46,
+  logoWidth: 80,
+  logoHeight: 80,
   titleRow: 2,
   titleColumn: 12,
   titleRowSpan: 1,
@@ -72,7 +72,7 @@ export const DEFAULT_EXPORT_TEMPLATE: ExportTemplateConfig = {
   titleColor: '#000000',
   introColor: '#475569',
   columnWidths: MASTER_TEMPLATE_COLUMN_WIDTHS,
-  rowHeights: Array.from({ length: 20 }, () => 20),
+  rowHeights: [60, 20, 20, 22, ...Array.from({ length: 16 }, () => 20)],
 };
 
 export const EXPORT_TEMPLATE_COLOR_FIELDS: Array<keyof Pick<

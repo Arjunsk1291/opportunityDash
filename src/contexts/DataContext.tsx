@@ -424,11 +424,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
       if (eventName !== 'opportunities' || !dataLines.length) return;
       try {
-        const payload = JSON.parse(dataLines.join('\n')) as { type?: string };
+        const payload = JSON.parse(dataLines.join('\n')) as { type?: string; rows?: unknown[] };
         if (payload?.type === 'full-reload') {
           void refreshData({ force: true }).catch(() => {});
         } else if (payload?.type === 'incremental') {
-          void refreshData({ background: true }).catch(() => {});
+          if (Array.isArray(payload.rows) && payload.rows.length > 0) {
+            upsertOpportunities(payload.rows as Partial<Opportunity>[]);
+          } else {
+            void refreshData({ background: true }).catch(() => {});
+          }
         }
       } catch {
         // Ignore malformed push payloads.
@@ -500,7 +504,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         streamRetryTimerRef.current = null;
       }
     };
-  }, [isAuthLoading, token, refreshData]);
+  }, [isAuthLoading, token, refreshData, upsertOpportunities]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
