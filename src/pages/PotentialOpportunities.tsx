@@ -65,6 +65,10 @@ const isSharePointOrOneDriveUrl = (value: string) => {
   return /sharepoint\.com/i.test(url) || /onedrive\.live\.com/i.test(url) || /my\.sharepoint\.com/i.test(url);
 };
 
+// SharePoint "my?id=..." folder/navigation links block iframe embedding entirely
+const isSharePointNavLink = (value: string) =>
+  isSharePointOrOneDriveUrl(value) && /[?&]id=/i.test(String(value || '').trim());
+
 const toSowPreviewUrl = (value: string) => {
   const raw = String(value || '').trim();
   if (!looksLikeUrl(raw)) return '';
@@ -201,6 +205,11 @@ export default function PotentialOpportunities() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsRow, setDetailsRow] = useState<PotentialRow | null>(null);
 
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQ, setPickerQ] = useState('');
+  const [pickerVertical, setPickerVertical] = useState('ALL');
+  const [pickerMarking, setPickerMarking] = useState(false);
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -209,6 +218,13 @@ export default function PotentialOpportunities() {
     if (Array.isArray(opportunities) && opportunities.length) return;
     void refreshData({ background: false }).catch(() => {});
   }, [activeTab, opportunities, refreshData, token]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    if (!token) return;
+    if (Array.isArray(opportunities) && opportunities.length) return;
+    void refreshData({ background: false }).catch(() => {});
+  }, [pickerOpen, opportunities, refreshData, token]);
 
   const load = useCallback(async (reason: string) => {
     if (!token) return;
@@ -264,6 +280,30 @@ export default function PotentialOpportunities() {
     });
     return map;
   }, [opportunities]);
+
+  const existingRefs = useMemo(() => new Set(rows.map(r => normalizeRef(r.opportunityRefNo))), [rows]);
+
+  const pickerOpps = useMemo(() => {
+    const casted = (opportunities || []).map(o => o as unknown as OpportunityLite);
+    let list = casted.filter(opp => {
+      const ref = normalizeRef(String(opp.opportunityRefNo || ''));
+      if (!ref || existingRefs.has(ref)) return false;
+      if (pickerVertical !== 'ALL') {
+        const group = String(opp.groupClassification || '').toUpperCase();
+        if (pickerVertical === 'OTHERS') return !['GTS', 'GDS', 'GES'].includes(group);
+        return group === pickerVertical;
+      }
+      return true;
+    });
+    if (pickerQ.trim()) {
+      const q = pickerQ.trim().toLowerCase();
+      list = list.filter(opp =>
+        String(opp.opportunityRefNo || '').toLowerCase().includes(q) ||
+        String(opp.tenderName || '').toLowerCase().includes(q)
+      );
+    }
+    return list.slice(0, 60);
+  }, [opportunities, existingRefs, pickerVertical, pickerQ]);
 
   const toExtraPairs = (extras: Record<string, unknown>) => {
     const pairs = Object.entries(extras || {})
@@ -322,6 +362,38 @@ export default function PotentialOpportunities() {
     return data.row || null;
   };
 
+  const selectTender = async (opp: OpportunityLite) => {
+    const ref = String(opp.opportunityRefNo || '').trim();
+    if (!ref || !token || pickerMarking) return;
+    setPickerMarking(true);
+    try {
+      const data = await fetchJson<{ success: boolean; row: MarkRow }>(
+        `${API_URL}/potential-opportunities/mark`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ opportunityRefNo: ref, isPotential: true }),
+        }
+      );
+      const mr = data.row;
+      setRows(prev => [{
+        id: String(mr._id || mr.id || ''),
+        opportunityRefNo: ref,
+        isPotential: true,
+        extras: (mr.extras || {}) as PotentialRow['extras'],
+        updatedAt: mr.updatedAt,
+        createdAt: mr.createdAt,
+        opportunity: opp,
+      }, ...prev]);
+      toast.success(`${ref} added to potential opportunities.`);
+      setPickerOpen(false);
+    } catch (e) {
+      toast.error((e as Error).message || 'Failed to add tender.');
+    } finally {
+      setPickerMarking(false);
+    }
+  };
+
   return (
     <>
     <ActionProgressBar status={trackedStatus} />
@@ -350,6 +422,11 @@ export default function PotentialOpportunities() {
             <Button variant="default" onClick={() => fileInputRef.current?.click()} disabled={!canWrite} loading={importing} className="rounded-xl">
               <FileUp className="mr-2 h-4 w-4" /> Import Excel
             </Button>
+            {canWrite && (
+              <Button variant="outline" onClick={() => setPickerOpen(true)} className="rounded-xl">
+                <Plus className="mr-2 h-4 w-4" /> Add Tender
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -723,33 +800,55 @@ export default function PotentialOpportunities() {
           </DialogHeader>
           <div className="flex-1 min-h-0 relative bg-muted/5">
             {looksLikeUrl(editSowLink || '') ? (
-              <div className="absolute inset-0 flex flex-col">
-                <div className="flex-1">
-                  <iframe
-                    title="SOW Preview"
-                    className="w-full h-full border-0"
-                    src={toSowPreviewUrl(editSowLink)}
-                    sandbox="allow-scripts allow-same-origin allow-popups"
-                  />
-                </div>
-                <div className="bg-background/80 backdrop-blur-sm border-t p-3 flex items-center justify-center gap-3">
-                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-[10px] sm:text-xs text-muted-foreground">
-                    Iframe preview restricted by some providers. If blank, use the external link.
-                  </p>
+              isSharePointNavLink(editSowLink) ? (
+                // SharePoint "my?id=..." navigation links block all iframe embedding — open externally
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 p-8">
+                  <div className="rounded-full bg-amber-500/10 p-5">
+                    <ExternalLink className="h-8 w-8 text-amber-500" />
+                  </div>
+                  <div className="text-center space-y-1.5 max-w-sm">
+                    <p className="font-semibold text-foreground">Preview not available</p>
+                    <p className="text-sm text-muted-foreground">
+                      SharePoint restricts embedding this link. Open it in your browser to view the document.
+                    </p>
+                    <p className="font-mono text-[10px] text-muted-foreground/60 break-all line-clamp-2 mt-2">{editSowLink}</p>
+                  </div>
                   <Button
-                    variant="link"
-                    size="sm"
-                    className="h-auto p-0 text-[10px] sm:text-xs"
-                    onClick={() => {
-                      const link = editSowLink || '';
-                      if (looksLikeUrl(link)) window.open(link, '_blank', 'noopener,noreferrer');
-                    }}
+                    size="lg"
+                    onClick={() => window.open(editSowLink, '_blank', 'noopener,noreferrer')}
                   >
-                    Open in new tab
+                    <ExternalLink className="mr-2 h-4 w-4" /> Open in Browser
                   </Button>
                 </div>
-              </div>
+              ) : (
+                <div className="absolute inset-0 flex flex-col">
+                  <div className="flex-1">
+                    <iframe
+                      title="SOW Preview"
+                      className="w-full h-full border-0"
+                      src={toSowPreviewUrl(editSowLink)}
+                      sandbox="allow-scripts allow-same-origin allow-popups"
+                    />
+                  </div>
+                  <div className="bg-background/80 backdrop-blur-sm border-t p-3 flex items-center justify-center gap-3">
+                    <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-[10px] sm:text-xs text-muted-foreground">
+                      If preview is blank, the provider restricts embedding.
+                    </p>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto p-0 text-[10px] sm:text-xs"
+                      onClick={() => {
+                        const link = editSowLink || '';
+                        if (looksLikeUrl(link)) window.open(link, '_blank', 'noopener,noreferrer');
+                      }}
+                    >
+                      Open in new tab
+                    </Button>
+                  </div>
+                </div>
+              )
             ) : (
               <div className="h-full flex items-center justify-center p-8 text-center text-sm text-muted-foreground">
                 No valid URL provided for preview.
@@ -975,6 +1074,86 @@ export default function PotentialOpportunities() {
         </DialogContent>
       </Dialog>
       </AnimatePresence>
+
+      <Dialog open={pickerOpen} onOpenChange={(open) => { setPickerOpen(open); if (!open) { setPickerQ(''); setPickerVertical('ALL'); } }}>
+        <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[85vh] rounded-[2rem] overflow-hidden p-0 flex flex-col">
+          <DialogHeader className="bg-primary/5 p-6 shrink-0">
+            <DialogTitle className="text-xl font-black tracking-tight flex items-center gap-3">
+              <Plus className="h-5 w-5 text-primary" />
+              Select Tender
+            </DialogTitle>
+            <p className="text-muted-foreground text-xs mt-1">Choose a tender from the main list to add it to Potential Opportunities.</p>
+          </DialogHeader>
+          <div className="px-6 pt-4 pb-3 space-y-3 shrink-0 border-b">
+            <Input
+              placeholder="Search by ref no or tender name…"
+              value={pickerQ}
+              onChange={e => setPickerQ(e.target.value)}
+              className="rounded-xl"
+              autoFocus
+            />
+            <div className="flex flex-wrap gap-2">
+              {['ALL', 'GTS', 'GDS', 'GES', 'OTHERS'].map(v => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setPickerVertical(v)}
+                  className={cn(
+                    "px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border transition-colors",
+                    pickerVertical === v
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border bg-muted/30 text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {pickerOpps.length === 0 ? (
+              <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
+                {(opportunities?.length ?? 0) > 0 ? 'No matching tenders found.' : 'Loading tenders…'}
+              </div>
+            ) : (
+              <div className="divide-y">
+                {pickerOpps.map((opp) => {
+                  const ref = String(opp.opportunityRefNo || '');
+                  const name = String(opp.tenderName || '');
+                  const client = String(opp.clientName || '');
+                  const group = String(opp.groupClassification || '');
+                  const status = String(opp.avenirStatus || '');
+                  return (
+                    <div key={ref} className="flex items-center gap-3 px-6 py-3 hover:bg-muted/40 transition-colors">
+                      <div className="flex-1 min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs text-muted-foreground shrink-0">{ref}</span>
+                          {group && <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0">{group}</Badge>}
+                          {status && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0">{status}</Badge>}
+                        </div>
+                        <div className="text-sm font-medium truncate">{name || '—'}</div>
+                        {client && <div className="text-xs text-muted-foreground truncate">{client}</div>}
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="rounded-full px-4 shrink-0"
+                        disabled={pickerMarking}
+                        onClick={() => selectTender(opp)}
+                      >
+                        <Plus className="h-3 w-3 mr-1" /> Add
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <div className="p-4 border-t flex justify-end">
+            <Button variant="ghost" className="rounded-xl" onClick={() => setPickerOpen(false)}>Close</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
     </>
   );
