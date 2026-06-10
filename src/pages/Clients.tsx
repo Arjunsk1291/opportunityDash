@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTrackedAction } from '@/hooks/useTrackedAction';
 import { ActionProgressBar } from '@/components/ActionProgressBar';
-import { Check, Copy, Globe, MapPin, Plus, Search, Upload, UserCheck, Merge, AlertCircle, RefreshCw } from 'lucide-react';
+import { Check, Copy, Globe, MapPin, Plus, Search, Upload, UserCheck, Merge, AlertCircle, RefreshCw, LayoutGrid, LayoutList, FileDown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,9 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -275,6 +278,10 @@ const Clients = () => {
   const [duplicates, setDuplicates] = useState<DuplicateCluster[]>([]);
   const [loadingDuplicates, setLoadingDuplicates] = useState(false);
   const [merging, setMerging] = useState<string | null>(null);
+  const [clientViewMode, setClientViewMode] = useState<'grid' | 'list'>('grid');
+  const CL_PAGE_SIZE_GRID = 12;
+  const CL_PAGE_SIZE_LIST = 10;
+  const [clCurrentPage, setClCurrentPage] = useState(1);
 
   const [newClient, setNewClient] = useState<ClientInput>({
     companyName: '',
@@ -350,6 +357,46 @@ const Clients = () => {
       return buildSearchBlob(client).includes(query);
     });
   }, [clients, filters, search]);
+
+  useEffect(() => { setClCurrentPage(1); }, [filteredClients.length, clientViewMode]);
+
+  const clPageSize = clientViewMode === 'grid' ? CL_PAGE_SIZE_GRID : CL_PAGE_SIZE_LIST;
+  const clTotalPages = Math.max(1, Math.ceil(filteredClients.length / clPageSize));
+  const clPagedClients = useMemo(() => {
+    const start = (clCurrentPage - 1) * clPageSize;
+    return filteredClients.slice(start, start + clPageSize);
+  }, [filteredClients, clCurrentPage, clPageSize]);
+
+  const csvEscapeClient = (v: unknown) => {
+    const s = String(v == null ? '' : v);
+    if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+
+  const handleExportClientsCsv = () => {
+    const header = ['Company', 'Domain', 'City', 'Country', 'Primary Contact', 'Email', 'Contact Count'];
+    const lines = filteredClients.map(c => {
+      const first = c.contacts[0];
+      return [
+        c.companyName,
+        c.domain || c.group || '',
+        c.location.city || '',
+        c.location.country || '',
+        first ? `${first.firstName} ${first.lastName}`.trim() : '',
+        first?.email || '',
+        c.contacts.length,
+      ].map(csvEscapeClient).join(',');
+    });
+    const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `clients-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const handleCardClick = (client: ClientProfile) => {
     setSelectedClient(client);
@@ -561,7 +608,10 @@ const Clients = () => {
           </h1>
           <p className="text-muted-foreground">Vendor-style directory of client profiles and contacts.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <Button variant="outline" size="sm" className="gap-2" onClick={handleExportClientsCsv} disabled={filteredClients.length === 0}>
+            <FileDown className="h-4 w-4" /> Export CSV
+          </Button>
           {canManageClients && (
             <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
               <DialogTrigger asChild>
@@ -881,7 +931,7 @@ const Clients = () => {
             className="h-12 pl-11 bg-card border-border/50 rounded-2xl shadow-sm focus-visible:ring-primary/20"
           />
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {filters.domains.length > 0 || filters.countries.length > 0 ? (
             <Button
               variant="outline"
@@ -892,6 +942,10 @@ const Clients = () => {
               Clear all filters
             </Button>
           ) : null}
+          <div className="flex gap-1 rounded-lg border border-border/50 bg-muted/20 p-0.5">
+            <Button variant={clientViewMode === 'grid' ? 'secondary' : 'ghost'} size="sm" className="h-7 w-7 p-0" onClick={() => setClientViewMode('grid')} title="Grid view"><LayoutGrid className="h-4 w-4" /></Button>
+            <Button variant={clientViewMode === 'list' ? 'secondary' : 'ghost'} size="sm" className="h-7 w-7 p-0" onClick={() => setClientViewMode('list')} title="List view"><LayoutList className="h-4 w-4" /></Button>
+          </div>
         </div>
       </div>
 
@@ -922,32 +976,34 @@ const Clients = () => {
         </div>
       </div>
 
+      {isLoading && (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-2xl" />)}
+        </div>
+      )}
+      {error && !isLoading && (
+        <Card className="border-destructive/20 bg-destructive/5 p-6 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 inline mr-2" />
+          {error}
+        </Card>
+      )}
+      {!isLoading && filteredClients.length === 0 && (
+        <div className="py-20 text-center">
+          <div className="inline-flex p-6 rounded-full bg-muted/50 mb-4">
+            <Search className="h-10 w-10 text-muted-foreground/50" />
+          </div>
+          <p className="text-lg font-bold text-foreground">No clients found</p>
+          <p className="text-muted-foreground">Try adjusting your search or filters to find what you're looking for.</p>
+        </div>
+      )}
+      {!isLoading && filteredClients.length > 0 && (
+      <div className="space-y-4">
+      {clientViewMode === 'grid' ? (
       <div
         className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
         style={{ perspective: '1000px' }}
       >
-        {isLoading && (
-          <Card className="border border-border/50 bg-card p-12 text-center flex flex-col items-center gap-4 col-span-full">
-            <RefreshCw className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm font-medium text-muted-foreground">Synchronizing client directory...</p>
-          </Card>
-        )}
-        {error && !isLoading && (
-          <Card className="border-destructive/20 bg-destructive/5 p-6 text-sm text-destructive col-span-full">
-            <AlertCircle className="h-4 w-4 inline mr-2" />
-            {error}
-          </Card>
-        )}
-        {!isLoading && filteredClients.length === 0 && (
-          <div className="col-span-full py-20 text-center">
-             <div className="inline-flex p-6 rounded-full bg-muted/50 mb-4">
-               <Search className="h-10 w-10 text-muted-foreground/50" />
-             </div>
-             <p className="text-lg font-bold text-foreground">No clients found</p>
-             <p className="text-muted-foreground">Try adjusting your search or filters to find what you're looking for.</p>
-          </div>
-        )}
-        {filteredClients.map((client) => {
+        {clPagedClients.map((client) => {
           const firstContact = client.contacts[0];
           const domainDisplay = client.domain || client.group || 'No domain';
           const matchCount = countMatches(client, search);
@@ -998,6 +1054,61 @@ const Clients = () => {
           );
         })}
       </div>
+      ) : (
+        <div className="rounded-xl border overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="font-bold">Company</TableHead>
+                <TableHead className="hidden sm:table-cell font-bold">Domain</TableHead>
+                <TableHead className="hidden md:table-cell font-bold">Location</TableHead>
+                <TableHead className="font-bold">Contacts</TableHead>
+                <TableHead className="hidden lg:table-cell font-bold">Primary Contact</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {clPagedClients.map((client) => {
+                const firstContact = client.contacts[0];
+                const domainDisplay = client.domain || client.group || '—';
+                return (
+                  <TableRow key={client.id} className="group cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => handleCardClick(client)}>
+                    <TableCell className="font-medium">{highlightText(client.companyName, search)}</TableCell>
+                    <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{highlightText(domainDisplay, search)}</TableCell>
+                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                      {client.location.city || client.location.country ? `${client.location.city}${client.location.city && client.location.country ? ', ' : ''}${client.location.country}` : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="text-xs">{client.contacts.length}</Badge>
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+                      {firstContact ? `${firstContact.firstName} ${firstContact.lastName}`.trim() : '—'}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+      {clTotalPages > 1 && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <p className="text-xs text-muted-foreground">{(clCurrentPage - 1) * clPageSize + 1}–{Math.min(clCurrentPage * clPageSize, filteredClients.length)} of {filteredClients.length} clients</p>
+          <Pagination className="w-auto mx-0 justify-end">
+            <PaginationContent>
+              <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setClCurrentPage(p => Math.max(1, p - 1)); }} className={clCurrentPage === 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+              {Array.from({ length: clTotalPages }).map((_, idx) => {
+                const pg = idx + 1;
+                if (clTotalPages <= 7 || pg === 1 || pg === clTotalPages || Math.abs(pg - clCurrentPage) <= 1) return <PaginationItem key={pg}><PaginationLink href="#" isActive={pg === clCurrentPage} onClick={(e) => { e.preventDefault(); setClCurrentPage(pg); }} className="cursor-pointer">{pg}</PaginationLink></PaginationItem>;
+                if (pg === clCurrentPage - 2 || pg === clCurrentPage + 2) return <PaginationItem key={pg}><PaginationEllipsis /></PaginationItem>;
+                return null;
+              })}
+              <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setClCurrentPage(p => Math.min(clTotalPages, p + 1)); }} className={clCurrentPage === clTotalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
+      )}
+      </div>
+      )}
       </TabsContent>
 
       {isMaster && (

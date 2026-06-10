@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 import { useTrackedAction } from '@/hooks/useTrackedAction';
 import { ActionProgressBar } from '@/components/ActionProgressBar';
-import { AlertTriangle, BarChart3, BriefcaseBusiness, Briefcase, Building2, CalendarDays, Database, FileCheck2, Globe, Plus, Search, Upload, Users, TrendingUp, Handshake, Target, Zap } from 'lucide-react';
+import { AlertTriangle, BarChart3, BriefcaseBusiness, Briefcase, Building2, CalendarDays, Database, FileCheck2, Globe, LayoutGrid, LayoutList, Plus, Search, SearchX, Upload, Users, TrendingUp, Handshake, Target, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +35,8 @@ import {
   createBDEngagementId,
 } from '@/lib/bdEngagements';
 import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToMatrix } from '@/lib/excelWorkbook';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 type MeetingTypeOption = typeof MEETING_TYPES[number];
@@ -257,6 +259,10 @@ const BDEngagements = () => {
   const [selectedEngagement, setSelectedEngagement] = useState<BDEngagement | null>(null);
   const [selectedClient, setSelectedClient] = useState<string>('');
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [engViewMode, setEngViewMode] = useState<'table' | 'card'>('table');
+  const [bdCurrentPage, setBdCurrentPage] = useState(1);
+  const BD_PAGE_SIZE = 10;
+
   const canBulkAdd = Boolean(isAdmin || isMaster || bulkAccessEmails.includes(String(user?.email || '').toLowerCase()));
   const canManageBulkAccess = Boolean(isAdmin || isMaster);
 
@@ -701,6 +707,11 @@ const BDEngagements = () => {
 
     return sorted;
   }, [dateSourceMode, leadFilter, meetingTypeFilter, reportFilter, rows, search, sortField, sortOrder, statusFilter]);
+
+  useEffect(() => { setBdCurrentPage(1); }, [filteredRows.length, search, meetingTypeFilter, statusFilter, leadFilter, reportFilter]);
+
+  const bdTotalPages = Math.max(1, Math.ceil(filteredRows.length / BD_PAGE_SIZE));
+  const pagedEngagements = filteredRows.slice((bdCurrentPage - 1) * BD_PAGE_SIZE, bdCurrentPage * BD_PAGE_SIZE);
 
   const stats = useMemo(() => {
     const totalEngagements = rows.length;
@@ -1171,6 +1182,27 @@ const BDEngagements = () => {
         <TabsContent value="engagements" className="space-y-6">
           <Card className="border-border bg-card text-card-foreground">
             <CardContent className="p-5">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="text-sm font-medium text-muted-foreground">{filteredRows.length} of {rows.length} engagements</span>
+                <div className="flex gap-1 rounded-lg border border-border bg-muted/30 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setEngViewMode('table')}
+                    className={`rounded-md p-1.5 transition-colors ${engViewMode === 'table' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    title="Table view"
+                  >
+                    <LayoutList className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEngViewMode('card')}
+                    className={`rounded-md p-1.5 transition-colors ${engViewMode === 'card' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                    title="Card view"
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
               <div className="grid gap-3 lg:grid-cols-[minmax(0,1.6fr)_repeat(4,minmax(0,0.7fr))]">
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1256,66 +1288,163 @@ const BDEngagements = () => {
               </div>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Ref</TableHead>
-                    <TableHead
-                      className="select-none"
-                      title="Double-click to toggle date source (sheet vs ref-derived)"
-                      onDoubleClick={() => {
-                        setDateSourceMode((prev) => (prev === 'sheet' ? 'ref' : 'sheet'));
-                        setSortField('date');
-                      }}
-                    >
-                      Date {dateSourceMode === 'ref' ? '(Ref)' : '(Sheet)'}
-                    </TableHead>
-                  <TableHead>Client Name</TableHead>
-                  <TableHead>Meeting Type</TableHead>
-                  <TableHead>Status Q/N</TableHead>
-                  <TableHead>Meeting location</TableHead>
-                  <TableHead>Discussion Points</TableHead>
-                  <TableHead>Report</TableHead>
-                  <TableHead>Lead</TableHead>
-                    <TableHead>Focal Person</TableHead>
-                    <TableHead>Lead Description</TableHead>
-                    <TableHead>Next Steps</TableHead>
-                    <TableHead>Last contact</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredRows.map((row) => (
-                    <TableRow key={row.id} className="cursor-pointer" onClick={() => setSelectedEngagement(row)}>
-                      <TableCell className="font-medium">{row.ref}</TableCell>
-                      <TableCell>{formatPrettyDate(dateSourceMode === 'ref' ? (deriveIsoDateFromRef(row.ref) || row.date) : row.date)}</TableCell>
-                      <TableCell>{row.clientName}</TableCell>
-                      <TableCell>{row.meetingType}</TableCell>
-                      <TableCell>{row.status || '—'}</TableCell>
-                      <TableCell>{row.location || '—'}</TableCell>
-                      <TableCell className="max-w-[280px] whitespace-pre-wrap break-words text-justify align-top">{row.discussionPoints}</TableCell>
-                      <TableCell>{row.reportSubmitted ? <Badge className="border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
-                      <TableCell>{row.leadGenerated ? <Badge className="border border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
-                      <TableCell>{row.focalPerson || '—'}</TableCell>
-                      <TableCell className="max-w-[240px] whitespace-pre-wrap break-words text-justify align-top">{row.leadDescription || '—'}</TableCell>
-                      <TableCell className="max-w-[240px] whitespace-pre-wrap break-words text-justify align-top">{row.nextSteps || '—'}</TableCell>
-                      <TableCell>{formatPrettyDate(row.lastContact)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button type="button" size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); openEditDialog(row); }}>Edit</Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {filteredRows.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={14} className="py-12 text-center text-sm text-muted-foreground">
-                        No engagement records match the current filters.
-                      </TableCell>
-                    </TableRow>
+              {engViewMode === 'table' ? (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Ref</TableHead>
+                        <TableHead
+                          className="select-none"
+                          title="Double-click to toggle date source (sheet vs ref-derived)"
+                          onDoubleClick={() => {
+                            setDateSourceMode((prev) => (prev === 'sheet' ? 'ref' : 'sheet'));
+                            setSortField('date');
+                          }}
+                        >
+                          Date {dateSourceMode === 'ref' ? '(Ref)' : '(Sheet)'}
+                        </TableHead>
+                        <TableHead>Client Name</TableHead>
+                        <TableHead>Meeting Type</TableHead>
+                        <TableHead>Status Q/N</TableHead>
+                        <TableHead>Meeting location</TableHead>
+                        <TableHead>Discussion Points</TableHead>
+                        <TableHead>Report</TableHead>
+                        <TableHead>Lead</TableHead>
+                        <TableHead>Focal Person</TableHead>
+                        <TableHead>Lead Description</TableHead>
+                        <TableHead>Next Steps</TableHead>
+                        <TableHead>Last contact</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pagedEngagements.map((row) => (
+                        <TableRow key={row.id} className="group cursor-pointer transition-colors hover:bg-muted/30" onClick={() => setSelectedEngagement(row)}>
+                          <TableCell className="font-medium">{row.ref}</TableCell>
+                          <TableCell>{formatPrettyDate(dateSourceMode === 'ref' ? (deriveIsoDateFromRef(row.ref) || row.date) : row.date)}</TableCell>
+                          <TableCell>{row.clientName}</TableCell>
+                          <TableCell>{row.meetingType}</TableCell>
+                          <TableCell>{row.status || '—'}</TableCell>
+                          <TableCell>{row.location || '—'}</TableCell>
+                          <TableCell className="max-w-[280px] whitespace-pre-wrap break-words text-justify align-top">{row.discussionPoints}</TableCell>
+                          <TableCell>{row.reportSubmitted ? <Badge className="border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
+                          <TableCell>{row.leadGenerated ? <Badge className="border border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300">Yes</Badge> : <Badge variant="outline">No</Badge>}</TableCell>
+                          <TableCell>{row.focalPerson || '—'}</TableCell>
+                          <TableCell className="max-w-[240px] whitespace-pre-wrap break-words text-justify align-top">{row.leadDescription || '—'}</TableCell>
+                          <TableCell className="max-w-[240px] whitespace-pre-wrap break-words text-justify align-top">{row.nextSteps || '—'}</TableCell>
+                          <TableCell>{formatPrettyDate(row.lastContact)}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                              <Button type="button" size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); openEditDialog(row); }}>Edit</Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {filteredRows.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={14} className="py-16 text-center">
+                            <div className="flex flex-col items-center gap-3">
+                              <SearchX className="h-10 w-10 text-muted-foreground/40" />
+                              <p className="text-sm text-muted-foreground">No engagement records match the current filters.</p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                  {filteredRows.length > BD_PAGE_SIZE && (
+                    <div className="mt-4 flex items-center justify-between gap-4 border-t border-border pt-4">
+                      <p className="text-xs text-muted-foreground">
+                        {(bdCurrentPage - 1) * BD_PAGE_SIZE + 1}–{Math.min(bdCurrentPage * BD_PAGE_SIZE, filteredRows.length)} of {filteredRows.length}
+                      </p>
+                      <Pagination className="w-auto mx-0 justify-end">
+                        <PaginationContent>
+                          <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setBdCurrentPage(p => Math.max(1, p - 1)); }} className={bdCurrentPage === 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+                          {Array.from({ length: bdTotalPages }).map((_, idx) => {
+                            const pg = idx + 1;
+                            if (bdTotalPages <= 7 || pg === 1 || pg === bdTotalPages || Math.abs(pg - bdCurrentPage) <= 1) return <PaginationItem key={pg}><PaginationLink href="#" isActive={pg === bdCurrentPage} onClick={(e) => { e.preventDefault(); setBdCurrentPage(pg); }} className="cursor-pointer">{pg}</PaginationLink></PaginationItem>;
+                            if (pg === bdCurrentPage - 2 || pg === bdCurrentPage + 2) return <PaginationItem key={pg}><PaginationEllipsis /></PaginationItem>;
+                            return null;
+                          })}
+                          <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setBdCurrentPage(p => Math.min(bdTotalPages, p + 1)); }} className={bdCurrentPage === bdTotalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+                        </PaginationContent>
+                      </Pagination>
+                    </div>
                   )}
-                </TableBody>
-              </Table>
+                </>
+              ) : (
+                <>
+                  {filteredRows.length === 0 ? (
+                    <div className="flex flex-col items-center gap-3 py-16">
+                      <SearchX className="h-10 w-10 text-muted-foreground/40" />
+                      <p className="text-sm text-muted-foreground">No engagement records match the current filters.</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {pagedEngagements.map((row) => (
+                        <div
+                          key={row.id}
+                          className="group flex cursor-pointer flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+                          onClick={() => setSelectedEngagement(row)}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-xs font-mono text-muted-foreground">{row.ref}</p>
+                              <p className="mt-0.5 font-semibold text-foreground leading-tight">{row.clientName}</p>
+                            </div>
+                            <span className="shrink-0 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                              {formatPrettyDate(dateSourceMode === 'ref' ? (deriveIsoDateFromRef(row.ref) || row.date) : row.date)}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            <Badge variant="outline" className="text-xs">{row.meetingType}</Badge>
+                            {row.status && <Badge variant="outline" className="text-xs border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300">{row.status}</Badge>}
+                            {row.reportSubmitted && <Badge className="text-xs border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">Report</Badge>}
+                            {row.leadGenerated && <Badge className="text-xs border border-violet-500/20 bg-violet-500/10 text-violet-700 dark:text-violet-300">Lead</Badge>}
+                          </div>
+                          {row.discussionPoints && (
+                            <p className="line-clamp-2 text-xs text-muted-foreground">{row.discussionPoints}</p>
+                          )}
+                          <div className="mt-auto flex items-center justify-between border-t border-border pt-2">
+                            <div className="text-xs text-muted-foreground">
+                              {row.focalPerson ? <span>{row.focalPerson}</span> : <span className="italic">No focal person</span>}
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs opacity-0 transition-opacity group-hover:opacity-100"
+                              onClick={(event) => { event.stopPropagation(); openEditDialog(row); }}
+                            >
+                              Edit
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {filteredRows.length > BD_PAGE_SIZE && (
+                    <div className="mt-4 flex items-center justify-between gap-4 border-t border-border pt-4">
+                      <p className="text-xs text-muted-foreground">
+                        {(bdCurrentPage - 1) * BD_PAGE_SIZE + 1}–{Math.min(bdCurrentPage * BD_PAGE_SIZE, filteredRows.length)} of {filteredRows.length}
+                      </p>
+                      <Pagination className="w-auto mx-0 justify-end">
+                        <PaginationContent>
+                          <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setBdCurrentPage(p => Math.max(1, p - 1)); }} className={bdCurrentPage === 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+                          {Array.from({ length: bdTotalPages }).map((_, idx) => {
+                            const pg = idx + 1;
+                            if (bdTotalPages <= 7 || pg === 1 || pg === bdTotalPages || Math.abs(pg - bdCurrentPage) <= 1) return <PaginationItem key={pg}><PaginationLink href="#" isActive={pg === bdCurrentPage} onClick={(e) => { e.preventDefault(); setBdCurrentPage(pg); }} className="cursor-pointer">{pg}</PaginationLink></PaginationItem>;
+                            if (pg === bdCurrentPage - 2 || pg === bdCurrentPage + 2) return <PaginationItem key={pg}><PaginationEllipsis /></PaginationItem>;
+                            return null;
+                          })}
+                          <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setBdCurrentPage(p => Math.min(bdTotalPages, p + 1)); }} className={bdCurrentPage === bdTotalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+                        </PaginationContent>
+                      </Pagination>
+                    </div>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

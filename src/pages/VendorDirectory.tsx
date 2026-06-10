@@ -37,6 +37,8 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import {
@@ -392,6 +394,9 @@ export default function VendorDirectory() {
   const [agreementFilter, setAgreementFilter] = useState<AgreementFilter>('ALL');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [sortBy, setSortBy] = useState<SortKey>('name');
+  const VD_PAGE_SIZE_GRID = 12;
+  const VD_PAGE_SIZE_LIST = 10;
+  const [vdCurrentPage, setVdCurrentPage] = useState(1);
   const [selectedVendor, setSelectedVendor] = useState<VendorData | null>(null);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -456,6 +461,15 @@ export default function VendorDirectory() {
         }
       });
   }, [agreementFilter, searchTerms, sortBy, vendors]);
+
+  useEffect(() => { setVdCurrentPage(1); }, [enrichedVendors.length, search, agreementFilter, viewMode]);
+
+  const vdPageSize = viewMode === 'grid' ? VD_PAGE_SIZE_GRID : VD_PAGE_SIZE_LIST;
+  const vdTotalPages = Math.max(1, Math.ceil(enrichedVendors.length / vdPageSize));
+  const pagedVendors = useMemo(() => {
+    const start = (vdCurrentPage - 1) * vdPageSize;
+    return enrichedVendors.slice(start, start + vdPageSize);
+  }, [enrichedVendors, vdCurrentPage, vdPageSize]);
 
   const totals = useMemo(() => ({
     total: vendors.length,
@@ -635,8 +649,9 @@ export default function VendorDirectory() {
       </Card>
 
       {viewMode === 'grid' ? (
+        <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
-          {enrichedVendors.map(({ vendor, relevance, matchCount }) => {
+          {pagedVendors.map(({ vendor, relevance, matchCount }) => {
             const focus = focusMeta(vendor.focusArea);
             const FocusIcon = focus.icon;
             return (
@@ -696,7 +711,26 @@ export default function VendorDirectory() {
             );
           })}
         </div>
+        {vdTotalPages > 1 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <p className="text-xs text-muted-foreground">{(vdCurrentPage - 1) * vdPageSize + 1}–{Math.min(vdCurrentPage * vdPageSize, enrichedVendors.length)} of {enrichedVendors.length} partners</p>
+            <Pagination className="w-auto mx-0 justify-end">
+              <PaginationContent>
+                <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setVdCurrentPage(p => Math.max(1, p - 1)); }} className={vdCurrentPage === 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+                {Array.from({ length: vdTotalPages }).map((_, idx) => {
+                  const pg = idx + 1;
+                  if (vdTotalPages <= 7 || pg === 1 || pg === vdTotalPages || Math.abs(pg - vdCurrentPage) <= 1) return <PaginationItem key={pg}><PaginationLink href="#" isActive={pg === vdCurrentPage} onClick={(e) => { e.preventDefault(); setVdCurrentPage(pg); }} className="cursor-pointer">{pg}</PaginationLink></PaginationItem>;
+                  if (pg === vdCurrentPage - 2 || pg === vdCurrentPage + 2) return <PaginationItem key={pg}><PaginationEllipsis /></PaginationItem>;
+                  return null;
+                })}
+                <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setVdCurrentPage(p => Math.min(vdTotalPages, p + 1)); }} className={vdCurrentPage === vdTotalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        )}
+        </div>
       ) : (
+        <div className="space-y-4">
         <Card className="bg-card/80 backdrop-blur-sm">
           <div className="overflow-x-auto">
             <Table>
@@ -713,8 +747,8 @@ export default function VendorDirectory() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {enrichedVendors.map(({ vendor, relevance }) => (
-                  <TableRow key={vendor.id} className="cursor-pointer" onClick={() => setSelectedVendor(vendor)}>
+                {pagedVendors.map(({ vendor, relevance }) => (
+                  <TableRow key={vendor.id} className="group cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setSelectedVendor(vendor)}>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox checked={compareIds.includes(vendor.id)} onCheckedChange={(checked) => toggleCompare(vendor.id, Boolean(checked))} />
                     </TableCell>
@@ -736,6 +770,24 @@ export default function VendorDirectory() {
             </Table>
           </div>
         </Card>
+        {vdTotalPages > 1 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <p className="text-xs text-muted-foreground">{(vdCurrentPage - 1) * vdPageSize + 1}–{Math.min(vdCurrentPage * vdPageSize, enrichedVendors.length)} of {enrichedVendors.length} partners</p>
+            <Pagination className="w-auto mx-0 justify-end">
+              <PaginationContent>
+                <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setVdCurrentPage(p => Math.max(1, p - 1)); }} className={vdCurrentPage === 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+                {Array.from({ length: vdTotalPages }).map((_, idx) => {
+                  const pg = idx + 1;
+                  if (vdTotalPages <= 7 || pg === 1 || pg === vdTotalPages || Math.abs(pg - vdCurrentPage) <= 1) return <PaginationItem key={pg}><PaginationLink href="#" isActive={pg === vdCurrentPage} onClick={(e) => { e.preventDefault(); setVdCurrentPage(pg); }} className="cursor-pointer">{pg}</PaginationLink></PaginationItem>;
+                  if (pg === vdCurrentPage - 2 || pg === vdCurrentPage + 2) return <PaginationItem key={pg}><PaginationEllipsis /></PaginationItem>;
+                  return null;
+                })}
+                <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setVdCurrentPage(p => Math.min(vdTotalPages, p + 1)); }} className={vdCurrentPage === vdTotalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        )}
+        </div>
       )}
 
       {enrichedVendors.length === 0 && (
@@ -748,12 +800,12 @@ export default function VendorDirectory() {
         <div className="space-y-3">
           {[1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="rounded-lg border bg-card p-4 flex items-center gap-4">
-              <div className="h-10 w-10 rounded-full bg-muted animate-pulse shrink-0" />
+              <Skeleton className="h-10 w-10 rounded-full shrink-0" />
               <div className="flex-1 space-y-2">
-                <div className="h-4 w-1/3 rounded bg-muted animate-pulse" />
-                <div className="h-3 w-1/2 rounded bg-muted animate-pulse" />
+                <Skeleton className="h-4 w-1/3 rounded" />
+                <Skeleton className="h-3 w-1/2 rounded" />
               </div>
-              <div className="h-6 w-16 rounded bg-muted animate-pulse" />
+              <Skeleton className="h-6 w-16 rounded" />
             </div>
           ))}
         </div>

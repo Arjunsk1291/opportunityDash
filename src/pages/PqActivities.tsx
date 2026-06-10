@@ -5,7 +5,7 @@ import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { CalendarIcon, Copy, FileDown, FileUp, Plus, Search, Trash2, Pencil, AlertTriangle, FileText } from 'lucide-react';
+import { CalendarIcon, Copy, FileDown, FileUp, Plus, Search, Trash2, Pencil, AlertTriangle, FileText, LayoutGrid, LayoutList, SearchX } from 'lucide-react';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,8 @@ import { toast } from 'sonner';
 import { withPerf } from '@/lib/perfLogger';
 import { Progress } from '@/components/ui/progress';
 import { useProgressLoader } from '@/lib/useProgressLoader';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { downloadWorkbook } from '@/lib/excelWorkbook';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -130,6 +132,9 @@ export default function PqActivities() {
 
   const [deleteTarget, setDeleteTarget] = useState<PqActivityRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'card'>('list');
+  const PQ_PAGE_SIZE = 10;
+  const [pqCurrentPage, setPqCurrentPage] = useState(1);
 
   const form = useForm<PqFormValues>({
     resolver: zodResolver(pqFormSchema),
@@ -234,7 +239,16 @@ export default function PqActivities() {
 
   useEffect(() => {
     setExpandedId(null);
+    setPqCurrentPage(1);
   }, [activeTenant]);
+
+  useEffect(() => { setPqCurrentPage(1); }, [filteredRows.length, q, statusFilter, showStaleOnly]);
+
+  const pqTotalPages = Math.max(1, Math.ceil(filteredRows.length / PQ_PAGE_SIZE));
+  const pqPagedRows = useMemo(() => {
+    const start = (pqCurrentPage - 1) * PQ_PAGE_SIZE;
+    return filteredRows.slice(start, start + PQ_PAGE_SIZE);
+  }, [filteredRows, pqCurrentPage]);
 
   const statusBadgeClass = (status: PqStatus) => {
     switch (status) {
@@ -526,32 +540,32 @@ export default function PqActivities() {
             <TabsContent value={activeTenant}>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-6">
-          <Card className="rounded-2xl bg-navytrust-surface/40 backdrop-blur border-white/10 shadow-elegant">
+          <Card className="rounded-2xl bg-blue-500/10 border-blue-500/20 shadow-elegant">
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs tracking-[0.24em] uppercase text-navytrust-foreground/70">Total</CardTitle>
+              <CardTitle className="text-xs tracking-[0.24em] uppercase text-blue-400">Total</CardTitle>
             </CardHeader>
-            <CardContent className="text-2xl font-semibold">{stats.total}</CardContent>
+            <CardContent className="text-2xl font-semibold text-blue-300">{stats.total}</CardContent>
           </Card>
-          <Card className="rounded-2xl bg-navytrust-surface/40 backdrop-blur border-white/10 shadow-elegant">
+          <Card className="rounded-2xl bg-green-500/10 border-green-500/20 shadow-elegant">
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs tracking-[0.24em] uppercase text-navytrust-foreground/70 flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-navytrust-gold shadow-nt-gold animate-pulse" aria-hidden="true" />
+              <CardTitle className="text-xs tracking-[0.24em] uppercase text-green-400 flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" aria-hidden="true" />
                 Prequalified
               </CardTitle>
             </CardHeader>
-            <CardContent className="text-2xl font-semibold">{stats.prequalified}</CardContent>
+            <CardContent className="text-2xl font-semibold text-green-300">{stats.prequalified}</CardContent>
           </Card>
-          <Card className="rounded-2xl bg-navytrust-surface/40 backdrop-blur border-white/10 shadow-elegant">
+          <Card className="rounded-2xl bg-indigo-500/10 border-indigo-500/20 shadow-elegant">
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs tracking-[0.24em] uppercase text-navytrust-foreground/70">Registered</CardTitle>
+              <CardTitle className="text-xs tracking-[0.24em] uppercase text-indigo-400">Registered</CardTitle>
             </CardHeader>
-            <CardContent className="text-2xl font-semibold">{stats.registered}</CardContent>
+            <CardContent className="text-2xl font-semibold text-indigo-300">{stats.registered}</CardContent>
           </Card>
-          <Card className="rounded-2xl bg-navytrust-surface/40 backdrop-blur border-white/10 shadow-elegant">
+          <Card className="rounded-2xl bg-amber-500/10 border-amber-500/20 shadow-elegant">
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs tracking-[0.24em] uppercase text-navytrust-foreground/70">In Process</CardTitle>
+              <CardTitle className="text-xs tracking-[0.24em] uppercase text-amber-400">In Process</CardTitle>
             </CardHeader>
-            <CardContent className="text-2xl font-semibold">{stats.inProcess}</CardContent>
+            <CardContent className="text-2xl font-semibold text-amber-300">{stats.inProcess}</CardContent>
           </Card>
         </div>
             </TabsContent>
@@ -560,12 +574,6 @@ export default function PqActivities() {
 
         <>
 	        <div className="mt-6 rounded-2xl bg-navytrust-surface/35 backdrop-blur border border-white/10 shadow-elegant p-3 sm:p-4">
-	          {loading && (
-	            <div className="mb-3">
-	              <Progress value={loadProgress} className="h-2" />
-	              <div className="mt-1 text-xs text-navytrust-foreground/70">Working… {loadProgress}%</div>
-	            </div>
-	          )}
 	          <div className="flex flex-col lg:flex-row lg:items-center gap-3">
 	            <div className="flex-1 flex items-center gap-2">
 	              <div className="relative w-full">
@@ -581,6 +589,10 @@ export default function PqActivities() {
 	              <Button variant="secondary" className="bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70" onClick={() => loadRows('refresh_click')} loading={loading}>
 	                Refresh
 	              </Button>
+              <div className="flex gap-1 rounded-lg border border-white/10 bg-navytrust-elevated/30 p-0.5">
+                <Button variant={viewMode === 'list' ? 'secondary' : 'ghost'} size="sm" className="h-7 w-7 p-0" onClick={() => setViewMode('list')} title="List view"><LayoutList className="h-4 w-4" /></Button>
+                <Button variant={viewMode === 'card' ? 'secondary' : 'ghost'} size="sm" className="h-7 w-7 p-0" onClick={() => setViewMode('card')} title="Card view"><LayoutGrid className="h-4 w-4" /></Button>
+              </div>
             </div>
 
             <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
@@ -687,8 +699,20 @@ export default function PqActivities() {
           </Card>
         </div>
 
-        {/* Desktop table */}
-        <div className="hidden md:block mt-6">
+        {/* Table / List view */}
+        <div className={viewMode === 'list' ? 'mt-6' : 'hidden'}>
+          {loading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-xl" />)}
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <div className="flex flex-col items-center gap-4 py-20 text-muted-foreground">
+              <SearchX className="h-12 w-12 opacity-30" />
+              <p className="font-semibold">No entries found</p>
+              <p className="text-xs">Try adjusting your search or filters</p>
+            </div>
+          ) : (
+          <div className="space-y-4">
           <div className="rounded-2xl border border-white/10 bg-navytrust-surface/25 backdrop-blur shadow-elegant overflow-hidden">
             <table className="w-full text-sm" aria-label="PQ activities table">
               <thead className="bg-navytrust-elevated/35">
@@ -705,7 +729,7 @@ export default function PqActivities() {
               </thead>
               <tbody>
                 <AnimatePresence initial={false}>
-	                  {filteredRows.map((row, idx) => {
+	                  {pqPagedRows.map((row, idx) => {
 	                    const isPreq = row.status === 'Prequalified';
 	                    return (
                       <motion.tr
@@ -753,6 +777,25 @@ export default function PqActivities() {
               </tbody>
             </table>
           </div>
+          {pqTotalPages > 1 && (
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <p className="text-xs text-muted-foreground">{(pqCurrentPage - 1) * PQ_PAGE_SIZE + 1}–{Math.min(pqCurrentPage * PQ_PAGE_SIZE, filteredRows.length)} of {filteredRows.length}</p>
+              <Pagination className="w-auto mx-0 justify-end">
+                <PaginationContent>
+                  <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setPqCurrentPage(p => Math.max(1, p - 1)); }} className={pqCurrentPage === 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+                  {Array.from({ length: pqTotalPages }).map((_, idx) => {
+                    const pg = idx + 1;
+                    if (pqTotalPages <= 7 || pg === 1 || pg === pqTotalPages || Math.abs(pg - pqCurrentPage) <= 1) return <PaginationItem key={pg}><PaginationLink href="#" isActive={pg === pqCurrentPage} onClick={(e) => { e.preventDefault(); setPqCurrentPage(pg); }} className="cursor-pointer">{pg}</PaginationLink></PaginationItem>;
+                    if (pg === pqCurrentPage - 2 || pg === pqCurrentPage + 2) return <PaginationItem key={pg}><PaginationEllipsis /></PaginationItem>;
+                    return null;
+                  })}
+                  <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setPqCurrentPage(p => Math.min(pqTotalPages, p + 1)); }} className={pqCurrentPage === pqTotalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
+          </div>
+          )}
 
 	          <Dialog open={Boolean(detailRow)} onOpenChange={(open) => { if (!open) setDetailRow(null); }}>
 	            <DialogContent className="max-w-4xl">
@@ -867,10 +910,20 @@ export default function PqActivities() {
 	          </Dialog>
         </div>
 
-        {/* Mobile cards */}
-	        <div className="md:hidden mt-6 space-y-3">
+        {/* Card view */}
+	        <div className={viewMode === 'card' ? 'mt-6 space-y-4' : 'hidden'}>
+          {loading ? (
+            <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-2xl" />)}</div>
+          ) : filteredRows.length === 0 ? (
+            <div className="flex flex-col items-center gap-4 py-20 text-muted-foreground">
+              <SearchX className="h-12 w-12 opacity-30" />
+              <p className="font-semibold">No entries found</p>
+            </div>
+          ) : (
+          <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 	          <AnimatePresence initial={false}>
-	            {filteredRows.map((row, idx) => {
+	            {pqPagedRows.map((row, idx) => {
 	              const isPreq = row.status === 'Prequalified';
 	              return (
                 <motion.div
@@ -915,8 +968,27 @@ export default function PqActivities() {
 	              );
 	            })}
 	          </AnimatePresence>
+          </div>
+          {pqTotalPages > 1 && (
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <p className="text-xs text-muted-foreground">{(pqCurrentPage - 1) * PQ_PAGE_SIZE + 1}–{Math.min(pqCurrentPage * PQ_PAGE_SIZE, filteredRows.length)} of {filteredRows.length}</p>
+              <Pagination className="w-auto mx-0 justify-end">
+                <PaginationContent>
+                  <PaginationItem><PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setPqCurrentPage(p => Math.max(1, p - 1)); }} className={pqCurrentPage === 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+                  {Array.from({ length: pqTotalPages }).map((_, idx) => {
+                    const pg = idx + 1;
+                    if (pqTotalPages <= 7 || pg === 1 || pg === pqTotalPages || Math.abs(pg - pqCurrentPage) <= 1) return <PaginationItem key={pg}><PaginationLink href="#" isActive={pg === pqCurrentPage} onClick={(e) => { e.preventDefault(); setPqCurrentPage(pg); }} className="cursor-pointer">{pg}</PaginationLink></PaginationItem>;
+                    if (pg === pqCurrentPage - 2 || pg === pqCurrentPage + 2) return <PaginationItem key={pg}><PaginationEllipsis /></PaginationItem>;
+                    return null;
+                  })}
+                  <PaginationItem><PaginationNext href="#" onClick={(e) => { e.preventDefault(); setPqCurrentPage(p => Math.min(pqTotalPages, p + 1)); }} className={pqCurrentPage === pqTotalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'} /></PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
+          )}
+          </div>
+          )}
 	        </div>
-        </>
 
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetContent side="right" className="w-full sm:max-w-xl pointer-events-auto">
@@ -1125,6 +1197,7 @@ export default function PqActivities() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        </>
       </div>
     </div>
     </>

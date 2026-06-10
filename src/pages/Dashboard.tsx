@@ -12,6 +12,7 @@ import { ExportButton } from '@/components/Dashboard/ExportButton';
 import { ReportButton } from '@/components/Dashboard/ReportButton';
 import { OpportunityDetailDialog } from '@/components/Dashboard/OpportunityDetailDialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
@@ -1091,16 +1092,16 @@ const Dashboard = () => {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="rounded-lg border bg-card p-4 space-y-2">
-              <div className="h-3 w-1/2 rounded bg-muted animate-pulse" />
-              <div className="h-8 w-3/4 rounded bg-muted animate-pulse" />
+              <Skeleton className="h-3 w-1/2 rounded" />
+              <Skeleton className="h-8 w-3/4 rounded" />
             </div>
           ))}
         </div>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="rounded-lg border bg-card p-4 h-64 animate-pulse bg-muted/20" />
-          <div className="rounded-lg border bg-card p-4 h-64 animate-pulse bg-muted/20" />
+          <Skeleton className="h-64 rounded-lg" />
+          <Skeleton className="h-64 rounded-lg" />
         </div>
-        <div className="rounded-lg border bg-card p-4 h-80 animate-pulse bg-muted/20" />
+        <Skeleton className="h-80 rounded-lg" />
       </div>
     );
   }

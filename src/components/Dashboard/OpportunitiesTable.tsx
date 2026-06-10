@@ -5,6 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Search, CheckCircle, Clock, RotateCcw, RefreshCw, MessageSquare, ArrowRight, ArrowUpDown, Eye, EyeOff } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { useCurrency } from '@/contexts/CurrencyContext';
@@ -182,7 +184,7 @@ export function OpportunitiesTable({
   const { formatCurrency } = useCurrency();
   const { getApprovalStatus, getApprovalState, approveAsProposalHead, approveAsSVP, bulkApprove, bulkRevert, revertApproval, refreshApprovals } = useApproval();
   const { isProposalHead, isSVP, isMaster, user, token, canPerformAction } = useAuth();
-  const { refreshData } = useData();
+  const { refreshData, isLoading } = useData();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBulkOpen, setIsBulkOpen] = useState(false);
   const [bulkMode, setBulkMode] = useState<'approve' | 'revert'>('approve');
@@ -221,9 +223,8 @@ export function OpportunitiesTable({
   const isSyncingScrollRef = useRef(false);
   const [topScrollWidth, setTopScrollWidth] = useState(0);
   const [showTopScrollbar, setShowTopScrollbar] = useState(false);
-  const [renderLimit, setRenderLimit] = useState(150);
-  const isInfiniteScrollEnabled = responsiveMode === 'dashboard';
-  const RENDER_BATCH_SIZE = 150;
+  const PAGE_SIZE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
 
   const isSheetPreset = columnPreset === 'sheet';
   const postBidColumnClass = responsiveMode === 'dashboard'
@@ -635,37 +636,15 @@ export function OpportunitiesTable({
   }, [filteredData, showConvertedEoiRows, isSheetPreset, sheetSortHeader, sheetSortOrder]);
 
   useEffect(() => {
-    if (!isInfiniteScrollEnabled) return;
-    setRenderLimit(RENDER_BATCH_SIZE);
-    const container = scrollContainerRef.current;
-    if (container) container.scrollTop = 0;
-  }, [isInfiniteScrollEnabled, visibleData.length]);
+    setCurrentPage(1);
+  }, [visibleData.length, search, statusFilter]);
 
-  useEffect(() => {
-    if (!isInfiniteScrollEnabled) return;
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const onScroll = () => {
-      const thresholdPx = 200;
-      const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-      if (distanceToBottom > thresholdPx) return;
-      setRenderLimit((prev) => {
-        if (prev >= visibleData.length) return prev;
-        return Math.min(visibleData.length, prev + RENDER_BATCH_SIZE);
-      });
-    };
-
-    container.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      container.removeEventListener('scroll', onScroll);
-    };
-  }, [isInfiniteScrollEnabled, visibleData.length]);
+  const totalPages = Math.max(1, Math.ceil(visibleData.length / PAGE_SIZE));
 
   const renderedData = useMemo(() => {
-    if (!isInfiniteScrollEnabled) return visibleData;
-    return visibleData.slice(0, renderLimit);
-  }, [isInfiniteScrollEnabled, renderLimit, visibleData]);
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return visibleData.slice(start, start + PAGE_SIZE);
+  }, [currentPage, visibleData]);
 
   const toggleSheetSort = (header: string) => {
     setSheetSortHeader((prev) => {
@@ -972,7 +951,26 @@ export function OpportunitiesTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-	              {renderedData.map((tender) => {
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={`skel-${i}`}>
+                    {Array.from({ length: isSheetPreset ? 8 : 8 }).map((__, j) => (
+                      <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : renderedData.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={14} className="py-16 text-center">
+                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                      <Search className="h-10 w-10 opacity-30" />
+                      <p className="font-medium">No tenders found</p>
+                      <p className="text-xs">Try adjusting your search or filters</p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : null}
+	              {!isLoading && renderedData.map((tender) => {
 	                const approvalStatus = getApprovalStatus(tender.opportunityRefNo);
 	                const approvalState = getApprovalState(tender.opportunityRefNo);
 	                const rowTrace = duplicateTraceByKeptId[getRowKey(tender)];
@@ -1137,11 +1135,53 @@ export function OpportunitiesTable({
             </TableBody>
           </Table>
         </div>
-        <div className="p-2 sm:p-3 text-xs sm:text-sm text-muted-foreground border-t bg-background">
-          Showing by {sortBy === 'ref' ? `Avenir Ref (${refSortOrder.toUpperCase()})` : `RFP Received (${rfpSortOrder.toUpperCase()})`}: {renderedData.length} of {visibleData.length} tenders
-          {!showConvertedEoiRows && visibleData.length !== filteredData.length ? ` (${filteredData.length - visibleData.length} converted EOI row${filteredData.length - visibleData.length === 1 ? '' : 's'} hidden)` : ''}
-          {dedupeHighlightedCount > 0 ? ` (${dedupeHighlightedCount} dedupe-kept row${dedupeHighlightedCount === 1 ? '' : 's'} highlighted)` : ''}
-          {isInfiniteScrollEnabled ? ' (infinite scroll enabled)' : ' (scroll to view all)'}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2 sm:p-3 border-t bg-background">
+          <p className="text-xs text-muted-foreground">
+            {visibleData.length === 0 ? 'No tenders' : `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, visibleData.length)} of ${visibleData.length} tenders`}
+            {!showConvertedEoiRows && visibleData.length !== filteredData.length ? ` (${filteredData.length - visibleData.length} EOI hidden)` : ''}
+            {dedupeHighlightedCount > 0 ? ` · ${dedupeHighlightedCount} dedupe` : ''}
+          </p>
+          {totalPages > 1 && (
+            <Pagination className="w-auto mx-0 justify-end">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); setCurrentPage((p) => Math.max(1, p - 1)); }}
+                    className={currentPage === 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer'}
+                  />
+                </PaginationItem>
+                {Array.from({ length: totalPages }).map((_, idx) => {
+                  const pg = idx + 1;
+                  if (totalPages <= 7 || pg === 1 || pg === totalPages || Math.abs(pg - currentPage) <= 1) {
+                    return (
+                      <PaginationItem key={pg}>
+                        <PaginationLink
+                          href="#"
+                          isActive={pg === currentPage}
+                          onClick={(e) => { e.preventDefault(); setCurrentPage(pg); }}
+                          className="cursor-pointer"
+                        >
+                          {pg}
+                        </PaginationLink>
+                      </PaginationItem>
+                    );
+                  }
+                  if (pg === currentPage - 2 || pg === currentPage + 2) {
+                    return <PaginationItem key={pg}><PaginationEllipsis /></PaginationItem>;
+                  }
+                  return null;
+                })}
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); setCurrentPage((p) => Math.min(totalPages, p + 1)); }}
+                    className={currentPage === totalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          )}
         </div>
         <Dialog open={Boolean(selectedDuplicateTrace)} onOpenChange={(open) => { if (!open) setSelectedDuplicateTrace(null); }}>
           <DialogContent className="max-w-4xl">

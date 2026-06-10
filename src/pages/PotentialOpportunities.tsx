@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileDown, FileUp, Plus, Search, Sparkles, Wand2, Edit2, Trash2, CheckCircle2, LayoutGrid, List as ListIcon, X, ExternalLink, Eye, Link as LinkIcon, AlertCircle } from 'lucide-react';
+import { FileDown, FileUp, Plus, Search, Sparkles, Wand2, Edit2, Trash2, CheckCircle2, LayoutGrid, List as ListIcon, X, ExternalLink, Eye, Link as LinkIcon, AlertCircle, PackageOpen } from 'lucide-react';
 import { useTrackedAction } from '@/hooks/useTrackedAction';
 import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import ExcelJS from 'exceljs';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
@@ -20,6 +19,8 @@ import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, works
 import { perfLog, withPerf } from '@/lib/perfLogger';
 import { Progress } from '@/components/ui/progress';
 import { useProgressLoader } from '@/lib/useProgressLoader';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
@@ -195,6 +196,8 @@ export default function PotentialOpportunities() {
   type TabKey = 'cards' | 'grid' | 'excel' | 'search' | 'manual';
   const [activeTab, setActiveTab] = useState<TabKey>('cards');
   const [selectedVertical, setSelectedVertical] = useState<Vertical | 'ALL'>('ALL');
+  const PAGE_SIZE = 10;
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<PotentialRow | null>(null);
@@ -262,6 +265,44 @@ export default function PotentialOpportunities() {
     }
     return base;
   }, [rows, selectedVertical]);
+
+  useEffect(() => { setCurrentPage(1); }, [filteredRows.length, selectedVertical]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const pagedRows = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredRows.slice(start, start + PAGE_SIZE);
+  }, [filteredRows, currentPage]);
+
+  const csvEscape = (v: unknown) => {
+    const s = String(v == null ? '' : v);
+    if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+
+  const handleExportCsv = () => {
+    const header = ['Ref No', 'Tender Name', 'Client', 'Vertical', 'SOW Link', 'Overview'];
+    const lines = filteredRows.map(r => {
+      const opp = r.opportunity || opportunitiesByRef.get(normalizeRef(r.opportunityRefNo)) || null;
+      return [
+        r.opportunityRefNo,
+        opp?.tenderName || getExtrasTenderName(r.extras) || '',
+        opp?.clientName || '',
+        opp?.groupClassification || 'Other',
+        getExtrasSowLink(r.extras) || '',
+        String(r.extras?.overview || '').replace(/\n/g, ' '),
+      ].map(csvEscape).join(',');
+    });
+    const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `potential-opportunities-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const stats = useMemo(() => {
     const total = rows.length;
@@ -418,6 +459,9 @@ export default function PotentialOpportunities() {
           </div>
           <div className="flex flex-wrap gap-2 shrink-0">
             <Button variant="outline" onClick={() => load('refresh')} loading={loading} className="rounded-xl">Refresh</Button>
+            <Button variant="outline" onClick={handleExportCsv} disabled={filteredRows.length === 0} className="rounded-xl">
+              <FileDown className="mr-2 h-4 w-4" /> Export CSV
+            </Button>
             <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={e => { if (e.target.files?.[0]) executeImport(e.target.files[0]); }} />
             <Button variant="default" onClick={() => fileInputRef.current?.click()} disabled={!canWrite} loading={importing} className="rounded-xl">
               <FileUp className="mr-2 h-4 w-4" /> Import Excel
@@ -483,8 +527,22 @@ export default function PotentialOpportunities() {
         </TabsList>
 
         <TabsContent value="cards" className="mt-6">
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-48 rounded-3xl" />
+              ))}
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <div className="flex flex-col items-center gap-4 py-20 text-muted-foreground">
+              <PackageOpen className="h-12 w-12 opacity-30" />
+              <p className="font-semibold">No potential opportunities found</p>
+              <p className="text-xs">Try a different vertical filter or add tenders</p>
+            </div>
+          ) : (
+          <div className="space-y-6">
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-             {filteredRows.map(r => (
+             {pagedRows.map(r => (
                (() => {
                  const opp = r.opportunity || opportunitiesByRef.get(normalizeRef(r.opportunityRefNo)) || null;
                  const tenderTitle = (opp?.tenderName && String(opp.tenderName).trim())
@@ -636,6 +694,118 @@ export default function PotentialOpportunities() {
                })()
              ))}
            </div>
+           {totalPages > 1 && (
+             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2">
+               <p className="text-xs text-muted-foreground">{(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredRows.length)} of {filteredRows.length}</p>
+               <Pagination className="w-auto mx-0 justify-end">
+                 <PaginationContent>
+                   <PaginationItem>
+                     <PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }} className={currentPage === 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer'} />
+                   </PaginationItem>
+                   {Array.from({ length: totalPages }).map((_, idx) => {
+                     const pg = idx + 1;
+                     if (totalPages <= 7 || pg === 1 || pg === totalPages || Math.abs(pg - currentPage) <= 1) {
+                       return <PaginationItem key={pg}><PaginationLink href="#" isActive={pg === currentPage} onClick={(e) => { e.preventDefault(); setCurrentPage(pg); }} className="cursor-pointer">{pg}</PaginationLink></PaginationItem>;
+                     }
+                     if (pg === currentPage - 2 || pg === currentPage + 2) return <PaginationItem key={pg}><PaginationEllipsis /></PaginationItem>;
+                     return null;
+                   })}
+                   <PaginationItem>
+                     <PaginationNext href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }} className={currentPage === totalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'} />
+                   </PaginationItem>
+                 </PaginationContent>
+               </Pagination>
+             </div>
+           )}
+          </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="grid" className="mt-6">
+          {loading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <div className="flex flex-col items-center gap-4 py-20 text-muted-foreground">
+              <PackageOpen className="h-12 w-12 opacity-30" />
+              <p className="font-semibold">No potential opportunities found</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-xl border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="font-bold">Ref No</TableHead>
+                      <TableHead className="font-bold">Tender Name</TableHead>
+                      <TableHead className="hidden sm:table-cell font-bold">Client</TableHead>
+                      <TableHead className="hidden md:table-cell font-bold">Vertical</TableHead>
+                      <TableHead className="hidden lg:table-cell font-bold">Updated</TableHead>
+                      <TableHead className="font-bold text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pagedRows.map(r => {
+                      const opp = r.opportunity || opportunitiesByRef.get(normalizeRef(r.opportunityRefNo)) || null;
+                      const tenderName = opp?.tenderName || getExtrasTenderName(r.extras) || '—';
+                      const clientName = opp?.clientName || '—';
+                      const vertical = opp?.groupClassification || 'Other';
+                      const verticalColor = vertical === 'GTS' ? 'text-cyan-600' : vertical === 'GDS' ? 'text-fuchsia-600' : vertical === 'GES' ? 'text-emerald-600' : 'text-muted-foreground';
+                      return (
+                        <TableRow key={r.id} className="group cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => { setDetailsRow(r); setDetailsOpen(true); }}>
+                          <TableCell className="font-mono text-xs font-bold text-blue-600">{r.opportunityRefNo}</TableCell>
+                          <TableCell className="max-w-[220px] truncate text-sm">{tenderName}</TableCell>
+                          <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{clientName}</TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            <Badge className={`text-xs font-bold ${verticalColor} bg-transparent border`}>{vertical}</Badge>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
+                            {r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : '—'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {isMaster && (
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); openEdit(r); }}>
+                                  <Edit2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 hover:text-destructive" disabled={!canWrite} onClick={async (e) => { e.stopPropagation(); if(confirm("Remove?")) { await markPotential(r.opportunityRefNo, false); setRows(prev => prev.filter(x => x.id !== r.id)); } }}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              {totalPages > 1 && (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">{(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredRows.length)} of {filteredRows.length}</p>
+                  <Pagination className="w-auto mx-0 justify-end">
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }} className={currentPage === 1 ? 'pointer-events-none opacity-40' : 'cursor-pointer'} />
+                      </PaginationItem>
+                      {Array.from({ length: totalPages }).map((_, idx) => {
+                        const pg = idx + 1;
+                        if (totalPages <= 7 || pg === 1 || pg === totalPages || Math.abs(pg - currentPage) <= 1) {
+                          return <PaginationItem key={pg}><PaginationLink href="#" isActive={pg === currentPage} onClick={(e) => { e.preventDefault(); setCurrentPage(pg); }} className="cursor-pointer">{pg}</PaginationLink></PaginationItem>;
+                        }
+                        if (pg === currentPage - 2 || pg === currentPage + 2) return <PaginationItem key={pg}><PaginationEllipsis /></PaginationItem>;
+                        return null;
+                      })}
+                      <PaginationItem>
+                        <PaginationNext href="#" onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }} className={currentPage === totalPages ? 'pointer-events-none opacity-40' : 'cursor-pointer'} />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
+              )}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
