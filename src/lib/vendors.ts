@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToObjects } from '@/lib/excelWorkbook';
 
 export type AgreementStatus = 'NDA' | 'Association Agreement' | 'Pending';
@@ -216,14 +216,16 @@ export const previewVendorImport = async (file: File, existingVendors: VendorDat
   return { newVendors, skippedDuplicates };
 };
 
-export const downloadVendorTemplate = () => {
+export const downloadVendorTemplate = async () => {
+  const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Vendor Import Template');
   sheet.addRow([...VENDOR_IMPORT_HEADERS]);
   void downloadWorkbook(workbook, 'vendor-directory-template.xlsx');
 };
 
-export const exportVendors = (vendors: VendorData[]) => {
+export const exportVendors = async (vendors: VendorData[]) => {
+  const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Vendors');
   sheet.addRow([

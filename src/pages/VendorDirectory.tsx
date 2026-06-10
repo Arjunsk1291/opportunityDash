@@ -550,7 +550,7 @@ export default function VendorDirectory() {
               <Plus className="h-4 w-4" />
               Add Partner
             </Button>
-            <Button variant="outline" className="gap-2" onClick={() => exportVendors(vendors)}>
+            <Button variant="outline" className="gap-2" onClick={() => void exportVendors(vendors)}>
               <FileSpreadsheet className="h-4 w-4" />
               Export
             </Button>
@@ -871,7 +871,7 @@ export default function VendorDirectory() {
                 <div className="font-medium">Template</div>
                 <div className="text-sm text-muted-foreground">Download the import template with the expected headers.</div>
               </div>
-              <Button variant="outline" className="gap-2" onClick={downloadVendorTemplate}>
+              <Button variant="outline" className="gap-2" onClick={() => void downloadVendorTemplate()}>
                 <FileSpreadsheet className="h-4 w-4" />
                 Download Template
               </Button>

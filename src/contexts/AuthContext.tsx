@@ -14,6 +14,8 @@ export interface User {
   status: UserStatus;
   assignedGroup?: string | null;
   lastLogin?: Date;
+  isTempAccess?: boolean;
+  allowedPages?: string[];
 }
 
 export type UserPageOverride = { email: string; pageKey: PageKey; access: 'view' | 'edit' };
@@ -104,6 +106,8 @@ interface CurrentUserResponse {
   role: UserRole;
   status: UserStatus;
   assignedGroup?: string | null;
+  isTempAccess?: boolean;
+  allowedPages?: string[];
 }
 
 async function fetchJsonWithTimeout<T>(
@@ -259,6 +263,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: data.user.role,
       status: data.user.status,
       assignedGroup: data.user.assignedGroup || null,
+      isTempAccess: data.user.isTempAccess || false,
+      allowedPages: Array.isArray(data.user.allowedPages) ? data.user.allowedPages : undefined,
     };
     setUser(nextUser);
     setToken(data.sessionToken || null);
@@ -318,6 +324,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: data.role,
           status: data.status,
           assignedGroup: data.assignedGroup || null,
+          isTempAccess: data.isTempAccess || false,
+          allowedPages: Array.isArray(data.allowedPages) ? data.allowedPages : undefined,
         });
         setIsPending(data.status === 'pending');
         setAuthError(null);
@@ -533,6 +541,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const canAccessPage = useCallback((pageKey: PageKey) => {
     if (!user || user.status !== 'approved') return false;
+    if (user.isTempAccess) return Array.isArray(user.allowedPages) && user.allowedPages.includes(pageKey);
     const allowedRoles = pagePermissions[pageKey] || [];
     const excludedRoles = pageExcludePermissions[pageKey] || [];
     const allowedEmails = pageEmailPermissions[pageKey] || [];
@@ -543,6 +552,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const canViewPage = useCallback((pageKey: PageKey) => {
     if (!user || user.status !== 'approved') return false;
+    if (user.isTempAccess) return Array.isArray(user.allowedPages) && user.allowedPages.includes(pageKey);
     if (user.role === 'Master') return true;
     const email = String(user.email || '').trim().toLowerCase();
     const override = userPageOverrides.find((o) => o.email === email && o.pageKey === pageKey);

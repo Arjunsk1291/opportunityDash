@@ -13,4 +13,18 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Heavy libraries that are only needed on specific pages
+          'vendor-exceljs': ['exceljs'],
+          'vendor-jspreadsheet': ['jspreadsheet-ce', 'jsuites'],
+          'vendor-charts': ['recharts'],
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
+  },
 }));

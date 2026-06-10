@@ -723,8 +723,8 @@ export default function Admin({ initialTab }: AdminProps = {}) {
       }
       if (!cancelled && diag.enabled) {
         fetch(API_URL + '/version', { headers: token ? { Authorization: 'Bearer ' + token } : undefined })
-          .then((r) => r.json())
-          .then((data) => statusConsole.info('backend version', data))
+          .then((r) => r.ok ? r.json() : null)
+          .then((data) => { if (data) statusConsole.info('backend version', data); })
           .catch(() => {});
       }
     };

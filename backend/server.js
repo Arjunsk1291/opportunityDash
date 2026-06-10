@@ -2900,13 +2900,18 @@ app.post('/api/auth/login', authRateLimiter, verifyToken, async (req, res) => {
 });
 
 app.get('/api/auth/user', verifyToken, async (req, res) => {
-  res.json({
+  const resp = {
     email: req.user.email,
     displayName: req.user.displayName,
     role: req.user.role,
     status: req.user.status,
     assignedGroup: req.user.assignedGroup,
-  });
+  };
+  if (req.user.isTempAccess) {
+    resp.isTempAccess = true;
+    resp.allowedPages = Array.isArray(req.user.allowedPages) ? req.user.allowedPages : [];
+  }
+  res.json(resp);
 });
 
 // Simple role-based login (development mode)

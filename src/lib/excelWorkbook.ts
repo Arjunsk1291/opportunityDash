@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 
 const DANGEROUS_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
@@ -11,6 +11,7 @@ const safeAssign = (target: Record<string, unknown>, key: string, value: unknown
 };
 
 export const loadWorkbookFromArrayBuffer = async (buffer: ArrayBuffer) => {
+  const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
   return workbook;
