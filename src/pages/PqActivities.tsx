@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { staggerGrid, cardVariant } from '@/lib/animations';
 import { useTrackedAction } from '@/hooks/useTrackedAction';
 import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { z } from 'zod';
@@ -539,14 +540,14 @@ export default function PqActivities() {
             </TabsList>
             <TabsContent value={activeTenant}>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-6">
-          <Card className="rounded-2xl bg-blue-500/10 border-blue-500/20 shadow-elegant">
+        <motion.div variants={staggerGrid} initial="hidden" animate="visible" className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mt-6">
+          <motion.div variants={cardVariant}><Card className="rounded-2xl bg-blue-500/10 border-blue-500/20 shadow-elegant">
             <CardHeader className="pb-2">
               <CardTitle className="text-xs tracking-[0.24em] uppercase text-blue-400">Total</CardTitle>
             </CardHeader>
             <CardContent className="text-2xl font-semibold text-blue-300">{stats.total}</CardContent>
-          </Card>
-          <Card className="rounded-2xl bg-green-500/10 border-green-500/20 shadow-elegant">
+          </Card></motion.div>
+          <motion.div variants={cardVariant}><Card className="rounded-2xl bg-green-500/10 border-green-500/20 shadow-elegant">
             <CardHeader className="pb-2">
               <CardTitle className="text-xs tracking-[0.24em] uppercase text-green-400 flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" aria-hidden="true" />
@@ -554,20 +555,20 @@ export default function PqActivities() {
               </CardTitle>
             </CardHeader>
             <CardContent className="text-2xl font-semibold text-green-300">{stats.prequalified}</CardContent>
-          </Card>
-          <Card className="rounded-2xl bg-indigo-500/10 border-indigo-500/20 shadow-elegant">
+          </Card></motion.div>
+          <motion.div variants={cardVariant}><Card className="rounded-2xl bg-indigo-500/10 border-indigo-500/20 shadow-elegant">
             <CardHeader className="pb-2">
               <CardTitle className="text-xs tracking-[0.24em] uppercase text-indigo-400">Registered</CardTitle>
             </CardHeader>
             <CardContent className="text-2xl font-semibold text-indigo-300">{stats.registered}</CardContent>
-          </Card>
-          <Card className="rounded-2xl bg-amber-500/10 border-amber-500/20 shadow-elegant">
+          </Card></motion.div>
+          <motion.div variants={cardVariant}><Card className="rounded-2xl bg-amber-500/10 border-amber-500/20 shadow-elegant">
             <CardHeader className="pb-2">
               <CardTitle className="text-xs tracking-[0.24em] uppercase text-amber-400">In Process</CardTitle>
             </CardHeader>
             <CardContent className="text-2xl font-semibold text-amber-300">{stats.inProcess}</CardContent>
-          </Card>
-        </div>
+          </Card></motion.div>
+        </motion.div>
             </TabsContent>
           </Tabs>
         </div>

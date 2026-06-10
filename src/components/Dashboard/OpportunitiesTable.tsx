@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
+import { rowVariant } from '@/lib/animations';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -970,7 +972,7 @@ export function OpportunitiesTable({
                   </TableCell>
                 </TableRow>
               ) : null}
-	              {!isLoading && renderedData.map((tender) => {
+	              {!isLoading && renderedData.map((tender, idx) => {
 	                const approvalStatus = getApprovalStatus(tender.opportunityRefNo);
 	                const approvalState = getApprovalState(tender.opportunityRefNo);
 	                const rowTrace = duplicateTraceByKeptId[getRowKey(tender)];
@@ -978,8 +980,12 @@ export function OpportunitiesTable({
 	                const matchInfo = searchTerm ? getSearchMatchInfo(tender, searchTerm) : null;
 	                const matchColumns = matchInfo && matchInfo.matched ? matchInfo.columns : [];
 	                return (
-	                  <TableRow
+	                  <motion.tr
 	                    key={tender.id}
+	                    custom={idx}
+	                    initial="hidden"
+	                    animate="visible"
+	                    variants={rowVariant}
 	                    className={`group cursor-pointer hover:bg-muted/50 ${styles.row} ${styles[getRowStatusClass(tender)] || ''} ${isDedupeKeptRow ? styles.dedupeKeptRow : ''}`}
 	                    onClick={() => {
                       if (rowTrace) {
@@ -1129,7 +1135,7 @@ export function OpportunitiesTable({
                         ) : null}
                       </>
                     )}
-                  </TableRow>
+                  </motion.tr>
                 );
               })}
             </TableBody>

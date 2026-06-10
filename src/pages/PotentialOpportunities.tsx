@@ -3,6 +3,7 @@ import { FileDown, FileUp, Plus, Search, Sparkles, Wand2, Edit2, Trash2, CheckCi
 import { useTrackedAction } from '@/hooks/useTrackedAction';
 import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { motion, AnimatePresence } from 'framer-motion';
+import { staggerGrid, cardVariant, rowVariant } from '@/lib/animations';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/contexts/AuthContext';
@@ -541,7 +542,7 @@ export default function PotentialOpportunities() {
             </div>
           ) : (
           <div className="space-y-6">
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+           <motion.div variants={staggerGrid} initial="hidden" animate="visible" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
              {pagedRows.map(r => (
                (() => {
                  const opp = r.opportunity || opportunitiesByRef.get(normalizeRef(r.opportunityRefNo)) || null;
@@ -570,8 +571,8 @@ export default function PotentialOpportunities() {
                    badge: 'bg-violet-500 text-white', ring: 'ring-violet-400/30',
                  };
                  return (
+               <motion.div key={r.id} variants={cardVariant}>
                <Card
-                 key={r.id}
                  className={cn(
                    "group relative rounded-3xl border transition-all duration-300 overflow-hidden cursor-pointer",
                    "hover:shadow-2xl hover:-translate-y-1.5",
@@ -690,10 +691,11 @@ export default function PotentialOpportunities() {
                    </div>
                  </CardFooter>
                </Card>
+               </motion.div>
                  );
                })()
              ))}
-           </div>
+           </motion.div>
            {totalPages > 1 && (
              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2">
                <p className="text-xs text-muted-foreground">{(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredRows.length)} of {filteredRows.length}</p>
@@ -752,8 +754,9 @@ export default function PotentialOpportunities() {
                       const clientName = opp?.clientName || '—';
                       const vertical = opp?.groupClassification || 'Other';
                       const verticalColor = vertical === 'GTS' ? 'text-cyan-600' : vertical === 'GDS' ? 'text-fuchsia-600' : vertical === 'GES' ? 'text-emerald-600' : 'text-muted-foreground';
+                      const listIdx = pagedRows.indexOf(r);
                       return (
-                        <TableRow key={r.id} className="group cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => { setDetailsRow(r); setDetailsOpen(true); }}>
+                        <motion.tr key={r.id} custom={listIdx} initial="hidden" animate="visible" variants={rowVariant} className="group cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => { setDetailsRow(r); setDetailsOpen(true); }}>
                           <TableCell className="font-mono text-xs font-bold text-blue-600">{r.opportunityRefNo}</TableCell>
                           <TableCell className="max-w-[220px] truncate text-sm">{tenderName}</TableCell>
                           <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{clientName}</TableCell>
@@ -775,7 +778,7 @@ export default function PotentialOpportunities() {
                               </Button>
                             </div>
                           </TableCell>
-                        </TableRow>
+                        </motion.tr>
                       );
                     })}
                   </TableBody>

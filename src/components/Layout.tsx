@@ -8,7 +8,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { BarChart3, Search, User, LogOut, Shield } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { ReportIssueButton } from '@/components/ReportIssueButton';
 import logo from '@/assets/Avenir_Logo.avif';
 import { UniversalSearchDialog } from '@/components/UniversalSearch/UniversalSearchDialog';
@@ -20,6 +21,7 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const { user, isAdmin, logout, token } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchOpen, setSearchOpen] = useState(false);
 
   const handleLogout = () => {
@@ -108,9 +110,15 @@ export function Layout({ children }: LayoutProps) {
           </header>
 
           {/* Main Content */}
-          <main className="flex-1 min-w-0 overflow-x-hidden p-3 sm:p-4 lg:p-6">
+          <motion.main
+            key={location.pathname}
+            className="flex-1 min-w-0 overflow-x-hidden p-3 sm:p-4 lg:p-6"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
             {children}
-          </main>
+          </motion.main>
         </SidebarInset>
       </div>
       <ReportIssueButton authToken={token} reporter={user ? { displayName: user.displayName, role: user.role, email: user.email } : null} />

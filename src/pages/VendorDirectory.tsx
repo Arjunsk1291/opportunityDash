@@ -1,4 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
+import { staggerGrid, cardVariant, rowVariant } from '@/lib/animations';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTrackedAction } from '@/hooks/useTrackedAction';
 import { ActionProgressBar } from '@/components/ActionProgressBar';
@@ -650,12 +652,12 @@ export default function VendorDirectory() {
 
       {viewMode === 'grid' ? (
         <div className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+        <motion.div variants={staggerGrid} initial="hidden" animate="visible" className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
           {pagedVendors.map(({ vendor, relevance, matchCount }) => {
             const focus = focusMeta(vendor.focusArea);
             const FocusIcon = focus.icon;
             return (
-              <div key={vendor.id} className="[perspective:1000px]">
+              <motion.div key={vendor.id} variants={cardVariant} className="[perspective:1000px]">
                 <Card
                   className="group h-full overflow-hidden border-border/70 bg-card/85 shadow-sm transition-all duration-300 hover:-translate-y-2 hover:scale-[1.01] hover:shadow-2xl"
                   onClick={() => setSelectedVendor(vendor)}
@@ -707,10 +709,10 @@ export default function VendorDirectory() {
                     {matchCount > 0 && <div className="text-xs text-muted-foreground">Matched {matchCount} search terms.</div>}
                   </CardContent>
                 </Card>
-              </div>
+              </motion.div>
             );
           })}
-        </div>
+        </motion.div>
         {vdTotalPages > 1 && (
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <p className="text-xs text-muted-foreground">{(vdCurrentPage - 1) * vdPageSize + 1}–{Math.min(vdCurrentPage * vdPageSize, enrichedVendors.length)} of {enrichedVendors.length} partners</p>
@@ -747,8 +749,8 @@ export default function VendorDirectory() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pagedVendors.map(({ vendor, relevance }) => (
-                  <TableRow key={vendor.id} className="group cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setSelectedVendor(vendor)}>
+                {pagedVendors.map(({ vendor, relevance }, idx) => (
+                  <motion.tr key={vendor.id} custom={idx} initial="hidden" animate="visible" variants={rowVariant} className="group cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => setSelectedVendor(vendor)}>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox checked={compareIds.includes(vendor.id)} onCheckedChange={(checked) => toggleCompare(vendor.id, Boolean(checked))} />
                     </TableCell>
@@ -764,7 +766,7 @@ export default function VendorDirectory() {
                     <TableCell>{vendor.confirmedTechStack.length}</TableCell>
                     <TableCell>{vendor.certifications.length}</TableCell>
                     <TableCell>{vendor.contactPerson || vendor.emails[0] || '—'}</TableCell>
-                  </TableRow>
+                  </motion.tr>
                 ))}
               </TableBody>
             </Table>

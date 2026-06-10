@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
+import { staggerGrid, cardVariant, rowVariant } from '@/lib/animations';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTrackedAction } from '@/hooks/useTrackedAction';
 import { ActionProgressBar } from '@/components/ActionProgressBar';
@@ -999,7 +1001,10 @@ const Clients = () => {
       {!isLoading && filteredClients.length > 0 && (
       <div className="space-y-4">
       {clientViewMode === 'grid' ? (
-      <div
+      <motion.div
+        variants={staggerGrid}
+        initial="hidden"
+        animate="visible"
         className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
         style={{ perspective: '1000px' }}
       >
@@ -1008,8 +1013,8 @@ const Clients = () => {
           const domainDisplay = client.domain || client.group || 'No domain';
           const matchCount = countMatches(client, search);
           return (
+            <motion.div key={client.id} variants={cardVariant}>
             <Card
-              key={client.id}
               onClick={() => handleCardClick(client)}
               className="group relative cursor-pointer overflow-hidden border border-border/50 bg-card transform-gpu transition-all hover:shadow-xl hover:-translate-y-1 hover:scale-[1.01]"
             >
@@ -1051,9 +1056,10 @@ const Clients = () => {
                 </p>
               </CardContent>
             </Card>
+            </motion.div>
           );
         })}
-      </div>
+      </motion.div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
           <Table>
@@ -1067,11 +1073,11 @@ const Clients = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {clPagedClients.map((client) => {
+              {clPagedClients.map((client, idx) => {
                 const firstContact = client.contacts[0];
                 const domainDisplay = client.domain || client.group || '—';
                 return (
-                  <TableRow key={client.id} className="group cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => handleCardClick(client)}>
+                  <motion.tr key={client.id} custom={idx} initial="hidden" animate="visible" variants={rowVariant} className="group cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => handleCardClick(client)}>
                     <TableCell className="font-medium">{highlightText(client.companyName, search)}</TableCell>
                     <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{highlightText(domainDisplay, search)}</TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
@@ -1083,7 +1089,7 @@ const Clients = () => {
                     <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                       {firstContact ? `${firstContact.firstName} ${firstContact.lastName}`.trim() : '—'}
                     </TableCell>
-                  </TableRow>
+                  </motion.tr>
                 );
               })}
             </TableBody>

@@ -3,7 +3,7 @@ import MuiSkeleton, { type SkeletonProps as MuiSkeletonProps } from "@mui/materi
 
 type SkeletonProps = MuiSkeletonProps & { className?: string };
 
-function Skeleton({ className, animation = "pulse", ...props }: SkeletonProps) {
+function Skeleton({ className, animation = "wave", ...props }: SkeletonProps) {
   return <MuiSkeleton className={cn(className)} animation={animation} {...props} />;
 }
 

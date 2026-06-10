@@ -37,6 +37,8 @@ import {
 import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer, worksheetToMatrix } from '@/lib/excelWorkbook';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import { motion } from 'framer-motion';
+import { staggerGrid, cardVariant, rowVariant } from '@/lib/animations';
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 type MeetingTypeOption = typeof MEETING_TYPES[number];
@@ -1048,10 +1050,11 @@ const BDEngagements = () => {
         </TabsList>
 
         <TabsContent value="dashboard" className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <motion.div variants={staggerGrid} initial="hidden" animate="visible" className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             {statCards.map((card, index) => (
-              <button
+              <motion.button
                 key={card.label}
+                variants={cardVariant}
                 type="button"
                 onClick={() => openDrilldown(card.label, card.rows)}
                 className="text-left"
@@ -1069,9 +1072,9 @@ const BDEngagements = () => {
                     </div>
                   </CardContent>
                 </Card>
-              </button>
+              </motion.button>
             ))}
-          </div>
+          </motion.div>
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="border-border bg-card text-card-foreground">
@@ -1319,8 +1322,8 @@ const BDEngagements = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pagedEngagements.map((row) => (
-                        <TableRow key={row.id} className="group cursor-pointer transition-colors hover:bg-muted/30" onClick={() => setSelectedEngagement(row)}>
+                      {pagedEngagements.map((row, idx) => (
+                        <motion.tr key={row.id} custom={idx} initial="hidden" animate="visible" variants={rowVariant} className="group cursor-pointer transition-colors hover:bg-muted/30" onClick={() => setSelectedEngagement(row)}>
                           <TableCell className="font-medium">{row.ref}</TableCell>
                           <TableCell>{formatPrettyDate(dateSourceMode === 'ref' ? (deriveIsoDateFromRef(row.ref) || row.date) : row.date)}</TableCell>
                           <TableCell>{row.clientName}</TableCell>
@@ -1339,7 +1342,7 @@ const BDEngagements = () => {
                               <Button type="button" size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); openEditDialog(row); }}>Edit</Button>
                             </div>
                           </TableCell>
-                        </TableRow>
+                        </motion.tr>
                       ))}
                       {filteredRows.length === 0 && (
                         <TableRow>
@@ -1381,10 +1384,11 @@ const BDEngagements = () => {
                       <p className="text-sm text-muted-foreground">No engagement records match the current filters.</p>
                     </div>
                   ) : (
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <motion.div variants={staggerGrid} initial="hidden" animate="visible" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {pagedEngagements.map((row) => (
-                        <div
+                        <motion.div
                           key={row.id}
+                          variants={cardVariant}
                           className="group flex cursor-pointer flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
                           onClick={() => setSelectedEngagement(row)}
                         >
@@ -1420,9 +1424,9 @@ const BDEngagements = () => {
                               Edit
                             </Button>
                           </div>
-                        </div>
+                        </motion.div>
                       ))}
-                    </div>
+                    </motion.div>
                   )}
                   {filteredRows.length > BD_PAGE_SIZE && (
                     <div className="mt-4 flex items-center justify-between gap-4 border-t border-border pt-4">

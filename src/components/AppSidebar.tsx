@@ -46,7 +46,11 @@ export function AppSidebar() {
             <SidebarMenu>
               {visibleMainItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive(item.url)}
+                    className={isActive(item.url) ? 'animate-[pulse-glow_2.5s_ease-in-out_infinite]' : ''}
+                  >
                     <NavLink to={item.url}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
