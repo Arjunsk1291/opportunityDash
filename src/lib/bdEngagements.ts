@@ -2,6 +2,7 @@ export const BD_ENGAGEMENTS_STORAGE_KEY = 'bd_engagements_v3';
 
 export type BDEngagement = {
   id: string;
+  _id?: string;
   ref: string;
   date: string;
   clientName: string;

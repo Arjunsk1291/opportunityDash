@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, type ComponentType } from 'react';
 import { useTrackedAction } from '@/hooks/useTrackedAction';
 import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { FunnelChart } from '@/components/Dashboard/FunnelChart';
@@ -1127,7 +1127,23 @@ const Dashboard = () => {
     );
   }
 
-  const kpiCards = [
+  type KpiCard = {
+    label: string;
+    value: number | string;
+    tone: string;
+    glow: string;
+    icon: ComponentType<{ className?: string }>;
+    type: 'regretted' | 'hold' | 'won' | 'value' | 'lost' | 'submission' | 'winRatio';
+    displayValue?: string;
+    valuePrefix?: string;
+    chip?: string;
+    emphasizeValue?: boolean;
+    secondaryDisplayValue?: string;
+    secondaryValuePrefix?: string;
+    meta?: { label: string; value: number | string; tone: string }[];
+  };
+
+  const kpiCards: KpiCard[] = [
     {
       label: 'Regretted',
       value: groupedBuckets.regretted.groups.length,

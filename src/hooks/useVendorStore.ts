@@ -44,7 +44,12 @@ export const useVendorStore = () => {
     fetchVendors();
   }, [fetchVendors]);
 
-  const addVendor = async (input: Omit<VendorData, 'id'>) => {
+  // agreementStatus/agreementDocuments are optional here because the manual
+  // add-vendor form never collects them; the backend applies its defaults.
+  const addVendor = async (
+    input: Omit<VendorData, 'id' | 'agreementStatus' | 'agreementDocuments'> &
+      Partial<Pick<VendorData, 'agreementStatus' | 'agreementDocuments'>>,
+  ) => {
     if (!canPerformAction('vendors_write')) {
       throw new Error('You do not have permission to write vendors');
     }

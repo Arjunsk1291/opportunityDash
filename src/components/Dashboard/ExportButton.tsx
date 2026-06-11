@@ -454,7 +454,7 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
             cell.numFmt = 'dd-mmm-yy';
           } else if (selectedColumns[index].label !== 'Sr.no' && selectedColumns[index].label !== 'Year' && selectedColumns[index].label !== 'Tender name' && selectedColumns[index].label !== 'Client' && selectedColumns[index].label !== 'END USER' && selectedColumns[index].label !== 'ADNOC RFT NO' && selectedColumns[index].label !== 'Tender Location (Execution)' && selectedColumns[index].label !== 'GDS/GES' && selectedColumns[index].label !== 'Assigned Person' && selectedColumns[index].label !== 'Stage of project, Concept, FEED, DE' && selectedColumns[index].label !== 'Tender Type' && selectedColumns[index].label !== 'AVENIR STATUS' && selectedColumns[index].label !== 'REMARKS/REASON' && selectedColumns[index].label !== 'TENDER RESULT' && selectedColumns[index].label !== 'TENDER STATUS' && selectedColumns[index].label !== 'Currency, USD/AED' && selectedColumns[index].label !== 'who was awarded the project') {
             cell.numFmt = '#,##0.00';
-          } else if (selectedColumns[index].label === 'Tender value' || selectedColumns[index].label === 'Sub-contract value' || selectedColumns[index].label === 'GM Value' || selectedColumns[index].label === 'go/get value' || selectedColumns[index].label === 'USD to AED' || selectedColumns[index].label === 'final awarded price') {
+          } else if (['Tender value', 'Sub-contract value', 'GM Value', 'go/get value', 'USD to AED', 'final awarded price'].includes(String(selectedColumns[index].label))) {
             cell.numFmt = '#,##0.00';
           }
         });

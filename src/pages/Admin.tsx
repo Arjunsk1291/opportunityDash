@@ -65,7 +65,7 @@ interface AuthorizedUser {
   lastLogin?: Date;
   createdAt: Date;
   approvedBy?: string;
-  approvedAt?: Date;
+  approvedAt?: Date | string;
   tempAccessExpiresAt?: string | null;
 }
 

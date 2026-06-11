@@ -200,7 +200,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const ageMs = ts ? Date.now() - ts : Number.POSITIVE_INFINITY;
           const rows = Array.isArray(parsed?.rows) ? parsed.rows : [];
           const cacheView = String(parsed?.view || 'full') === 'lite' ? 'lite' : 'full';
-          const cacheCompatible = cacheView === 'full' || routeView === 'lite' || cacheView === routeView;
+          const cacheCompatible = cacheView === 'full' || routeView === 'lite' || (cacheView as OpportunityFetchView) === routeView;
           if (rows.length > 0 && ageMs <= OPPORTUNITIES_CACHE_MAX_AGE_MS && cacheCompatible) {
             setOpportunities(rows as Opportunity[]);
             setLastSyncTime(new Date(ts));
@@ -265,9 +265,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
           : await response.json() as OpportunityApiRecord[];
         const parseEnd = performance.now();
 
-        const sourceRows = incrementalSince
-          ? Array.isArray(data?.rows) ? data.rows : []
-          : Array.isArray(data) ? data : [];
+        const changes = incrementalSince ? (data as OpportunityChangesResponse) : null;
+        const sourceRows = changes
+          ? Array.isArray(changes.rows) ? changes.rows : []
+          : Array.isArray(data) ? (data as OpportunityApiRecord[]) : [];
         const nextRows = incrementalSince
           ? mergeOpportunityRows(opportunitiesRef.current, sourceRows, false)
           : normalizeOpportunityRows(sourceRows);
@@ -293,8 +294,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const snapshotAtHeader = response.headers.get('X-Opps-Snapshot-At');
         const nextSyncDate = snapshotAtHeader
           ? new Date(snapshotAtHeader)
-          : incrementalSince
-            ? new Date(String(data?.snapshotAt || data?.latestSnapshotAt || new Date().toISOString()))
+          : changes
+            ? new Date(String(changes.snapshotAt || changes.latestSnapshotAt || new Date().toISOString()))
             : new Date();
         if (!Number.isNaN(nextSyncDate.getTime())) {
           setLastSyncTime(nextSyncDate);

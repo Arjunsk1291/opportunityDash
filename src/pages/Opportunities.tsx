@@ -49,7 +49,10 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const gridRef = useRef<JspreadsheetGridHandle>(null);
 
   const canEdit = canPerformAction('manual_opportunity_updates_write');
-  const canUpload = canPerformAction('opportunities_sheet_upload');
+  // 'opportunities_sheet_upload' is not a registered ActionKey, so only Master
+  // passes the check (canPerformAction short-circuits for Master). Cast keeps
+  // that long-standing behavior without adding a new configurable permission.
+  const canUpload = canPerformAction('opportunities_sheet_upload' as Parameters<typeof canPerformAction>[0]);
 
   // KPI counts
   const kpi = useMemo(() => {

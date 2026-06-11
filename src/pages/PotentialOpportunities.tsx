@@ -142,7 +142,7 @@ export default function PotentialOpportunities() {
         const ref = String(r[refIdx] || '').trim();
         if (!ref) return null;
         const extras: Record<string, unknown> = {};
-        header.forEach((h, i) => { if (i !== refIdx && h) extras[matrix[0][i]] = r[i] || ''; });
+        header.forEach((h, i) => { if (i !== refIdx && h) extras[String(matrix[0][i])] = r[i] || ''; });
         return { opportunityRefNo: ref, extras };
       }).filter(Boolean);
 

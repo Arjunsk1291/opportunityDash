@@ -5,15 +5,16 @@ import { cn } from "@/lib/utils";
 
 export type CheckboxProps = Omit<MuiCheckboxProps, "onChange"> & {
   onCheckedChange?: (checked: boolean) => void;
+  onChange?: MuiCheckboxProps["onChange"];
 };
 
 const Checkbox = React.forwardRef<HTMLButtonElement, CheckboxProps>(
-  ({ className, onCheckedChange, ...props }, ref) => (
+  ({ className, onCheckedChange, onChange, ...props }, ref) => (
     <MuiCheckbox
       {...props}
       ref={ref}
       onChange={(event, checked) => {
-        props.onChange?.(event, checked);
+        onChange?.(event, checked);
         onCheckedChange?.(checked);
       }}
       className={cn("p-0", className)}

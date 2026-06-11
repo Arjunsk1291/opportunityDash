@@ -58,7 +58,7 @@ function buildRows(opportunities: Opportunity[], exchangeRate: number): string[]
     const snap = (opp.rawGraphData?.rowSnapshot || {}) as Record<string, unknown>;
     const get = (key: string) => {
       if (DIRECT_DB_KEYS.has(key)) {
-        const val = (opp as Record<string, unknown>)[key];
+        const val = (opp as unknown as Record<string, unknown>)[key];
         return val !== null && val !== undefined ? String(val) : '';
       }
       const v = snap[key];
