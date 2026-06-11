@@ -150,6 +150,47 @@ const HEADER_SYNONYMS: Record<string, string[]> = {
   lastName: ['lastname', 'last', 'surname', 'familyname', 'contactlastname'],
   email: ['email', 'emailaddress', 'mail', 'contactemail'],
   phone: ['phone', 'phonenumber', 'telephone', 'mobile', 'contactphone'],
+  primaryContact: ['primarycontact', 'primaryname', 'contactperson', 'contactname'],
+};
+
+// Business group codes (GES/GDS/GTS/GPS etc.) that appear in the exported "Domain" column
+const GROUP_CODE_RE = /^[A-Z]{2,5}$/;
+const classifyDomainField = (value: string): { domain: string; group: string } => {
+  const v = value.trim();
+  if (!v) return { domain: '', group: '' };
+  if (GROUP_CODE_RE.test(v.toUpperCase()) && v.length <= 5) return { domain: '', group: v.toUpperCase() };
+  return { domain: v, group: '' };
+};
+
+// Slugify for dedup: strip everything except a-z0-9
+const slugifyCompany = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const deduplicateClientInputs = (inputs: ClientInput[]): ClientInput[] => {
+  const groups = new Map<string, ClientInput[]>();
+  for (const input of inputs) {
+    const key = slugifyCompany(input.companyName);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(input);
+  }
+  return Array.from(groups.values()).map((group) => {
+    if (group.length === 1) return group[0];
+    const richScore = (x: ClientInput) =>
+      (x.city ? 1 : 0) + (x.country ? 1 : 0) + (x.domain ? 1 : 0) + (x.group ? 1 : 0) + x.contacts.length * 2;
+    const base = [...group].sort((a, b) => richScore(b) - richScore(a))[0];
+    const seen = new Set<string>();
+    const merged: ClientContactInput[] = [];
+    for (const entry of group) {
+      for (const c of entry.contacts) {
+        const k = `${c.email}|${c.phone}|${c.firstName}|${c.lastName}`.toLowerCase();
+        if (!seen.has(k) && (c.firstName || c.lastName || c.email || c.phone)) {
+          seen.add(k);
+          merged.push(c);
+        }
+      }
+    }
+    return { ...base, contacts: merged };
+  });
 };
 
 const detectHeaderRow = (rows: string[][]) => {
@@ -195,6 +236,7 @@ const mapCsvRows = (rows: string[][]): ClientInput[] => {
   const idxLast = map.lastName ?? -1;
   const idxEmail = map.email ?? -1;
   const idxPhone = map.phone ?? -1;
+  const idxPrimaryContact = map.primaryContact ?? -1;
 
   const hasHeader = score >= 2 && idxCompany >= 0;
   const fallbackIndices = rows[0]?.length >= 8 ? { idxCompany: 0, idxCity: 1, idxCountry: 2, idxDomain: 3, idxFirst: 4, idxLast: 5, idxEmail: 6, idxPhone: 7 } : null;
@@ -211,18 +253,36 @@ const mapCsvRows = (rows: string[][]): ClientInput[] => {
     const emailIndex = hasHeader ? idxEmail : fallbackIndices!.idxEmail;
     const phoneIndex = hasHeader ? idxPhone : fallbackIndices!.idxPhone;
 
-    const contact: ClientContactInput = {
-      firstName: row[firstIndex] || '',
-      lastName: row[lastIndex] || '',
-      email: row[emailIndex] || '',
-      phone: row[phoneIndex] || '',
-    };
+    // Handle "Primary Contact" (full name in one column) vs separate first/last columns
+    let contact: ClientContactInput;
+    if (idxPrimaryContact >= 0 && row[idxPrimaryContact]?.trim()) {
+      const fullName = row[idxPrimaryContact].trim();
+      const spaceIdx = fullName.indexOf(' ');
+      contact = {
+        firstName: spaceIdx >= 0 ? fullName.slice(0, spaceIdx) : fullName,
+        lastName: spaceIdx >= 0 ? fullName.slice(spaceIdx + 1) : '',
+        email: emailIndex >= 0 ? (row[emailIndex] || '') : '',
+        phone: phoneIndex >= 0 ? (row[phoneIndex] || '') : '',
+      };
+    } else {
+      contact = {
+        firstName: firstIndex >= 0 ? (row[firstIndex] || '') : '',
+        lastName: lastIndex >= 0 ? (row[lastIndex] || '') : '',
+        email: emailIndex >= 0 ? (row[emailIndex] || '') : '',
+        phone: phoneIndex >= 0 ? (row[phoneIndex] || '') : '',
+      };
+    }
+
+    // The exported "Domain" column contains either a real domain or a group code (GES/GDS/GTS)
+    const rawDomain = domainIndex >= 0 ? (row[domainIndex] || '') : '';
+    const { domain, group } = classifyDomainField(rawDomain);
 
     return {
       companyName: row[companyIndex] || '',
-      domain: row[domainIndex] || '',
-      city: row[cityIndex] || '',
-      country: row[countryIndex] || '',
+      domain,
+      group,
+      city: cityIndex >= 0 ? (row[cityIndex] || '') : '',
+      country: countryIndex >= 0 ? (row[countryIndex] || '') : '',
       contacts: contact.firstName || contact.lastName || contact.email || contact.phone ? [contact] : [],
     };
   });
@@ -349,6 +409,13 @@ const Clients = () => {
     return { topDomains, topCountries };
   }, [clients]);
 
+  // Pre-compute blobs once when clients change — avoids rebuilding on every keystroke
+  const clientBlobs = useMemo(() => {
+    const m = new Map<string, string>();
+    clients.forEach((c) => m.set(c.id, buildSearchBlob(c)));
+    return m;
+  }, [clients]);
+
   const filteredClients = useMemo(() => {
     const query = search.trim().toLowerCase();
     return clients.filter((client) => {
@@ -356,9 +423,9 @@ const Clients = () => {
       if (filters.domains.length > 0 && !filters.domains.includes(domainKey)) return false;
       if (filters.countries.length > 0 && !filters.countries.includes(client.location.country)) return false;
       if (!query) return true;
-      return buildSearchBlob(client).includes(query);
+      return (clientBlobs.get(client.id) ?? '').includes(query);
     });
-  }, [clients, filters, search]);
+  }, [clients, clientBlobs, filters, search]);
 
   useEffect(() => { setClCurrentPage(1); }, [filteredClients.length, clientViewMode]);
 
@@ -446,17 +513,20 @@ const Clients = () => {
         toast.error('No rows found in the CSV file');
         return;
       }
-      const inputs = mapCsvRows(rows).filter((row) => row.companyName.trim());
-      if (!inputs.length) {
+      const rawInputs = mapCsvRows(rows).filter((row) => row.companyName.trim());
+      if (!rawInputs.length) {
         toast.error('CSV headers are missing or no valid client rows found');
         return;
       }
+      const inputs = deduplicateClientInputs(rawInputs);
       const result = await importClients(inputs);
       const created = Number((result as { created?: number })?.created || 0);
       const updated = Number((result as { updated?: number })?.updated || 0);
+      const deduped = rawInputs.length - inputs.length;
       const summary = { attempted: inputs.length, created, updated, at: new Date().toISOString() };
       setLastImportSummary(summary);
-      toast.success(`Imported ${inputs.length} rows (created ${created}, updated ${updated})`);
+      const dedupNote = deduped > 0 ? `, merged ${deduped} duplicates` : '';
+      toast.success(`Imported ${inputs.length} rows (created ${created}, updated ${updated}${dedupNote})`);
       setIsImportOpen(false);
     } catch (err) {
       console.error('[clients.import.error]', err);

@@ -3,6 +3,7 @@ import type { ClientContactInput, ClientInput, ClientProfile } from '@/types/cli
 import { useAuth } from '@/contexts/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+const CLIENTS_CACHE_KEY = 'avenir_clients_v1';
 
 const normalizeCompanyName = (name: string): string => {
   const cleaned = String(name || '').trim().replace(/\s+/g, ' ');
@@ -23,11 +24,24 @@ const contactKey = (contact: ClientContactInput): string => {
   return `${email}|${phone}|${first}|${last}`;
 };
 
+const readClientsCache = (): ClientProfile[] | null => {
+  try {
+    const raw = sessionStorage.getItem(CLIENTS_CACHE_KEY);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw) as { data: ClientProfile[]; ts: number };
+    if (Date.now() - ts < 5 * 60 * 1000 && Array.isArray(data)) return data;
+  } catch {}
+  return null;
+};
+
+const writeClientsCache = (data: ClientProfile[]) => {
+  try { sessionStorage.setItem(CLIENTS_CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch {}
+};
 
 export const useClientStore = () => {
   const { token, canPerformAction } = useAuth();
-  const [clients, setClients] = useState<ClientProfile[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [clients, setClients] = useState<ClientProfile[]>(() => readClientsCache() ?? []);
+  const [isLoading, setIsLoading] = useState(() => readClientsCache() === null);
   const [error, setError] = useState<string | null>(null);
 
   const writeHeaders = () => ({
@@ -41,7 +55,6 @@ export const useClientStore = () => {
       setIsLoading(false);
       return;
     }
-    setIsLoading(true);
     setError(null);
     try {
       const response = await fetch(`${API_URL}/clients`, {
@@ -51,7 +64,9 @@ export const useClientStore = () => {
       if (response.status === 503) return;
       if (!response.ok) throw new Error('Failed to load clients');
       const data = await response.json();
-      setClients(Array.isArray(data) ? data : []);
+      const arr = Array.isArray(data) ? data : [];
+      setClients(arr);
+      writeClientsCache(arr);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       if (!message.includes('503')) {
