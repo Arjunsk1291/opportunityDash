@@ -1,32 +1,48 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from "react-router-dom";
 import { Layout } from "@/components/Layout";
 import { DataProvider } from "@/contexts/DataContext";
 import { CurrencyProvider } from "@/contexts/CurrencyContext";
 import { ApprovalProvider } from "@/contexts/ApprovalContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import Dashboard from "./pages/Dashboard";
-import KpiDiagnostics from "./pages/KpiDiagnostics";
+import { PageLoader } from "@/components/PageLoader";
 import Login from "./pages/Login";
-import Opportunities from "./pages/Opportunities";
-import BidDecision from "./pages/BidDecision";
-import PotentialOpportunities from "./pages/PotentialOpportunities";
-import VendorDirectory from "./pages/VendorDirectory";
-import Clients from "./pages/Clients";
-import Analytics from "./pages/Analytics";
-import BDEngagements from "./pages/BDEngagements";
-import MasterOverviewRoute from "./routes/master.overview";
-import MasterUsersRoute from "./routes/master.users";
-import MasterPermissionsRoute from "./routes/master.permissions";
-import MasterDataSyncRoute from "./routes/master.data-sync";
-import MasterExportTemplatesRoute from "./routes/master.export-templates";
-import MasterTelecastRoute from "./routes/master.telecast";
-import MasterColumnsRoute from "./routes/master.columns";
-import MasterDiagnosticsRoute from "./routes/master.diagnostics";
 import PendingApproval from "./pages/PendingApproval";
 import NotFound from "./pages/NotFound";
-import PqActivities from "./pages/PqActivities";
-import Upcoming from "./pages/Upcoming";
+
+// Every page is lazy-loaded so the initial bundle only carries the shell;
+// route chunks download on demand (core routes prefetch on idle below).
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const KpiDiagnostics = lazy(() => import("./pages/KpiDiagnostics"));
+const Opportunities = lazy(() => import("./pages/Opportunities"));
+const BidDecision = lazy(() => import("./pages/BidDecision"));
+const PotentialOpportunities = lazy(() => import("./pages/PotentialOpportunities"));
+const VendorDirectory = lazy(() => import("./pages/VendorDirectory"));
+const Clients = lazy(() => import("./pages/Clients"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const BDEngagements = lazy(() => import("./pages/BDEngagements"));
+const MasterOverviewRoute = lazy(() => import("./routes/master.overview"));
+const MasterUsersRoute = lazy(() => import("./routes/master.users"));
+const MasterPermissionsRoute = lazy(() => import("./routes/master.permissions"));
+const MasterDataSyncRoute = lazy(() => import("./routes/master.data-sync"));
+const MasterExportTemplatesRoute = lazy(() => import("./routes/master.export-templates"));
+const MasterTelecastRoute = lazy(() => import("./routes/master.telecast"));
+const MasterColumnsRoute = lazy(() => import("./routes/master.columns"));
+const MasterDiagnosticsRoute = lazy(() => import("./routes/master.diagnostics"));
+const PqActivities = lazy(() => import("./pages/PqActivities"));
+const Upcoming = lazy(() => import("./pages/Upcoming"));
+
+// Warm the most likely first destinations while the user is still on the
+// login screen / auth check, so the first navigation feels instant.
+const prefetchCoreRoutes = () => {
+  void import("./pages/Dashboard");
+  void import("./pages/Opportunities");
+};
+if (typeof window !== "undefined") {
+  const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+  if (idle) idle(prefetchCoreRoutes);
+  else window.setTimeout(prefetchCoreRoutes, 1200);
+}
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
@@ -40,12 +56,23 @@ import { ThemeProvider as NextThemeProvider, useTheme } from "next-themes";
 import { Skeleton } from "@/components/ui/skeleton";
 import { diag } from "@/lib/diagnostics";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 function AppLayout() {
   return (
     <Layout>
-      <Outlet />
+      <Suspense fallback={<PageLoader />}>
+        <Outlet />
+      </Suspense>
     </Layout>
   );
 }
@@ -78,6 +105,7 @@ function AppRoutes() {
   return (
     <>
       <RoutePerfLogger />
+      <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/kpi-diagnostics" element={<KpiDiagnostics />} />
@@ -140,6 +168,7 @@ function AppRoutes() {
           </Route>
         )}
       </Routes>
+      </Suspense>
     </>
   );
 }

@@ -68,7 +68,7 @@ export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities,
   const normalizeHeader = (v: unknown) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
   const { execute: executeCommit, isLoading: isCommitting, progress: commitProgress } = useAsyncAction({
-    action: async () => {
+    action: async (_: void, reportProgress) => {
       if (!parsedRows.length) throw new Error('No parsed rows to save.');
       const batches: RowFormState[][] = [];
       for (let i = 0; i < parsedRows.length; i += SHEET_UPLOAD_COMMIT_BATCH_SIZE) {
@@ -77,6 +77,7 @@ export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities,
       const touchedByRef = new Map<string, Opportunity>();
       for (let bIdx = 0; bIdx < batches.length; bIdx += 1) {
         setProgressLabel(`Writing batch ${bIdx + 1} of ${batches.length}…`);
+        reportProgress?.(Math.round((bIdx / batches.length) * 100));
         const res = await fetch(`${API_URL}/opportunities/sheet-upload/commit`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -102,10 +103,13 @@ export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities,
   });
 
   const { execute: executeUpload, isLoading: isUploading, progress: uploadProgress } = useAsyncAction({
-    action: async (file: File) => {
+    action: async (file: File, reportProgress) => {
       setProgressLabel('Reading workbook…');
+      reportProgress?.(5);
       const buffer = await file.arrayBuffer();
+      reportProgress?.(15);
       const workbook = await loadWorkbookFromArrayBuffer(buffer);
+      reportProgress?.(40);
       const worksheet = getFirstWorksheet(workbook);
       if (!worksheet) throw new Error('No worksheet found.');
 
@@ -153,8 +157,13 @@ export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities,
       };
 
       setProgressLabel('Mapping rows…');
+      reportProgress?.(50);
       const parsed: RowFormState[] = [];
+      const rowSpan = Math.max(1, maxRows - headerRowIdx);
       for (let r = headerRowIdx + 1; r <= maxRows; r++) {
+        if ((r - headerRowIdx) % 250 === 0) {
+          reportProgress?.(50 + Math.round(((r - headerRowIdx) / rowSpan) * 40));
+        }
         const excelRow = worksheet.getRow(r);
         const refNo = getCellText(excelRow, 'opportunityRefNo');
         const tenderName = getCellText(excelRow, 'tenderName');
@@ -181,6 +190,7 @@ export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities,
       }
 
       setProgressLabel('Diffing with database…');
+      reportProgress?.(92);
       const existingByRef = new Map(opportunities.map((o) => [normalizeRef(String(o.opportunityRefNo || o.tenderNo || '')), o]));
       const created: RowFormState[] = [];
       const updated: RowFormState[] = [];

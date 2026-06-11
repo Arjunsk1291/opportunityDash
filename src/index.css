@@ -528,3 +528,30 @@
   overflow: auto !important;
   width: 100% !important;
 }
+
+/* Ambient background orbs (AmbientBackground.tsx) — transform-only drift */
+@keyframes ambient-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  33%  { transform: translate3d(3rem, -2rem, 0) scale(1.08); }
+  66%  { transform: translate3d(-2rem, 2.5rem, 0) scale(0.95); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+.ambient-orb {
+  animation: ambient-drift 26s ease-in-out infinite;
+  will-change: transform;
+}
+
+.ambient-orb-slow {
+  animation: ambient-drift 38s ease-in-out infinite reverse;
+  will-change: transform;
+}
+
+.ambient-orb-rev {
+  animation: ambient-drift 32s ease-in-out -12s infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-orb, .ambient-orb-slow, .ambient-orb-rev { animation: none; }
+}

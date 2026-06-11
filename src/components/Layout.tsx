@@ -13,6 +13,8 @@ import { motion } from 'framer-motion';
 import { ReportIssueButton } from '@/components/ReportIssueButton';
 import logo from '@/assets/Avenir_Logo.avif';
 import { UniversalSearchDialog } from '@/components/UniversalSearch/UniversalSearchDialog';
+import { ScrollJourney } from '@/components/ScrollJourney';
+import { AmbientBackground } from '@/components/AmbientBackground';
 
 interface LayoutProps {
   children: ReactNode;
@@ -43,6 +45,8 @@ export function Layout({ children }: LayoutProps) {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
+        <AmbientBackground />
+        <ScrollJourney />
         <AppSidebar />
         <SidebarInset className="flex-1">
           {/* Header */}

@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => ({
           'vendor-exceljs': ['exceljs'],
           'vendor-jspreadsheet': ['jspreadsheet-ce', 'jsuites'],
           'vendor-charts': ['recharts'],
+          'vendor-mui': ['@mui/material', '@mui/x-data-grid'],
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
         },
       },
