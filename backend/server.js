@@ -321,6 +321,22 @@ const respondDatabaseUnavailable = (res) => {
   return res.status(503).json({ error: 'Database unavailable. Please try again shortly.' });
 };
 
+// Detect Mongoose/MongoDB driver errors so catch blocks can return 503 instead of 500.
+const isDbError = (err) =>
+  Boolean(
+    err?.name?.includes('Mongo') ||
+    /server selection|socket timeout|topology|timed out|not connected|buffering timed out|ECONNRESET|ETIMEDOUT/i.test(err?.message || '')
+  );
+
+// Unified catch handler — returns 503 for DB errors, 500 for everything else.
+const handleApiError = (res, err, context = '') => {
+  if (context) console.error(`[${context}]`, err?.message || err);
+  if (!res.headersSent) {
+    if (isDbError(err)) return respondDatabaseUnavailable(res);
+    return res.status(500).json({ error: err?.message || 'Internal server error' });
+  }
+};
+
 const clampString = (value, maxLen) => String(value || '').trim().slice(0, maxLen);
 const deriveContactPersonFromEmail = (email) => {
   const raw = String(email || '').trim();
@@ -521,12 +537,34 @@ if (DISABLE_MONGODB) {
   console.log('[startup] MongoDB disabled via environment variable.');
   startHttpServer();
 } else {
+// Fail queries immediately when disconnected instead of buffering them.
+// Without this, a dropped Atlas connection causes every request to queue up
+// silently and nginx returns 504 before Mongoose ever gives up.
+mongoose.set('bufferCommands', false);
+
+mongoose.connection.on('disconnected', () => {
+  console.warn('[mongo.disconnected] MongoDB connection lost — requests will receive 503 until reconnected');
+});
+mongoose.connection.on('reconnected', () => {
+  console.log('[mongo.reconnected] MongoDB connection restored');
+});
+mongoose.connection.on('error', (err) => {
+  console.error('[mongo.error]', err.message);
+});
+
 mongoose.connect(MONGODB_URI, {
   monitorCommands: DIAG_LOGS,
   autoIndex: !IS_PROD,
   autoCreate: !IS_PROD,
-  serverSelectionTimeoutMS: IS_PROD ? 10000 : 30000,
-  socketTimeoutMS: IS_PROD ? 30000 : 45000,
+  // Fail fast on server selection — 5s in prod so slow queries surface quickly
+  serverSelectionTimeoutMS: IS_PROD ? 5000 : 15000,
+  // Socket-level timeout — abort hung queries after 15s in prod
+  socketTimeoutMS: IS_PROD ? 15000 : 30000,
+  // TCP-level keepalive prevents silent connection drops through firewalls / Atlas idle timeout
+  family: 4,
+  heartbeatFrequencyMS: 10000,
+  maxPoolSize: 5,
+  minPoolSize: 1,
 })
   .then(() => {
     if (DIAG_LOGS) {
@@ -2777,6 +2815,7 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
 
 app.get('/api/clients/duplicates', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!req.user || !['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
@@ -2837,7 +2876,7 @@ app.get('/api/clients/duplicates', verifyToken, async (req, res) => {
 
     res.json({ success: true, clusters });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'clients.duplicates.get');
   }
 });
 
@@ -3903,6 +3942,7 @@ app.post('/api/auth/change-password', authRateLimiter, verifyToken, async (req, 
 
 app.get('/api/users/authorized', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin users can view this' });
     }
@@ -3922,7 +3962,7 @@ app.get('/api/users/authorized', verifyToken, async (req, res) => {
     });
     res.json(safeUsers);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'users.authorized.get');
   }
 });
 
@@ -4088,6 +4128,7 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
 
 app.post('/api/users/approve', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requireActionPermission(req, res, 'users_manage')) return;
 
     const { email } = req.body;
@@ -4111,12 +4152,13 @@ app.post('/api/users/approve', verifyToken, async (req, res) => {
 
     res.json({ success: true, user });
   } catch (error) {
-    res.status(500).json(toApiError(error, 'GRAPH_WORKSHEETS_FAILED'));
+    return handleApiError(res, error, 'users.approve');
   }
 });
 
 app.post('/api/users/reject', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requireActionPermission(req, res, 'users_manage')) return;
 
     const { email } = req.body;
@@ -4141,12 +4183,13 @@ app.post('/api/users/reject', verifyToken, async (req, res) => {
     invalidateUserCache(email.toLowerCase());
     res.json({ success: true, user });
   } catch (error) {
-    res.status(500).json(toApiError(error, 'GRAPH_PREVIEW_FAILED'));
+    return handleApiError(res, error, 'users.reject');
   }
 });
 
 app.post('/api/users/change-role', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requireActionPermission(req, res, 'users_manage')) return;
 
     const { email, newRole, assignedGroup } = req.body;
@@ -4194,12 +4237,13 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
     invalidateUserCache(email.toLowerCase());
     res.json({ success: true, user });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'users.change-role');
   }
 });
 
 app.delete('/api/users/remove', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requireActionPermission(req, res, 'users_manage')) return;
 
     const { email } = req.body;
@@ -4220,7 +4264,7 @@ app.delete('/api/users/remove', verifyToken, async (req, res) => {
     invalidateUserCache(email.toLowerCase());
     res.json({ success: true, message: 'User removed' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'users.remove');
   }
 });
 
@@ -5577,7 +5621,8 @@ const refreshSystemConfigAlertTrackingFromSyncedOpportunities = async (config, u
 
 app.get('/api/navigation/permissions', verifyToken, async (req, res) => {
   try {
-    const config = await getSystemConfig({ force: true });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const config = await getSystemConfig();
     const permissions = sanitizePageRoleAccess(config.pageRoleAccess || {});
     const excludePermissions = sanitizePageExcludeRoleAccess(config.pageRoleExcludeAccess || {});
     const emailPermissions = sanitizePageEmailAccess(config.pageEmailAccess || {});
@@ -5596,7 +5641,7 @@ app.get('/api/navigation/permissions', verifyToken, async (req, res) => {
     const meta = addConfigMetaHeaders(res, config);
     res.json({ success: true, permissions, excludePermissions, emailPermissions, ...meta });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'navigation.permissions.get');
   }
 });
 
@@ -5684,12 +5729,13 @@ app.get('/api/permissions/bootstrap', verifyToken, async (req, res) => {
 
 app.get('/api/action-permissions', verifyToken, async (_req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     const { permissions, emailPermissions } = await getActionPermissions();
-    const config = await getSystemConfig({ force: true });
+    const config = await getSystemConfig();
     const meta = addConfigMetaHeaders(res, config);
     res.json({ success: true, permissions, emailPermissions, ...meta });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'action-permissions.get');
   }
 });
 
@@ -5834,6 +5880,7 @@ app.post('/api/permissions/v2/override', verifyToken, async (req, res) => {
 
 app.get('/api/admin/bootstrap', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!(req.user?.role === 'Master' || req.user?.role === 'Admin')) {
       return res.status(403).json({ error: 'Only Master/Admin can load admin bootstrap data' });
     }
@@ -5912,7 +5959,7 @@ app.get('/api/admin/bootstrap', verifyToken, async (req, res) => {
       errors,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to load admin bootstrap data' });
+    return handleApiError(res, error, 'admin.bootstrap.get');
   }
 });
 
@@ -5948,10 +5995,11 @@ app.post('/api/eoi-duplicates/config', verifyToken, express.json(), async (req, 
 
 app.get('/api/telecast/config', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can view telecast config' });
     }
-    const config = await getSystemConfig({ force: true });
+    const config = await getSystemConfig();
     const groupRecipients = {
       GES: normalizeEmailList(config?.telecastGroupRecipients?.GES || []),
       GDS: normalizeEmailList(config?.telecastGroupRecipients?.GDS || []),
@@ -6007,7 +6055,7 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
       ...meta,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'telecast.config.get');
   }
 });
 
@@ -6125,10 +6173,11 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
 
 app.get('/api/reporting/config', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can view reporting config' });
     }
-    const config = await getSystemConfig({ force: true });
+    const config = await getSystemConfig();
     const meta = addConfigMetaHeaders(res, config);
     res.json({
       success: true,
@@ -6142,7 +6191,7 @@ app.get('/api/reporting/config', verifyToken, async (req, res) => {
       ...meta,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'reporting.config.get');
   }
 });
 
@@ -6246,11 +6295,12 @@ const getTelecastSendMailAccessToken = async () => {
 
 app.get('/api/notifications/status', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can view notification status' });
     }
 
-    const config = await getSystemConfig({ force: true });
+    const config = await getSystemConfig();
     const meta = addConfigMetaHeaders(res, config);
     const alertedTracked = await SyncedOpportunity.countDocuments({ telecastAlerted: true });
     const alertedKeysTracked = await SyncedOpportunity.distinct('telecastAlertedKey', { telecastAlerted: true, telecastAlertedKey: { $ne: '' } });
@@ -6279,7 +6329,7 @@ app.get('/api/notifications/status', verifyToken, async (req, res) => {
       weeklyStats: Array.isArray(config.telecastWeeklyStats) ? config.telecastWeeklyStats.slice(-12) : [],
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'notifications.status.get');
   }
 });
 
@@ -7065,6 +7115,7 @@ app.get('/api/opportunities/stream', verifyToken, async (req, res) => {
 // --- Potential Opportunities (separate extras store; does not modify SyncedOpportunity schema) ---
 app.get('/api/potential-opportunities', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requireActionPermission(req, res, 'opportunities_view')) return;
     const q = String(req.query?.q || '').trim().toLowerCase();
     const onlyPotential = String(req.query?.onlyPotential || 'true').toLowerCase() !== 'false';
@@ -7108,8 +7159,7 @@ app.get('/api/potential-opportunities', verifyToken, async (req, res) => {
 
     res.json({ success: true, rows });
   } catch (error) {
-    console.error('[api.potential-opportunities.get.error]', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
+    return handleApiError(res, error, 'potential-opportunities.get');
   }
 });
 
@@ -7206,12 +7256,13 @@ app.get('/api/spreadsheet/workbook/opportunities', verifyToken, async (_req, res
 // --- BD Engagements ---
 app.get('/api/bd-engagements', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requirePageView(req, res, 'bd_engagements')) return;
     res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     const rows = await BDEngagement.find().sort({ createdAt: -1 }).lean();
     res.json(rows.map(mapIdField));
   } catch (error) {
-    res.status(500).json({ error: error.message || 'Internal server error' });
+    return handleApiError(res, error, 'bd-engagements.get');
   }
 });
 
@@ -7334,25 +7385,27 @@ app.delete('/api/bd-engagements/:id', verifyToken, async (req, res) => {
 
 app.get('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
   try {
-    const config = await getSystemConfig({ force: true });
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    const config = await getSystemConfig();
     const allowedEmails = Array.isArray(config.postBidAllowedEmails) ? config.postBidAllowedEmails : [];
     const email = String(req.user?.email || '').trim().toLowerCase();
     const canEdit = ['Master', 'Admin'].includes(req.user.role) || allowedEmails.map((e) => String(e || '').trim().toLowerCase()).includes(email);
     const meta = addConfigMetaHeaders(res, config);
     res.json({ success: true, canEdit, allowedEmails, ...meta });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'opportunities.post-bid-config.get');
   }
 });
 
 app.post('/api/opportunities/post-bid-config', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!['Master', 'Admin'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only Master/Admin can update post-bid config' });
     }
     // Frontend historically sends `{ emails: [...] }`; support both shapes.
     const nextEmails = normalizeEmailList(req.body?.allowedEmails || req.body?.emails || []);
-    const config = await getSystemConfig({ force: true });
+    const config = await getSystemConfig();
     const beforeHashes = { postBidAllowedEmails: hashJson(config.postBidAllowedEmails || []) };
     const updated = await persistSystemConfigFields(config, {
       postBidAllowedEmails: nextEmails,
@@ -7370,7 +7423,7 @@ app.post('/api/opportunities/post-bid-config', verifyToken, async (req, res) => 
 
     res.json({ success: true, allowedEmails: updated.postBidAllowedEmails || [], ...meta });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'opportunities.post-bid-config.post');
   }
 });
 
@@ -7613,6 +7666,7 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
 
 app.get('/api/opportunities/value-conflicts', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requireActionPermission(req, res, 'manual_opportunity_updates_write')) return;
 
     const pending = await OpportunityFieldConflict.find({ status: 'pending' }).sort({ detectedAt: -1 }).lean();
@@ -7661,7 +7715,7 @@ app.get('/api/opportunities/value-conflicts', verifyToken, async (req, res) => {
 
     res.json({ success: true, conflicts: groups });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'opportunities.value-conflicts.get');
   }
 });
 
@@ -7977,6 +8031,7 @@ const buildBidDecisionRecord = (doc) => ({
 
 app.get('/api/bid-decisions', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requirePagePermission(req, res, 'bid_decision')) return;
     const opportunityRefNo = String(req.query?.opportunityRefNo || '').trim();
     const query = opportunityRefNo
@@ -8014,12 +8069,13 @@ app.get('/api/bid-decisions', verifyToken, async (req, res) => {
       opportunitiesByRef,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'bid-decisions.get');
   }
 });
 
 app.get('/api/bid-decisions/:opportunityRefNo', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requirePagePermission(req, res, 'bid_decision')) return;
     const opportunityRefNo = String(req.params.opportunityRefNo || '').trim();
     if (!opportunityRefNo) return res.status(400).json({ error: 'opportunityRefNo is required' });
@@ -8052,7 +8108,7 @@ app.get('/api/bid-decisions/:opportunityRefNo', verifyToken, async (req, res) =>
       opportunityExists: Boolean(opportunity),
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleApiError(res, error, 'bid-decisions.byRef.get');
   }
 });
 
@@ -8132,13 +8188,14 @@ app.post('/api/bid-decisions', verifyToken, async (req, res) => {
 
 app.get('/api/vendors', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requirePageView(req, res, 'vendor_directory')) return;
     res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     await cleanupDummyVendors();
     const vendors = await Vendor.find().sort({ updatedAt: -1, companyName: 1 }).lean();
     res.json(vendors.map((vendor) => mapIdField(vendor)));
   } catch (error) {
-    res.status(500).json({ error: 'Internal server error' });
+    return handleApiError(res, error, 'vendors.get');
   }
 });
 
@@ -8210,12 +8267,13 @@ app.post('/api/vendors/import', verifyToken, async (req, res) => {
 
 app.get('/api/clients', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requirePageView(req, res, 'clients')) return;
     res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     const clients = await Client.find().sort({ updatedAt: -1 }).lean();
     res.json(clients.map((client) => mapIdField(client)));
   } catch (error) {
-    res.status(500).json({ error: 'Internal server error' });
+    return handleApiError(res, error, 'clients.get');
   }
 });
 
