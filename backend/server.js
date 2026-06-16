@@ -339,6 +339,35 @@ const upsertLocalAuthorizedUser = (email, updates = {}) => {
   return next;
 };
 
+// Short-lived in-memory cache for verified users. Eliminates per-request DB lookup.
+// TTL is intentionally short so role/status changes propagate quickly.
+const USER_AUTH_CACHE = new Map(); // email → { user, expiresAt }
+const USER_AUTH_CACHE_TTL_MS = 90 * 1000;
+
+const getCachedUser = (email) => {
+  const entry = USER_AUTH_CACHE.get(email);
+  if (!entry) return null;
+  if (entry.expiresAt < Date.now()) {
+    USER_AUTH_CACHE.delete(email);
+    return null;
+  }
+  return entry.user;
+};
+
+const setCachedUser = (email, user) => {
+  USER_AUTH_CACHE.set(email, { user, expiresAt: Date.now() + USER_AUTH_CACHE_TTL_MS });
+  if (USER_AUTH_CACHE.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of USER_AUTH_CACHE.entries()) {
+      if (v.expiresAt < now) USER_AUTH_CACHE.delete(k);
+    }
+  }
+};
+
+const invalidateUserCache = (email) => {
+  USER_AUTH_CACHE.delete(String(email || '').trim().toLowerCase());
+};
+
 const createSessionToken = (user, extraPayload = {}) => {
   const secret = EFFECTIVE_JWT_SECRET;
   const payload = {
@@ -2640,12 +2669,17 @@ const verifyToken = async (req, res, next) => {
       return next();
     }
 
-    const user = await AuthorizedUser.findOne({ email: username });
+    let user = getCachedUser(username);
+    if (!user) {
+      user = await AuthorizedUser.findOne({ email: username });
+      if (user) setCachedUser(username, user);
+    }
     if (!user) {
       return res.status(403).json({ error: 'User not authorized' });
     }
 
     if (user.status === 'rejected') {
+      invalidateUserCache(username);
       return res.status(403).json({ error: 'User access has been rejected' });
     }
 
@@ -4096,6 +4130,7 @@ app.post('/api/users/reject', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    invalidateUserCache(email.toLowerCase());
     res.json({ success: true, user });
   } catch (error) {
     res.status(500).json(toApiError(error, 'GRAPH_PREVIEW_FAILED'));
@@ -4148,6 +4183,7 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
       { new: true }
     );
 
+    invalidateUserCache(email.toLowerCase());
     res.json({ success: true, user });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -4173,6 +4209,7 @@ app.delete('/api/users/remove', verifyToken, async (req, res) => {
 
     const result = await AuthorizedUser.deleteOne({ email: email.toLowerCase() });
 
+    invalidateUserCache(email.toLowerCase());
     res.json({ success: true, message: 'User removed' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -6904,6 +6941,7 @@ app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) =>
 app.get('/api/opportunities', verifyToken, async (req, res) => {
   try {
     if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (!await requireActionPermission(req, res, 'opportunities_view')) return;
     const start = Date.now();
     const view = String(req.query?.view || 'full').trim().toLowerCase();
     const projection = getOpportunityProjection(view);

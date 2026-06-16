@@ -1,4 +1,5 @@
-import { useState, useMemo, useRef, useEffect, type ComponentType } from 'react';
+import { useState, useMemo, useRef, type ComponentType } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTrackedAction } from '@/hooks/useTrackedAction';
 import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { FunnelChart } from '@/components/Dashboard/FunnelChart';
@@ -574,48 +575,35 @@ const evictOldKpiDiagnostics = () => {
   }
 };
 
+const capReport = (payload: KpiDiagnosticsReport): KpiDiagnosticsReport => {
+  const included = payload.included.slice(0, MAX_DIAGNOSTICS_ROWS);
+  const omitted = payload.omitted.slice(0, MAX_DIAGNOSTICS_ROWS);
+  return { ...payload, included, omitted };
+};
+
 const tryStoreKpiDiagnostics = (reportId: string, report: KpiDiagnosticsReport) => {
+  // KPI reports open in a new tab. New tabs share localStorage but have their own
+  // sessionStorage — so sessionStorage fallback would produce a tab that can't find
+  // its own data. Always use localStorage; if it's too full, cap and retry once.
   const storageKey = `${KPI_DIAGNOSTICS_STORAGE_PREFIX}${reportId}`;
-  const attemptStore = (target: Storage, payload: KpiDiagnosticsReport) => {
-    target.setItem(storageKey, JSON.stringify(payload));
-  };
-
-  const capReport = (payload: KpiDiagnosticsReport): KpiDiagnosticsReport => {
-    const included = payload.included.slice(0, MAX_DIAGNOSTICS_ROWS);
-    const omitted = payload.omitted.slice(0, MAX_DIAGNOSTICS_ROWS);
-    return {
-      ...payload,
-      included,
-      omitted,
-      counts: {
-        ...payload.counts,
-        includedRows: payload.counts.includedRows,
-        omittedRows: payload.counts.omittedRows,
-      },
-    };
-  };
-
   evictOldKpiDiagnostics();
   try {
-    attemptStore(localStorage, report);
+    localStorage.setItem(storageKey, JSON.stringify(report));
     return;
   } catch {
-    // fall through
+    // localStorage full — evict more aggressively and retry with a capped report
   }
-
   try {
-    attemptStore(sessionStorage, report);
-    return;
+    // Force-evict all existing diagnostics entries to make room
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(KPI_DIAGNOSTICS_STORAGE_PREFIX)) localStorage.removeItem(key);
+    }
+    const capped = capReport(report);
+    (capped as unknown as Record<string, unknown>).truncated = true;
+    localStorage.setItem(storageKey, JSON.stringify(capped));
   } catch {
-    // fall through
-  }
-
-  const capped = capReport(report);
-  (capped as any).truncated = true;
-  try {
-    attemptStore(sessionStorage, capped);
-  } catch {
-    // Nothing else we can do; avoid throwing in UI thread.
+    // Nothing else we can do; the diagnostics tab will open but show an empty report.
   }
 };
 
@@ -624,16 +612,24 @@ const Dashboard = () => {
   const { status: trackedStatus } = useTrackedAction();
   const { isMaster, token } = useAuth();
   const { formatCurrency, currency, convertValue } = useCurrency();
-  const [topPerformerConfigVisible, setTopPerformerConfigVisible] = useState(false);
+  const queryClient = useQueryClient();
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
 
-  useEffect(() => {
-    if (!token) return;
-    fetch(`${import.meta.env.VITE_API_URL || '/api'}/telecast/config`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data) setTopPerformerConfigVisible(Boolean(data.topPerformerCardVisible)); })
-      .catch(() => {});
-  }, [token]);
+  const { data: telecastConfig } = useQuery({
+    queryKey: ['telecast-config'],
+    queryFn: async () => {
+      const r = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/telecast/config`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) return null;
+      return r.json() as Promise<{ topPerformerCardVisible?: boolean } | null>;
+    },
+    enabled: Boolean(token),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+  });
+
+  const topPerformerConfigVisible = Boolean(telecastConfig?.topPerformerCardVisible);
 
   const handleToggleShowForAll = async (show: boolean) => {
     if (!token || !isMaster) return;
@@ -643,7 +639,8 @@ const Dashboard = () => {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ topPerformerCardVisible: show }),
       });
-      setTopPerformerConfigVisible(show);
+      // Invalidate the cached config so next read gets the updated value
+      await queryClient.invalidateQueries({ queryKey: ['telecast-config'] });
     } catch { /* silent */ }
   };
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
@@ -1289,7 +1286,7 @@ const Dashboard = () => {
       <section className="space-y-4">
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div className="rounded-2xl border-2 border-sky-300/80 bg-sky-50/30 p-3 shadow-[0_0_24px_rgba(56,189,248,0.18)]">
-            <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">Recieved</p>
+            <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">Received</p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {receivedCards.map((card, index) => (
                 <button

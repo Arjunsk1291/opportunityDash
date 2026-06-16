@@ -6,11 +6,16 @@ services:
     buildCommand: npm install --include=dev && npm run build && node --check backend/services/graphExcelService.js && node --check backend/server.js && rm -rf backend/node_modules && cd backend && npm install --no-audit --no-fund
     startCommand: node backend/server.js
     envVars:
+      # MONGODB_URI must be set as a secret in the Render dashboard (Environment tab).
+      # Do NOT add the connection string here — it contains database credentials.
+      # Format: mongodb+srv://<user>:<password>@<host>/<db>
       - key: MONGODB_URI
-        value: mongodb+srv://avenir:13Avenir2025%40@avenirapproval.irpnuud.mongodb.net/opportunity-dashboard
+        sync: false
       - key: PORT
         value: "3001"
       - key: NODE_ENV
         value: production
-      - key: VITE_API_URL
-        value: https://opportunitydash.onrender.com/api
+      # JWT_SECRET must be set as a secret in the Render dashboard.
+      # Generate with: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+      - key: JWT_SECRET
+        sync: false

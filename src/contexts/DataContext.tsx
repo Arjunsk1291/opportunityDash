@@ -85,6 +85,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const hasLoadedOnceRef = useRef(false);
   const cacheHydratedRef = useRef(false);
   const currentViewRef = useRef<OpportunityFetchView>('lite');
+  // routeViewRef stays current via a separate effect so refreshData doesn't
+  // need location.pathname in its dependency array (which caused a new function
+  // reference — and therefore a duplicate fetch — on every navigation).
+  const routeViewRef = useRef<OpportunityFetchView>('lite');
   const opportunitiesRef = useRef<Opportunity[]>([]);
   const lastSyncTimeRef = useRef<Date | null>(null);
   const streamRetryTimerRef = useRef<number | null>(null);
@@ -99,6 +103,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     lastSyncTimeRef.current = lastSyncTime;
   }, [lastSyncTime]);
+
+  useEffect(() => {
+    routeViewRef.current = getOpportunityViewForRoute(location.pathname);
+  }, [location.pathname]);
 
   const buildVisibleOpportunity = useCallback((opp: OpportunityApiRecord): Opportunity | null => {
     const refNo = String(opp?.opportunityRefNo || '').trim();
@@ -184,8 +192,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const isBackground = Boolean(options?.background);
     const forceRefresh = Boolean(options?.force);
-    const route = location.pathname || '';
-    const routeView = getOpportunityViewForRoute(route);
+    const route = window.location.pathname || '';
+    const routeView = routeViewRef.current;
     const currentLastSyncTime = lastSyncTimeRef.current;
     const canUseIncremental = Boolean(currentLastSyncTime) && !forceRefresh && (isBackground || streamActiveRef.current);
     const cacheKey = OPPORTUNITIES_CACHE_KEY;
@@ -370,12 +378,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [
     isAuthLoading,
     token,
-    location.pathname,
     mergeOpportunityRows,
     normalizeOpportunityRows,
     persistOpportunityCache,
-    opportunitiesRef,
-    lastSyncTimeRef,
+    buildVisibleOpportunity,
   ]);
 
   useEffect(() => {

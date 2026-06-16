@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo, useState } from 'react';
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Plus, AlertTriangle } from 'lucide-react';
@@ -84,7 +84,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
     navigate({ pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true });
   }, [location.search, opportunities, navigate, location.pathname]);
 
-  const loadConflicts = async () => {
+  const loadConflicts = useCallback(async () => {
     if (!token || !canEdit) return;
     setConflictsLoading(true);
     try {
@@ -100,9 +100,9 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
     } finally {
       setConflictsLoading(false);
     }
-  };
+  }, [token, canEdit]);
 
-  useEffect(() => { void loadConflicts(); }, [token, canEdit]);
+  useEffect(() => { void loadConflicts(); }, [loadConflicts]);
 
   const resolveConflict = async (conflictId: string, action: 'use_sheet' | 'keep_existing') => {
     if (!token || !canEdit) return;

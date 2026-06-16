@@ -105,7 +105,6 @@ function AppRoutes() {
   return (
     <>
       <RoutePerfLogger />
-      <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/kpi-diagnostics" element={<KpiDiagnostics />} />
@@ -168,7 +167,6 @@ function AppRoutes() {
           </Route>
         )}
       </Routes>
-      </Suspense>
     </>
   );
 }

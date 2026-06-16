@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import { DEFAULT_PAGE_ROLE_ACCESS, PageKey } from '@/config/navigation';
 import { ActionKey, DEFAULT_ACTION_ROLE_ACCESS } from '@/config/actionPermissions';
 
@@ -70,7 +71,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const SESSION_REFRESH_LEEWAY_MS = 2 * 60 * 1000;
 const FALLBACK_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
-const PERMISSIONS_REFRESH_INTERVAL_MS = 30 * 1000;
+const PERMISSIONS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 interface AuthorizedUserResponse {
   id?: string;
   _id?: string;
@@ -147,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, setIsPending] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const authErrorToastIdRef = useRef<string | number | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [pagePermissions, setPagePermissions] = useState<Record<PageKey, UserRole[]>>(DEFAULT_PAGE_ROLE_ACCESS as Record<PageKey, UserRole[]>);
   const [pageExcludePermissions, setPageExcludePermissions] = useState<Record<PageKey, UserRole[]>>({} as Record<PageKey, UserRole[]>);
@@ -158,6 +160,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userPageOverrides, setUserPageOverrides] = useState<UserPageOverride[]>([]);
   const [pageEditActionMap, setPageEditActionMap] = useState<Record<string, string[]>>({});
   const permissionsRefreshRef = React.useRef<Promise<void> | null>(null);
+
+  // Show auth errors as a persistent toast rather than pushing content down the page.
+  useEffect(() => {
+    if (authError) {
+      authErrorToastIdRef.current = toast.error('Auth service unavailable', {
+        description: authError,
+        duration: Infinity,
+        id: 'auth-error',
+      });
+    } else {
+      toast.dismiss('auth-error');
+      authErrorToastIdRef.current = null;
+    }
+  }, [authError]);
 
   const authHeaders = useCallback(
     () => token ? { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token } : { 'Content-Type': 'application/json' },
@@ -681,22 +697,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         reloadActionPermissions: reloadPermissionsBundle,
       }}
     >
-      {authError && (
-        <div
-          role="alert"
-          style={{
-            margin: '12px',
-            padding: '12px 16px',
-            borderRadius: '8px',
-            border: '1px solid #f5c2c7',
-            backgroundColor: '#f8d7da',
-            color: '#842029',
-            fontWeight: 600,
-          }}
-        >
-          Auth service unavailable
-        </div>
-      )}
       {children}
     </AuthContext.Provider>
   );
