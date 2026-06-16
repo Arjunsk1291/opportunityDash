@@ -8788,6 +8788,147 @@ app.post('/api/tender-updates-report', verifyToken, async (req, res) => {
   }
 });
 
+// ── PQ Activities ─────────────────────────────────────────────────────────────
+const PQ_TENANT_KEYS = ['avenir_abudhabi', 'avenir_india', 'bcts_dubai', 'bcts_abudhabi', 'avenir_energy', 'avenir_oilfield', 'lauren'];
+
+app.get('/api/pq-activities', verifyToken, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (!await requireActionPermission(req, res, 'pq_activities_view')) return;
+    const tenant = PQ_TENANT_KEYS.includes(req.query.tenant) ? req.query.tenant : 'avenir_abudhabi';
+    const Model = getPqModel(tenant);
+    const filter = { tenant };
+    if (req.query.status && req.query.status !== 'All') filter.status = req.query.status;
+    if (req.query.q) {
+      const re = new RegExp(req.query.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [{ company: re }, { registeredEmail: re }, { workgroup: re }];
+    }
+    const rows = await Model.find(filter).sort({ status: 1, company: 1 }).lean();
+    res.json({ rows: rows.map(r => ({ ...r, id: r._id.toString() })) });
+  } catch (error) { return handleApiError(res, error, 'pq-activities.list'); }
+});
+
+app.get('/api/pq-activities/export', verifyToken, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (!await requireActionPermission(req, res, 'pq_activities_view')) return;
+    const tenant = PQ_TENANT_KEYS.includes(req.query.tenant) ? req.query.tenant : 'avenir_abudhabi';
+    const Model = getPqModel(tenant);
+    const rows = await Model.find({ tenant }).sort({ status: 1, company: 1 }).lean();
+    const headers = ['S.No', 'Company', 'Status', 'Workgroup', 'Registered Email', 'User ID (Portal)', 'Password(Portal)', 'Link(Portal)', 'Image Link', 'Enquiries', 'Renewal Date', 'Last Update', 'Notes'];
+    const dataRows = rows.map(r => [
+      r.sNo ?? '', r.company || '', r.status || '', r.workgroup || '',
+      r.registeredEmail || '', r.userId || '', r.password || '', r.link || '',
+      r.imageLink || '', r.enquiries || '',
+      r.renewalDate ? new Date(r.renewalDate).toISOString().slice(0, 10) : '',
+      r.lastUpdateDate ? new Date(r.lastUpdateDate).toISOString().slice(0, 10) : '',
+      r.notes || '',
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'PQ Activities');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const dateStr = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Disposition', `attachment; filename=pq-activities-${tenant}-${dateStr}.xlsx`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch (error) { return handleApiError(res, error, 'pq-activities.export'); }
+});
+
+app.post('/api/pq-activities/import', verifyToken, express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
+    const tenant = PQ_TENANT_KEYS.includes(req.query.tenant) ? req.query.tenant : 'avenir_abudhabi';
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) return res.status(400).json({ error: 'No file data received' });
+    const wb = XLSX.read(req.body, { type: 'buffer', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    if (!ws) return res.status(400).json({ error: 'Empty workbook' });
+    const raw = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    if (!raw.length) return res.status(400).json({ error: 'No rows found in file' });
+    const Model = getPqModel(tenant);
+    let added = 0, updated = 0;
+    for (const row of raw) {
+      const company = String(row['Company'] || row['company'] || '').trim();
+      if (!company) continue;
+      const doc = {
+        tenant,
+        company,
+        sNo: Number(row['S.No'] || row['sNo'] || 0) || 0,
+        status: normalizePqStatus(row['Status'] || row['status']),
+        workgroup: String(row['Workgroup'] || row['workgroup'] || '').trim(),
+        registeredEmail: String(row['Registered Email'] || row['registeredEmail'] || '').trim(),
+        userId: String(row['User ID (Portal)'] || row['userId'] || '-').trim() || '-',
+        password: String(row['Password(Portal)'] || row['password'] || '').trim(),
+        link: String(row['Link(Portal)'] || row['link'] || '-').trim() || '-',
+        imageLink: String(row['Image Link'] || row['imageLink'] || '').trim(),
+        enquiries: String(row['Enquiries'] || row['enquiries'] || '').trim(),
+        notes: String(row['Notes'] || row['notes'] || '').trim(),
+        lastUpdateDate: parseOptionalDate(row['Last Update'] || row['lastUpdateDate'] || null),
+        renewalDate: parseOptionalDate(row['Renewal Date'] || row['renewalDate'] || null),
+      };
+      const existing = await Model.findOne({ tenant, company: { $regex: new RegExp(`^${company.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+      if (existing) {
+        await Model.updateOne({ _id: existing._id }, { $set: doc });
+        updated++;
+      } else {
+        await Model.create(doc);
+        added++;
+      }
+    }
+    res.json({ ok: true, added, updated });
+  } catch (error) { return handleApiError(res, error, 'pq-activities.import'); }
+});
+
+app.post('/api/pq-activities', verifyToken, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
+    const parsed = pqActivityCreateSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input' });
+    const tenant = PQ_TENANT_KEYS.includes(parsed.data.tenant) ? parsed.data.tenant : 'avenir_abudhabi';
+    const Model = getPqModel(tenant);
+    const doc = await Model.create({ ...parsed.data, tenant });
+    res.status(201).json({ ok: true, row: { ...doc.toObject(), id: doc._id.toString() } });
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ error: 'A company with this name already exists for this tenant' });
+    return handleApiError(res, error, 'pq-activities.create');
+  }
+});
+
+app.patch('/api/pq-activities/:id', verifyToken, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
+    const tenant = PQ_TENANT_KEYS.includes(req.query.tenant) ? req.query.tenant : 'avenir_abudhabi';
+    const parsed = pqActivityPatchSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input' });
+    const Model = getPqModel(tenant);
+    const doc = await Model.findOneAndUpdate(
+      { _id: req.params.id, tenant },
+      { $set: parsed.data },
+      { new: true, runValidators: true }
+    );
+    if (!doc) return res.status(404).json({ error: 'Entry not found' });
+    res.json({ ok: true, row: { ...doc.toObject(), id: doc._id.toString() } });
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ error: 'A company with this name already exists for this tenant' });
+    return handleApiError(res, error, 'pq-activities.update');
+  }
+});
+
+app.delete('/api/pq-activities/:id', verifyToken, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (!await requireActionPermission(req, res, 'pq_activities_manage')) return;
+    const tenant = PQ_TENANT_KEYS.includes(req.query.tenant) ? req.query.tenant : 'avenir_abudhabi';
+    const Model = getPqModel(tenant);
+    const doc = await Model.findOneAndDelete({ _id: req.params.id, tenant });
+    if (!doc) return res.status(404).json({ error: 'Entry not found' });
+    res.json({ ok: true });
+  } catch (error) { return handleApiError(res, error, 'pq-activities.delete'); }
+});
+
 const distPath = path.resolve(__dirname, '../dist');
 app.use(express.static(distPath));
 

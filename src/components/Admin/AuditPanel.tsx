@@ -57,6 +57,10 @@ const ENDPOINT_CATALOGUE = [
   // Config variants
   { group: 'Config', label: 'EOI Duplicates Config', url: '/eoi-duplicates/config', method: 'GET', critical: false },
   { group: 'Config', label: 'Notifications Alerted', url: '/notifications/alerted', method: 'GET', critical: false },
+
+  // PQ Activities
+  { group: 'PQ Activities', label: 'PQ List', url: '/pq-activities?tenant=avenir_abudhabi', method: 'GET', critical: true },
+  { group: 'PQ Activities', label: 'PQ Export', url: '/pq-activities/export?tenant=avenir_abudhabi', method: 'GET', critical: false },
 ] as const;
 
 type EndpointDef = typeof ENDPOINT_CATALOGUE[number];
@@ -130,6 +134,7 @@ async function probeEndpoint(
 
     const res = await fetch(`${API_URL}${def.url}`, {
       method: def.method,
+      cache: 'no-store',
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'isSSE' in def && def.isSSE ? 'text/event-stream' : 'application/json',
@@ -234,11 +239,12 @@ export function AuditPanel({ token }: { token: string | null }) {
       const total = ENDPOINT_CATALOGUE.length;
       const results: ProbeResult[] = [];
 
-      // Step 2: Probe every endpoint sequentially
+      // Step 2: Probe every endpoint sequentially with a short gap to avoid nginx rate-limiting
       for (let i = 0; i < ENDPOINT_CATALOGUE.length; i++) {
         if (abort.signal.aborted) break;
         const def = ENDPOINT_CATALOGUE[i];
         setCurrentStep(`Probing ${def.method} ${def.url}…`);
+        if (i > 0) await new Promise((r) => setTimeout(r, 120));
         const result = await probeEndpoint(def, token, abort.signal);
         results.push(result);
         setProgress(10 + Math.round(((i + 1) / total) * 88));
