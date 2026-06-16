@@ -244,7 +244,7 @@ export function AuditPanel({ token }: { token: string | null }) {
         if (abort.signal.aborted) break;
         const def = ENDPOINT_CATALOGUE[i];
         setCurrentStep(`Probing ${def.method} ${def.url}…`);
-        if (i > 0) await new Promise((r) => setTimeout(r, 120));
+        if (i > 0) await new Promise((r) => setTimeout(r, 1100));
         const result = await probeEndpoint(def, token, abort.signal);
         results.push(result);
         setProgress(10 + Math.round(((i + 1) / total) * 88));
@@ -336,6 +336,7 @@ export function AuditPanel({ token }: { token: string | null }) {
             <div className="font-semibold text-base">System Audit</div>
             <div className="text-sm text-muted-foreground mt-0.5">
               Probes every API endpoint, checks MongoDB, collections, config, and environment.
+              Each probe is spaced 1.1s apart to avoid nginx rate limiting (~35s total).
               Download the report and share it for diagnosis.
             </div>
           </div>
