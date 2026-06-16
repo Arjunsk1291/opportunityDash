@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "NODE_OPTIONS=--max-old-space-size=512 vite build",
+    "build": "NODE_OPTIONS=--max-old-space-size=1024 vite build",
     "build:dev": "vite build --mode development",
     "start": "node backend/server.js",
     "lint": "eslint .",
