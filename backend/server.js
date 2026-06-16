@@ -510,131 +510,6 @@ app.get('/api/version', (_req, res) => {
   });
 });
 
-// ── Full System Audit (Master only) ──────────────────────────────────────────
-app.get('/api/audit/run', verifyToken, async (req, res) => {
-  try {
-    if (req.user?.role !== 'Master' && req.user?.role !== 'MASTER') {
-      return res.status(403).json({ error: 'Only Master users can run the system audit' });
-    }
-
-    const auditStart = Date.now();
-    const dbReady = mongoose.connection.readyState === 1;
-    const system = getSystemHealthSnapshot();
-
-    // DB ping
-    let dbPingMs = null;
-    let dbPingError = null;
-    if (dbReady) {
-      try {
-        const t0 = Date.now();
-        await mongoose.connection.db.command({ ping: 1 });
-        dbPingMs = Date.now() - t0;
-      } catch (e) {
-        dbPingError = e?.message || 'ping failed';
-      }
-    }
-
-    // Collection counts
-    const collectionModels = [
-      ['SyncedOpportunity', SyncedOpportunity],
-      ['Client', Client],
-      ['Vendor', Vendor],
-      ['BidDecision', BidDecision],
-      ['PotentialOpportunity', PotentialOpportunity],
-      ['AuthorizedUser', AuthorizedUser],
-      ['Approval', Approval],
-      ['LoginLog', LoginLog],
-      ['AuthDiagnosticLog', AuthDiagnosticLog],
-      ['GraphSyncConfig', GraphSyncConfig],
-    ];
-
-    const collections = {};
-    if (dbReady) {
-      await Promise.all(
-        collectionModels.map(async ([name, Model]) => {
-          try {
-            const count = await Model.estimatedDocumentCount();
-            collections[name] = { count, ok: true };
-          } catch (e) {
-            collections[name] = { count: null, ok: false, error: e?.message };
-          }
-        })
-      );
-    } else {
-      for (const [name] of collectionModels) {
-        collections[name] = { count: null, ok: false, error: 'DB not connected' };
-      }
-    }
-
-    // Config snapshot
-    let configSnapshot = null;
-    if (dbReady) {
-      try {
-        const config = await getSystemConfig();
-        configSnapshot = {
-          hasPageRoleAccess: Boolean(config?.pageRoleAccess && Object.keys(config.pageRoleAccess).length > 0),
-          hasActionPermissions: Boolean(config?.actionRoleAccess && Object.keys(config.actionRoleAccess).length > 0),
-          hasPageViewAccess: Boolean(config?.pageViewAccess && Object.keys(config.pageViewAccess).length > 0),
-          telecastEnabled: Boolean(config?.telecastEnabled),
-          notificationsConfigured: Boolean(config?.notificationLastCheckedAt),
-          postBidEmailCount: Array.isArray(config?.postBidAllowedEmails) ? config.postBidAllowedEmails.length : 0,
-          cacheHit: Boolean(systemConfigCache.value),
-          cacheAgeMs: systemConfigCache.ts ? Date.now() - systemConfigCache.ts : null,
-        };
-      } catch (e) {
-        configSnapshot = { error: e?.message };
-      }
-    }
-
-    // Auth cache stats
-    const authCacheStats = {
-      size: USER_AUTH_CACHE.size,
-      ttlMs: USER_AUTH_CACHE_TTL_MS,
-    };
-
-    const auditMs = Date.now() - auditStart;
-
-    res.json({
-      ok: true,
-      generatedAt: new Date().toISOString(),
-      auditMs,
-      build: {
-        gitSha: BUILD_INFO.gitSha,
-        buildTime: BUILD_INFO.buildTime,
-        nodeVersion: process.version,
-        platform: os.platform(),
-        arch: os.arch(),
-      },
-      db: {
-        readyState: mongoose.connection.readyState,
-        readyStateLabel: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState] || 'unknown',
-        pingMs: dbPingMs,
-        pingError: dbPingError,
-        host: mongoose.connection.host || null,
-        name: mongoose.connection.name || null,
-      },
-      system: {
-        uptimeSec: Math.round(process.uptime()),
-        ...system,
-      },
-      collections,
-      config: configSnapshot,
-      authCache: authCacheStats,
-      env: {
-        NODE_ENV: process.env.NODE_ENV || 'development',
-        IS_PROD: Boolean(IS_PROD),
-        MONGODB_URI_SET: Boolean(process.env.MONGODB_URI),
-        JWT_SECRET_SET: Boolean(process.env.JWT_SECRET || process.env.SESSION_JWT_SECRET),
-        AZURE_TENANT_ID_SET: Boolean(process.env.AZURE_TENANT_ID || process.env.TENANT_ID),
-        AZURE_CLIENT_ID_SET: Boolean(process.env.AZURE_CLIENT_ID || process.env.CLIENT_ID),
-        ROPC_USERNAME_SET: Boolean(process.env.ROPC_USERNAME),
-      },
-    });
-  } catch (error) {
-    return handleApiError(res, error, 'audit.run');
-  }
-});
-
 app.get('/api/auth/msal-config', (_req, res) => {
   const tenantId = process.env.AZURE_TENANT_ID || '';
   const clientId = process.env.AZURE_CLIENT_ID || '';
@@ -2935,6 +2810,120 @@ app.post('/api/auth/verify-token', authRateLimiter, async (req, res) => {
       stack: error?.stack || null,
     }));
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Full System Audit (Master only) ──────────────────────────────────────────
+app.get('/api/audit/run', verifyToken, async (req, res) => {
+  try {
+    if (req.user?.role !== 'Master' && req.user?.role !== 'MASTER') {
+      return res.status(403).json({ error: 'Only Master users can run the system audit' });
+    }
+
+    const auditStart = Date.now();
+    const dbReady = mongoose.connection.readyState === 1;
+    const system = getSystemHealthSnapshot();
+
+    let dbPingMs = null;
+    let dbPingError = null;
+    if (dbReady) {
+      try {
+        const t0 = Date.now();
+        await mongoose.connection.db.command({ ping: 1 });
+        dbPingMs = Date.now() - t0;
+      } catch (e) {
+        dbPingError = e?.message || 'ping failed';
+      }
+    }
+
+    const collectionModels = [
+      ['SyncedOpportunity', SyncedOpportunity],
+      ['Client', Client],
+      ['Vendor', Vendor],
+      ['BidDecision', BidDecision],
+      ['PotentialOpportunity', PotentialOpportunity],
+      ['AuthorizedUser', AuthorizedUser],
+      ['Approval', Approval],
+      ['LoginLog', LoginLog],
+      ['AuthDiagnosticLog', AuthDiagnosticLog],
+      ['GraphSyncConfig', GraphSyncConfig],
+    ];
+
+    const collections = {};
+    if (dbReady) {
+      await Promise.all(
+        collectionModels.map(async ([name, Model]) => {
+          try {
+            const count = await Model.estimatedDocumentCount();
+            collections[name] = { count, ok: true };
+          } catch (e) {
+            collections[name] = { count: null, ok: false, error: e?.message };
+          }
+        })
+      );
+    } else {
+      for (const [name] of collectionModels) {
+        collections[name] = { count: null, ok: false, error: 'DB not connected' };
+      }
+    }
+
+    let configSnapshot = null;
+    if (dbReady) {
+      try {
+        const config = await getSystemConfig();
+        configSnapshot = {
+          hasPageRoleAccess: Boolean(config?.pageRoleAccess && Object.keys(config.pageRoleAccess).length > 0),
+          hasActionPermissions: Boolean(config?.actionRoleAccess && Object.keys(config.actionRoleAccess).length > 0),
+          hasPageViewAccess: Boolean(config?.pageViewAccess && Object.keys(config.pageViewAccess).length > 0),
+          telecastEnabled: Boolean(config?.telecastEnabled),
+          notificationsConfigured: Boolean(config?.notificationLastCheckedAt),
+          postBidEmailCount: Array.isArray(config?.postBidAllowedEmails) ? config.postBidAllowedEmails.length : 0,
+          cacheHit: Boolean(systemConfigCache.value),
+          cacheAgeMs: systemConfigCache.ts ? Date.now() - systemConfigCache.ts : null,
+        };
+      } catch (e) {
+        configSnapshot = { error: e?.message };
+      }
+    }
+
+    const authCacheStats = { size: USER_AUTH_CACHE.size, ttlMs: USER_AUTH_CACHE_TTL_MS };
+    const auditMs = Date.now() - auditStart;
+
+    res.json({
+      ok: true,
+      generatedAt: new Date().toISOString(),
+      auditMs,
+      build: {
+        gitSha: BUILD_INFO.gitSha,
+        buildTime: BUILD_INFO.buildTime,
+        nodeVersion: process.version,
+        platform: os.platform(),
+        arch: os.arch(),
+      },
+      db: {
+        readyState: mongoose.connection.readyState,
+        readyStateLabel: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState] || 'unknown',
+        pingMs: dbPingMs,
+        pingError: dbPingError,
+        host: mongoose.connection.host || null,
+        name: mongoose.connection.name || null,
+      },
+      system: { uptimeSec: Math.round(process.uptime()), ...system },
+      collections,
+      config: configSnapshot,
+      authCache: authCacheStats,
+      env: {
+        NODE_ENV: process.env.NODE_ENV || 'development',
+        IS_PROD: Boolean(IS_PROD),
+        MONGODB_URI_SET: Boolean(process.env.MONGODB_URI),
+        JWT_SECRET_SET: Boolean(process.env.JWT_SECRET || process.env.SESSION_JWT_SECRET),
+        AZURE_TENANT_ID_SET: Boolean(process.env.AZURE_TENANT_ID || process.env.TENANT_ID),
+        AZURE_CLIENT_ID_SET: Boolean(process.env.AZURE_CLIENT_ID || process.env.CLIENT_ID),
+        ROPC_USERNAME_SET: Boolean(process.env.ROPC_USERNAME),
+      },
+    });
+  } catch (error) {
+    return handleApiError(res, error, 'audit.run');
   }
 });
 
