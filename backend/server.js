@@ -3841,7 +3841,7 @@ app.post('/api/auth/password-reset/confirm', passwordResetRateLimiter, async (re
     const newPassword = String(req.body?.newPassword || '');
     if (!email || !code || !newPassword) return res.status(400).json({ error: 'email, code, and newPassword are required' });
 
-    assertStrongPassword(newPassword);
+    try { assertStrongPassword(newPassword); } catch (e) { return res.status(400).json({ error: e.message }); }
     const user = await findAuthorizedUserByEmail(email);
     if (!user || user.status !== 'approved') return res.status(403).json({ error: 'Invalid reset request' });
 
@@ -3879,7 +3879,7 @@ app.post('/api/auth/change-password', authRateLimiter, verifyToken, async (req, 
     const newPassword = String(req.body?.newPassword || '');
     if (!currentPassword || !newPassword) return res.status(400).json({ error: 'currentPassword and newPassword are required' });
 
-    assertStrongPassword(newPassword);
+    try { assertStrongPassword(newPassword); } catch (e) { return res.status(400).json({ error: e.message }); }
     const user = await AuthorizedUser.findOne({ email });
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (!user.passwordHash) return res.status(400).json({ error: 'Password login not configured for this user' });
@@ -3928,13 +3928,14 @@ app.get('/api/users/authorized', verifyToken, async (req, res) => {
 
 app.post('/api/users/set-password', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requireActionPermission(req, res, 'users_manage')) return;
     const email = String(req.body?.email || '').trim().toLowerCase();
     const newPassword = String(req.body?.newPassword || '');
     const requireChange = req.body?.requireChange !== undefined ? Boolean(req.body.requireChange) : true;
 
     if (!email || !newPassword) return res.status(400).json({ error: 'email and newPassword are required' });
-    assertStrongPassword(newPassword);
+    try { assertStrongPassword(newPassword); } catch (e) { return res.status(400).json({ error: e.message }); }
 
     const existing = await AuthorizedUser.findOne({ email });
     if (!existing) return res.status(404).json({ error: 'User not found' });
@@ -4008,6 +4009,7 @@ app.post('/api/users/unlock-account', verifyToken, async (req, res) => {
 
 app.post('/api/users/add', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requireActionPermission(req, res, 'users_manage')) return;
 
     const email = String(req.body?.email || '').trim().toLowerCase();
@@ -4039,6 +4041,14 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
       if (!tempAccessExpiresAt || Number.isNaN(tempAccessExpiresAt.getTime())) return res.status(400).json({ error: 'Valid tempAccessExpiresAt is required for TempUser' });
     }
 
+    if (rawPassword) {
+      try {
+        assertStrongPassword(rawPassword);
+      } catch (e) {
+        return res.status(400).json({ error: e.message });
+      }
+    }
+
     const existing = await AuthorizedUser.findOne({ email });
     if (existing?.role === 'Master' || existing?.role === 'MASTER') {
       return res.status(403).json({ error: 'Modifying Master users is not allowed' });
@@ -4046,8 +4056,6 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
 
     const passwordPatch = {};
     if (rawPassword) {
-      // Masters/Admins can set/reset passwords; enforce strong policy for all accounts.
-      assertStrongPassword(rawPassword);
       passwordPatch.passwordHash = await hashPassword(rawPassword);
       passwordPatch.passwordChangedAt = new Date();
       passwordPatch.requiresPasswordChange = role === 'TempUser' ? true : false;
@@ -5132,7 +5140,7 @@ const getSystemHealthSnapshot = () => {
 };
 
 const getActionPermissions = async () => {
-  const config = await getSystemConfig({ force: true });
+  const config = await getSystemConfig();
   const permissions = sanitizeActionRoleAccess(config.actionRoleAccess || {});
   const emailPermissions = sanitizeActionEmailAccess(config.actionEmailAccess || {});
   const missingRoleKeys = ACTION_KEYS.filter((key) => !Object.prototype.hasOwnProperty.call(config.actionRoleAccess || {}, key));
@@ -5409,9 +5417,11 @@ const buildCollectionStats = async () => {
 };
 
 const requireActionPermission = async (req, res, actionKey) => {
+  // Master short-circuits before any DB call — they are always allowed.
+  if (String(req.user?.role || '') === 'Master') {
+    return systemConfigCache.value || await getSystemConfig();
+  }
   const { config, permissions, emailPermissions } = await getActionPermissions();
-  // Master is the supreme role: always allowed to perform any action.
-  if (String(req.user?.role || '') === 'Master') return config;
   const allowedRoles = permissions[actionKey] || [];
   const allowedEmails = emailPermissions[actionKey] || [];
   const userEmail = String(req.user?.email || '').trim().toLowerCase();
@@ -5640,6 +5650,7 @@ app.post('/api/navigation/permissions', verifyToken, async (req, res) => {
 
 app.get('/api/permissions/bootstrap', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     const config = await getSystemConfig();
     const [pagePermissionsResult, actionPermissionsResult] = await Promise.allSettled([
       buildPagePermissionsPayload(config),
@@ -5727,6 +5738,7 @@ app.post('/api/action-permissions', verifyToken, async (req, res) => {
 
 app.get('/api/permissions/v2', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     const config = await getPermissionsV2();
     const pageViewAccess = {};
     const pageEditAccess = {};
@@ -7012,6 +7024,7 @@ app.get('/api/opportunities/changes', verifyToken, async (req, res) => {
 
 app.get('/api/opportunities/stream', verifyToken, async (req, res) => {
   try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
     if (!await requireActionPermission(req, res, 'opportunities_view')) return;
 
     res.status(200);
