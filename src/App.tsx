@@ -29,6 +29,7 @@ const MasterExportTemplatesRoute = lazy(() => import("./routes/master.export-tem
 const MasterTelecastRoute = lazy(() => import("./routes/master.telecast"));
 const MasterColumnsRoute = lazy(() => import("./routes/master.columns"));
 const MasterDiagnosticsRoute = lazy(() => import("./routes/master.diagnostics"));
+const MasterAuditRoute = lazy(() => import("./routes/master.audit"));
 const PqActivities = lazy(() => import("./pages/PqActivities"));
 const Upcoming = lazy(() => import("./pages/Upcoming"));
 
@@ -150,6 +151,7 @@ function AppRoutes() {
             <Route path="master/telecast" element={<PageAccessRoute pageKey="master"><MasterTelecastRoute /></PageAccessRoute>} />
             <Route path="master/columns" element={<PageAccessRoute pageKey="master"><MasterColumnsRoute /></PageAccessRoute>} />
             <Route path="master/diagnostics" element={<PageAccessRoute pageKey="master"><MasterDiagnosticsRoute /></PageAccessRoute>} />
+            <Route path="master/audit" element={<PageAccessRoute pageKey="master"><MasterAuditRoute /></PageAccessRoute>} />
             <Route path="upcoming" element={<PageAccessRoute pageKey="master"><Upcoming /></PageAccessRoute>} />
 
             <Route path="status/pre-bid" element={<Opportunities statusFilter="Pre-bid" />} />

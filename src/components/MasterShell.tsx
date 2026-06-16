@@ -11,7 +11,8 @@ export type MasterSectionKey =
   | 'data-sync'
   | 'telecast'
   | 'columns'
-  | 'diagnostics';
+  | 'diagnostics'
+  | 'audit';
 
 type MasterNavItem = {
   key: MasterSectionKey;
@@ -28,6 +29,7 @@ const MASTER_NAV: MasterNavItem[] = [
 { key: 'telecast', label: 'Telecast', path: '/master/telecast', keywords: ['telecast', 'alerts', 'mail'] },
   { key: 'columns', label: 'Columns', path: '/master/columns', keywords: ['columns', 'visibility', 'color'] },
   { key: 'diagnostics', label: 'Diagnostics', path: '/master/diagnostics', keywords: ['diagnostics', 'latency', 'log', 'build'] },
+  { key: 'audit', label: 'Audit', path: '/master/audit', keywords: ['audit', 'health', 'endpoints', 'probe', 'report', 'download', 'debug'] },
 ];
 
 export function getMasterNavItemFromPath(pathname: string) {
