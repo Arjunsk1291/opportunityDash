@@ -429,6 +429,29 @@ export function AuditPanel({ token }: { token: string | null }) {
               ok={report.server.auditMs < 3000}
               warn={report.server.auditMs >= 3000}
             />
+            <MetricCard
+              label="Heap Used"
+              value={`${formatBytes((report.server.system as Record<string, unknown>).memory ? ((report.server.system as Record<string, Record<string, number>>).memory.processHeapUsedBytes) : 0)} / ${formatBytes((report.server.system as Record<string, Record<string, number>>).memory?.processHeapTotalBytes ?? 0)}`}
+              ok={(report.server.system as Record<string, Record<string, number>>).memory?.processHeapPercent < 95}
+              warn={(report.server.system as Record<string, Record<string, number>>).memory?.processHeapPercent >= 95}
+            />
+            <MetricCard
+              label="Server RAM"
+              value={`${(report.server.system as Record<string, Record<string, number>>).memory?.usedPercent?.toFixed(0) ?? '?'}% of ${formatBytes((report.server.system as Record<string, Record<string, number>>).memory?.totalBytes ?? 0)}`}
+              ok={(report.server.system as Record<string, Record<string, number>>).memory?.usedPercent < 85}
+              warn={(report.server.system as Record<string, Record<string, number>>).memory?.usedPercent >= 85}
+            />
+            <MetricCard
+              label="Load (1m)"
+              value={String(Array.isArray((report.server.system as Record<string, unknown>).loadAverage) ? ((report.server.system as Record<string, number[]>).loadAverage[0] ?? '?') : '?')}
+              ok={(report.server.system as Record<string, number[]>).loadAverage?.[0] < 2}
+              warn={(report.server.system as Record<string, number[]>).loadAverage?.[0] >= 2}
+            />
+            <MetricCard
+              label="Platform"
+              value={String((report.server.system as Record<string, unknown>).platform ?? '—')}
+              ok
+            />
           </div>
 
           {/* Collections */}

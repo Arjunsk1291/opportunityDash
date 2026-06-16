@@ -5089,6 +5089,7 @@ const systemConfigCache = {
   value: null,
   expiresAt: 0,
   inFlight: null,
+  ts: null,
 };
 
 const hashJson = (value) => {
@@ -5171,6 +5172,7 @@ const getSystemConfig = async (options = {}) => {
     let config = await SystemConfig.findOne();
     if (!config) config = await SystemConfig.create({});
     systemConfigCache.value = config;
+    systemConfigCache.ts = Date.now();
     systemConfigCache.expiresAt = Date.now() + CONFIG_CACHE_TTL_MS;
     return config;
   })().finally(() => {
@@ -5206,7 +5208,12 @@ const detectDeploymentPlatform = () => {
   if (process.env.AWS_EXECUTION_ENV || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION) return 'AWS';
   if (process.env.VERCEL) return 'Vercel';
   if (process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PROJECT_ID) return 'Railway';
-  return 'Unknown';
+  // Detect Lightsail/EC2 from hostname pattern or /etc/os-release
+  try {
+    const hostname = os.hostname();
+    if (/^ip-\d+-\d+-\d+-\d+$/.test(hostname)) return 'AWS Lightsail / EC2';
+  } catch { /* ignore */ }
+  return 'Linux VPS';
 };
 
 const readSystemTemperature = () => {
@@ -5223,6 +5230,7 @@ const readSystemTemperature = () => {
       const numeric = Number(raw);
       if (!Number.isFinite(numeric)) continue;
       const celsius = numeric > 1000 ? numeric / 1000 : numeric;
+      if (celsius <= -50) continue; // invalid/unavailable sensor
       return {
         celsius: Math.round(celsius * 10) / 10,
         source: path.basename(candidate),
