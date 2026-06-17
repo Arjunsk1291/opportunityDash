@@ -16,6 +16,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { JspreadsheetGrid, JspreadsheetGridHandle } from '@/components/Opportunities/JspreadsheetGrid';
 import { UploadSheetDialog } from '@/components/Opportunities/UploadSheetDialog';
 import { EntryDialog } from '@/components/Opportunities/EntryDialog';
+import { ManualMatchDialog } from '@/components/Opportunities/ManualMatchDialog';
+import type { ManualMatchCandidate } from '@/lib/manualMatchFinder';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -37,6 +39,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const { status: trackedStatus } = useTrackedAction();
   const location = useLocation();
   const navigate = useNavigate();
+  const [manualMatches, setManualMatches] = useState<ManualMatchCandidate[]>([]);
 
   const [search, setSearch] = useState(statusFilter || '');
   const [entryOpen, setEntryOpen] = useState(false);
@@ -151,6 +154,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
                 opportunities={opportunities}
                 onUpsertOpportunities={upsertOpportunities}
                 onRefreshData={() => void refreshData({ background: true })}
+                onManualMatchesFound={setManualMatches}
               />
             )}
             {canEdit && (
@@ -252,6 +256,13 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ManualMatchDialog
+        token={token}
+        matches={manualMatches}
+        onResolved={(match) => setManualMatches((prev) => prev.filter((m) => !(m.kind === match.kind && m.recordId === match.recordId && m.opportunityRefNo === match.opportunityRefNo)))}
+        onClose={() => setManualMatches([])}
+      />
     </>
   );
 };

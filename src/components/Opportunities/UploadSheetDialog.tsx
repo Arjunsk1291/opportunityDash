@@ -7,6 +7,9 @@ import { Upload } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
 import { getFirstWorksheet, loadWorkbookFromArrayBuffer } from '@/lib/excelWorkbook';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
+import { fetchBidDecisionRecords } from '@/lib/bidDecision';
+import { fetchPotentialOpportunityRows, getExtrasTenderName } from '@/lib/potentialOpportunities';
+import { findManualMatches, type ManualMatchCandidate } from '@/lib/manualMatchFinder';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const MAX_OPPORTUNITY_UPLOAD_ROWS = 5000;
@@ -55,9 +58,10 @@ interface UploadSheetDialogProps {
   opportunities: Opportunity[];
   onUpsertOpportunities: (rows: Opportunity[]) => void;
   onRefreshData: () => void;
+  onManualMatchesFound?: (matches: ManualMatchCandidate[]) => void;
 }
 
-export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities, onRefreshData }: UploadSheetDialogProps) {
+export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities, onRefreshData, onManualMatchesFound }: UploadSheetDialogProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [parsedRows, setParsedRows] = useState<RowFormState[]>([]);
@@ -97,6 +101,28 @@ export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities,
       setPreviewOpen(false);
       setUploadMeta(null);
       void onRefreshData();
+
+      if (touched.length && token && onManualMatchesFound) {
+        try {
+          const [bidDecisions, potentialRows] = await Promise.all([
+            fetchBidDecisionRecords(token),
+            fetchPotentialOpportunityRows(token),
+          ]);
+          const manualBidDecisions = bidDecisions.filter((record) => record.sourceMode === 'manual');
+          const unmatchedPotentialRows = potentialRows
+            .filter((row) => !row.opportunity)
+            .map((row) => ({ id: row.id, opportunityRefNo: row.opportunityRefNo, tenderName: getExtrasTenderName(row.extras) }));
+          const touchedRefs = touched.map((row) => ({
+            opportunityRefNo: String(row.opportunityRefNo || row.tenderNo || ''),
+            tenderName: String(row.tenderName || ''),
+          }));
+          const matches = findManualMatches(touchedRefs, manualBidDecisions, unmatchedPotentialRows);
+          if (matches.length) onManualMatchesFound(matches);
+        } catch {
+          // Non-critical: skip match detection silently if it fails, the upload itself already succeeded.
+        }
+      }
+
       return { success: true };
     },
     successMessage: () => 'Sheet uploaded successfully.',

@@ -7305,6 +7305,31 @@ app.post('/api/potential-opportunities/mark', verifyToken, async (req, res) => {
   }
 });
 
+app.patch('/api/potential-opportunities/:id/relink', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'opportunities_write')) return;
+    const id = String(req.params?.id || '').trim();
+    const opportunityRefNo = String(req.body?.opportunityRefNo || '').trim();
+    if (!id || !opportunityRefNo) {
+      return res.status(400).json({ error: 'id and opportunityRefNo are required' });
+    }
+    const updatedBy = String(req.user?.email || req.user?.name || '').trim();
+    const updated = await PotentialOpportunity.findByIdAndUpdate(
+      id,
+      { $set: { opportunityRefNo, updatedBy } },
+      { new: true, collation: { locale: 'en', strength: 2 } },
+    ).lean();
+    if (!updated) return res.status(404).json({ error: 'Potential opportunity not found' });
+    res.json({ success: true, row: { id: String(updated._id), ...updated } });
+  } catch (error) {
+    if (String(error?.code || '') === '11000') {
+      return res.status(409).json({ error: 'A potential opportunity already exists for this opportunityRefNo' });
+    }
+    console.error('[api.potential-opportunities.relink.error]', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 app.put('/api/potential-opportunities/:id/extras', verifyToken, async (req, res) => {
   try {
     if (!await requireActionPermission(req, res, 'opportunities_write')) return;
@@ -8305,6 +8330,45 @@ app.post('/api/bid-decisions', verifyToken, async (req, res) => {
       return res.status(409).json({ error: 'A bid decision already exists for this opportunityRefNo' });
     }
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/bid-decisions/:id/relink', verifyToken, async (req, res) => {
+  try {
+    if (!await requirePagePermission(req, res, 'bid_decision')) return;
+    if (!await requireActionPermission(req, res, 'bid_decision_manage')) return;
+    const id = String(req.params?.id || '').trim();
+    const opportunityRefNo = String(req.body?.opportunityRefNo || '').trim();
+    if (!id || !opportunityRefNo) {
+      return res.status(400).json({ error: 'id and opportunityRefNo are required' });
+    }
+
+    const sourceOpportunity = await SyncedOpportunity.findOne({ opportunityRefNo }).lean();
+    if (!sourceOpportunity) {
+      return res.status(404).json({ error: `Opportunity "${opportunityRefNo}" not found in the database.` });
+    }
+
+    const updated = await BidDecision.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          opportunityRefNo,
+          sourceMode: 'dashboard',
+          sourceOpportunityId: String(sourceOpportunity._id || ''),
+          sourceOpportunitySyncedAt: sourceOpportunity.syncedAt ? new Date(sourceOpportunity.syncedAt) : null,
+          updatedBy: String(req.user?.email || ''),
+        },
+      },
+      { new: true, runValidators: true },
+    );
+    if (!updated) return res.status(404).json({ error: 'Bid decision not found' });
+
+    return res.json({ success: true, record: buildBidDecisionRecord(updated) });
+  } catch (error) {
+    if (String(error?.code || '') === '11000') {
+      return res.status(409).json({ error: 'A bid decision already exists for this opportunityRefNo' });
+    }
+    return handleApiError(res, error, 'bid-decisions.relink');
   }
 });
 

@@ -365,6 +365,19 @@ export const fetchBidDecisionByRef = async (token: string, opportunityRefNo: str
   return normalizeBidDecisionRecord(data?.record || null);
 };
 
+export const relinkBidDecisionToOpportunity = async (token: string, id: string, opportunityRefNo: string) => {
+  const response = await fetch(`${API_URL}/bid-decisions/${encodeURIComponent(id)}/relink`, {
+    method: 'PATCH',
+    headers: authHeaders(token),
+    body: JSON.stringify({ opportunityRefNo: normalizeText(opportunityRefNo) }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || 'Failed to link bid decision');
+  }
+  return normalizeBidDecisionRecord(data?.record || null);
+};
+
 export const saveBidDecision = async (token: string, payload: BidDecisionSaveInput) => {
   const response = await fetch(`${API_URL}/bid-decisions`, {
     method: 'POST',
