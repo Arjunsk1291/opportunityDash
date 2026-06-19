@@ -526,6 +526,9 @@ export default function Admin({ initialTab }: AdminProps = {}) {
   const [leadNotifSeededAt, setLeadNotifSeededAt] = useState<string | null>(null);
   const [leadNotifSeedBusy, setLeadNotifSeedBusy] = useState(false);
   const [leadNotifEmailInput, setLeadNotifEmailInput] = useState('');
+  // Sheet upload email CC list (logged-in uploader is always CC'd automatically)
+  const [sheetUploadCcRecipients, setSheetUploadCcRecipients] = useState<string[]>([]);
+  const [sheetUploadCcInput, setSheetUploadCcInput] = useState('');
   // F22 — award value report
   const [awardReportSending, setAwardReportSending] = useState(false);
   // F25 — top performer card visibility
@@ -1675,6 +1678,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
       setLeadNotifEnabled(Boolean(data.leadNotifEnabled));
       setLeadNotifTrigger(data.leadNotifTrigger || 'new_row');
       setLeadNotifRecipients(Array.isArray(data.leadNotifRecipients) ? data.leadNotifRecipients : []);
+      setSheetUploadCcRecipients(Array.isArray(data.sheetUploadCcRecipients) ? data.sheetUploadCcRecipients : []);
       setLeadNotifTemplateSubject(data.leadNotifTemplateSubject || 'Notification: New Tender — {{TENDER_NO}}');
       setLeadNotifTemplateBody(data.leadNotifTemplateBody || 'This is an automated notification for the following opportunity.');
       setLeadNotifSeededAt(data.leadNotifSeededAt || null);
@@ -2554,6 +2558,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
             leadNotifEnabled,
             leadNotifTrigger,
             leadNotifRecipients,
+            sheetUploadCcRecipients,
             leadNotifTemplateSubject,
             leadNotifTemplateBody,
             topPerformerCardVisible,
@@ -4631,6 +4636,44 @@ export default function Admin({ initialTab }: AdminProps = {}) {
                   <Textarea rows={3} value={leadNotifTemplateBody} onChange={e => setLeadNotifTemplateBody(e.target.value)} />
                 </div>
                 <Button onClick={saveTelecastConfig} loading={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">Save Lead Notification Settings</Button>
+              </CardContent>
+            </Card>
+
+            {/* Sheet Upload Email CC */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Sheet Upload Email CC</CardTitle>
+                <CardDescription>When a user emails an uploaded opportunity sheet, the logged-in uploader is always CC'd automatically. Add any additional addresses that should also be CC'd on every sheet-upload email.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Additional CC Recipients</p>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Add email…"
+                      value={sheetUploadCcInput}
+                      onChange={e => setSheetUploadCcInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && sheetUploadCcInput.trim()) {
+                          setSheetUploadCcRecipients(r => Array.from(new Set([...r, sheetUploadCcInput.trim()])));
+                          setSheetUploadCcInput('');
+                        }
+                      }}
+                    />
+                    <Button variant="outline" size="sm" onClick={() => { if (sheetUploadCcInput.trim()) { setSheetUploadCcRecipients(r => Array.from(new Set([...r, sheetUploadCcInput.trim()]))); setSheetUploadCcInput(''); } }}>Add</Button>
+                  </div>
+                  {sheetUploadCcRecipients.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {sheetUploadCcRecipients.map(email => (
+                        <span key={email} className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-500/15 text-slate-700 dark:text-slate-300 text-xs px-2 py-0.5 rounded-full">
+                          {email}
+                          <button onClick={() => setSheetUploadCcRecipients(r => r.filter(e => e !== email))} className="text-muted-foreground hover:text-red-500">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <Button onClick={saveTelecastConfig} loading={configSaving} className="h-10 sm:h-11 md:h-12 text-xs sm:text-sm md:text-base px-3 sm:px-4 w-full sm:w-auto">Save Sheet Upload CC</Button>
               </CardContent>
             </Card>
 

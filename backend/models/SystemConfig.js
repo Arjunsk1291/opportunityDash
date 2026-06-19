@@ -140,6 +140,8 @@ const systemConfigSchema = new mongoose.Schema(
     leadNotifTemplateBody: { type: String, default: 'This is an automated notification for the following opportunity.' },
     leadNotifTemplateStyle: { type: String, default: 'avenir_blue' },
     leadNotifSeededAt: { type: Date, default: null },
+    // Sheet upload email — extra CC recipients (logged-in sender is always CC'd automatically)
+    sheetUploadCcRecipients: { type: [String], default: [] },
     // Feature 25 — top performer card visibility
     topPerformerCardVisible: { type: Boolean, default: false },
     lastUpdatedBy: { type: String, default: null },

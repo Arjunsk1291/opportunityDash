@@ -6216,6 +6216,7 @@ app.get('/api/telecast/config', verifyToken, async (req, res) => {
       leadNotifTemplateBody: config.leadNotifTemplateBody || '',
       leadNotifTemplateStyle: getTelecastTemplateStyle(config.leadNotifTemplateStyle).key,
       leadNotifSeededAt: config.leadNotifSeededAt || null,
+      sheetUploadCcRecipients: Array.isArray(config.sheetUploadCcRecipients) ? config.sheetUploadCcRecipients : [],
       topPerformerCardVisible: Boolean(config.topPerformerCardVisible),
       ...meta,
     });
@@ -6266,6 +6267,7 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
     const leadNotifTemplateBody = String(req.body?.leadNotifTemplateBody || '').trim();
     const leadNotifTemplateStyle = getTelecastTemplateStyle(req.body?.leadNotifTemplateStyle);
     const topPerformerCardVisible = req.body?.topPerformerCardVisible !== undefined ? Boolean(req.body.topPerformerCardVisible) : undefined;
+    const sheetUploadCcRecipients = req.body?.sheetUploadCcRecipients !== undefined ? normalizeEmailList(req.body.sheetUploadCcRecipients || []) : undefined;
 
     const config = await getSystemConfig({ force: true });
     const extraFields = {
@@ -6285,6 +6287,7 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
       leadNotifTemplateStyle: leadNotifTemplateStyle.key,
     };
     if (topPerformerCardVisible !== undefined) extraFields.topPerformerCardVisible = topPerformerCardVisible;
+    if (sheetUploadCcRecipients !== undefined) extraFields.sheetUploadCcRecipients = sheetUploadCcRecipients;
 
     const updated = await persistSystemConfigFields(config, {
       telecastTemplateSubject: templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}',
@@ -6329,6 +6332,7 @@ app.post('/api/telecast/config', verifyToken, async (req, res) => {
       })),
       groupRecipients,
       keywords: TELECAST_TEMPLATE_KEYWORDS,
+      sheetUploadCcRecipients: updated.sheetUploadCcRecipients || [],
       ...meta,
     });
   } catch (error) {
@@ -7900,6 +7904,14 @@ app.post('/api/opportunities/sheet-upload/notify', verifyToken, async (req, res)
     const subject = `New Opportunity Sheet Uploaded — ${archive.filename} (${archive.createdCount} new, ${archive.updatedCount} updated)`;
     const contentBytes = archive.data.toString('base64');
 
+    // Always CC the logged-in uploader, plus any admin-configured CC recipients (Master Panel).
+    // Drop anyone already in the To list so they aren't double-addressed.
+    const config = await getSystemConfig();
+    const configuredCc = Array.isArray(config.sheetUploadCcRecipients) ? config.sheetUploadCcRecipients : [];
+    const toSet = new Set(recipientEmails.map((email) => email.toLowerCase()));
+    const ccRecipients = normalizeEmailList([req.user.email, ...configuredCc])
+      .filter((email) => !toSet.has(email.toLowerCase()));
+
     const { accessToken } = await getTelecastSendMailAccessToken();
     const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
       method: 'POST',
@@ -7909,6 +7921,7 @@ app.post('/api/opportunities/sheet-upload/notify', verifyToken, async (req, res)
           subject,
           body: { contentType: 'HTML', content: html },
           toRecipients: recipientEmails.map((email) => ({ emailAddress: { address: email } })),
+          ccRecipients: ccRecipients.map((email) => ({ emailAddress: { address: email } })),
           hasAttachments: true,
           attachments: [{
             '@odata.type': '#microsoft.graph.fileAttachment',

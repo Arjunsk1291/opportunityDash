@@ -102,58 +102,71 @@ export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities,
       const touched = Array.from(touchedByRef.values());
       const committedMeta = uploadMeta;
       const rawFile = rawFileRef.current;
+      const rowCount = parsedRows.length;
       if (touched.length) onUpsertOpportunities(touched);
       setParsedRows([]);
       setPreviewOpen(false);
       setUploadMeta(null);
       void onRefreshData();
 
-      if (touched.length && token && rawFile && onSheetArchived) {
-        try {
-          const archiveId = await archiveUploadedSheet(token, {
-            filename: rawFile.filename,
-            contentBase64: rawFile.base64,
-            rowCount: parsedRows.length,
-            createdCount: committedMeta?.created || 0,
-            updatedCount: committedMeta?.updated || 0,
-          });
-          if (archiveId) {
-            onSheetArchived(archiveId, {
-              filename: rawFile.filename,
-              createdCount: committedMeta?.created || 0,
-              updatedCount: committedMeta?.updated || 0,
-            });
-          }
-        } catch {
-          // Non-critical: skip the send-notification prompt silently, the upload itself already succeeded.
-        }
-      }
-
-      if (touched.length && token && onManualMatchesFound) {
-        try {
-          const [bidDecisions, potentialRows] = await Promise.all([
-            fetchBidDecisionRecords(token),
-            fetchPotentialOpportunityRows(token),
-          ]);
-          const manualBidDecisions = bidDecisions.filter((record) => record.sourceMode === 'manual');
-          const unmatchedPotentialRows = potentialRows
-            .filter((row) => !row.opportunity)
-            .map((row) => ({ id: row.id, opportunityRefNo: row.opportunityRefNo, tenderName: getExtrasTenderName(row.extras) }));
-          const touchedRefs = touched.map((row) => ({
-            opportunityRefNo: String(row.opportunityRefNo || row.tenderNo || ''),
-            tenderName: String(row.tenderName || ''),
-          }));
-          const matches = findManualMatches(touchedRefs, manualBidDecisions, unmatchedPotentialRows);
-          if (matches.length) onManualMatchesFound(matches);
-        } catch {
-          // Non-critical: skip match detection silently if it fails, the upload itself already succeeded.
-        }
-      }
+      // The upload itself is now complete — clear the loading/toast state immediately.
+      // Archiving the raw file and scanning for duplicate manual entries are non-critical
+      // follow-ups, so run them in the background instead of blocking the commit action.
+      void runPostCommitTasks(touched, committedMeta, rawFile, rowCount);
 
       return { success: true };
     },
     successMessage: () => 'Sheet uploaded successfully.',
   });
+
+  const runPostCommitTasks = async (
+    touched: Opportunity[],
+    committedMeta: { created: number; updated: number } | null,
+    rawFile: { filename: string; base64: string } | null,
+    rowCount: number,
+  ) => {
+    if (touched.length && token && rawFile && onSheetArchived) {
+      try {
+        const archiveId = await archiveUploadedSheet(token, {
+          filename: rawFile.filename,
+          contentBase64: rawFile.base64,
+          rowCount,
+          createdCount: committedMeta?.created || 0,
+          updatedCount: committedMeta?.updated || 0,
+        });
+        if (archiveId) {
+          onSheetArchived(archiveId, {
+            filename: rawFile.filename,
+            createdCount: committedMeta?.created || 0,
+            updatedCount: committedMeta?.updated || 0,
+          });
+        }
+      } catch {
+        // Non-critical: skip the send-notification prompt silently, the upload itself already succeeded.
+      }
+    }
+
+    if (touched.length && token && onManualMatchesFound) {
+      try {
+        const [bidDecisions, potentialRows] = await Promise.all([
+          fetchBidDecisionRecords(token),
+          fetchPotentialOpportunityRows(token),
+        ]);
+        const manualBidDecisions = bidDecisions.filter((record) => record.sourceMode === 'manual');
+        const unmatchedPotentialRows = potentialRows
+          .filter((row) => !row.opportunity)
+          .map((row) => ({ id: row.id, opportunityRefNo: row.opportunityRefNo, tenderName: getExtrasTenderName(row.extras) }));
+        const touchedRefs = touched.map((row) => ({
+          opportunityRefNo: String(row.opportunityRefNo || row.tenderNo || ''),
+          tenderName: String(row.tenderName || ''),
+        }));
+        const matches = findManualMatches(touchedRefs, manualBidDecisions, unmatchedPotentialRows);
+        if (matches.length) onManualMatchesFound(matches);
+      } catch {
+        // Non-critical: skip match detection silently if it fails, the upload itself already succeeded.
+      }
+    }
+  };
 
   const { execute: executeUpload, isLoading: isUploading, progress: uploadProgress } = useAsyncAction({
     action: async (file: File, reportProgress) => {
