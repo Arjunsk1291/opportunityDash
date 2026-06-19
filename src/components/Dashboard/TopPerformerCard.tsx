@@ -64,21 +64,21 @@ export function TopPerformerCard({ showForAllUsers, onToggleShowForAll }: Props)
 
   return (
     <>
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+      <div className="glass-card overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border/60">
           <div className="flex items-center gap-2.5">
             <Trophy className="h-4 w-4 text-amber-500 shrink-0" />
-            <span className="font-semibold text-slate-800 text-sm">Top Performer</span>
-            <div className="flex rounded-full border border-slate-200 overflow-hidden text-xs">
+            <span className="font-semibold text-foreground text-sm">Top Performer</span>
+            <div className="flex rounded-full border border-border/60 overflow-hidden text-xs">
               <button
                 onClick={() => setPeriod('year')}
-                className={`px-2.5 py-0.5 transition-colors ${period === 'year' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+                className={`px-2.5 py-0.5 transition-colors ${period === 'year' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-[var(--glass-hover)]'}`}
               >
                 This Year
               </button>
               <button
                 onClick={() => setPeriod('all')}
-                className={`px-2.5 py-0.5 transition-colors ${period === 'all' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+                className={`px-2.5 py-0.5 transition-colors ${period === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-[var(--glass-hover)]'}`}
               >
                 All Time
               </button>
@@ -90,7 +90,7 @@ export function TopPerformerCard({ showForAllUsers, onToggleShowForAll }: Props)
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 text-slate-400 hover:text-slate-700"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
                   onClick={() => onToggleShowForAll(!showForAllUsers)}
                 >
                   {showForAllUsers ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
@@ -104,17 +104,17 @@ export function TopPerformerCard({ showForAllUsers, onToggleShowForAll }: Props)
         </div>
 
         <div className="px-5 py-4">
-          {loading && <p className="text-sm text-slate-400 animate-pulse">Computing…</p>}
+          {loading && <p className="text-sm text-muted-foreground animate-pulse">Computing…</p>}
           {!loading && !data && (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-muted-foreground">
               No awarded tenders found {period === 'year' ? 'this year' : 'in the database'}.
             </p>
           )}
           {!loading && data && (
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-lg font-bold text-slate-900 leading-tight">{data.name}</p>
-                <p className="text-sm text-slate-500 mt-0.5">
+                <p className="text-lg font-bold text-foreground leading-tight">{data.name}</p>
+                <p className="text-sm text-muted-foreground mt-0.5">
                   {data.count} awarded tender{data.count !== 1 ? 's' : ''}
                   {data.totalValue > 0 && <span> · {fmt(data.totalValue)}</span>}
                 </p>

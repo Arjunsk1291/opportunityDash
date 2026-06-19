@@ -1258,7 +1258,10 @@ const Dashboard = () => {
       </div>
 
       {/* Filter & Export Bar */}
-      <div className="sticky top-14 z-40 -mx-3 sm:-mx-4 lg:-mx-6 px-3 sm:px-4 lg:px-6 py-3 sm:py-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+      <div
+        className="sticky top-14 z-40 -mx-3 sm:-mx-4 lg:-mx-6 px-3 sm:px-4 lg:px-6 py-3 sm:py-4 border-b border-border/60"
+        style={{ background: 'var(--glass-topbar-bg)', backdropFilter: 'var(--glass-blur)' }}
+      >
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4 lg:gap-6 min-w-0">
           <div className="flex-1 min-w-0">
             <AdvancedFilters
@@ -1285,7 +1288,7 @@ const Dashboard = () => {
 
       <section className="space-y-4">
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <div className="rounded-2xl border-2 border-sky-300/80 bg-sky-50/30 p-3 shadow-[0_0_24px_rgba(56,189,248,0.18)]">
+          <div className="rounded-2xl border-2 border-sky-300/80 dark:border-sky-500/40 bg-sky-50/30 dark:bg-sky-500/10 p-3 shadow-[0_0_24px_rgba(56,189,248,0.18)]">
             <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">Received</p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {receivedCards.map((card, index) => (
@@ -1307,7 +1310,7 @@ const Dashboard = () => {
                       {isMaster ? (
                         <button
                           type="button"
-                          className="rounded-lg border border-slate-200 bg-background/80 p-1 text-muted-foreground hover:text-foreground"
+                          className="rounded-lg border border-border/60 p-1 text-muted-foreground hover:text-foreground hover:bg-[var(--glass-hover)]"
                           aria-label={`Diagnose omitted rows for ${card.label}`}
                           onClick={(e) => {
                             e.preventDefault();
@@ -1320,7 +1323,7 @@ const Dashboard = () => {
                           <Info className="h-4 w-4" />
                         </button>
                       ) : null}
-                      <div className={`rounded-2xl border border-white/70 bg-background/80 p-2.5 shadow-sm ${card.tone}`}>
+                      <div className={`rounded-2xl border border-border/60 p-2.5 shadow-sm ${card.tone}`}>
                         <card.icon className="h-5 w-5" />
                       </div>
                     </div>
@@ -1330,7 +1333,7 @@ const Dashboard = () => {
             </div>
           </div>
 
-          <div className="rounded-2xl border-2 border-emerald-300/80 bg-emerald-50/30 p-3 shadow-[0_0_24px_rgba(16,185,129,0.18)]">
+          <div className="rounded-2xl border-2 border-emerald-300/80 dark:border-emerald-500/40 bg-emerald-50/30 dark:bg-emerald-500/10 p-3 shadow-[0_0_24px_rgba(16,185,129,0.18)]">
             <div className="flex items-center justify-between px-2 pb-2">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Total Submitted</p>
               <p className="text-sm font-bold text-emerald-800">{groupedBuckets.submitted.groups.length}</p>
@@ -1355,7 +1358,7 @@ const Dashboard = () => {
                       {isMaster ? (
                         <button
                           type="button"
-                          className="rounded-lg border border-slate-200 bg-background/80 p-1 text-muted-foreground hover:text-foreground"
+                          className="rounded-lg border border-border/60 p-1 text-muted-foreground hover:text-foreground hover:bg-[var(--glass-hover)]"
                           aria-label={`Diagnose omitted rows for ${card.label}`}
                           onClick={(e) => {
                             e.preventDefault();
@@ -1368,7 +1371,7 @@ const Dashboard = () => {
                           <Info className="h-4 w-4" />
                         </button>
                       ) : null}
-                      <div className={`rounded-2xl border border-white/70 bg-background/80 p-2.5 shadow-sm ${card.tone}`}>
+                      <div className={`rounded-2xl border border-border/60 p-2.5 shadow-sm ${card.tone}`}>
                         <card.icon className="h-5 w-5" />
                       </div>
                     </div>
@@ -1414,7 +1417,7 @@ const Dashboard = () => {
                 {card.meta ? (
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
                     {card.meta.map((item) => (
-                      <span key={item.label} className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5">
+                      <span key={item.label} className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2 py-0.5">
                         <span className={`h-2 w-2 rounded-full ${item.tone}`} />
                         {item.label} {item.value}
                       </span>
@@ -1427,7 +1430,7 @@ const Dashboard = () => {
                 {isMaster ? (
                   <button
                     type="button"
-                    className="rounded-lg border border-slate-200 bg-background/80 p-1 text-muted-foreground hover:text-foreground"
+                    className="rounded-lg border border-border/60 p-1 text-muted-foreground hover:text-foreground hover:bg-[var(--glass-hover)]"
                     aria-label={`Diagnose omitted rows for ${card.label}`}
                     onClick={(e) => {
                       e.preventDefault();
@@ -1438,7 +1441,7 @@ const Dashboard = () => {
                     <Info className="h-4 w-4" />
                   </button>
                 ) : null}
-                <div className={`rounded-2xl border border-white/70 bg-background/80 p-2.5 shadow-sm ${card.tone}`}>
+                <div className={`rounded-2xl border border-border/60 p-2.5 shadow-sm ${card.tone}`}>
                   <card.icon className="h-5 w-5" />
                 </div>
               </div>

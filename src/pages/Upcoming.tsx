@@ -26,15 +26,15 @@ interface UpcomingItem {
 }
 
 const STATUS_COLORS: Record<Status, string> = {
-  Planned: 'bg-slate-100 text-slate-700 border-slate-200',
-  'In Progress': 'bg-amber-100 text-amber-700 border-amber-200',
-  Done: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  Planned: 'bg-slate-100 dark:bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-500/30',
+  'In Progress': 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30',
+  Done: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30',
 };
 
 const PRIORITY_COLORS: Record<Priority, string> = {
-  High: 'bg-red-100 text-red-700 border-red-200',
-  Medium: 'bg-blue-100 text-blue-700 border-blue-200',
-  Low: 'bg-gray-100 text-gray-500 border-gray-200',
+  High: 'bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30',
+  Medium: 'bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/30',
+  Low: 'bg-gray-100 dark:bg-gray-500/15 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-500/30',
 };
 
 const BLANK: Partial<UpcomingItem> = {
@@ -115,8 +115,8 @@ export default function Upcoming() {
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Upcoming Features</h1>
-          <p className="text-sm text-slate-500 mt-1">Roadmap of planned improvements and enhancements</p>
+          <h1 className="text-2xl font-bold text-foreground">Upcoming Features</h1>
+          <p className="text-sm text-muted-foreground mt-1">Roadmap of planned improvements and enhancements</p>
         </div>
         {canEdit && (
           <Button onClick={openCreate} size="sm">
@@ -133,8 +133,8 @@ export default function Upcoming() {
             onClick={() => setFilterStatus(s)}
             className={`px-3 py-1 text-sm rounded-full border transition-colors ${
               filterStatus === s
-                ? 'bg-slate-800 text-white border-slate-800'
-                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'glass-field-control text-muted-foreground hover:text-foreground'
             }`}
           >
             {s}
@@ -144,37 +144,37 @@ export default function Upcoming() {
           <select
             value={filterCategory}
             onChange={e => setFilterCategory(e.target.value)}
-            className="text-sm border border-slate-200 rounded-full px-3 py-1 text-slate-600 bg-white"
+            className="glass-field-control text-sm rounded-full px-3 py-1"
           >
             {categories.map(c => <option key={c}>{c}</option>)}
           </select>
         )}
       </div>
 
-      {loading && <p className="text-slate-400 text-sm">Loading…</p>}
+      {loading && <p className="text-muted-foreground text-sm">Loading…</p>}
 
       {!loading && filtered.length === 0 && (
-        <p className="text-slate-400 text-sm">No items match the current filter.</p>
+        <p className="text-muted-foreground text-sm">No items match the current filter.</p>
       )}
 
       {Object.entries(grouped).map(([category, categoryItems]) => (
         <div key={category} className="mb-8">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">{category}</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">{category}</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {categoryItems.map(item => (
               <div
                 key={item.id}
-                className="bg-white rounded-xl border border-slate-200 p-4 flex flex-col gap-2 shadow-sm hover:shadow-md transition-shadow"
+                className="glass-card rounded-xl p-4 flex flex-col gap-2 hover:shadow-md transition-shadow"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium text-slate-800 leading-snug flex-1">{item.title}</p>
+                  <p className="text-sm font-medium text-foreground leading-snug flex-1">{item.title}</p>
                   {canEdit && (
                     <div className="flex gap-1 shrink-0">
-                      <button onClick={() => openEdit(item)} className="text-slate-400 hover:text-slate-700 p-0.5">
+                      <button onClick={() => openEdit(item)} className="text-muted-foreground hover:text-foreground p-0.5">
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       {isMaster && (
-                        <button onClick={() => handleDelete(item.id)} className="text-slate-400 hover:text-red-500 p-0.5">
+                        <button onClick={() => handleDelete(item.id)} className="text-muted-foreground hover:text-red-500 p-0.5">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       )}
@@ -182,7 +182,7 @@ export default function Upcoming() {
                   )}
                 </div>
                 {item.description && (
-                  <p className="text-xs text-slate-500 leading-relaxed">{item.description}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{item.description}</p>
                 )}
                 <div className="flex gap-1.5 flex-wrap mt-auto pt-1">
                   <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${STATUS_COLORS[item.status]}`}>

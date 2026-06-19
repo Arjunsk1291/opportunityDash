@@ -50,7 +50,10 @@ export function Layout({ children }: LayoutProps) {
         <AppSidebar />
         <SidebarInset className="flex-1">
           {/* Header */}
-          <header className="sticky top-0 z-50 flex min-h-14 items-center gap-2 sm:gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-2 sm:px-4 py-2">
+          <header
+            className="sticky top-0 z-50 flex min-h-14 items-center gap-2 sm:gap-4 border-b border-border/60 px-2 sm:px-4 py-2"
+            style={{ background: 'var(--glass-topbar-bg)', backdropFilter: 'var(--glass-blur)' }}
+          >
             <SidebarTrigger />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 min-w-0">

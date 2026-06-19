@@ -57,12 +57,12 @@ const TIME_RANGE_OPTIONS = [
 ] as const;
 
 const JOURNEY_NODE_TONES = {
-  primary: 'border-sky-200 bg-sky-50 text-sky-800',
-  info: 'border-cyan-200 bg-cyan-50 text-cyan-800',
+  primary: 'border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10 text-sky-800 dark:text-sky-300',
+  info: 'border-cyan-200 dark:border-cyan-500/30 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-800 dark:text-cyan-300',
   success: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   warning: 'border-amber-200 bg-amber-50 text-amber-800',
   danger: 'border-rose-200 bg-rose-50 text-rose-800',
-  muted: 'border-slate-200 bg-slate-50 text-slate-700',
+  muted: 'border-border/60 bg-slate-50 dark:bg-slate-500/10 text-foreground',
 } as const;
 
 const POST_BID_TYPE_LABELS: Record<string, string> = {
@@ -427,14 +427,14 @@ const GaugeCard = ({
           </svg>
           <div className="absolute inset-0 flex items-center justify-center text-center">
             <div>
-              <div className="text-2xl font-extrabold tracking-tight text-slate-950">
+              <div className="text-2xl font-extrabold tracking-tight text-foreground">
                 <AnimatedCounter value={value} format={(next) => `${next.toFixed(1)}%`} animateKey={animateKey} />
               </div>
-              <div className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Rate</div>
+              <div className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground">Rate</div>
             </div>
           </div>
         </div>
-        <p className="text-sm leading-6 text-slate-500">{description}</p>
+        <p className="text-sm leading-6 text-muted-foreground">{description}</p>
       </div>
     </div>
   );
@@ -999,7 +999,7 @@ const Analytics = () => {
     {
       label: 'Regretted',
       value: groupedBuckets.regretted.groups.length,
-      tone: 'text-slate-700',
+      tone: 'text-foreground',
       glow: 'analytics-kpi-glow-amber',
       icon: ThumbsDown,
       onClick: () => openDrilldown('Regretted', groupedBuckets.regretted.rows),
@@ -1144,7 +1144,7 @@ const Analytics = () => {
       </section>
 
       <section className="mb-6 lg:mb-8">
-        <div className="rounded-[28px] border border-slate-200 bg-card/90 p-4 shadow-sm backdrop-blur-sm lg:p-5">
+        <div className="rounded-[28px] glass-panel p-4 lg:p-5">
           <AdvancedFilters
             data={opportunities}
             filters={filters}
@@ -1179,7 +1179,7 @@ const Analytics = () => {
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
                   <div className="dash-label">{card.label}</div>
-                  <div className="mt-2 analytics-kpi-number text-slate-950">
+                  <div className="mt-2 analytics-kpi-number text-foreground">
                     {card.valuePrefix ? (
                       <span className="inline-flex items-center gap-2">
                         {card.valuePrefix.kind === 'img' ? (
@@ -1194,27 +1194,27 @@ const Analytics = () => {
                     )}
                   </div>
                 </div>
-                <div className={`rounded-2xl border border-white/70 bg-card/90 p-3 shadow-sm ${card.tone}`}>
+                <div className={`rounded-2xl border border-border/60 bg-card/90 p-3 shadow-sm ${card.tone}`}>
                   <card.icon className="h-5 w-5" />
                 </div>
               </div>
               <div className="mb-3 flex items-center justify-between gap-3">
                 <span className={`text-xs font-semibold ${card.tone}`}>{card.totalLabel ?? `Total ${formatCompactNumber(card.value)}`}</span>
               </div>
-              <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-muted">
                 <div className={`h-full rounded-full ${card.tone.replace('text', 'bg')}`} style={{ width: `${clampPercent(safePercent(card.value, Math.max(analytics.overall.submittedCount, card.value, 1)))}%` }} />
               </div>
               {card.meta ? (
-                <div className="flex flex-wrap gap-2 text-[10px] text-slate-500">
+                <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">
                   {card.meta.map((item) => (
-                    <span key={item.label} className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5">
+                    <span key={item.label} className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2 py-0.5">
                       <span className={`h-2 w-2 rounded-full ${item.tone}`} />
                       {item.label} {item.value}
                     </span>
                   ))}
                 </div>
               ) : (
-                <div className="text-xs text-slate-500">{card.chip}</div>
+                <div className="text-xs text-muted-foreground">{card.chip}</div>
               )}
             </div>
           </button>
@@ -1225,8 +1225,8 @@ const Analytics = () => {
         <div className="analytics-card p-5 lg:p-6">
           <div className="mb-4">
             <div className="dash-label">Side-by-Side</div>
-            <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">Pipeline Comparison</h2>
-            <p className="mt-2 text-sm text-slate-500">
+            <h2 className="mt-2 text-xl font-bold tracking-tight text-foreground">Pipeline Comparison</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
               EOI-Origin means an analytics journey group that contains at least one EOI row. Direct Tender means a journey group with tender-side records only. Became Tender means an EOI-Origin group that later picked up at least one tender-side row.
             </p>
           </div>
@@ -1234,16 +1234,16 @@ const Analytics = () => {
             <table className="w-full min-w-[640px] border-separate border-spacing-y-2">
               <thead>
                 <tr>
-                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Metric</th>
-                  <th className="rounded-l-2xl bg-sky-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">EOI-Origin</th>
-                  <th className="rounded-r-2xl bg-cyan-50 px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.16em] text-cyan-700">Direct Tender</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Metric</th>
+                  <th className="rounded-l-2xl bg-sky-50 dark:bg-sky-500/10 px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.16em] text-sky-700 dark:text-sky-300">EOI-Origin</th>
+                  <th className="rounded-r-2xl bg-cyan-50 dark:bg-cyan-500/10 px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.16em] text-cyan-700 dark:text-cyan-300">Direct Tender</th>
                 </tr>
               </thead>
               <tbody>
                 {analytics.comparisonRows.map((row) => (
                   <tr key={row.label}>
-                    <td className="rounded-l-2xl border border-r-0 border-slate-200 bg-background px-3 py-3 text-sm font-medium text-slate-700">{row.label}</td>
-                    <td className="border-y border-sky-100 bg-sky-50/60 px-3 py-3 text-right text-sm font-semibold text-slate-950">
+                    <td className="rounded-l-2xl border border-r-0 border-border/60 bg-card px-3 py-3 text-sm font-medium text-foreground">{row.label}</td>
+                    <td className="border-y border-sky-100 dark:border-sky-500/20 bg-sky-50/60 dark:bg-sky-500/10 px-3 py-3 text-right text-sm font-semibold text-foreground">
                       <button
                         type="button"
                         className="w-full text-right"
@@ -1261,7 +1261,7 @@ const Analytics = () => {
                         {row.eoiOrigin}
                       </button>
                     </td>
-                    <td className="rounded-r-2xl border border-l-0 border-cyan-100 bg-cyan-50/60 px-3 py-3 text-right text-sm font-semibold text-slate-950">
+                    <td className="rounded-r-2xl border border-l-0 border-cyan-100 dark:border-cyan-500/20 bg-cyan-50/60 dark:bg-cyan-500/10 px-3 py-3 text-right text-sm font-semibold text-foreground">
                       <button
                         type="button"
                         className="w-full text-right disabled:cursor-default"
@@ -1291,27 +1291,27 @@ const Analytics = () => {
         <div className="analytics-card p-5 lg:p-6">
           <div className="mb-5">
             <div className="dash-label">Aging</div>
-            <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">EOI Aging</h2>
+            <h2 className="mt-2 text-xl font-bold tracking-tight text-foreground">EOI Aging</h2>
           </div>
           <div className="space-y-4">
             {analytics.eoiAgingBuckets.map((bucket) => (
               <button
                 key={bucket.key}
                 type="button"
-                className="w-full rounded-2xl border border-slate-200 bg-background px-4 py-4 text-left"
+                className="w-full rounded-2xl border border-border/60 bg-card px-4 py-4 text-left"
                 onClick={() => openDrilldown(`EOI Aging • ${bucket.label}`, analytics.drilldowns.pureEoi.filter((opp) => getEoiAgingBucket(getDayDiff(parseFlexibleTimestamp(opp.dateTenderReceived || opp.tenderSubmittedDate), Date.now())) === bucket.key))}
               >
                 <div className="mb-3 flex items-center justify-between gap-4">
                   <div>
                     <div className="text-sm font-semibold text-foreground">{bucket.label}</div>
-                    <div className="text-xs text-slate-500">{bucket.key} days</div>
+                    <div className="text-xs text-muted-foreground">{bucket.key} days</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-semibold text-slate-950">{bucket.count}</div>
-                    <div className="text-xs text-slate-500">{formatPercent(bucket.percent)}</div>
+                    <div className="text-sm font-semibold text-foreground">{bucket.count}</div>
+                    <div className="text-xs text-muted-foreground">{formatPercent(bucket.percent)}</div>
                   </div>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
                   <div className={`h-full rounded-full ${bucket.tone}`} style={{ width: `${clampPercent(bucket.percent)}%` }} />
                 </div>
               </button>
@@ -1322,11 +1322,11 @@ const Analytics = () => {
         <div className="analytics-card p-5 lg:p-6">
           <div className="mb-5">
             <div className="dash-label">Aging</div>
-            <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">Tender Aging</h2>
+            <h2 className="mt-2 text-xl font-bold tracking-tight text-foreground">Tender Aging</h2>
           </div>
           <div className="space-y-4">
             {selectedGroup !== 'GTS' && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+              <div className="rounded-2xl border border-border/60 bg-slate-50 dark:bg-slate-500/10 px-4 py-4 text-sm text-muted-foreground">
                 Tender aging is driven by No Decision tenders and is only shown for the `GTS` vertical.
               </div>
             )}
@@ -1334,20 +1334,20 @@ const Analytics = () => {
               <button
                 key={bucket.key}
                 type="button"
-                className="w-full rounded-2xl border border-slate-200 bg-background px-4 py-4 text-left"
+                className="w-full rounded-2xl border border-border/60 bg-card px-4 py-4 text-left"
                 onClick={() => openDrilldown(`Tender Aging • ${bucket.label}`, analytics.drilldowns.noDecision.filter((opp) => getTenderAgingBucket(getDayDiff(parseFlexibleTimestamp(opp.tenderSubmittedDate), Date.now())) === bucket.key))}
               >
                 <div className="mb-3 flex items-center justify-between gap-4">
                   <div>
                     <div className="text-sm font-semibold text-foreground">{bucket.label}</div>
-                    <div className="text-xs text-slate-500">{bucket.key} days since submitted</div>
+                    <div className="text-xs text-muted-foreground">{bucket.key} days since submitted</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-semibold text-slate-950">{bucket.count}</div>
-                    <div className="text-xs text-slate-500">{formatPercent(bucket.percent)}</div>
+                    <div className="text-sm font-semibold text-foreground">{bucket.count}</div>
+                    <div className="text-xs text-muted-foreground">{formatPercent(bucket.percent)}</div>
                   </div>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
                   <div className={`h-full rounded-full ${bucket.tone}`} style={{ width: `${clampPercent(bucket.percent)}%` }} />
                 </div>
               </button>
@@ -1359,12 +1359,12 @@ const Analytics = () => {
       <section className="mb-6 grid gap-6 xl:grid-cols-2 lg:mb-8">
         <div className="analytics-card p-5 lg:p-6">
           <div className="mb-5 flex items-center gap-3">
-            <div className="rounded-2xl bg-slate-100 p-3">
+            <div className="rounded-2xl bg-muted p-3">
               <XCircle className="h-5 w-5 text-rose-600" />
             </div>
             <div>
               <div className="dash-label">Text Clusters</div>
-              <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950">Loss Reasons</h2>
+              <h2 className="mt-1 text-xl font-bold tracking-tight text-foreground">Loss Reasons</h2>
             </div>
           </div>
           <div className="space-y-4">
@@ -1376,10 +1376,10 @@ const Analytics = () => {
                 onClick={() => openDrilldown(`Loss Reasons • ${reason.label}`, analytics.drilldowns.lost.filter((opp) => categorizeLossReason(normalizeText(opp.remarksReason || opp.comments)) === reason.label))}
               >
                 <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-                  <span className="font-medium text-slate-700">{reason.label}</span>
-                  <span className="text-slate-500">{reason.count} ({formatPercent(reason.percent)})</span>
+                  <span className="font-medium text-foreground">{reason.label}</span>
+                  <span className="text-muted-foreground">{reason.count} ({formatPercent(reason.percent)})</span>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
                   <div
                     className={index % 5 === 0 ? 'h-full rounded-full bg-rose-500' : index % 5 === 1 ? 'h-full rounded-full bg-amber-500' : index % 5 === 2 ? 'h-full rounded-full bg-blue-600' : index % 5 === 3 ? 'h-full rounded-full bg-cyan-500' : 'h-full rounded-full bg-slate-500'}
                     style={{ width: `${clampPercent(reason.percent)}%` }}
@@ -1388,22 +1388,22 @@ const Analytics = () => {
               </button>
             ))}
             {analytics.lossReasons.length === 0 && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">No loss remarks available in this scope.</div>
+              <div className="rounded-2xl border border-border/60 bg-slate-50 dark:bg-slate-500/10 px-4 py-3 text-sm text-muted-foreground">No loss remarks available in this scope.</div>
             )}
           </div>
         </div>
 
         <div className="analytics-card p-5 lg:p-6">
           <div className="mb-5 flex items-center gap-3">
-            <div className="rounded-2xl bg-slate-100 p-3">
+            <div className="rounded-2xl bg-muted p-3">
               <Waves className="h-5 w-5 text-blue-600" />
             </div>
             <div>
               <div className="dash-label">Post-Bid</div>
-              <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950">Post-Bid Detail Mix</h2>
+              <h2 className="mt-1 text-xl font-bold tracking-tight text-foreground">Post-Bid Detail Mix</h2>
             </div>
           </div>
-          <div className="mb-6 h-4 overflow-hidden rounded-full bg-slate-100">
+          <div className="mb-6 h-4 overflow-hidden rounded-full bg-muted">
             {analytics.postBidBreakdown.map((item) => (
               <button
                 key={item.label}
@@ -1419,14 +1419,14 @@ const Analytics = () => {
               <button
                 key={item.label}
                 type="button"
-                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-background px-4 py-3 text-left"
+                className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 text-left"
                 onClick={() => openDrilldown(`Post-Bid • ${item.label}`, analytics.drilldowns.lifecycle.filter((opp) => getPostBidLabel(opp) === item.label))}
               >
                 <div className="flex items-center gap-3">
                   <span className={`h-3 w-3 rounded-sm ${item.color}`} />
-                  <span className="text-sm font-medium text-slate-700">{item.label}</span>
+                  <span className="text-sm font-medium text-foreground">{item.label}</span>
                 </div>
-                <span className="text-sm font-semibold text-slate-950">{item.count}</span>
+                <span className="text-sm font-semibold text-foreground">{item.count}</span>
               </button>
             ))}
           </div>
@@ -1436,12 +1436,12 @@ const Analytics = () => {
       <section className="mb-6 grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)] lg:mb-8">
         <div className="analytics-card p-5 lg:p-6">
           <div className="mb-5 flex items-center gap-3">
-            <div className="rounded-2xl bg-slate-100 p-3">
-              <Building2 className="h-5 w-5 text-slate-700" />
+            <div className="rounded-2xl bg-muted p-3">
+              <Building2 className="h-5 w-5 text-foreground" />
             </div>
             <div>
               <div className="dash-label">Client Rankings</div>
-              <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950">Client Matrix</h2>
+              <h2 className="mt-1 text-xl font-bold tracking-tight text-foreground">Client Matrix</h2>
             </div>
           </div>
           <div className="space-y-3">
@@ -1453,7 +1453,7 @@ const Analytics = () => {
                 <button
                   key={row.client}
                   type="button"
-                  className="w-full rounded-2xl border border-slate-200 bg-background px-4 py-4 text-left"
+                  className="w-full rounded-2xl border border-border/60 bg-card px-4 py-4 text-left"
                   onClick={() => openDrilldown(`Client Matrix • ${row.client}`, groupedOpportunities
                     .filter((group) => getGroupClient(group) === row.client)
                     .map((group) => getPureEoiRow(group) || getConvertedTenderRow(group) || group.primary)
@@ -1461,14 +1461,14 @@ const Analytics = () => {
                 >
                   <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="max-w-[220px] truncate text-sm font-semibold text-foreground">{row.client}</div>
-                    <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                    <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                       <span>EOI {row.eoiCount}</span>
                       <span>Tender {row.tenderCount}</span>
                       <span>Won {row.wonCount}</span>
                       <span>{formatPercent(row.conversionRate)}</span>
                     </div>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
                     <div className="h-full bg-sky-200" style={{ width: `${eoiWidth}%` }} />
                   </div>
                   <div className="-mt-2 h-2 overflow-hidden rounded-full">
@@ -1481,7 +1481,7 @@ const Analytics = () => {
               );
             })}
           </div>
-          <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
+          <div className="mt-4 flex flex-wrap gap-4 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-sm bg-sky-200" /> EOI</span>
             <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-sm bg-sky-500" /> Tender</span>
             <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-sm bg-emerald-500" /> Won</span>
@@ -1490,29 +1490,29 @@ const Analytics = () => {
 
         <div className="analytics-card p-5 lg:p-6">
           <div className="mb-5 flex items-center gap-3">
-            <div className="rounded-2xl bg-slate-100 p-3">
-              <TimerReset className="h-5 w-5 text-slate-700" />
+            <div className="rounded-2xl bg-muted p-3">
+              <TimerReset className="h-5 w-5 text-foreground" />
             </div>
             <div>
               <div className="dash-label">Conversion Risk</div>
-              <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950">Stale EOI Tracker</h2>
+              <h2 className="mt-1 text-xl font-bold tracking-tight text-foreground">Stale EOI Tracker</h2>
             </div>
           </div>
           <div className="space-y-3">
             {analytics.staleEoiRows.length === 0 && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">No stale EOIs in the selected scope.</div>
+              <div className="rounded-2xl border border-border/60 bg-slate-50 dark:bg-slate-500/10 px-4 py-4 text-sm text-muted-foreground">No stale EOIs in the selected scope.</div>
             )}
             {analytics.staleEoiRows.map((row) => (
               <button
                 key={`${row.refNo}-${row.tenderName}`}
                 type="button"
-                className="w-full rounded-2xl border border-slate-200 bg-background px-4 py-4 text-left"
+                className="w-full rounded-2xl border border-border/60 bg-card px-4 py-4 text-left"
                 onClick={() => openDrilldown(`Stale EOI • ${row.tenderName}`, analytics.drilldowns.pureEoi.filter((opp) => normalizeText(opp.opportunityRefNo) === row.refNo && normalizeText(opp.tenderName) === row.tenderName))}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-foreground">{row.tenderName}</div>
-                    <div className="mt-1 text-xs text-slate-500">{row.refNo || 'NO REF'} • {row.client}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{row.refNo || 'NO REF'} • {row.client}</div>
                   </div>
                   <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">{row.ageDays} days</Badge>
                 </div>
@@ -1525,8 +1525,8 @@ const Analytics = () => {
       <section className="mb-6 analytics-card p-5 lg:mb-8 lg:p-6">
         <div className="mb-5">
           <div className="dash-label">Monthly Signals</div>
-          <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950">Monthly Heatmap</h2>
-          <p className="mt-2 text-sm text-slate-500">Received and submitted use explicit dates from your records. Won and Outcome are plotted against the best available tender-side date currently in the dataset.</p>
+          <h2 className="mt-2 text-xl font-bold tracking-tight text-foreground">Monthly Heatmap</h2>
+          <p className="mt-2 text-sm text-muted-foreground">Received and submitted use explicit dates from your records. Won and Outcome are plotted against the best available tender-side date currently in the dataset.</p>
         </div>
         <div className="mb-5 grid gap-3 sm:grid-cols-[200px_minmax(0,1fr)]">
           <Select value={heatmapYear} onValueChange={setHeatmapYear}>
@@ -1550,21 +1550,21 @@ const Analytics = () => {
         <div className="overflow-x-auto">
           <div className="min-w-[720px]">
             {filteredHeatmapMonths.length === 0 && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+              <div className="rounded-2xl border border-border/60 bg-slate-50 dark:bg-slate-500/10 px-4 py-4 text-sm text-muted-foreground">
                 No months match the selected year or search term.
               </div>
             )}
             <div className="grid" style={{ gridTemplateColumns: `160px repeat(${filteredHeatmapMonths.length}, minmax(48px, 1fr))` }}>
               <div />
               {filteredHeatmapMonths.map((month) => (
-                <div key={month} className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                <div key={month} className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                   {formatMonthLabel(month)}
                 </div>
               ))}
 
               {displayedHeatmap.map((row) => (
                 <Fragment key={row.status}>
-                  <div className="flex items-center px-3 py-3 text-sm font-semibold text-slate-700">{row.status}</div>
+                  <div className="flex items-center px-3 py-3 text-sm font-semibold text-foreground">{row.status}</div>
                   {row.values.map((cell) => {
                     const opacity = cell.value > 0 ? Math.max(0.18, cell.value / monthHeatMax) : 0.12;
                     const colorClass = row.status === 'Received'

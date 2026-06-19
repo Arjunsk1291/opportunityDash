@@ -4510,7 +4510,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
                   </div>
                   <Switch checked={tlAssignAlertEnabled} onCheckedChange={setTlAssignAlertEnabled} disabled={configSaving} />
                 </div>
-                <div className="flex items-center gap-3 rounded-xl border p-4 bg-slate-50">
+                <div className="flex items-center gap-3 rounded-xl border p-4 bg-slate-50 dark:bg-slate-500/10">
                   <div className="flex-1">
                     <p className="text-sm font-medium">Seed Existing Awards</p>
                     <p className="text-xs text-muted-foreground">{tlAssignSeededAt ? `Seeded at: ${new Date(tlAssignSeededAt).toLocaleString()}` : 'Not seeded yet — run this before enabling to avoid backfill emails.'}</p>
@@ -4544,7 +4544,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
                   </div>
                   <Switch checked={pmAssignAlertEnabled} onCheckedChange={setPmAssignAlertEnabled} disabled={configSaving} />
                 </div>
-                <div className="flex items-center gap-3 rounded-xl border p-4 bg-slate-50">
+                <div className="flex items-center gap-3 rounded-xl border p-4 bg-slate-50 dark:bg-slate-500/10">
                   <div className="flex-1">
                     <p className="text-sm font-medium">Seed Status</p>
                     <p className="text-xs text-muted-foreground">{pmAssignSeededAt ? `Seeded at: ${new Date(pmAssignSeededAt).toLocaleString()}` : 'Not seeded yet — use the "Seed Now" button in the TL Alert section above.'}</p>
@@ -4607,15 +4607,15 @@ export default function Admin({ initialTab }: AdminProps = {}) {
                   {leadNotifRecipients.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {leadNotifRecipients.map(email => (
-                        <span key={email} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded-full">
+                        <span key={email} className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-500/15 text-slate-700 dark:text-slate-300 text-xs px-2 py-0.5 rounded-full">
                           {email}
-                          <button onClick={() => setLeadNotifRecipients(r => r.filter(e => e !== email))} className="text-slate-400 hover:text-red-500">×</button>
+                          <button onClick={() => setLeadNotifRecipients(r => r.filter(e => e !== email))} className="text-muted-foreground hover:text-red-500">×</button>
                         </span>
                       ))}
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-3 rounded-xl border p-4 bg-slate-50">
+                <div className="flex items-center gap-3 rounded-xl border p-4 bg-slate-50 dark:bg-slate-500/10">
                   <div className="flex-1">
                     <p className="text-sm font-medium">Seed Existing Rows</p>
                     <p className="text-xs text-muted-foreground">{leadNotifSeededAt ? `Seeded at: ${new Date(leadNotifSeededAt).toLocaleString()}` : 'Not seeded yet — run before enabling to avoid backfill emails.'}</p>
