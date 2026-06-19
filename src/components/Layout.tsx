@@ -48,7 +48,7 @@ export function Layout({ children }: LayoutProps) {
         <AmbientBackground />
         <ScrollJourney />
         <AppSidebar />
-        <SidebarInset className="flex-1">
+        <SidebarInset className="flex-1 !bg-transparent">
           {/* Header */}
           <header
             className="sticky top-0 z-50 flex min-h-14 items-center gap-2 sm:gap-4 border-b border-border/60 px-2 sm:px-4 py-2"
