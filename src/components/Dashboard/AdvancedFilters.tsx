@@ -209,13 +209,13 @@ export function AdvancedFilters({
             placeholder="Search opportunities, clients, tenders..."
             value={filters.search}
             onChange={(e) => updateFilter("search", e.target.value)}
-            className="glass-field-control pl-10 text-xs sm:text-sm placeholder:text-muted-foreground"
+            className="pl-10 text-xs sm:text-sm border-slate-200/90 bg-white/88 text-slate-800 placeholder:text-slate-500"
           />
         </div>
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="glass-field-control w-full sm:w-auto justify-between sm:justify-center gap-2">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto justify-between sm:justify-center gap-2 border-slate-200/90 bg-white/82 text-slate-800 hover:bg-white">
               Status
               {filters.statuses.length > 0 && (
                 <Badge variant="secondary" className="ml-1 px-1.5">
@@ -225,7 +225,7 @@ export function AdvancedFilters({
               <ChevronDown className="h-3 w-3" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="glass-popover w-56 p-3" align="start">
+          <PopoverContent className="w-56 p-3 border-slate-200/90 bg-white/92 text-slate-800 backdrop-blur-xl" align="start">
             <div className="space-y-2">
               {STAGE_ORDER.map((status) => (
                 <div key={status} className="flex items-center gap-2">
@@ -245,7 +245,7 @@ export function AdvancedFilters({
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="glass-field-control w-full sm:w-auto justify-between sm:justify-center gap-2">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto justify-between sm:justify-center gap-2 border-slate-200/90 bg-white/82 text-slate-800 hover:bg-white">
               Verticals
               {filters.groups.length > 0 && (
                 <Badge variant="secondary" className="ml-1 px-1.5">
@@ -255,7 +255,7 @@ export function AdvancedFilters({
               <ChevronDown className="h-3 w-3" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="glass-popover w-48 p-3" align="start">
+          <PopoverContent className="w-48 p-3 border-slate-200/90 bg-white/92 text-slate-800 backdrop-blur-xl" align="start">
             <div className="space-y-2">
               {GROUP_CLASSIFICATIONS.map((group) => (
                 <div key={group} className="flex items-center gap-2">
@@ -275,7 +275,7 @@ export function AdvancedFilters({
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="glass-field-control w-full sm:w-auto justify-between sm:justify-center gap-2">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto justify-between sm:justify-center gap-2 border-slate-200/90 bg-white/82 text-slate-800 hover:bg-white">
               Lead
               {filters.leads.length > 0 && (
                 <Badge variant="secondary" className="ml-1 px-1.5">
@@ -285,7 +285,7 @@ export function AdvancedFilters({
               <ChevronDown className="h-3 w-3" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="glass-popover w-48 p-3 max-h-[300px] overflow-auto" align="start">
+          <PopoverContent className="w-48 p-3 max-h-[300px] overflow-auto border-slate-200/90 bg-white/92 text-slate-800 backdrop-blur-xl" align="start">
             <div className="space-y-2">
               {uniqueValues.leads.map((lead) => (
                 <div key={lead} className="flex items-center gap-2">
@@ -305,7 +305,7 @@ export function AdvancedFilters({
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="glass-field-control w-full sm:w-auto justify-between sm:justify-center gap-2">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto justify-between sm:justify-center gap-2 border-slate-200/90 bg-white/82 text-slate-800 hover:bg-white">
               Client
               {filters.clients.length > 0 && (
                 <Badge variant="secondary" className="ml-1 px-1.5">
@@ -315,7 +315,7 @@ export function AdvancedFilters({
               <ChevronDown className="h-3 w-3" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="glass-popover w-56 p-3 max-h-[300px] overflow-auto" align="start">
+          <PopoverContent className="w-56 p-3 max-h-[300px] overflow-auto border-slate-200/90 bg-white/92 text-slate-800 backdrop-blur-xl" align="start">
             <div className="space-y-2">
               {uniqueValues.clients.map((client) => (
                 <div key={client} className="flex items-center gap-2">
@@ -335,7 +335,7 @@ export function AdvancedFilters({
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="glass-field-control w-full sm:w-auto justify-between sm:justify-center gap-2">
+            <Button variant="outline" size="sm" className="w-full sm:w-auto justify-between sm:justify-center gap-2 border-slate-200/90 bg-white/82 text-slate-800 hover:bg-white">
               <Calendar className="h-3 w-3" />
               {filters.datePreset === "custom" && filters.dateRange.from ? (
                 <span>
@@ -348,7 +348,7 @@ export function AdvancedFilters({
               <ChevronDown className="h-3 w-3" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="glass-popover w-auto p-3" align="start">
+          <PopoverContent className="w-auto p-3 border-slate-200/90 bg-white/92 text-slate-800 backdrop-blur-xl" align="start">
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 {(["all", "thisMonth", "lastMonth", "thisQuarter", "lastQuarter", "thisYear", "lastYear"] as DatePreset[]).map((preset) => (
@@ -416,7 +416,7 @@ export function AdvancedFilters({
           variant={isExpanded ? "secondary" : "outline"}
           size="sm"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="glass-field-control w-full sm:w-auto justify-between sm:justify-center gap-2"
+          className="w-full sm:w-auto justify-between sm:justify-center gap-2 border-slate-200/90 bg-white/82 text-slate-800 hover:bg-white"
         >
           <Filter className="h-3 w-3" />
           More Filters
@@ -428,7 +428,7 @@ export function AdvancedFilters({
         </Button>
 
         {activeFilterCount > 0 && (
-          <Button variant="ghost" size="sm" onClick={onClearFilters} className="w-full sm:w-auto justify-center gap-1 text-muted-foreground hover:bg-[var(--glass-hover)] hover:text-foreground">
+          <Button variant="ghost" size="sm" onClick={onClearFilters} className="w-full sm:w-auto justify-center gap-1 text-slate-700 hover:bg-white/70 hover:text-slate-900">
             <X className="h-3 w-3" />
             Clear All
           </Button>

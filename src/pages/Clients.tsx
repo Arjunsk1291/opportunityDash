@@ -967,25 +967,25 @@ const Clients = () => {
 
         <TabsContent value="all" className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="border border-border/50 shadow-sm">
+        <Card className="bg-card border border-border/50 shadow-sm">
           <CardContent className="pt-6">
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Total Clients</p>
             <p className="text-3xl font-black text-foreground mt-1">{stats.totalClients}</p>
           </CardContent>
         </Card>
-        <Card className="border border-border/50 shadow-sm">
+        <Card className="bg-card border border-border/50 shadow-sm">
           <CardContent className="pt-6">
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">With Contacts</p>
             <p className="text-3xl font-black text-foreground mt-1">{stats.withContacts}</p>
           </CardContent>
         </Card>
-        <Card className="border border-border/50 shadow-sm">
+        <Card className="bg-card border border-border/50 shadow-sm">
           <CardContent className="pt-6">
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Total Contacts</p>
             <p className="text-3xl font-black text-foreground mt-1">{stats.totalContacts}</p>
           </CardContent>
         </Card>
-        <Card className="border border-border/50 shadow-sm">
+        <Card className="bg-card border border-border/50 shadow-sm">
           <CardContent className="pt-6">
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Unique Domains</p>
             <p className="text-3xl font-black text-foreground mt-1">{stats.domains}</p>

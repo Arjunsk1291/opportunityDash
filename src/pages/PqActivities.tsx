@@ -499,7 +499,7 @@ export default function PqActivities() {
   return (
     <>
     <ActionProgressBar status={trackedStatus} />
-    <div className="min-h-[calc(100vh-64px)] text-foreground">
+    <div className="min-h-[calc(100vh-64px)] bg-background text-foreground">
       <div className="mx-auto max-w-7xl px-3 sm:px-6 py-6 sm:py-10">
         <header className="flex flex-col gap-2">
           <h1 className="font-display text-2xl sm:text-3xl md:text-4xl tracking-tight">Pre-Qualification</h1>

@@ -13,9 +13,9 @@ interface OpportunityDetailDialogProps {
 }
 
 const DetailRow = ({ label, value }: { label: string; value: string | React.ReactNode }) => (
-  <div className="flex justify-between items-start py-3 border-b border-border/60 last:border-b-0">
-    <p className="text-sm font-semibold text-muted-foreground uppercase">{label}</p>
-    <p className="text-sm text-foreground font-medium text-right max-w-xs">{value || '—'}</p>
+  <div className="flex justify-between items-start py-3 border-b border-slate-200 last:border-b-0">
+    <p className="text-sm font-semibold text-slate-500 uppercase">{label}</p>
+    <p className="text-sm text-slate-900 font-medium text-right max-w-xs">{value || '—'}</p>
   </div>
 );
 
@@ -114,10 +114,7 @@ export function OpportunityDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-w-2xl max-h-[85vh] overflow-hidden border-border/60 bg-transparent shadow-none rounded-2xl"
-        style={{ background: 'var(--glass-card-bg)', backdropFilter: 'var(--glass-blur)', boxShadow: 'var(--glass-card-shadow)' }}
-      >
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden border-none bg-white">
         <DialogHeader className="sr-only">
           <DialogTitle>Opportunity details</DialogTitle>
           <DialogDescription>Detailed information for the selected opportunity.</DialogDescription>

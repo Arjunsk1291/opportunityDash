@@ -1,1 +1,0 @@
-import{j as t}from"./vendor-mui-UksazzsL.js";import{b as r}from"./vendor-react-DeHv7wdG.js";import"./vendor-charts-CQYCmchF.js";import"./vendor-exceljs-w88fy-c4.js";function p(){return t.jsx(r,{to:"/master/overview",replace:!0})}export{p as default};
