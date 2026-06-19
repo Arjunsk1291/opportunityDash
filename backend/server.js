@@ -26,6 +26,7 @@ import PqActivity, { getPqModel } from './models/PqActivity.js';
 import PotentialOpportunity from './models/PotentialOpportunity.js';
 import BidDecision from './models/BidDecision.js';
 import UpcomingFeature from './models/UpcomingFeature.js';
+import UploadedSheetArchive from './models/UploadedSheetArchive.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import BDEngagement from './models/BDEngagement.js';
@@ -1592,6 +1593,48 @@ const buildIssueReportEmailHtml = ({
               <td style="padding:10px 12px;border:1px solid #e2e8f0;"><div style="white-space:pre-wrap;line-height:1.7;">${comments}</div></td>
             </tr>
           </table>
+        </div>
+      </div>
+    </div>
+  `;
+};
+
+const buildSheetUploadNotificationEmailHtml = ({ filename = '', createdCount = 0, updatedCount = 0, rowCount = 0, uploadedBy = '', styleKey = 'avenir_blue' }) => {
+  const style = getTelecastTemplateStyle(styleKey);
+  const colors = style.colors;
+  const rows = [
+    ['File', filename || '—'],
+    ['Rows Processed', String(rowCount)],
+    ['New Tenders', String(createdCount)],
+    ['Updated Tenders', String(updatedCount)],
+    ['Uploaded By', uploadedBy || '—'],
+  ];
+
+  return `
+    <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
+      <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
+        <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Opportunities</div>
+          <h1 style="margin:0;font-size:24px;line-height:1.2;">&#128228; New Opportunity Sheet Uploaded</h1>
+          <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">A new opportunity sheet was uploaded and committed to the dashboard. The original file is attached to this email.</p>
+        </div>
+        <div style="padding:24px 28px;">
+          <div style="margin-bottom:18px;padding:16px 18px;border-radius:14px;background:${colors.summaryBg};border:1px solid ${colors.summaryBorder};color:${colors.summaryText};">
+            <strong style="display:block;margin-bottom:10px;">Summary</strong>
+            <table style="width:100%;border-collapse:collapse;border-spacing:0;overflow:hidden;border:1px solid ${colors.summaryBorder};border-radius:12px;background:#ffffff;">
+              <tbody>
+                ${rows.map(([label, value], index) => `
+                  <tr style="background:${index % 2 === 0 ? '#ffffff' : colors.tableRowAlt};">
+                    <th style="width:32%;padding:10px 12px;text-align:left;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${colors.tableHeaderText};background:${colors.tableHeaderBg};border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(label)}</th>
+                    <td style="padding:10px 12px;font-size:14px;color:#0f172a;border-bottom:1px solid ${colors.summaryBorder};">${escapeHtml(value)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div style="margin-top:28px;text-align:center;">
+            <a href="${DASHBOARD_URL}" style="display:inline-block;padding:12px 28px;background:${colors.headerBg};color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;letter-spacing:0.04em;">Open Avenir Dashboard &rarr;</a>
+          </div>
         </div>
       </div>
     </div>
@@ -7808,6 +7851,89 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Sheet Upload Notification (store the uploaded file + email it on request) ──
+
+app.post('/api/opportunities/sheet-upload/archive', verifyToken, express.json({ limit: '20mb' }), async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'opportunities_sheet_upload')) return;
+    const filename = String(req.body?.filename || '').trim() || 'opportunities-upload.xlsx';
+    const contentBase64 = String(req.body?.contentBase64 || '');
+    if (!contentBase64) return res.status(400).json({ error: 'contentBase64 is required' });
+
+    const archive = await UploadedSheetArchive.create({
+      filename,
+      data: Buffer.from(contentBase64, 'base64'),
+      uploadedBy: String(req.user?.email || ''),
+      rowCount: Number(req.body?.rowCount) || 0,
+      createdCount: Number(req.body?.createdCount) || 0,
+      updatedCount: Number(req.body?.updatedCount) || 0,
+    });
+
+    res.json({ success: true, archiveId: String(archive._id) });
+  } catch (error) {
+    console.error('[sheet-upload.archive.error]', error?.message);
+    res.status(500).json({ error: error.message || 'Failed to store uploaded sheet' });
+  }
+});
+
+app.post('/api/opportunities/sheet-upload/notify', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'opportunities_sheet_upload')) return;
+    const archiveId = String(req.body?.archiveId || '').trim();
+    const recipientEmails = normalizeEmailList(Array.isArray(req.body?.recipientEmails) ? req.body.recipientEmails : []);
+    if (!archiveId) return res.status(400).json({ error: 'archiveId is required' });
+    if (!recipientEmails.length) return res.status(400).json({ error: 'At least one recipient is required' });
+
+    const archive = await UploadedSheetArchive.findById(archiveId);
+    if (!archive) return res.status(404).json({ error: 'Uploaded sheet not found (it may have expired).' });
+
+    const html = buildSheetUploadNotificationEmailHtml({
+      filename: archive.filename,
+      createdCount: archive.createdCount,
+      updatedCount: archive.updatedCount,
+      rowCount: archive.rowCount,
+      uploadedBy: archive.uploadedBy,
+    });
+    const subject = `New Opportunity Sheet Uploaded — ${archive.filename} (${archive.createdCount} new, ${archive.updatedCount} updated)`;
+    const contentBytes = archive.data.toString('base64');
+
+    const { accessToken } = await getTelecastSendMailAccessToken();
+    const graphResponse = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: { contentType: 'HTML', content: html },
+          toRecipients: recipientEmails.map((email) => ({ emailAddress: { address: email } })),
+          hasAttachments: true,
+          attachments: [{
+            '@odata.type': '#microsoft.graph.fileAttachment',
+            name: archive.filename,
+            contentType: archive.contentType,
+            contentBytes,
+          }],
+        },
+        saveToSentItems: true,
+      }),
+    });
+
+    if (!graphResponse.ok) {
+      const payload = await graphResponse.json().catch(() => ({}));
+      throw new Error(payload?.error?.message || `Graph sendMail failed with status ${graphResponse.status}`);
+    }
+
+    archive.notifiedAt = new Date();
+    archive.notifiedTo = recipientEmails;
+    await archive.save();
+
+    res.json({ success: true, recipientCount: recipientEmails.length });
+  } catch (error) {
+    console.error('[sheet-upload.notify.error]', error?.message);
+    res.status(500).json({ error: error.message || 'Failed to send notification email' });
   }
 });
 

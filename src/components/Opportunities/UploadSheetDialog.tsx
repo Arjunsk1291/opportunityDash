@@ -10,6 +10,7 @@ import { useAsyncAction } from '@/hooks/useAsyncAction';
 import { fetchBidDecisionRecords } from '@/lib/bidDecision';
 import { fetchPotentialOpportunityRows, getExtrasTenderName } from '@/lib/potentialOpportunities';
 import { findManualMatches, type ManualMatchCandidate } from '@/lib/manualMatchFinder';
+import { archiveUploadedSheet, arrayBufferToBase64 } from '@/lib/sheetNotify';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const MAX_OPPORTUNITY_UPLOAD_ROWS = 5000;
@@ -59,14 +60,17 @@ interface UploadSheetDialogProps {
   onUpsertOpportunities: (rows: Opportunity[]) => void;
   onRefreshData: () => void;
   onManualMatchesFound?: (matches: ManualMatchCandidate[]) => void;
+  onSheetArchived?: (archiveId: string, meta: { filename: string; createdCount: number; updatedCount: number }) => void;
 }
 
-export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities, onRefreshData, onManualMatchesFound }: UploadSheetDialogProps) {
+export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities, onRefreshData, onManualMatchesFound, onSheetArchived }: UploadSheetDialogProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [parsedRows, setParsedRows] = useState<RowFormState[]>([]);
   const [uploadMeta, setUploadMeta] = useState<{ created: number; updated: number } | null>(null);
   const [progressLabel, setProgressLabel] = useState<string | null>(null);
+  // Raw bytes of the file currently in the preview, kept only so the exact uploaded file can be emailed after commit.
+  const rawFileRef = useRef<{ filename: string; base64: string } | null>(null);
 
   const normalizeRef = (v: string) => String(v || '').trim().toLowerCase();
   const normalizeHeader = (v: unknown) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -96,11 +100,34 @@ export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities,
         });
       }
       const touched = Array.from(touchedByRef.values());
+      const committedMeta = uploadMeta;
+      const rawFile = rawFileRef.current;
       if (touched.length) onUpsertOpportunities(touched);
       setParsedRows([]);
       setPreviewOpen(false);
       setUploadMeta(null);
       void onRefreshData();
+
+      if (touched.length && token && rawFile && onSheetArchived) {
+        try {
+          const archiveId = await archiveUploadedSheet(token, {
+            filename: rawFile.filename,
+            contentBase64: rawFile.base64,
+            rowCount: parsedRows.length,
+            createdCount: committedMeta?.created || 0,
+            updatedCount: committedMeta?.updated || 0,
+          });
+          if (archiveId) {
+            onSheetArchived(archiveId, {
+              filename: rawFile.filename,
+              createdCount: committedMeta?.created || 0,
+              updatedCount: committedMeta?.updated || 0,
+            });
+          }
+        } catch {
+          // Non-critical: skip the send-notification prompt silently, the upload itself already succeeded.
+        }
+      }
 
       if (touched.length && token && onManualMatchesFound) {
         try {
@@ -133,6 +160,7 @@ export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities,
       setProgressLabel('Reading workbook…');
       reportProgress?.(5);
       const buffer = await file.arrayBuffer();
+      rawFileRef.current = { filename: file.name, base64: arrayBufferToBase64(buffer) };
       reportProgress?.(15);
       const workbook = await loadWorkbookFromArrayBuffer(buffer);
       reportProgress?.(40);

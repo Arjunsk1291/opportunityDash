@@ -17,6 +17,7 @@ import { JspreadsheetGrid, JspreadsheetGridHandle } from '@/components/Opportuni
 import { UploadSheetDialog } from '@/components/Opportunities/UploadSheetDialog';
 import { EntryDialog } from '@/components/Opportunities/EntryDialog';
 import { ManualMatchDialog } from '@/components/Opportunities/ManualMatchDialog';
+import { SheetNotifyDialog, type SheetArchiveMeta } from '@/components/Opportunities/SheetNotifyDialog';
 import type { ManualMatchCandidate } from '@/lib/manualMatchFinder';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -40,6 +41,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [manualMatches, setManualMatches] = useState<ManualMatchCandidate[]>([]);
+  const [sheetArchive, setSheetArchive] = useState<SheetArchiveMeta | null>(null);
 
   const [search, setSearch] = useState(statusFilter || '');
   const [entryOpen, setEntryOpen] = useState(false);
@@ -155,6 +157,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
                 onUpsertOpportunities={upsertOpportunities}
                 onRefreshData={() => void refreshData({ background: true })}
                 onManualMatchesFound={setManualMatches}
+                onSheetArchived={(archiveId, meta) => setSheetArchive({ archiveId, ...meta })}
               />
             )}
             {canEdit && (
@@ -257,12 +260,20 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         </DialogContent>
       </Dialog>
 
-      <ManualMatchDialog
+      <SheetNotifyDialog
         token={token}
-        matches={manualMatches}
-        onResolved={(match) => setManualMatches((prev) => prev.filter((m) => !(m.kind === match.kind && m.recordId === match.recordId && m.opportunityRefNo === match.opportunityRefNo)))}
-        onClose={() => setManualMatches([])}
+        archive={sheetArchive}
+        onClose={() => setSheetArchive(null)}
       />
+
+      {!sheetArchive && (
+        <ManualMatchDialog
+          token={token}
+          matches={manualMatches}
+          onResolved={(match) => setManualMatches((prev) => prev.filter((m) => !(m.kind === match.kind && m.recordId === match.recordId && m.opportunityRefNo === match.opportunityRefNo)))}
+          onClose={() => setManualMatches([])}
+        />
+      )}
     </>
   );
 };
