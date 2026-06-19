@@ -1059,7 +1059,7 @@ const BDEngagements = () => {
                 onClick={() => openDrilldown(card.label, card.rows)}
                 className="text-left"
               >
-                <Card className="group relative overflow-hidden border-border bg-card text-card-foreground shadow-xl">
+                <Card className="group relative overflow-hidden border-border text-card-foreground shadow-xl">
                   <div className={`absolute inset-0 bg-gradient-to-br ${card.accent} opacity-70 transition-opacity duration-300 group-hover:opacity-100`} />
                   <CardContent className="relative flex items-start justify-between p-5">
                     <div>
@@ -1077,7 +1077,7 @@ const BDEngagements = () => {
           </motion.div>
 
           <div className="grid gap-6 xl:grid-cols-2">
-            <Card className="border-border bg-card text-card-foreground">
+            <Card className="border-border text-card-foreground">
               <CardHeader>
                 <CardTitle>Engagements Over Time</CardTitle>
               </CardHeader>
@@ -1104,7 +1104,7 @@ const BDEngagements = () => {
               </CardContent>
             </Card>
 
-            <Card className="border-border bg-card text-card-foreground">
+            <Card className="border-border text-card-foreground">
               <CardHeader>
                 <CardTitle>Meeting Type Breakdown</CardTitle>
               </CardHeader>
@@ -1154,7 +1154,7 @@ const BDEngagements = () => {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-1">
-            <Card className="border-border bg-card text-card-foreground">
+            <Card className="border-border text-card-foreground">
               <CardHeader>
                 <CardTitle>Top Clients by Engagement Count</CardTitle>
               </CardHeader>
@@ -1183,7 +1183,7 @@ const BDEngagements = () => {
         </TabsContent>
 
         <TabsContent value="engagements" className="space-y-6">
-          <Card className="border-border bg-card text-card-foreground">
+          <Card className="border-border text-card-foreground">
             <CardContent className="p-5">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <span className="text-sm font-medium text-muted-foreground">{filteredRows.length} of {rows.length} engagements</span>
@@ -1389,7 +1389,7 @@ const BDEngagements = () => {
                         <motion.div
                           key={row.id}
                           variants={cardVariant}
-                          className="group flex cursor-pointer flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+                          className="group flex cursor-pointer flex-col gap-3 rounded-2xl border border-border p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
                           onClick={() => setSelectedEngagement(row)}
                         >
                           <div className="flex items-start justify-between gap-2">
@@ -1454,7 +1454,7 @@ const BDEngagements = () => {
         </TabsContent>
 
         <TabsContent value="clients" className="space-y-6">
-          <Card className="border-border bg-card text-card-foreground">
+          <Card className="border-border text-card-foreground">
             <CardContent className="grid gap-3 p-5 lg:grid-cols-[minmax(0,1fr)_220px]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1515,7 +1515,7 @@ const BDEngagements = () => {
               ))}
             </div>
 
-            <Card className="border-border bg-card text-card-foreground">
+            <Card className="border-border text-card-foreground">
               <CardHeader>
                 <CardTitle>{selectedClientSummary?.clientName || 'Client Details'}</CardTitle>
                 <p className="text-sm text-muted-foreground">Full engagement history in reverse chronological order.</p>

@@ -184,7 +184,7 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
             { label: 'Awarded', value: kpi.awarded, color: 'bg-amber-500' },
             { label: 'Lost / Regretted', value: kpi.lost, color: 'bg-red-500' },
           ].map(({ label, value, color }) => (
-            <div key={label} className="rounded-lg border bg-card p-3 flex items-center gap-3">
+            <div key={label} className="glass-card p-3 flex items-center gap-3">
               <div className={`h-8 w-1 rounded-full ${color}`} />
               <div>
                 <div className="text-2xl font-bold tabular-nums">{value}</div>

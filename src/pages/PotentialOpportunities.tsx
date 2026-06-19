@@ -441,7 +441,7 @@ export default function PotentialOpportunities() {
     <ActionProgressBar status={trackedStatus} />
     <div className="space-y-6 pb-20">
       {/* Hero header */}
-      <div className="relative rounded-3xl overflow-hidden border border-border/50 bg-card shadow-xl">
+      <div className="relative rounded-3xl overflow-hidden border border-border/50 shadow-xl">
         <div className="absolute inset-0 bg-gradient-to-br from-violet-500/15 via-primary/8 to-cyan-500/10 pointer-events-none" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent pointer-events-none" />
         <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between p-6 md:p-8">
@@ -477,7 +477,7 @@ export default function PotentialOpportunities() {
       </div>
 
       {(loading || importing) && (
-        <div className="rounded-2xl border bg-card p-3 shadow-sm animate-in fade-in slide-in-from-top-2">
+        <div className="rounded-2xl border p-3 shadow-sm animate-in fade-in slide-in-from-top-2">
           <Progress value={importing ? importProgress : loadProgress} className="h-2" />
           <div className="mt-2 flex justify-between items-center px-1">
              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">

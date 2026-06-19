@@ -351,7 +351,7 @@ function CompareDialog({ open, onOpenChange, vendors }: { open: boolean; onOpenC
         <div className="overflow-x-auto pb-2 scrollbar-thin">
           <div className="grid min-w-[720px] gap-4" style={{ gridTemplateColumns: `repeat(${vendors.length}, minmax(260px, 1fr))` }}>
             {vendors.map((vendor) => (
-              <Card key={vendor.id} className="bg-card/80">
+              <Card key={vendor.id} className="">
                 <CardContent className="space-y-4 p-4">
                   <div>
                     <h3 className="text-lg font-semibold">{vendor.companyName}</h3>
@@ -551,7 +551,7 @@ export default function VendorDirectory() {
     <>
     <ActionProgressBar status={trackedStatus} />
     <div className="space-y-4 sm:space-y-6">
-      <Card className="bg-card/80 p-4 backdrop-blur-sm sm:p-6">
+      <Card className="p-4 backdrop-blur-sm sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-2xl font-semibold">Partners</h1>
@@ -593,7 +593,7 @@ export default function VendorDirectory() {
         ))}
       </div>
 
-      <Card className="bg-card/80 p-4 backdrop-blur-sm sm:p-5">
+      <Card className="p-4 backdrop-blur-sm sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0 flex-1 space-y-3">
             <div className="relative">
@@ -659,7 +659,7 @@ export default function VendorDirectory() {
             return (
               <motion.div key={vendor.id} variants={cardVariant} className="[perspective:1000px]">
                 <Card
-                  className="group h-full overflow-hidden border-border/70 bg-card/85 shadow-sm transition-all duration-300 hover:-translate-y-2 hover:scale-[1.01] hover:shadow-2xl"
+                  className="group h-full overflow-hidden border-border/70 shadow-sm transition-all duration-300 hover:-translate-y-2 hover:scale-[1.01] hover:shadow-2xl"
                   onClick={() => setSelectedVendor(vendor)}
                 >
                   <div className="h-1.5 w-full bg-gradient-to-r from-primary via-info to-success" />
@@ -733,7 +733,7 @@ export default function VendorDirectory() {
         </div>
       ) : (
         <div className="space-y-4">
-        <Card className="bg-card/80 backdrop-blur-sm">
+        <Card className="backdrop-blur-sm">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -793,7 +793,7 @@ export default function VendorDirectory() {
       )}
 
       {enrichedVendors.length === 0 && (
-        <Card className="bg-card/80 p-10 text-center text-muted-foreground backdrop-blur-sm">
+        <Card className="p-10 text-center text-muted-foreground backdrop-blur-sm">
           No partners match the current filters.
         </Card>
       )}
@@ -814,7 +814,7 @@ export default function VendorDirectory() {
       )}
 
       {error && !isLoading && (
-        <Card className="bg-card/80 p-10 text-center text-destructive backdrop-blur-sm">
+        <Card className="p-10 text-center text-destructive backdrop-blur-sm">
           {error}
         </Card>
       )}
