@@ -1242,18 +1242,29 @@ const Dashboard = () => {
     <ActionProgressBar status={trackedStatus} />
     <div className="space-y-4 sm:space-y-6">
       {/* Sync Status Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 text-xs text-muted-foreground">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 min-w-0">
-          <div>
-            Last refreshed from MongoDB: {lastSyncTime?.toLocaleTimeString()} - {opportunities.length} opportunities loaded
-          </div>
-          <div className="flex items-center gap-2 min-w-0">
-            <RefreshCw className="h-3 w-3" />
-            Server auto-sync runs independently of the browser session
-          </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex items-center gap-2">
+          <span
+            className="relative flex h-2 w-2 rounded-full"
+            style={{
+              background: isLiveRefreshActive ? '#22c55e' : '#94a3b8',
+              boxShadow: `0 0 0 3px ${isLiveRefreshActive ? 'rgba(34,197,94,.2)' : 'rgba(148,163,184,.18)'}`,
+            }}
+          >
+            {isLiveRefreshActive && (
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+            )}
+          </span>
+          <span className="text-[11.5px] font-semibold" style={{ color: 'var(--glass-text-2)' }}>
+            {isLiveRefreshActive ? 'Live' : 'Paused'} · Last sync{' '}
+            <b style={{ color: 'var(--glass-text-1)' }}>{lastSyncTime ? lastSyncTime.toLocaleTimeString() : '—'}</b>
+            {' · '}
+            <b style={{ color: 'var(--glass-text-1)' }}>{opportunities.length}</b> records
+          </span>
         </div>
-        <div className="text-xs">
-          {isLiveRefreshActive ? '✅ Live refresh active' : '⏸️ Live refresh inactive'}
+        <div className="ml-auto flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--glass-text-3)' }}>
+          <RefreshCw className="h-3 w-3" />
+          Server auto-sync runs independently of the browser session
         </div>
       </div>
 
