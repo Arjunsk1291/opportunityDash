@@ -64,7 +64,7 @@ export function ManualMatchDialog({ token, matches, onResolved, onClose }: Manua
             linked += 1;
           } else {
             // Unchecked entries are explicitly marked "not the same" so they won't resurface.
-            dismissMatch(match.recordId, match.opportunityRefNo);
+            dismissMatch(match.recordId);
           }
           onResolved(match);
         } catch {
@@ -112,9 +112,7 @@ export function ManualMatchDialog({ token, matches, onResolved, onClose }: Manua
                 />
                 <div className="flex-1 min-w-0 space-y-2">
                   <div className="flex items-center gap-2">
-                    <Badge variant={match.confidence === 'high' ? 'default' : 'secondary'}>
-                      {match.confidence === 'high' ? 'Same ref no' : 'Similar name'}
-                    </Badge>
+                    <Badge variant="secondary">Similar name</Badge>
                     <span className="text-xs text-muted-foreground">
                       {match.kind === 'bidDecision' ? 'Bid Decision (manual)' : 'Potential Opportunity (unmatched)'}
                     </span>

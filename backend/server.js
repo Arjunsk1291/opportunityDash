@@ -4418,6 +4418,9 @@ app.delete('/api/users/remove', verifyToken, async (req, res) => {
 
     const result = await AuthorizedUser.deleteOne({ email: email.toLowerCase() });
 
+    // Audit trail: record every user removal so a vanished account can be traced.
+    console.warn(`[users.remove] email=${email.toLowerCase()} role=${target.role} deletedCount=${result.deletedCount} by=${req.user.email}`);
+
     invalidateUserCache(email.toLowerCase());
     res.json({ success: true, message: 'User removed' });
   } catch (error) {
