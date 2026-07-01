@@ -159,6 +159,7 @@ export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities,
         const touchedRefs = touched.map((row) => ({
           opportunityRefNo: String(row.opportunityRefNo || row.tenderNo || ''),
           tenderName: String(row.tenderName || ''),
+          clientName: String(row.clientName || ''),
         }));
         const matches = findManualMatches(touchedRefs, manualBidDecisions, unmatchedPotentialRows);
         if (matches.length) onManualMatchesFound(matches);

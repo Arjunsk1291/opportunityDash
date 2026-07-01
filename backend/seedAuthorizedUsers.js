@@ -24,19 +24,42 @@ const authorizedUsers = [
   { email: 'visal.j@avenirengineering.com', role: 'Basic', status: 'approved' },
 ];
 
+// DANGER: a full reset deletes EVERY user in the collection — including users that
+// were added later through the admin panel. It is now opt-in only. Run with
+// `node seedAuthorizedUsers.js --reset` (or SEED_RESET=true) to wipe and rebuild.
+// The default run is a safe, idempotent upsert that never removes existing users.
+const RESET = process.argv.includes('--reset') || String(process.env.SEED_RESET || '').toLowerCase() === 'true';
+
 async function seedUsers() {
   try {
     await mongoose.connect(MONGODB_URI);
 
-    // Clear existing users
-    await AuthorizedUser.deleteMany({});
+    if (RESET) {
+      console.warn('⚠️  --reset supplied: DELETING ALL authorized users before reseeding.');
+      console.warn('⚠️  Any admin-added users NOT in the hardcoded list will be permanently removed.');
+      const { deletedCount } = await AuthorizedUser.deleteMany({});
+      console.warn(`⚠️  Removed ${deletedCount} existing user(s).`);
+    }
 
-    // Insert new users
-    const result = await AuthorizedUser.insertMany(authorizedUsers);
+    // Idempotent upsert: ensure each canonical account exists with the intended
+    // role/status, without touching (or deleting) any other users.
+    let created = 0;
+    let updated = 0;
+    for (const { email, role, status } of authorizedUsers) {
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const result = await AuthorizedUser.updateOne(
+        { email: normalizedEmail },
+        {
+          $set: { role, status },
+          $setOnInsert: { email: normalizedEmail, createdAt: new Date() },
+        },
+        { upsert: true },
+      );
+      if (result.upsertedCount) created += 1;
+      else if (result.modifiedCount) updated += 1;
+    }
 
-    result.forEach(user => {
-    });
-
+    console.log(`✅ Seed complete. Ensured ${authorizedUsers.length} canonical users (created ${created}, updated ${updated}).`);
     process.exit(0);
   } catch (error) {
     console.error('❌ Seed error:', error.message);
