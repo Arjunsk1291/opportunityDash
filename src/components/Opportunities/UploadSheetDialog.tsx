@@ -14,7 +14,13 @@ import { archiveUploadedSheet, arrayBufferToBase64 } from '@/lib/sheetNotify';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const MAX_OPPORTUNITY_UPLOAD_ROWS = 5000;
-const SHEET_UPLOAD_COMMIT_BATCH_SIZE = 100;
+// Rows per commit request. Batches are sent sequentially (see executeCommit), so
+// fewer/larger batches = fewer round-trips = faster commit. Ceiling is the 1MB
+// express.json body limit (server.js:313); at ~1KB/row worst case, 400 rows stays
+// well under that. Kept sequential on purpose: opportunityRefNo has no unique index
+// (SyncedOpportunity.js:70), so parallel batches sharing a ref could race into
+// duplicate docs — a bigger batch avoids that while still cutting the round-trips.
+const SHEET_UPLOAD_COMMIT_BATCH_SIZE = 400;
 
 type RowFormState = {
   rawSheetYear: string;
