@@ -21,6 +21,7 @@ const VendorDirectory = lazy(() => import("./pages/VendorDirectory"));
 const Clients = lazy(() => import("./pages/Clients"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const BDEngagements = lazy(() => import("./pages/BDEngagements"));
+const FollowUps = lazy(() => import("./pages/FollowUps"));
 const MasterOverviewRoute = lazy(() => import("./routes/master.overview"));
 const MasterUsersRoute = lazy(() => import("./routes/master.users"));
 const MasterPermissionsRoute = lazy(() => import("./routes/master.permissions"));
@@ -141,6 +142,7 @@ function AppRoutes() {
             <Route path="clients" element={<PageAccessRoute pageKey="clients"><Clients /></PageAccessRoute>} />
             <Route path="analytics" element={<PageAccessRoute pageKey="analytics"><Analytics /></PageAccessRoute>} />
             <Route path="bd-engagements" element={<PageAccessRoute pageKey="bd_engagements"><BDEngagements /></PageAccessRoute>} />
+            <Route path="follow-ups" element={<PageAccessRoute pageKey="tender_follow_ups"><FollowUps /></PageAccessRoute>} />
             <Route path="advanced-analytics" element={<Navigate to="/bd-engagements" replace />} />
             <Route path="master" element={<PageAccessRoute pageKey="master"><Navigate to="/master/overview" replace /></PageAccessRoute>} />
             <Route path="master/overview" element={<PageAccessRoute pageKey="master"><MasterOverviewRoute /></PageAccessRoute>} />

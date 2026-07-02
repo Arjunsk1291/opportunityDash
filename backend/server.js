@@ -30,6 +30,7 @@ import UploadedSheetArchive from './models/UploadedSheetArchive.js';
 import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
 import GraphSyncConfig from './models/GraphSyncConfig.js';
 import BDEngagement from './models/BDEngagement.js';
+import TenderFollowUp from './models/TenderFollowUp.js';
 import {
   resolveShareLink,
   getWorksheets,
@@ -4984,6 +4985,7 @@ const PAGE_KEYS = [
   'clients',
   'analytics',
   'bd_engagements',
+  'tender_follow_ups',
   'master',
   'master_general',
   'master_users',
@@ -5000,6 +5002,7 @@ const ACTION_KEYS = [
   'opportunities_sheet_upload',
   'manual_opportunity_updates_write',
   'bd_engagements_write',
+  'tender_follow_ups_write',
   'pq_activities_view',
   'pq_activities_manage',
   'approvals_proposal_head',
@@ -5032,6 +5035,7 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
   clients: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   bd_engagements: ['Master', 'Admin', 'BDTeam'],
+  tender_follow_ups: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   master: ['Master', 'Admin'],
   master_general: ['Master', 'Admin'],
   master_users: ['Master', 'Admin'],
@@ -5047,6 +5051,7 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   opportunities_sheet_upload: ['Master', 'Admin'],
   manual_opportunity_updates_write: ['Master', 'Admin'],
   bd_engagements_write: ['Master', 'Admin', 'BDTeam'],
+  tender_follow_ups_write: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam'],
   pq_activities_view: ['Master', 'Admin', 'Basic'],
   pq_activities_manage: ['Master'],
   approvals_proposal_head: ['Master', 'ProposalHead'],
@@ -5687,6 +5692,7 @@ const PAGE_EDIT_ACTION_MAP = {
   vendor_directory: ['vendors_write', 'vendors_import'],
   clients: ['clients_write', 'clients_import', 'clients_seed'],
   bd_engagements: ['bd_engagements_write'],
+  tender_follow_ups: ['tender_follow_ups_write'],
   tender_updates: ['opportunities_write'],
   dashboard: [],
   analytics: [],
@@ -7573,6 +7579,74 @@ app.delete('/api/bd-engagements/:id', verifyToken, async (req, res) => {
     if (!await requireActionPermission(req, res, 'bd_engagements_write')) return;
     const id = String(req.params.id || '').trim();
     const deleted = await BDEngagement.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// ---- Tender Follow-Ups (per-tender follow-up notes; isolated collection) ----
+app.get('/api/tender-follow-ups', verifyToken, async (req, res) => {
+  try {
+    if (!isDatabaseReady()) return respondDatabaseUnavailable(res);
+    if (!await requirePageView(req, res, 'tender_follow_ups')) return;
+    res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
+    const filter = {};
+    const refNo = String(req.query?.opportunityRefNo || '').trim();
+    if (refNo) filter.opportunityRefNo = refNo;
+    const rows = await TenderFollowUp.find(filter).sort({ createdAt: -1 }).lean();
+    res.json(rows.map(mapIdField));
+  } catch (error) {
+    return handleApiError(res, error, 'tender-follow-ups.get');
+  }
+});
+
+app.post('/api/tender-follow-ups', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'tender_follow_ups_write')) return;
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const opportunityRefNo = String(payload?.opportunityRefNo || '').trim();
+    if (!opportunityRefNo) return res.status(400).json({ error: 'opportunityRefNo is required' });
+    const created = await TenderFollowUp.create({
+      opportunityRefNo,
+      tenderName: String(payload?.tenderName || '').trim(),
+      clientName: String(payload?.clientName || '').trim(),
+      date: String(payload?.date || '').trim(),
+      note: String(payload?.note || '').trim(),
+      updatedBy: String(req.user?.email || '').trim(),
+    });
+    res.json({ success: true, row: mapIdField(created.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+app.put('/api/tender-follow-ups/:id', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'tender_follow_ups_write')) return;
+    const id = String(req.params.id || '').trim();
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const existing = await TenderFollowUp.findById(id);
+    if (!existing) return res.status(404).json({ error: 'Not found' });
+    existing.opportunityRefNo = String(payload?.opportunityRefNo || existing.opportunityRefNo || '').trim();
+    existing.tenderName = String(payload?.tenderName ?? existing.tenderName ?? '').trim();
+    existing.clientName = String(payload?.clientName ?? existing.clientName ?? '').trim();
+    existing.date = String(payload?.date ?? existing.date ?? '').trim();
+    existing.note = String(payload?.note ?? existing.note ?? '').trim();
+    existing.updatedBy = String(req.user?.email || existing.updatedBy || '').trim();
+    await existing.save();
+    res.json({ success: true, row: mapIdField(existing.toObject()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+app.delete('/api/tender-follow-ups/:id', verifyToken, async (req, res) => {
+  try {
+    if (!await requireActionPermission(req, res, 'tender_follow_ups_write')) return;
+    const id = String(req.params.id || '').trim();
+    const deleted = await TenderFollowUp.findByIdAndDelete(id);
     if (!deleted) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });
   } catch (error) {
