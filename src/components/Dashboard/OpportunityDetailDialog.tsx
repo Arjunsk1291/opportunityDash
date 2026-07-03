@@ -1,9 +1,23 @@
+import { useState, useEffect, useCallback } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { CalendarClock, Plus, StickyNote } from 'lucide-react';
+import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 import { Opportunity } from '@/data/opportunityData';
 import { getDisplayResult, getDisplayStatus, isEoiNormalizedOpportunity, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 import { OPPORTUNITY_COLUMN_HEADERS } from '@/lib/opportunities/columns';
+import { type TenderFollowUp, getFollowUps, createFollowUp, canWriteFollowUps, initialsOf } from '@/lib/tenderFollowUps';
+
+const prettyDate = (iso: string): string => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
 interface OpportunityDetailDialogProps {
   opportunity: Opportunity | null;
@@ -95,6 +109,51 @@ export function OpportunityDetailDialog({
   onOpenChange,
   formatCurrency,
 }: OpportunityDetailDialogProps) {
+  const { token, user } = useAuth();
+  const canWrite = canWriteFollowUps(user?.role);
+  const refNo = opportunity?.opportunityRefNo || '';
+
+  const [followUps, setFollowUps] = useState<TenderFollowUp[]>([]);
+  const [fuLoading, setFuLoading] = useState(false);
+  const [newDate, setNewDate] = useState('');
+  const [newNote, setNewNote] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const loadFollowUps = useCallback(async () => {
+    if (!token || !refNo) { setFollowUps([]); return; }
+    setFuLoading(true);
+    try { setFollowUps(await getFollowUps(token, refNo)); }
+    catch { /* keep the detail dialog usable even if follow-ups fail */ }
+    finally { setFuLoading(false); }
+  }, [token, refNo]);
+
+  useEffect(() => {
+    if (open && refNo) loadFollowUps();
+    else setFollowUps([]);
+  }, [open, refNo, loadFollowUps]);
+
+  const handleAddFollowUp = async () => {
+    if (!token || !refNo || !newNote.trim()) return;
+    setAdding(true);
+    try {
+      await createFollowUp(token, {
+        opportunityRefNo: refNo,
+        tenderName: opportunity?.tenderName || '',
+        clientName: opportunity?.clientName || '',
+        date: newDate,
+        note: newNote.trim(),
+      });
+      setNewNote('');
+      setNewDate('');
+      toast.success('Follow-up added');
+      await loadFollowUps();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to add follow-up');
+    } finally {
+      setAdding(false);
+    }
+  };
+
   if (!opportunity) return null;
 
   const getHeaderColor = () => {
@@ -146,6 +205,64 @@ export function OpportunityDetailDialog({
             <DetailRow label="Awarded Date" value={opportunity.awardedDate || '—'} />
             <DetailRow label="Remarks" value={opportunity.remarksReason || '—'} />
             <DetailRow label="Result" value={getDisplayResult(opportunity) || '—'} />
+          </div>
+
+          <Separator className="my-6" />
+
+          {/* Follow-Ups for this tender */}
+          <div>
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
+              <StickyNote className="h-4 w-4 text-indigo-500" /> Follow-Ups
+              <span className="text-xs font-medium text-slate-400">({followUps.length})</span>
+            </h3>
+
+            {fuLoading ? (
+              <p className="text-xs text-slate-400">Loading…</p>
+            ) : followUps.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">No follow-ups yet for this tender.</p>
+            ) : (
+              <ul className="space-y-2">
+                {followUps.map((f) => (
+                  <li key={f.id} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                    <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+                      <span className="inline-flex items-center gap-1">
+                        <CalendarClock className="h-3 w-3" /> {prettyDate(f.date) || '—'}
+                      </span>
+                      <span className="inline-flex items-center gap-1.5" title={f.updatedBy}>
+                        <span className="h-4 w-4 rounded-full bg-indigo-500 text-white grid place-items-center text-[8px] font-bold">
+                          {initialsOf(f.updatedBy)}
+                        </span>
+                        <span className="max-w-[9rem] truncate">{f.updatedBy || 'unknown'}</span>
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{f.note}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {canWrite && (
+              <div className="mt-3 rounded-lg border border-dashed border-slate-300 p-3 space-y-2">
+                <Input
+                  type="date"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  className="h-8 text-xs w-44"
+                />
+                <Textarea
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  rows={2}
+                  placeholder="Add a follow-up note for this tender…"
+                  className="text-sm"
+                />
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={handleAddFollowUp} disabled={adding || !newNote.trim()}>
+                    <Plus className="h-3.5 w-3.5 mr-1" /> {adding ? 'Adding…' : 'Add Follow-Up'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           <Separator className="my-6" />
