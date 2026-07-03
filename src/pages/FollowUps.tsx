@@ -4,29 +4,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuth } from '@/contexts/AuthContext';
-import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, CalendarClock, Building2, StickyNote, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  type TenderFollowUp,
+  getFollowUps,
+  createFollowUp,
+  updateFollowUp,
+  deleteFollowUp,
+  canWriteFollowUps,
+  accentFor,
+  initialsOf,
+} from '@/lib/tenderFollowUps';
 
 const API = import.meta.env.VITE_API_URL || '/api';
-
-// Roles allowed to create/edit/delete follow-ups. Mirrors the backend
-// DEFAULT_ACTION_ROLE_ACCESS.tender_follow_ups_write list; the backend is the
-// real enforcement boundary — this only controls whether write UI is shown.
-const WRITE_ROLES = ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam'];
-
-interface FollowUp {
-  id: string;
-  opportunityRefNo: string;
-  tenderName: string;
-  clientName: string;
-  date: string;
-  note: string;
-  updatedBy: string;
-  createdAt: string;
-  updatedAt: string;
-}
 
 interface TenderOption {
   opportunityRefNo: string;
@@ -34,23 +26,28 @@ interface TenderOption {
   clientName: string;
 }
 
-const BLANK: Partial<FollowUp> = {
-  opportunityRefNo: '', tenderName: '', clientName: '', date: '', note: '',
-};
+type EditState = Partial<TenderFollowUp>;
 
 const asText = (value: unknown): string => (typeof value === 'string' ? value : value == null ? '' : String(value));
 
+const prettyDate = (iso: string): string => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
 export default function FollowUps() {
   const { token, user } = useAuth();
-  const canWrite = !!user && WRITE_ROLES.includes(user.role);
+  const canWrite = canWriteFollowUps(user?.role);
 
-  const [rows, setRows] = useState<FollowUp[]>([]);
+  const [rows, setRows] = useState<TenderFollowUp[]>([]);
   const [tenders, setTenders] = useState<TenderOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<Partial<FollowUp> | null>(null);
+  const [editing, setEditing] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
   const [tenderSearch, setTenderSearch] = useState('');
 
@@ -58,10 +55,7 @@ export default function FollowUps() {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API}/tender-follow-ups`, { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json().catch(() => []);
-      if (!res.ok) throw new Error(data?.error || 'Failed to load follow-ups');
-      setRows(Array.isArray(data) ? data : []);
+      setRows(await getFollowUps(token));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load follow-ups');
     } finally {
@@ -90,14 +84,14 @@ export default function FollowUps() {
       options.sort((a, b) => a.opportunityRefNo.localeCompare(b.opportunityRefNo));
       setTenders(options);
     } catch {
-      // Selector is best-effort; the ref can still be seen on existing rows.
+      /* selector is best-effort */
     }
   }, [token]);
 
   useEffect(() => { fetchRows(); fetchTenders(); }, [fetchRows, fetchTenders]);
 
-  const openCreate = () => { setEditing({ ...BLANK }); setTenderSearch(''); setDialogOpen(true); };
-  const openEdit = (row: FollowUp) => { setEditing({ ...row }); setTenderSearch(''); setDialogOpen(true); };
+  const openCreate = () => { setEditing({}); setTenderSearch(''); setDialogOpen(true); };
+  const openEdit = (row: TenderFollowUp) => { setEditing({ ...row }); setTenderSearch(''); setDialogOpen(true); };
 
   const selectTender = (opt: TenderOption) => {
     setEditing((p) => ({ ...p, opportunityRefNo: opt.opportunityRefNo, tenderName: opt.tenderName, clientName: opt.clientName }));
@@ -110,24 +104,16 @@ export default function FollowUps() {
     if (!editing.note?.trim()) { toast.error('A note is required'); return; }
     setSaving(true);
     try {
-      const isNew = !editing.id;
-      const res = await fetch(
-        isNew ? `${API}/tender-follow-ups` : `${API}/tender-follow-ups/${editing.id}`,
-        {
-          method: isNew ? 'POST' : 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            opportunityRefNo: editing.opportunityRefNo?.trim(),
-            tenderName: editing.tenderName?.trim() || '',
-            clientName: editing.clientName?.trim() || '',
-            date: editing.date?.trim() || '',
-            note: editing.note?.trim() || '',
-          }),
-        }
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Failed to save follow-up');
-      toast.success(isNew ? 'Follow-up added' : 'Follow-up updated');
+      const input = {
+        opportunityRefNo: editing.opportunityRefNo.trim(),
+        tenderName: editing.tenderName?.trim() || '',
+        clientName: editing.clientName?.trim() || '',
+        date: editing.date?.trim() || '',
+        note: editing.note.trim(),
+      };
+      if (editing.id) await updateFollowUp(token, editing.id, input);
+      else await createFollowUp(token, input);
+      toast.success(editing.id ? 'Follow-up updated' : 'Follow-up added');
       setDialogOpen(false);
       await fetchRows();
     } catch (err) {
@@ -137,16 +123,11 @@ export default function FollowUps() {
     }
   };
 
-  const handleDelete = async (row: FollowUp) => {
+  const handleDelete = async (row: TenderFollowUp) => {
     if (!token) return;
     if (!confirm(`Delete this follow-up for ${row.opportunityRefNo}?`)) return;
     try {
-      const res = await fetch(`${API}/tender-follow-ups/${row.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Failed to delete follow-up');
+      await deleteFollowUp(token, row.id);
       toast.success('Follow-up deleted');
       await fetchRows();
     } catch (err) {
@@ -156,14 +137,13 @@ export default function FollowUps() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) =>
+    const base = !q ? rows : rows.filter((r) =>
       r.opportunityRefNo.toLowerCase().includes(q) ||
       r.tenderName.toLowerCase().includes(q) ||
       r.clientName.toLowerCase().includes(q) ||
       r.note.toLowerCase().includes(q) ||
-      r.updatedBy.toLowerCase().includes(q)
-    );
+      r.updatedBy.toLowerCase().includes(q));
+    return [...base].sort((a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || ''));
   }, [rows, search]);
 
   const tenderMatches = useMemo(() => {
@@ -174,21 +154,43 @@ export default function FollowUps() {
       .slice(0, 40);
   }, [tenders, tenderSearch]);
 
+  const tenderCount = useMemo(() => new Set(rows.map((r) => r.opportunityRefNo)).size, [rows]);
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Tender Follow-Ups</h1>
-          <p className="text-sm text-slate-500 mt-1">Follow-up notes tracked against individual tenders.</p>
+      {/* Header */}
+      <div className="rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-600 to-violet-600 text-white p-6 mb-6 shadow-lg shadow-indigo-200/50">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-xl bg-white/15 grid place-items-center">
+              <ClipboardList className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold leading-tight">Tender Follow-Ups</h1>
+              <p className="text-sm text-white/80 mt-0.5">Track follow-up notes against individual tenders.</p>
+            </div>
+          </div>
+          {canWrite && (
+            <Button onClick={openCreate} className="bg-white text-indigo-700 hover:bg-white/90 shadow-sm">
+              <Plus className="h-4 w-4 mr-1" /> Add Follow-Up
+            </Button>
+          )}
         </div>
-        {canWrite && (
-          <Button onClick={openCreate} size="sm">
-            <Plus className="h-4 w-4 mr-1" /> Add Follow-Up
-          </Button>
-        )}
+        <div className="flex gap-6 mt-5">
+          <div>
+            <div className="text-2xl font-bold tabular-nums">{rows.length}</div>
+            <div className="text-xs text-white/70 uppercase tracking-wide">Follow-ups</div>
+          </div>
+          <div className="w-px bg-white/20" />
+          <div>
+            <div className="text-2xl font-bold tabular-nums">{tenderCount}</div>
+            <div className="text-xs text-white/70 uppercase tracking-wide">Tenders covered</div>
+          </div>
+        </div>
       </div>
 
-      <div className="relative mb-4 max-w-sm">
+      {/* Search */}
+      <div className="relative mb-5 max-w-sm">
         <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
         <Input
           value={search}
@@ -198,57 +200,86 @@ export default function FollowUps() {
         />
       </div>
 
-      {loading && <p className="text-slate-400 text-sm">Loading…</p>}
-
-      {!loading && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-28">Date</TableHead>
-                <TableHead className="w-32">Tender Ref</TableHead>
-                <TableHead>Tender</TableHead>
-                <TableHead>Client</TableHead>
-                <TableHead>Note</TableHead>
-                <TableHead className="w-44">Added By</TableHead>
-                {canWrite && <TableHead className="w-20 text-right">Actions</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={canWrite ? 7 : 6} className="text-center text-slate-400 py-8 text-sm">
-                    {rows.length === 0 ? 'No follow-ups yet.' : 'No follow-ups match your search.'}
-                  </TableCell>
-                </TableRow>
-              )}
-              {filtered.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="text-sm text-slate-600">{row.date || '—'}</TableCell>
-                  <TableCell className="text-sm font-medium text-slate-800">{row.opportunityRefNo}</TableCell>
-                  <TableCell className="text-sm text-slate-600 max-w-[16rem] truncate" title={row.tenderName}>{row.tenderName || '—'}</TableCell>
-                  <TableCell className="text-sm text-slate-600">{row.clientName || '—'}</TableCell>
-                  <TableCell className="text-sm text-slate-600 max-w-[22rem] whitespace-pre-wrap">{row.note}</TableCell>
-                  <TableCell className="text-xs text-slate-500">{row.updatedBy || '—'}</TableCell>
-                  {canWrite && (
-                    <TableCell className="text-right">
-                      <div className="flex gap-1 justify-end">
-                        <button onClick={() => openEdit(row)} className="text-slate-400 hover:text-slate-700 p-0.5" aria-label="Edit">
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button onClick={() => handleDelete(row)} className="text-slate-400 hover:text-red-500 p-0.5" aria-label="Delete">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+      {loading && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-40 rounded-2xl bg-slate-100 animate-pulse" />
+          ))}
         </div>
       )}
 
+      {!loading && filtered.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-12 text-center">
+          <StickyNote className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500">{rows.length === 0 ? 'No follow-ups yet.' : 'No follow-ups match your search.'}</p>
+          {canWrite && rows.length === 0 && (
+            <Button onClick={openCreate} size="sm" variant="outline" className="mt-3">
+              <Plus className="h-4 w-4 mr-1" /> Add the first one
+            </Button>
+          )}
+        </div>
+      )}
+
+      {!loading && filtered.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((row) => {
+            const accent = accentFor(row.opportunityRefNo);
+            return (
+              <div
+                key={row.id}
+                className="group relative flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all overflow-hidden"
+              >
+                <div className={`absolute left-0 top-0 h-full w-1.5 ${accent.bar}`} />
+                <div className="p-4 pl-5 flex flex-col gap-2 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ring-1 ${accent.chip}`}>
+                      {row.opportunityRefNo}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                      <CalendarClock className="h-3.5 w-3.5" />
+                      {prettyDate(row.date) || '—'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800 leading-snug line-clamp-2" title={row.tenderName}>
+                      {row.tenderName || 'Untitled tender'}
+                    </p>
+                    {row.clientName && (
+                      <p className="inline-flex items-center gap-1 text-xs text-slate-400 mt-0.5">
+                        <Building2 className="h-3 w-3" /> {row.clientName}
+                      </p>
+                    )}
+                  </div>
+
+                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap line-clamp-4 flex-1">{row.note}</p>
+
+                  <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-100">
+                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-400" title={row.updatedBy}>
+                      <span className={`h-5 w-5 rounded-full ${accent.dot} text-white grid place-items-center text-[9px] font-bold`}>
+                        {initialsOf(row.updatedBy)}
+                      </span>
+                      <span className="max-w-[10rem] truncate">{row.updatedBy || 'unknown'}</span>
+                    </span>
+                    {canWrite && (
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => openEdit(row)} className="text-slate-400 hover:text-indigo-600 p-1" aria-label="Edit">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button onClick={() => handleDelete(row)} className="text-slate-400 hover:text-red-500 p-1" aria-label="Delete">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -302,11 +333,7 @@ export default function FollowUps() {
             </div>
             <div>
               <Label>Date</Label>
-              <Input
-                type="date"
-                value={editing?.date || ''}
-                onChange={(e) => setEditing((p) => ({ ...p, date: e.target.value }))}
-              />
+              <Input type="date" value={editing?.date || ''} onChange={(e) => setEditing((p) => ({ ...p, date: e.target.value }))} />
             </div>
             <div>
               <Label>Note</Label>
