@@ -106,6 +106,52 @@ const ADMIN_USERS = String(process.env.ADMIN_USERS || '')
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
 const ADMIN_USERS_SET = new Set(ADMIN_USERS);
+const describeMongoTarget = (uri) => {
+  const raw = String(uri || '').trim();
+  if (!raw) return { host: '(unset)', dbName: '(unset)' };
+  try {
+    const parsed = new URL(raw);
+    return {
+      host: parsed.host || '(unknown)',
+      dbName: parsed.pathname.replace(/^\/+/, '') || '(default)',
+    };
+  } catch {
+    const match = raw.match(/^mongodb(?:\+srv)?:\/\/[^/]+\/([^?]+)/i);
+    return {
+      host: '(unparsed)',
+      dbName: match?.[1] || '(default)',
+    };
+  }
+};
+const PINNED_AUTHORIZED_USERS = [
+  // Temporary canonical user that should always exist as Basic/approved.
+  { email: 'amna@avenirengineering.com', role: 'Basic', status: 'approved' },
+];
+const ensurePinnedAuthorizedUsers = async () => {
+  const now = new Date();
+  for (const pinned of PINNED_AUTHORIZED_USERS) {
+    const email = String(pinned.email || '').trim().toLowerCase();
+    if (!email) continue;
+
+    const result = await AuthorizedUser.updateOne(
+      { email },
+      {
+        $set: {
+          email,
+          displayName: pinned.displayName || email,
+          role: pinned.role,
+          status: pinned.status,
+        },
+        $setOnInsert: {
+          createdAt: now,
+        },
+      },
+      { upsert: true },
+    );
+
+    console.info(`[startup.user-pin] email=${email} role=${pinned.role} status=${pinned.status} upserted=${result.upsertedCount || 0} modified=${result.modifiedCount || 0}`);
+  }
+};
 const normalizeLoginEmail = (value) => String(value || '').trim().toLowerCase();
 const isConfiguredAdminUsername = (value) => {
   const normalized = normalizeLoginEmail(value);
@@ -536,13 +582,17 @@ const startHttpServer = () => {
 };
 
 if (DISABLE_MONGODB) {
+  console.log(`[startup.mongo] mode=offline env=${IS_PROD ? 'production' : 'development'} db=(offline) host=(offline)`);
   console.log('[startup] MongoDB disabled via environment variable.');
   startHttpServer();
 } else {
-// Fail queries immediately when disconnected instead of buffering them.
-// Without this, a dropped Atlas connection causes every request to queue up
-// silently and nginx returns 504 before Mongoose ever gives up.
-mongoose.set('bufferCommands', false);
+  const mongoTarget = describeMongoTarget(MONGODB_URI);
+  console.info(`[startup.mongo] mode=connected env=${IS_PROD ? 'production' : 'development'} db=${mongoTarget.dbName} host=${mongoTarget.host} configured=${Boolean(process.env.MONGODB_URI)}`);
+
+  // Fail queries immediately when disconnected instead of buffering them.
+  // Without this, a dropped Atlas connection causes every request to queue up
+  // silently and nginx returns 504 before Mongoose ever gives up.
+  mongoose.set('bufferCommands', false);
 
 mongoose.connection.on('disconnected', () => {
   console.warn('[mongo.disconnected] MongoDB connection lost — requests will receive 503 until reconnected');
@@ -568,6 +618,15 @@ mongoose.connect(MONGODB_URI, {
   maxPoolSize: 5,
   minPoolSize: 1,
 })
+  .then(() => {
+    return ensurePinnedAuthorizedUsers()
+      .catch((err) => {
+        console.error('[startup.user-pin.error]', err?.message || String(err));
+      })
+      .finally(() => {
+        console.info(`[startup.mongo.connected] host=${mongoose.connection.host || '(unknown)'} db=${mongoose.connection.name || '(unknown)'} readyState=${mongoose.connection.readyState}`);
+      });
+  })
   .then(() => {
     if (DIAG_LOGS) {
       try {
@@ -4179,6 +4238,7 @@ app.post('/api/users/set-password', verifyToken, async (req, res) => {
 
     await existing.save();
 
+    console.info(`[users.set-password] email=${email} role=${existing.role} status=${existing.status} requiresChange=${existing.requiresPasswordChange} by=${req.user.email}`);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -4278,6 +4338,7 @@ app.post('/api/users/add', verifyToken, async (req, res) => {
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
 
+    console.info(`[users.add] email=${email} action=${existing ? 'updated' : 'created'} role=${user.role} status=${user.status} by=${req.user.email}`);
     res.json({ success: true, user: mapIdField(user.toObject ? user.toObject() : user) });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -4308,6 +4369,7 @@ app.post('/api/users/approve', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    console.info(`[users.approve] email=${email.toLowerCase()} status=approved by=${req.user.email}`);
     res.json({ success: true, user });
   } catch (error) {
     return handleApiError(res, error, 'users.approve');
@@ -4339,6 +4401,7 @@ app.post('/api/users/reject', verifyToken, async (req, res) => {
     }
 
     invalidateUserCache(email.toLowerCase());
+    console.info(`[users.reject] email=${email.toLowerCase()} status=rejected by=${req.user.email}`);
     res.json({ success: true, user });
   } catch (error) {
     return handleApiError(res, error, 'users.reject');
@@ -4393,6 +4456,7 @@ app.post('/api/users/change-role', verifyToken, async (req, res) => {
     );
 
     invalidateUserCache(email.toLowerCase());
+    console.info(`[users.change-role] email=${email.toLowerCase()} newRole=${newRole} assignedGroup=${update.assignedGroup || 'null'} by=${req.user.email}`);
     res.json({ success: true, user });
   } catch (error) {
     return handleApiError(res, error, 'users.change-role');
@@ -5897,7 +5961,7 @@ app.get('/api/permissions/bootstrap', verifyToken, async (req, res) => {
       errors,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || 'Failed to load permissions bootstrap data' });
+    handleApiError(res, error, 'permissions/bootstrap');
   }
 });
 
@@ -5974,7 +6038,7 @@ app.get('/api/permissions/v2', verifyToken, async (req, res) => {
       pageEditActionMap: PAGE_EDIT_ACTION_MAP,
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    handleApiError(res, error, 'permissions/v2');
   }
 });
 
@@ -6148,7 +6212,7 @@ app.get('/api/eoi-duplicates/config', verifyToken, async (req, res) => {
     res.set('x-system-config-version', String(config.updatedAt?.getTime?.() || Date.now()));
     res.json({ success: true, showConvertedEoiRowsDefault: Boolean(config.showConvertedEoiRowsDefault) });
   } catch (error) {
-    res.status(500).json({ error: error?.message || 'Failed to load EOI config' });
+    handleApiError(res, error, 'eoi-duplicates/config:get');
   }
 });
 
@@ -6163,7 +6227,7 @@ app.post('/api/eoi-duplicates/config', verifyToken, express.json(), async (req, 
     });
     res.json({ success: true, showConvertedEoiRowsDefault: Boolean(req.body?.showConvertedEoiRowsDefault) });
   } catch (error) {
-    res.status(500).json({ error: error?.message || 'Failed to save EOI config' });
+    handleApiError(res, error, 'eoi-duplicates/config:post');
   }
 });
 

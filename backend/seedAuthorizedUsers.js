@@ -17,6 +17,8 @@ const authorizedUsers = [
   { email: 'ganesh@avenirengineering.com', role: 'Admin', status: 'approved' },
   { email: 'aseeb@avenirengineering.com', role: 'Admin', status: 'approved' },
   // Basic
+  // Temporary canonical user so accidental reseeds do not drop her account.
+  { email: 'amna@avenirengineering.com', role: 'Basic', status: 'approved' },
   { email: 'gayathri.dinesh@avenirengineering.com', role: 'Basic', status: 'approved' },
   { email: 'ashwin.j@avenirengineering.com', role: 'Basic', status: 'approved' },
   { email: 'shalini.k@avenirengineering.com', role: 'Basic', status: 'approved' },
