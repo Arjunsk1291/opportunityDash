@@ -14,6 +14,7 @@ const pqActivitySchema = new mongoose.Schema(
   {
     tenant: { type: String, default: 'avenir_abudhabi', index: true },
     sNo: { type: Number, default: 0 },
+    referenceId: { type: String, default: '', trim: true, maxlength: 200 },
     company: { type: String, required: true, trim: true, maxlength: 120 },
     status: { type: String, enum: ['Prequalified', 'Registered', 'Registration on Process'], default: 'Registration on Process' },
     workgroup: { type: String, default: '', trim: true, maxlength: 120 },
