@@ -38,6 +38,7 @@ type PqActivityRow = {
   id: string;
   tenant?: string;
   sNo: number;
+  referenceId?: string;
   company: string;
   status: PqStatus;
   workgroup?: string;
@@ -69,6 +70,7 @@ const STATUS_ORDER: Record<PqStatus, number> = {
 
 const pqFormSchema = z.object({
   sNo: z.coerce.number().int().nonnegative().optional().default(0),
+  referenceId: z.string().trim().max(200).optional().default(''),
   company: z.string().trim().min(1, 'Company is required').max(120),
   status: z.enum(['Prequalified', 'Registered', 'Registration on Process']).default('Registration on Process'),
   workgroup: z.string().trim().max(120).optional().default(''),
@@ -195,6 +197,7 @@ export default function PqActivities() {
         if (!normalizedQ) return true;
         return (
           String(r.company || '').toLowerCase().includes(normalizedQ)
+          || String(r.referenceId || '').toLowerCase().includes(normalizedQ)
           || String(r.workgroup || '').toLowerCase().includes(normalizedQ)
           || String(r.registeredEmail || '').toLowerCase().includes(normalizedQ)
           || String(r.enquiries || '').toLowerCase().includes(normalizedQ)
@@ -206,6 +209,7 @@ export default function PqActivities() {
     for (const row of filtered) {
       const key = [
         row.company,
+        row.referenceId,
         row.status,
         row.workgroup,
         row.registeredEmail,
@@ -301,6 +305,7 @@ export default function PqActivities() {
     setEditing(null);
     form.reset({
       sNo: 0,
+      referenceId: '',
       company: '',
       status: 'Registration on Process',
       workgroup: '',
@@ -320,6 +325,7 @@ export default function PqActivities() {
     setEditing(row);
     form.reset({
       sNo: row.sNo ?? 0,
+      referenceId: row.referenceId || '',
       company: row.company || '',
       status: row.status || 'Registration on Process',
       workgroup: row.workgroup || '',
@@ -452,6 +458,7 @@ export default function PqActivities() {
       const ExcelJS = await import('exceljs');
       const headers = [
         'S.No',
+        'Reference ID',
         'Company',
         'Status',
         'Workgroup',
@@ -464,6 +471,7 @@ export default function PqActivities() {
       ];
       const sample = {
         'S.No': 1,
+        'Reference ID': 'PQ-REF-001',
         Company: 'Sample Company LLC',
         Status: 'Registration on Process',
         Workgroup: 'Procurement',
@@ -581,10 +589,10 @@ export default function PqActivities() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-navytrust-foreground/70" aria-hidden="true" />
 	                <Input
 	                  className="pl-9 bg-navytrust-elevated/40 border-white/10 text-navytrust-foreground placeholder:text-navytrust-foreground/60"
-	                  placeholder="Search company, workgroup, email, enquiries…"
+	                  placeholder="Search company, reference id, workgroup, email, enquiries…"
 	                  value={q}
 	                  onChange={(e) => setQ(e.target.value)}
-	                  aria-label="Search company, workgroup, email, enquiries"
+	                  aria-label="Search company, reference id, workgroup, email, enquiries"
 	                />
               </div>
 	              <Button variant="secondary" className="bg-navytrust-elevated/50 border border-white/10 text-navytrust-foreground hover:bg-navytrust-elevated/70" onClick={() => loadRows('refresh_click')} loading={loading}>
@@ -718,8 +726,9 @@ export default function PqActivities() {
             <table className="w-full text-sm" aria-label="PQ activities table">
               <thead className="bg-navytrust-elevated/35">
 	                <tr className="text-left text-navytrust-foreground/80">
-	                  <th className="px-4 py-3 font-semibold">#</th>
-	                  <th className="px-4 py-3 font-semibold">Company</th>
+		                  <th className="px-4 py-3 font-semibold">#</th>
+		                  <th className="px-4 py-3 font-semibold">Reference ID</th>
+		                  <th className="px-4 py-3 font-semibold">Company</th>
 	                  <th className="px-4 py-3 font-semibold">Status</th>
 	                  <th className="px-4 py-3 font-semibold">Workgroup</th>
 	                  <th className="px-4 py-3 font-semibold">Last Update</th>
@@ -742,8 +751,9 @@ export default function PqActivities() {
 	                        className="border-t border-white/10 hover:bg-white/5 cursor-pointer"
 	                        onClick={() => setDetailRow(row)}
 	                      >
-                        <td className="px-4 py-3 text-navytrust-foreground/80">{row.sNo || idx + 1}</td>
-                        <td className="px-4 py-3 font-medium text-navytrust-foreground">{row.company}</td>
+	                        <td className="px-4 py-3 text-navytrust-foreground/80">{row.sNo || idx + 1}</td>
+	                        <td className="px-4 py-3 text-navytrust-foreground/80 max-w-[220px] truncate">{row.referenceId || '—'}</td>
+	                        <td className="px-4 py-3 font-medium text-navytrust-foreground">{row.company}</td>
                         <td className="px-4 py-3">
                           <Badge className={statusBadgeClass(row.status)}>
                             {isPreq && <span className="mr-2 inline-block h-2 w-2 rounded-full bg-warning" aria-hidden="true" />}
@@ -856,11 +866,26 @@ export default function PqActivities() {
 
 	                  <div className="space-y-3">
 	                    <p className="font-semibold text-navytrust-foreground">Details</p>
-	                    <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-4 space-y-3">
-	                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-	                        <div>
-	                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Status</div>
-	                          <div className="mt-1 text-navytrust-foreground">{detailRow.status || '—'}</div>
+		                    <div className="rounded-2xl bg-navytrust-elevated/35 border border-white/10 p-4 space-y-3">
+		                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+		                        <div className="flex items-center justify-between gap-2">
+		                          <div className="min-w-0">
+		                            <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Reference ID</div>
+		                            <div className="mt-1 text-navytrust-foreground truncate">{detailRow.referenceId || '—'}</div>
+		                          </div>
+		                          <Button
+		                            size="icon"
+		                            variant="secondary"
+		                            className="bg-navytrust-elevated/55 border border-white/10 hover:bg-navytrust-elevated/75"
+		                            onClick={() => copyText(detailRow.referenceId || '', 'Reference ID')}
+		                            aria-label="Copy Reference ID"
+		                          >
+		                            <Copy className="h-4 w-4" />
+		                          </Button>
+		                        </div>
+		                        <div>
+		                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Status</div>
+		                          <div className="mt-1 text-navytrust-foreground">{detailRow.status || '—'}</div>
 	                        </div>
 	                        <div>
 	                          <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Workgroup</div>
@@ -942,10 +967,11 @@ export default function PqActivities() {
 	                    aria-label={`Open details for ${row.company}`}
 	                  >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Company</div>
-                        <div className="mt-1 font-semibold text-navytrust-foreground truncate">{row.company}</div>
-                        <div className="mt-2 flex flex-wrap gap-2 items-center">
+	                      <div className="min-w-0">
+	                        <div className="text-xs uppercase tracking-[0.18em] text-navytrust-foreground/70">Company</div>
+	                        <div className="mt-1 font-semibold text-navytrust-foreground truncate">{row.company}</div>
+	                        <div className="mt-1 text-xs text-navytrust-foreground/70 truncate">Reference ID: {row.referenceId || '—'}</div>
+	                        <div className="mt-2 flex flex-wrap gap-2 items-center">
                           <Badge className={statusBadgeClass(row.status)}>
                             {isPreq && <span className="mr-2 inline-block h-2 w-2 rounded-full bg-warning" aria-hidden="true" />}
                             {row.status}
@@ -1037,19 +1063,34 @@ export default function PqActivities() {
                     />
                   </div>
 
-                  <FormField
-                    control={form.control}
-                    name="company"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Company</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="referenceId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Reference ID</FormLabel>
+                          <FormControl>
+                            <Input placeholder="e.g. PQ-REF-001" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="company"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Company</FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField

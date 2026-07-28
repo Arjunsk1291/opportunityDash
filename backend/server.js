@@ -7805,6 +7805,7 @@ const normalizePqStatus = (value) => {
 const pqActivityCreateSchema = z.object({
   tenant: z.enum(['avenir_abudhabi', 'avenir_india', 'bcts_dubai', 'bcts_abudhabi', 'avenir_energy', 'avenir_oilfield', 'lauren']).optional(),
   sNo: z.number().int().nonnegative().optional(),
+  referenceId: z.string().trim().max(200).optional().default(''),
   company: z.string().trim().min(1).max(120),
   status: z.enum(['Prequalified', 'Registered', 'Registration on Process']).optional(),
   workgroup: z.string().trim().max(120).optional().default(''),
@@ -7829,6 +7830,16 @@ const parseOptionalDate = (value) => {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
   const parsed = new Date(String(value));
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const normalizePqReferenceId = (value) => String(value || '').trim();
+const readPqImportValue = (row, keys, fallback = '') => {
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(row, key)) continue;
+    const value = String(row[key] ?? '').trim();
+    if (value) return value;
+  }
+  return fallback;
 };
 
 app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res) => {
@@ -9153,7 +9164,7 @@ app.get('/api/pq-activities', verifyToken, async (req, res) => {
     if (req.query.status && req.query.status !== 'All') filter.status = req.query.status;
     if (req.query.q) {
       const re = new RegExp(req.query.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [{ company: re }, { registeredEmail: re }, { workgroup: re }];
+      filter.$or = [{ company: re }, { referenceId: re }, { registeredEmail: re }, { workgroup: re }];
     }
     const rows = await Model.find(filter).sort({ status: 1, company: 1 }).lean();
     res.json({ rows: rows.map(r => ({ ...r, id: r._id.toString() })) });
@@ -9167,9 +9178,9 @@ app.get('/api/pq-activities/export', verifyToken, async (req, res) => {
     const tenant = PQ_TENANT_KEYS.includes(req.query.tenant) ? req.query.tenant : 'avenir_abudhabi';
     const Model = getPqModel(tenant);
     const rows = await Model.find({ tenant }).sort({ status: 1, company: 1 }).lean();
-    const headers = ['S.No', 'Company', 'Status', 'Workgroup', 'Registered Email', 'User ID (Portal)', 'Password(Portal)', 'Link(Portal)', 'Image Link', 'Enquiries', 'Renewal Date', 'Last Update', 'Notes'];
+    const headers = ['S.No', 'Reference ID', 'Company', 'Status', 'Workgroup', 'Registered Email', 'User ID (Portal)', 'Password(Portal)', 'Link(Portal)', 'Image Link', 'Enquiries', 'Renewal Date', 'Last Update', 'Notes'];
     const dataRows = rows.map(r => [
-      r.sNo ?? '', r.company || '', r.status || '', r.workgroup || '',
+      r.sNo ?? '', r.referenceId || '', r.company || '', r.status || '', r.workgroup || '',
       r.registeredEmail || '', r.userId || '', r.password || '', r.link || '',
       r.imageLink || '', r.enquiries || '',
       r.renewalDate ? new Date(r.renewalDate).toISOString().slice(0, 10) : '',
@@ -9201,10 +9212,12 @@ app.post('/api/pq-activities/import', verifyToken, express.raw({ type: 'applicat
     const Model = getPqModel(tenant);
     let added = 0, updated = 0;
     for (const row of raw) {
-      const company = String(row['Company'] || row['company'] || '').trim();
+      const referenceId = readPqImportValue(row, ['Reference ID', 'Reference Id', 'referenceId', 'reference id']);
+      const company = readPqImportValue(row, ['Company', 'company']);
       if (!company) continue;
       const doc = {
         tenant,
+        referenceId: normalizePqReferenceId(referenceId),
         company,
         sNo: Number(row['S.No'] || row['sNo'] || 0) || 0,
         status: normalizePqStatus(row['Status'] || row['status']),
@@ -9219,7 +9232,11 @@ app.post('/api/pq-activities/import', verifyToken, express.raw({ type: 'applicat
         lastUpdateDate: parseOptionalDate(row['Last Update'] || row['lastUpdateDate'] || null),
         renewalDate: parseOptionalDate(row['Renewal Date'] || row['renewalDate'] || null),
       };
-      const existing = await Model.findOne({ tenant, company: { $regex: new RegExp(`^${company.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+      const referenceIdMatch = referenceId
+        ? await Model.findOne({ tenant, referenceId: { $regex: new RegExp(`^${referenceId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } })
+        : null;
+      const companyMatch = await Model.findOne({ tenant, company: { $regex: new RegExp(`^${company.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+      const existing = referenceIdMatch || companyMatch;
       if (existing) {
         await Model.updateOne({ _id: existing._id }, { $set: doc });
         updated++;
