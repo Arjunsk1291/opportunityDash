@@ -23,7 +23,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import styles from './OpportunitiesTable.module.css';
 import { CANONICAL_STATUS_ORDER, getDisplayStatus, getStatusBadgeClass, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
-import { getSearchMatchInfo } from '@/lib/opportunitySearchMatch';
+import { buildOpportunitySearchText, getSearchMatchInfo } from '@/lib/opportunitySearchMatch';
 import { OPPORTUNITY_COLUMN_HEADERS } from '@/lib/opportunities/columns';
 
 interface OpportunitiesTableProps {
@@ -352,6 +352,31 @@ export function OpportunitiesTable({
           return 'avenirStatus';
         case 'TENDER VALUE':
           return 'opportunityValue';
+        case 'REMARKS/REASON':
+          return 'remarksReason';
+        case 'TENDER RESULT':
+          return 'tenderResult';
+        case 'TENDER STATUS':
+        case 'TENDER STATUS -':
+          return 'tenderStatusRemark';
+        case 'WHO WAS AWARDED THE PROJECT':
+          return 'who was awarded the project';
+        case 'FINAL AWARDED PRICE':
+          return 'final awarded price';
+        case 'GM%':
+          return 'GM%';
+        case 'SUB-CONTRACT VALUE':
+          return 'Sub-contract value';
+        case 'GO%':
+          return 'Go%';
+        case 'GET %':
+          return 'Get %';
+        case 'CURRENCY, USD/AED':
+          return 'Currency, USD/AED';
+        case 'STAGE OF PROJECT, CONCEPT, FEED, DE':
+          return 'Stage of project, Concept, FEED, DE';
+        case 'BID / NO BID DECISION':
+          return 'BID / NO BID DECISION';
         default:
           return null;
       }
@@ -538,32 +563,6 @@ export function OpportunitiesTable({
     return normalizeCanonicalStatus(getDisplayStatus(tender));
   };
 
-  const buildSearchableText = (tender: Opportunity) => {
-    const approvalSearchValue = getApprovalStatus(tender.opportunityRefNo).toLowerCase();
-    const rowSnapshot = tender.rawGraphData?.rowSnapshot && typeof tender.rawGraphData.rowSnapshot === 'object'
-      ? Object.values(tender.rawGraphData.rowSnapshot).map((value) => String(value ?? '')).join(' ').toLowerCase()
-      : '';
-
-    return [
-      tender.opportunityRefNo,
-      tender.tenderName,
-      tender.opportunityClassification,
-      tender.clientName,
-      tender.groupClassification,
-      getRfpReceivedDisplay(tender),
-      tender.internalLead,
-      tender.opportunityValue,
-      tender.avenirStatus,
-      getSubmissionDisplay(tender),
-      tender.remarksReason,
-      tender.tenderStatusRemark,
-      tender.tenderResult,
-      approvalSearchValue,
-      tender.comments,
-      rowSnapshot,
-    ].map((value) => String(value ?? '').toLowerCase()).join(' ');
-  };
-
   const getRfpSortTime = (tender: Opportunity) => {
     const directDate = tender.dateTenderReceived ? new Date(tender.dateTenderReceived) : null;
     if (directDate && !Number.isNaN(directDate.getTime())) return directDate.getTime();
@@ -581,7 +580,7 @@ export function OpportunitiesTable({
     .filter((tender) => {
       const searchLower = search.toLowerCase();
       const rfpReceivedDisplay = getRfpReceivedDisplay(tender).toLowerCase();
-      const allSearchable = buildSearchableText(tender);
+      const allSearchable = buildOpportunitySearchText(tender, { approvalStatus: getApprovalStatus(tender.opportunityRefNo) });
       const mergedStatus = getMergedStatus(tender);
 
       const matchesSearch = !search || allSearchable.includes(searchLower) || rfpReceivedDisplay.includes(searchLower);

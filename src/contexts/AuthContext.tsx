@@ -69,6 +69,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+const AUTH_TOKEN_STORAGE_KEY = 'simpleAuthToken';
 const SESSION_REFRESH_LEEWAY_MS = 2 * 60 * 1000;
 const FALLBACK_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const PERMISSIONS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
@@ -125,6 +126,28 @@ async function fetchJsonWithTimeout<T>(
     return { response, data };
   } finally {
     window.clearTimeout(timer);
+  }
+}
+
+function readStoredAuthToken() {
+  try {
+    return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || window.sessionStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistStoredAuthToken(token: string | null) {
+  try {
+    if (token) {
+      window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+      window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+    } else {
+      window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+      window.sessionStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage failures; auth state is still kept in memory.
   }
 }
 
@@ -206,7 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsPending(false);
     setAuthError(null);
     setIsLoading(false);
-    window.sessionStorage.removeItem('simpleAuthToken');
+    persistStoredAuthToken(null);
   }, []);
 
   const logout = useCallback(() => {
@@ -227,7 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = (await response.json()) as RefreshTokenResponse;
     if (data.sessionToken) {
       setToken(data.sessionToken);
-      window.sessionStorage.setItem('simpleAuthToken', data.sessionToken);
+      persistStoredAuthToken(data.sessionToken);
     }
   }, [token]);
 
@@ -256,7 +279,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(nextUser);
     setToken(data.sessionToken || null);
     if (data.sessionToken) {
-      window.sessionStorage.setItem('simpleAuthToken', data.sessionToken);
+      persistStoredAuthToken(data.sessionToken);
     }
     setAuthError(null);
     setIsPending(nextUser.status === 'pending');
@@ -285,7 +308,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(nextUser);
     setToken(data.sessionToken || null);
     if (data.sessionToken) {
-      window.sessionStorage.setItem('simpleAuthToken', data.sessionToken);
+      persistStoredAuthToken(data.sessionToken);
     }
     setAuthError(null);
     setIsPending(nextUser.status === 'pending');
@@ -317,7 +340,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const restore = async () => {
-      const saved = window.sessionStorage.getItem('simpleAuthToken');
+      const saved = readStoredAuthToken();
       if (!saved) {
         setIsLoading(false);
         return;
@@ -328,12 +351,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + saved },
         });
         if (!response.ok) {
-          window.sessionStorage.removeItem('simpleAuthToken');
+          persistStoredAuthToken(null);
           setIsLoading(false);
           return;
         }
         const data = (await response.json()) as CurrentUserResponse;
         setToken(saved);
+        persistStoredAuthToken(saved);
         setUser({
           email: data.email,
           displayName: data.displayName || data.email,

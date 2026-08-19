@@ -38,6 +38,7 @@ import {
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { buildOpportunitySearchText } from '@/lib/opportunitySearchMatch';
 import { getDisplayStatus, normalizeCanonicalStatus } from '@/lib/opportunityStatus';
 import { TopPerformerCard } from '@/components/Dashboard/TopPerformerCard';
 import { isSubmissionWithinDays } from '@/lib/submissionDate';
@@ -418,27 +419,7 @@ const explainFilterExclusion = (opp: Opportunity, filters: FilterState) => {
   const search = String(filters.search || '').trim();
   if (search) {
     const searchLower = search.toLowerCase();
-    const rowSnapshot = opp.rawGraphData?.rowSnapshot && typeof opp.rawGraphData.rowSnapshot === 'object'
-      ? Object.values(opp.rawGraphData.rowSnapshot).map((value) => String(value ?? '')).join(' ').toLowerCase()
-      : '';
-    const searchableBlob = [
-      opp.opportunityRefNo,
-      opp.tenderName,
-      opp.opportunityClassification,
-      opp.clientName,
-      opp.groupClassification,
-      opp.awardedDate,
-      opp.dateTenderReceived,
-      opp.tenderPlannedSubmissionDate,
-      opp.tenderSubmittedDate,
-      opp.internalLead,
-      opp.opportunityValue,
-      opp.avenirStatus,
-      opp.tenderResult,
-      opp.remarksReason,
-      opp.comments,
-      rowSnapshot,
-    ].map((value) => String(value ?? '').toLowerCase()).join(' ');
+    const searchableBlob = buildOpportunitySearchText(opp);
     if (!searchableBlob.includes(searchLower)) {
       return { reasonCode: 'F.SEARCH', reason: 'excluded: search filter did not match row text', reasonMeta: { search } };
     }

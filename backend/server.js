@@ -133,23 +133,27 @@ const ensurePinnedAuthorizedUsers = async () => {
     const email = String(pinned.email || '').trim().toLowerCase();
     if (!email) continue;
 
+    const existing = await AuthorizedUser.findOne({ email }).lean();
+    if (existing) {
+      console.info(`[startup.user-pin] email=${email} already-exists role=${existing.role} status=${existing.status}`);
+      continue;
+    }
+
     const result = await AuthorizedUser.updateOne(
       { email },
       {
-        $set: {
+        $setOnInsert: {
           email,
           displayName: pinned.displayName || email,
           role: pinned.role,
           status: pinned.status,
-        },
-        $setOnInsert: {
           createdAt: now,
         },
       },
       { upsert: true },
     );
 
-    console.info(`[startup.user-pin] email=${email} role=${pinned.role} status=${pinned.status} upserted=${result.upsertedCount || 0} modified=${result.modifiedCount || 0}`);
+    console.info(`[startup.user-pin] email=${email} inserted role=${pinned.role} status=${pinned.status} upserted=${result.upsertedCount || 0}`);
   }
 };
 const normalizeLoginEmail = (value) => String(value || '').trim().toLowerCase();
@@ -439,7 +443,7 @@ const createSessionToken = (user, extraPayload = {}) => {
     role: String(user?.role || '').trim(),
     ...extraPayload,
   };
-  return jwt.sign(payload, secret, { expiresIn: '12h' });
+  return jwt.sign(payload, secret, { expiresIn: '7d' });
 };
 
 const hashResetToken = (token) => createHash('sha256').update(String(token || '')).digest('hex');

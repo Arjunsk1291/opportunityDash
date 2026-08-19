@@ -3,7 +3,7 @@ import jspreadsheet from 'jspreadsheet-ce';
 import 'jspreadsheet-ce/dist/jspreadsheet.css';
 import 'jsuites/dist/jsuites.css';
 import { toast } from 'sonner';
-import { Opportunity } from '@/data/opportunityData';
+import { GROUP_CLASSIFICATIONS, Opportunity } from '@/data/opportunityData';
 import { OPPORTUNITY_COLUMNS } from '@/lib/opportunities/columns';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -18,7 +18,7 @@ const DIRECT_DB_KEYS = new Set([
 const REF_NO_COL_INDEX = OPPORTUNITY_COLUMNS.findIndex((c) => c.key === 'opportunityRefNo');
 
 const ENUM_SOURCES: Record<string, string[]> = {
-  groupClassification: ['GDS', 'GES'],
+  groupClassification: [...GROUP_CLASSIFICATIONS],
   'Stage of project, Concept, FEED, DE': ['Concept', 'FEED', 'DE', 'Other'],
   'BID / NO BID DECISION': ['BID', 'NO BID'],
   avenirStatus: ['WORKING', 'SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'TO START', 'ONGOING', 'HOLD / CLOSED'],

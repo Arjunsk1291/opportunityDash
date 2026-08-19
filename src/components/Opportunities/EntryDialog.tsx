@@ -10,7 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { Opportunity } from '@/data/opportunityData';
+import { GROUP_CLASSIFICATIONS, Opportunity } from '@/data/opportunityData';
 import { OPPORTUNITY_COLUMNS, OPPORTUNITY_COLUMNS_BY_GROUP } from '@/lib/opportunities/columns';
 import { useCurrency } from '@/contexts/CurrencyContext';
 
@@ -50,7 +50,7 @@ const EMPTY_FORM: FormState = {
 };
 
 const COMBO_SELECT_OPTIONS: Record<string, string[]> = {
-  groupClassification: ['GDS', 'GES'],
+  groupClassification: [...GROUP_CLASSIFICATIONS],
   opportunityClassification: ['Concept', 'FEED', 'DE', 'Other'],
   tenderStatusRemark: ['WON', 'LOST', 'PENDING', 'AWARDED', 'DROPPED'],
   avenirStatus: ['WORKING', 'SUBMITTED', 'AWARDED', 'LOST', 'REGRETTED', 'TO START', 'ONGOING', 'HOLD / CLOSED'],
