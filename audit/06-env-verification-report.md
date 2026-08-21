@@ -77,3 +77,4 @@ These are from Mongoose schema definitions that declare the same index twice (`i
 - The `VITE_*` values (`VITE_API_URL=/api`, `VITE_DIAG_LOGS=true`) in the env file are correctly set for the Render deployment. They are build-time values; the current bundle already has them baked in.
 - Auth flow uses the `email` field in the JWT payload (not `username`). Any custom token generation must use `{ email: '...' }`.
 - MongoDB Atlas M0 free tier may show high query latency (~400ms+) under concurrent load. This is expected and is why the auth cache (90s TTL) and system config cache (30s TTL) were added.
+- Lightsail TLS renewal note: `avin.avenirenergy.me` expired on 2026-08-19 UTC and `certbot renew` failed because Let’s Encrypt could not reach `http://avin.avenirenergy.me/.well-known/acme-challenge/...` on port `80`. If port `80` stays blocked, reissue the cert using DNS-01 instead of HTTP-01.

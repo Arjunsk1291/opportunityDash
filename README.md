@@ -277,6 +277,11 @@ node --check backend/server.js
 4. Authentication issues
 - ensure token headers are present from frontend requests
 
+5. TLS certificate renewal on Lightsail fails
+- if port `80` is unavailable, renew with a DNS-01 challenge instead of HTTP-01
+- `certbot renew` using the nginx plugin requires public access on port `80`
+- for a blocked-port recovery path, follow [`docs/lightsail-cert-renewal.md`](./docs/lightsail-cert-renewal.md)
+
 ## Lightsail Quick Launch
 
 If you want a fast production boot after cloning, use one of these two paths.
@@ -329,6 +334,7 @@ node backend/server.js
 Security note for Lightsail:
 - Keep MongoDB private/local only (`bindIp: 127.0.0.1` or private subnet), never publicly exposed.
 - verify `JWT_SECRET` consistency in backend runtime
+- if port `80` cannot be opened, switch certificate renewal to DNS-01 and stop relying on nginx/http-01 renewal
 
 ## Security Notes
 

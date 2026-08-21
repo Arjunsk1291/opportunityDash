@@ -49,6 +49,8 @@
 
 3. **`opportunities_view` action permission must exist in MongoDB.** `GET /api/opportunities` is now gated by `requireActionPermission('opportunities_view')`. If this key does not exist in the `actionpermissions` collection, the endpoint will deny all users. Verify the permission exists before deploying FIX-7.
 
+4. **Lightsail certificate renewal must use DNS-01 if port 80 is blocked.** On 2026-08-21, `certbot renew` for `avin.avenirenergy.me` failed because Let’s Encrypt timed out fetching the HTTP-01 challenge on port `80`. If `80/tcp` cannot be opened, reissue the cert with a DNS-01 challenge and stop relying on nginx/http-01 renewal.
+
 ### Unverified behavior (requires live environment)
 
 - **SSE continuity on Lightsail** — the nginx config change is syntactically correct but untested in a deployed environment. Needs Network-tab verification that SSE events arrive after >60s.

@@ -8,6 +8,7 @@
     "build": "NODE_OPTIONS=--max-old-space-size=1024 vite build",
     "build:dev": "vite build --mode development",
     "start": "node backend/server.js",
+    "ops": "node scripts/ops-menu.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
