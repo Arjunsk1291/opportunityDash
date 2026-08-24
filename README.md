@@ -331,6 +331,23 @@ node backend/server.js
 
 5. Serve frontend build using Nginx (recommended), reverse-proxy `/api` to `127.0.0.1:3001`.
 
+### Ops Console
+
+This repo also includes a terminal ops console for Lightsail-style maintenance tasks:
+
+```sh
+npm run ops
+```
+
+It asks for `OPS_PASSKEY` before showing the menu, then renders a live system widget with:
+
+- host, uptime, load, and platform
+- memory and process heap usage
+- disk usage and free space
+- nginx / PM2 status
+- backend health, if the API is reachable
+- certificate expiry details
+
 Security note for Lightsail:
 - Keep MongoDB private/local only (`bindIp: 127.0.0.1` or private subnet), never publicly exposed.
 - verify `JWT_SECRET` consistency in backend runtime

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Plus, AlertTriangle } from 'lucide-react';
+import { Plus, AlertTriangle, Pencil, Search } from 'lucide-react';
 import { useTrackedAction } from '@/hooks/useTrackedAction';
 import { ActionProgressBar } from '@/components/ActionProgressBar';
 import { ExportButton } from '@/components/Dashboard/ExportButton';
@@ -46,6 +46,8 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
   const [search, setSearch] = useState(statusFilter || '');
   const [entryOpen, setEntryOpen] = useState(false);
   const [entryPrefill, setEntryPrefill] = useState<Partial<Opportunity> | undefined>(undefined);
+  const [updateLookupOpen, setUpdateLookupOpen] = useState(false);
+  const [updateSearch, setUpdateSearch] = useState('');
   const [conflictsOpen, setConflictsOpen] = useState(false);
   const [conflicts, setConflicts] = useState<ConflictGroup[]>([]);
   const [conflictsLoading, setConflictsLoading] = useState(false);
@@ -88,6 +90,20 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
     params.delete('editOpportunityValueRef');
     navigate({ pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true });
   }, [location.search, opportunities, navigate, location.pathname]);
+
+  const updateMatches = useMemo(() => {
+    const q = updateSearch.trim().toLowerCase();
+    const base = !q
+      ? opportunities
+      : opportunities.filter((o) => [
+          o.opportunityRefNo,
+          o.tenderNo,
+          o.tenderName,
+          o.clientName,
+          o.internalLead,
+        ].join(' ').toLowerCase().includes(q));
+    return base.slice(0, 40);
+  }, [opportunities, updateSearch]);
 
   const loadConflicts = useCallback(async () => {
     if (!token || !canEdit) return;
@@ -150,6 +166,12 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
               onChange={(e) => setSearch(e.target.value)}
               className="w-44"
             />
+            {canEdit && (
+              <Button type="button" variant="outline" onClick={() => { setUpdateSearch(''); setUpdateLookupOpen(true); }}>
+                <Search className="mr-2 h-4 w-4" />
+                Update
+              </Button>
+            )}
             {canUpload && (
               <UploadSheetDialog
                 token={token}
@@ -217,6 +239,53 @@ const Opportunities = ({ statusFilter }: OpportunitiesProps) => {
         onUpsertOpportunity={(rows) => upsertOpportunities(rows)}
         prefill={entryPrefill}
       />
+
+      <Dialog open={updateLookupOpen} onOpenChange={setUpdateLookupOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Update Tender</DialogTitle>
+            <DialogDescription>Search by tender number or opportunity ref no, then edit the saved tender details.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={updateSearch}
+              onChange={(e) => setUpdateSearch(e.target.value)}
+              placeholder="Search by tender number, ref no, client, lead, or tender name..."
+            />
+            <div className="max-h-[50vh] overflow-auto rounded-md border">
+              {updateMatches.map((opp) => (
+                <button
+                  key={opp.id}
+                  type="button"
+                  className="flex w-full items-start justify-between gap-4 border-b px-3 py-2 text-left last:border-b-0 hover:bg-muted/50"
+                  onClick={() => {
+                    setEntryPrefill(opp);
+                    setEntryOpen(true);
+                    setUpdateLookupOpen(false);
+                  }}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">{opp.opportunityRefNo || '—'}</span>
+                      <Badge variant="outline">{opp.groupClassification || '—'}</Badge>
+                    </div>
+                    <div className="mt-1 font-medium">{opp.tenderName || 'Untitled tender'}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {opp.clientName || '—'}
+                      {opp.tenderNo ? ` • Tender No ${opp.tenderNo}` : ''}
+                      {opp.internalLead ? ` • Lead ${opp.internalLead}` : ''}
+                    </div>
+                  </div>
+                  <Pencil className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                </button>
+              ))}
+              {updateMatches.length === 0 && (
+                <div className="px-3 py-6 text-center text-sm text-muted-foreground">No matching tenders.</div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Conflicts dialog */}
       <Dialog open={conflictsOpen} onOpenChange={setConflictsOpen}>
