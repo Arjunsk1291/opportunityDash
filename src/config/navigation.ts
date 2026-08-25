@@ -1,4 +1,4 @@
-import { BarChart3, BriefcaseBusiness, Building2, CalendarClock, FileCheck2, FileText, LayoutDashboard, ListChecks, Shield, Sparkles } from 'lucide-react';
+import { BarChart3, BriefcaseBusiness, Building2, CalendarClock, ClipboardList, FileCheck2, FileText, LayoutDashboard, ListChecks, Shield, Sparkles } from 'lucide-react';
 export type PageKey =
   | 'dashboard'
   | 'opportunities'
@@ -10,6 +10,7 @@ export type PageKey =
   | 'analytics'
   | 'bd_engagements'
   | 'tender_follow_ups'
+  | 'handover'
   | 'master'
   | 'master_general'
   | 'master_users'
@@ -29,6 +30,7 @@ export const PAGE_LABELS: Record<PageKey, string> = {
   analytics: 'Analytics',
   bd_engagements: 'BD Engagements',
   tender_follow_ups: 'Follow-Ups',
+  handover: 'Handover',
   master: 'Master Panel',
   master_general: 'Master Panel · General',
   master_users: 'Master Panel · User Management',
@@ -39,7 +41,7 @@ export const PAGE_LABELS: Record<PageKey, string> = {
 };
 
 export const PAGE_GROUPS: Array<{ label: string; pages: PageKey[] }> = [
-  { label: 'Core Workspace', pages: ['dashboard', 'opportunities', 'bid_decision', 'tender_updates', 'pq_activities', 'vendor_directory', 'clients', 'analytics', 'bd_engagements', 'tender_follow_ups'] },
+  { label: 'Core Workspace', pages: ['dashboard', 'opportunities', 'bid_decision', 'tender_updates', 'pq_activities', 'vendor_directory', 'clients', 'analytics', 'bd_engagements', 'tender_follow_ups', 'handover'] },
   { label: 'Master Panel', pages: ['master', 'master_general', 'master_users', 'master_data_sync', 'master_telecast', 'master_update', 'master_export'] },
 ];
 
@@ -54,6 +56,7 @@ export const DEFAULT_PAGE_ROLE_ACCESS: Record<PageKey, string[]> = {
   analytics: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   bd_engagements: ['Master', 'Admin', 'BDTeam'],
   tender_follow_ups: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
+  handover: ['Master', 'Admin'],
   master: ['Master', 'Admin'],
   master_general: ['Master', 'Admin'],
   master_users: ['Master', 'Admin'],
@@ -74,6 +77,7 @@ export const NAV_ITEMS = [
   { title: 'Analytics', url: '/analytics', pageKey: 'analytics' as const, icon: BarChart3, section: 'main' as const },
   { title: 'BD Engagements', url: '/bd-engagements', pageKey: 'bd_engagements' as const, icon: BriefcaseBusiness, section: 'main' as const },
   { title: 'Follow-Ups', url: '/follow-ups', pageKey: 'tender_follow_ups' as const, icon: CalendarClock, section: 'main' as const },
+  { title: 'Handover', url: '/handover', pageKey: 'handover' as const, icon: ClipboardList, section: 'admin' as const },
   { title: 'Master Panel', url: '/master', pageKey: 'master' as const, icon: Shield, section: 'admin' as const },
   { title: 'Upcoming', url: '/upcoming', pageKey: 'master' as const, icon: ListChecks, section: 'admin' as const },
 ];

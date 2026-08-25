@@ -22,6 +22,7 @@ const Clients = lazy(() => import("./pages/Clients"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const BDEngagements = lazy(() => import("./pages/BDEngagements"));
 const FollowUps = lazy(() => import("./pages/FollowUps"));
+const Handover = lazy(() => import("./pages/Handover"));
 const MasterOverviewRoute = lazy(() => import("./routes/master.overview"));
 const MasterUsersRoute = lazy(() => import("./routes/master.users"));
 const MasterPermissionsRoute = lazy(() => import("./routes/master.permissions"));
@@ -143,6 +144,7 @@ function AppRoutes() {
             <Route path="analytics" element={<PageAccessRoute pageKey="analytics"><Analytics /></PageAccessRoute>} />
             <Route path="bd-engagements" element={<PageAccessRoute pageKey="bd_engagements"><BDEngagements /></PageAccessRoute>} />
             <Route path="follow-ups" element={<PageAccessRoute pageKey="tender_follow_ups"><FollowUps /></PageAccessRoute>} />
+            <Route path="handover" element={<PageAccessRoute pageKey="handover"><Handover /></PageAccessRoute>} />
             <Route path="advanced-analytics" element={<Navigate to="/bd-engagements" replace />} />
             <Route path="master" element={<PageAccessRoute pageKey="master"><Navigate to="/master/overview" replace /></PageAccessRoute>} />
             <Route path="master/overview" element={<PageAccessRoute pageKey="master"><MasterOverviewRoute /></PageAccessRoute>} />
