@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opportunity Dashboard Manual</title>
+  <style>
+    :root {
+      --bg: #050914;
+      --bg2: #07111f;
+      --panel: rgba(10, 18, 32, 0.94);
+      --panel2: rgba(14, 25, 43, 0.9);
+      --line: rgba(110, 164, 255, 0.16);
+      --line2: rgba(110, 164, 255, 0.26);
+      --text: #eef5ff;
+      --muted: #9cb1d1;
+      --cyan: #47e6d2;
+      --blue: #67a8ff;
+      --green: #7ef0a6;
+      --amber: #ffd36b;
+      --pink: #ff7ed1;
+      --red: #ff6f7f;
+      --shadow: 0 26px 64px rgba(0, 0, 0, 0.38);
+      --radius: 22px;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font: 15px/1.62 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 12% 10%, rgba(71, 230, 210, 0.14), transparent 25%),
+        radial-gradient(circle at 88% 12%, rgba(103, 168, 255, 0.17), transparent 24%),
+        radial-gradient(circle at 50% 100%, rgba(255, 126, 209, 0.08), transparent 30%),
+        linear-gradient(180deg, var(--bg2), var(--bg));
+    }
+    a { color: var(--cyan); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    h1, h2, h3, h4 { margin: 0; line-height: 1.12; }
+    h1 { font-size: clamp(2.4rem, 6vw, 4.7rem); }
+    h2 { font-size: clamp(1.4rem, 3vw, 2rem); }
+    h3 { font-size: 1.05rem; }
+    p { margin: 0 0 10px; }
+    ul, ol { margin: 10px 0 0; padding-left: 18px; }
+    li { margin: 7px 0; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    code { padding: 0.15rem 0.35rem; border-radius: 0.45rem; background: rgba(255,255,255,0.08); }
+    .wrap { max-width: 1360px; margin: 0 auto; padding: 28px 18px 64px; }
+    .hero, .section, .toc, .callout, .mini-panel, .shot, .spec {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border-color: var(--line2);
+      border-radius: 28px;
+      background:
+        linear-gradient(135deg, rgba(13, 25, 44, 0.96), rgba(7, 14, 27, 0.98)),
+        radial-gradient(circle at 90% 10%, rgba(255, 126, 209, 0.12), transparent 28%);
+      padding: 28px;
+    }
+    .hero::after, .shot::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 28px 28px;
+      pointer-events: none;
+      opacity: 0.22;
+      mask-image: linear-gradient(180deg, rgba(0,0,0,0.84), transparent 95%);
+    }
+    .hero-grid { position: relative; z-index: 1; display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 18px; align-items: stretch; }
+    .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+    .brand img { width: 68px; height: 68px; object-fit: contain; border-radius: 18px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); padding: 9px; }
+    .eyebrow { text-transform: uppercase; letter-spacing: 0.28em; font-size: 11px; color: var(--muted); font-weight: 800; }
+    .smallcaps { font-size: 12px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--muted); font-weight: 800; }
+    .hero-card { padding: 20px; border: 1px solid rgba(255,255,255,0.06); border-radius: 20px; background: rgba(255,255,255,0.02); }
+    .hero-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+    .stat { padding: 14px 15px; border-radius: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
+    .stat strong { display: block; font-size: 1.45rem; margin-bottom: 4px; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+    .pill, .tag { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border-radius: 999px; font-size: 13px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: var(--text); }
+    .pill.cyan, .tag.cyan { border-color: rgba(71,230,210,0.30); color: #a0f3e9; }
+    .pill.blue, .tag.blue { border-color: rgba(103,168,255,0.30); color: #cadfff; }
+    .pill.green, .tag.green { border-color: rgba(126,240,166,0.30); color: #defde7; }
+    .pill.amber, .tag.amber { border-color: rgba(255,211,107,0.30); color: #ffe8b7; }
+    .pill.pink, .tag.pink { border-color: rgba(255,126,209,0.30); color: #ffd4ef; }
+    .layout { display: grid; grid-template-columns: 286px minmax(0, 1fr); gap: 18px; margin-top: 18px; align-items: start; }
+    .toc { position: sticky; top: 18px; padding: 18px; }
+    .toc ol { color: var(--muted); }
+    .toc li { margin: 8px 0; }
+    .section { padding: 22px; margin-bottom: 18px; }
+    .section-title { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .bar { width: 10px; min-width: 10px; height: 30px; border-radius: 999px; background: linear-gradient(180deg, var(--cyan), var(--blue)); box-shadow: 0 0 22px rgba(71,230,210,0.32); }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .callout, .mini-panel, .spec { padding: 16px 18px; background: linear-gradient(135deg, rgba(71,230,210,0.06), rgba(103,168,255,0.05)); }
+    .muted, .tiny { color: var(--muted); }
+    .tiny { font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; overflow: hidden; border-radius: 16px; border: 1px solid var(--line); background: rgba(255,255,255,0.02); }
+    th, td { text-align: left; padding: 12px 14px; vertical-align: top; border-bottom: 1px solid rgba(151, 172, 205, 0.12); }
+    th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; color: #bfd4f3; background: rgba(255,255,255,0.045); }
+    tr:last-child td { border-bottom: none; }
+    .shot { overflow: hidden; position: relative; background: linear-gradient(180deg, rgba(18, 31, 56, 0.95), rgba(7, 14, 28, 0.95)); min-height: 280px; }
+    .shot-header { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); position: relative; z-index: 1; }
+    .dots { display: flex; gap: 7px; align-items: center; }
+    .dot { width: 10px; height: 10px; border-radius: 999px; background: rgba(255,255,255,0.2); }
+    .dot.cyan { background: var(--cyan); } .dot.blue { background: var(--blue); } .dot.pink { background: var(--pink); }
+    .shot-frame { position: relative; z-index: 1; padding: 14px; }
+    .shot-frame img { width: 100%; display: block; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); background: #08101d; }
+    .shot-fallback { display: none; align-items: center; justify-content: center; min-height: 180px; border-radius: 14px; border: 1px dashed rgba(151,172,205,0.35); color: var(--muted); background: rgba(255,255,255,0.03); text-align: center; padding: 18px; }
+    .shot.missing .shot-frame img { display: none; }
+    .shot.missing .shot-fallback { display: flex; }
+    .figure-caption { display: flex; justify-content: space-between; gap: 10px; align-items: start; margin-top: 10px; color: var(--muted); font-size: 13px; }
+    .anchor { scroll-margin-top: 20px; }
+    .footer { text-align: center; color: var(--muted); font-size: 13px; padding-top: 20px; }
+    @media (max-width: 1100px) {
+      .hero-grid, .layout, .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+      .toc { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="brand">
+        <img src="../public/avenir-logo-preview.png" alt="Avenir logo preview">
+        <div>
+          <div class="eyebrow">Avenir Energy</div>
+          <div class="smallcaps">Opportunity Dashboard Manual</div>
+        </div>
+      </div>
+      <div class="hero-grid">
+        <div class="hero-card">
+          <div class="hero-copy">
+            <h1>Opportunity Dashboard Manual</h1>
+            <p class="muted" style="margin-top: 12px;">
+              A screen-by-screen operator handbook for the full dashboard suite: shell, role gates, workflow pages, master/admin tools,
+              and the maintenance console. This edition uses real captures from the live app stored alongside the HTML file.
+            </p>
+          </div>
+          <div class="pill-row">
+            <span class="pill cyan">Live screenshot atlas</span>
+            <span class="pill blue">Role-aware navigation</span>
+            <span class="pill green">Dashboard + admin docs</span>
+            <span class="pill amber">Field-level references</span>
+            <span class="pill pink">Self-contained local HTML</span>
+          </div>
+          <div class="hero-stats">
+            <div class="stat"><strong>18</strong><span class="muted">sections covering the suite end to end</span></div>
+            <div class="stat"><strong>10+</strong><span class="muted">major user-facing pages and route groups</span></div>
+            <div class="stat"><strong>8</strong><span class="muted">master/admin tabs under the shared shell</span></div>
+            <div class="stat"><strong>1</strong><span class="muted">Avenir-branded dark manual with fallback states</span></div>
+          </div>
+        </div>
+        <div class="hero-card">
+          <div class="smallcaps">Scope</div>
+          <div class="mini-panel" style="margin-top: 12px;">
+            <p><strong>Included:</strong> login, pending approval, dashboard, opportunities, bid decision, potential opportunities, pre-qualification, partners, clients, analytics, BD engagements, follow-ups, master panel, route map, and ops notes.</p>
+          </div>
+          <div class="mini-panel" style="margin-top: 12px;">
+            <p><strong>Screenshot workflow:</strong> captures live in <code>docs/screenshots/opportunitydash</code>, with filenames referenced directly from this document.</p>
+          </div>
+          <div class="mini-panel" style="margin-top: 12px;">
+            <p><strong>Fallback:</strong> if an image is missing, the frame keeps a readable caption and placeholder so the manual still opens cleanly.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="layout">
+      <aside class="toc">
+        <div class="eyebrow">Contents</div>
+        <ol>
+          <li><a href="#overview">Overview</a></li>
+          <li><a href="#shell">Shell and navigation</a></li>
+          <li><a href="#access">Login and pending approval</a></li>
+          <li><a href="#dashboard">Dashboard</a></li>
+          <li><a href="#atlas">Screenshot atlas</a></li>
+          <li><a href="#opportunities">Opportunities</a></li>
+          <li><a href="#bid">Bid Decision</a></li>
+          <li><a href="#potential">Potential Opportunities</a></li>
+          <li><a href="#pq">Pre-Qualification</a></li>
+          <li><a href="#partners">Partners</a></li>
+          <li><a href="#clients">Clients</a></li>
+          <li><a href="#analytics">Analytics</a></li>
+          <li><a href="#bd">BD Engagements</a></li>
+          <li><a href="#followups">Follow-Ups</a></li>
+          <li><a href="#master">Master Panel</a></li>
+          <li><a href="#master-tabs">Master sections</a></li>
+          <li><a href="#routes">Route map</a></li>
+          <li><a href="#ops">Ops console notes</a></li>
+          <li><a href="#assets">Screenshot assets</a></li>
+        </ol>
+      </aside>
+
+      <main>
+        <section class="section anchor" id="overview">
+          <div class="section-title"><div class="bar"></div><h2>1. Overview</h2></div>
+          <p>The Opportunity Dashboard is the Avenir operations workspace for tender tracking, bid/no-bid decisions, lead triage, partner and client reference data, BD activity, and admin control. Most users spend their time in the core workspace; only Master/Admin users should touch the system control tabs.</p>
+          <div class="grid-2">
+            <div class="callout">
+              <h3>What it does</h3>
+              <ul>
+                <li>Tracks opportunities, status, values, and pipeline changes.</li>
+                <li>Captures bid decisions, follow-ups, and BD engagements.</li>
+                <li>Maintains partners, clients, and pre-qualification records.</li>
+                <li>Surfaces health, sync, permissions, and audit tooling in the Master Panel.</li>
+              </ul>
+            </div>
+            <div class="callout">
+              <h3>How to use it</h3>
+              <ul>
+                <li>Start on Dashboard for the overview, then jump to the relevant workflow page.</li>
+                <li>Use search/filter controls before exporting or editing data.</li>
+                <li>Check role visibility if a page or action is missing.</li>
+                <li>Use Master Panel only when you need admin controls, sync, or audit tools.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="section anchor" id="shell">
+          <div class="section-title"><div class="bar"></div><h2>2. Shell and Navigation</h2></div>
+          <div class="grid-2">
+            <div class="mini-panel">
+              <h3>What it does</h3>
+              <ul>
+                <li>Sidebar groups the app into Core Workspace and Administration.</li>
+                <li>Top-level routes are role-filtered from the sidebar before the user sees them.</li>
+                <li>The shared shell carries logo, route chrome, and the active page state.</li>
+              </ul>
+            </div>
+            <div class="mini-panel">
+              <h3>Watch-outs</h3>
+              <ul>
+                <li>If a page is missing, check role access first, not just the URL.</li>
+                <li>Admin tabs are only available to Master/Admin users.</li>
+                <li>Some actions are page-visible but action-gated behind permissions.</li>
+              </ul>
+            </div>
+          </div>
+          <table>
+            <thead><tr><th>Area</th><th>What users see</th><th>Why it matters</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Sidebar</strong></td><td>Main navigation plus admin links when permitted.</td><td>Keeps the role-specific route map clear.</td></tr>
+              <tr><td><strong>Top bar</strong></td><td>Shell branding, utility actions, and page framing.</td><td>Confirms which workspace you are in.</td></tr>
+              <tr><td><strong>Route content</strong></td><td>Screen-specific widgets, tables, dialogs, and charts.</td><td>This is where data entry and review happen.</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="section anchor" id="access">
+          <div class="section-title"><div class="bar"></div><h2>3. Login and Pending Approval</h2></div>
+          <div class="grid-2">
+            <div class="mini-panel">
+              <h3>Login</h3>
+              <ul>
+                <li><code>/login</code> is the unauthenticated entry screen.</li>
+                <li><code>/auth/callback</code> completes the sign-in handoff.</li>
+                <li>Approved users are sent into the shell and then to the landing page.</li>
+              </ul>
+            </div>
+            <div class="mini-panel">
+              <h3>Pending approval</h3>
+              <ul>
+                <li>Users who authenticate but have not been approved are held in a pending state.</li>
+                <li>The screen should clearly indicate that the account exists but is waiting on access approval.</li>
+                <li>Users in this state should not expect sidebar navigation to be available yet.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="section anchor" id="dashboard">
+          <div class="section-title"><div class="bar"></div><h2>4. Dashboard</h2></div>
+          <p>This is the executive overview. It summarizes the live pipeline, highlights at-risk work, and gives a quick sense of volume, value, stage mix, and approval status.</p>
+          <div class="grid-2">
+            <div class="mini-panel">
+              <h3>Primary controls</h3>
+              <ul>
+                <li>KPI cards for state and value.</li>
+                <li>Advanced filters for scope, client, lead, group, and date-related review.</li>
+                <li>Pipeline chart and list-based widgets for drilldown.</li>
+                <li>Export and reporting actions for the filtered dataset.</li>
+              </ul>
+            </div>
+            <div class="mini-panel">
+              <h3>How to use it</h3>
+              <ul>
+                <li>Set scope first, then inspect the chart and list widgets.</li>
+                <li>Open an opportunity from the table or detail dialog when something needs review.</li>
+                <li>Use the dashboard as the sanity check before exporting or escalating.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="section anchor" id="atlas">
+          <div class="section-title"><div class="bar"></div><h2>5. Screenshot Atlas</h2></div>
+          <p class="muted">These captures live in <code>docs/screenshots/opportunitydash</code>. The frames are intentionally consistent so the manual reads like one branded handbook instead of a loose gallery.</p>
+
+          <div class="grid-2">
+            <figure class="shot">
+              <div class="shot-header">
+                <div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div>
+                <span class="tag cyan">Login</span>
+              </div>
+              <div class="shot-frame">
+                <img src="screenshots/opportunitydash/01-login.png" alt="Login screen screenshot" onerror="this.closest('.shot').classList.add('missing')">
+                <div class="shot-fallback">Screenshot unavailable. This frame is reserved for the login capture.</div>
+              </div>
+              <figcaption class="figure-caption"><span><strong>What to look for:</strong> sign-in entry and initial branding.</span><span class="tiny">File: 01-login.png</span></figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="shot-header">
+                <div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div>
+                <span class="tag amber">Pending approval</span>
+              </div>
+              <div class="shot-frame">
+                <img src="screenshots/opportunitydash/02-pending-approval.png" alt="Pending approval screenshot" onerror="this.closest('.shot').classList.add('missing')">
+                <div class="shot-fallback">Screenshot unavailable. This frame shows the pending approval state.</div>
+              </div>
+              <figcaption class="figure-caption"><span><strong>Watch-out:</strong> approved navigation is intentionally blocked here.</span><span class="tiny">File: 02-pending-approval.png</span></figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="shot-header"><div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div><span class="tag green">Dashboard</span></div>
+              <div class="shot-frame"><img src="screenshots/opportunitydash/03-dashboard.png" alt="Dashboard screenshot" onerror="this.closest('.shot').classList.add('missing')"><div class="shot-fallback">Dashboard screenshot unavailable.</div></div>
+              <figcaption class="figure-caption"><span><strong>Core view:</strong> KPIs, filters, and pipeline widgets.</span><span class="tiny">File: 03-dashboard.png</span></figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="shot-header"><div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div><span class="tag blue">Opportunities</span></div>
+              <div class="shot-frame"><img src="screenshots/opportunitydash/04-opportunities.png" alt="Opportunities screenshot" onerror="this.closest('.shot').classList.add('missing')"><div class="shot-fallback">Opportunities screenshot unavailable.</div></div>
+              <figcaption class="figure-caption"><span><strong>Core register:</strong> spreadsheet-style opportunity management.</span><span class="tiny">File: 04-opportunities.png</span></figcaption>
+            </figure>
+          </div>
+
+          <div class="grid-2" style="margin-top: 14px;">
+            <figure class="shot">
+              <div class="shot-header"><div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div><span class="tag pink">Entry modal</span></div>
+              <div class="shot-frame"><img src="screenshots/opportunitydash/05-opportunities-entry.png" alt="Opportunity entry modal screenshot" onerror="this.closest('.shot').classList.add('missing')"><div class="shot-fallback">Entry modal screenshot unavailable.</div></div>
+              <figcaption class="figure-caption"><span><strong>Use case:</strong> manual add or update flow.</span><span class="tiny">File: 05-opportunities-entry.png</span></figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="shot-header"><div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div><span class="tag amber">Upload flow</span></div>
+              <div class="shot-frame"><img src="screenshots/opportunitydash/06-opportunities-upload.png" alt="Opportunity upload screenshot" onerror="this.closest('.shot').classList.add('missing')"><div class="shot-fallback">Upload screenshot unavailable.</div></div>
+              <figcaption class="figure-caption"><span><strong>Use case:</strong> workbook import and reconciliation.</span><span class="tiny">File: 06-opportunities-upload.png</span></figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="section anchor" id="opportunities">
+          <div class="section-title"><div class="bar"></div><h2>6. Opportunities</h2></div>
+          <div class="grid-2">
+            <div class="mini-panel">
+              <h3>Primary purpose</h3>
+              <ul>
+                <li>Main operational register for tender rows.</li>
+                <li>Used to inspect, edit, and reconcile workbook data.</li>
+                <li>Often the source of truth for downstream workflow pages.</li>
+              </ul>
+            </div>
+            <div class="mini-panel">
+              <h3>Main controls</h3>
+              <ul>
+                <li><strong>Search grid</strong> filters visible rows.</li>
+                <li><strong>Add Entry</strong> opens manual creation.</li>
+                <li><strong>Upload Sheet</strong> imports workbook data.</li>
+                <li><strong>Export</strong> downloads the current table.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="callout">
+            <p class="tiny"><strong>Permission gate:</strong> viewing is broader than writing. Editing, importing, syncing, and manual updates are limited to higher roles, especially Master/Admin and proposal leadership.</p>
+          </div>
+        </section>
+
+        <section class="section anchor" id="bid">
+          <div class="section-title"><div class="bar"></div><h2>7. Bid Decision</h2></div>
+          <p>Bid Decision is the decision-wizard view. It helps users assess whether to pursue a tender and records the rationale in a structured way.</p>
+          <table>
+            <thead><tr><th>Part</th><th>What it captures</th><th>Watch-out</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Opportunity source</strong></td><td>The tender being evaluated.</td><td>Make sure the reference is correct before scoring.</td></tr>
+              <tr><td><strong>Details</strong></td><td>Project basics, dates, and scope.</td><td>Incomplete data produces weaker decisions.</td></tr>
+              <tr><td><strong>Scoring</strong></td><td>Weighted decision criteria and notes.</td><td>Keep commentary short and defensible.</td></tr>
+              <tr><td><strong>Outcome</strong></td><td>Bid or no-bid finalization.</td><td>Only permitted roles should save decisions.</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="section anchor" id="potential">
+          <div class="section-title"><div class="bar"></div><h2>8. Potential Opportunities</h2></div>
+          <p>This page holds early-stage leads before they are promoted into the main register. It is useful for triage and for spotting matches against live opportunities.</p>
+          <div class="grid-2">
+            <div class="mini-panel">
+              <h3>What it does</h3>
+              <ul>
+                <li>Stores potential leads and context.</li>
+                <li>Supports search and spreadsheet-style review.</li>
+                <li>Lets users compare incoming prospects against current opportunities.</li>
+              </ul>
+            </div>
+            <div class="mini-panel">
+              <h3>How to use it</h3>
+              <ul>
+                <li>Review opportunity reference, tender name, and scope link first.</li>
+                <li>Use it as a staging area before moving work into the main pipeline.</li>
+                <li>Watch for duplicate or related records.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="section anchor" id="pq">
+          <div class="section-title"><div class="bar"></div><h2>9. Pre-Qualification</h2></div>
+          <p>Pre-Qualification tracks portal registrations, credentials, and renewal context. It is both a records page and a reference page for getting into external portals quickly.</p>
+          <table>
+            <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Company</strong></td><td>The organization being tracked.</td></tr>
+              <tr><td><strong>Status</strong></td><td>Prequalified, Registered, or Registration in process.</td></tr>
+              <tr><td><strong>Workgroup</strong></td><td>Business team or grouping context.</td></tr>
+              <tr><td><strong>Credentials</strong></td><td>Registered email, user ID, password where stored.</td></tr>
+              <tr><td><strong>Renewal / last update</strong></td><td>Helps identify stale portal records.</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="section anchor" id="partners">
+          <div class="section-title"><div class="bar"></div><h2>10. Partners</h2></div>
+          <p>The Partners page is the vendor directory. Use it to compare capability, certification, and relationship status across third parties.</p>
+          <div class="grid-2">
+            <div class="mini-panel">
+              <h3>Main buttons and filters</h3>
+              <ul>
+                <li>Search by company and capability terms.</li>
+                <li>Import and export partner data where permitted.</li>
+                <li>Open detail/edit views for a specific vendor.</li>
+              </ul>
+            </div>
+            <div class="mini-panel">
+              <h3>What to check</h3>
+              <ul>
+                <li>Services, tech stack, and certifications.</li>
+                <li>Agreement and NDA state.</li>
+                <li>Any relevance score or matching context tied to the current work.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="section anchor" id="clients">
+          <div class="section-title"><div class="bar"></div><h2>11. Clients</h2></div>
+          <p>The Clients page normalizes company records and contacts into a single directory that can be searched, grouped, and exported.</p>
+          <div class="grid-2">
+            <div class="mini-panel">
+              <h3>Behavior</h3>
+              <ul>
+                <li>Handles import mapping and header detection.</li>
+                <li>Groups duplicate clusters so records can be cleaned up.</li>
+                <li>Stores contacts as part of the client profile.</li>
+              </ul>
+            </div>
+            <div class="mini-panel">
+              <h3>Watch-outs</h3>
+              <ul>
+                <li>Check domain and location normalization before using a client record in workflow decisions.</li>
+                <li>Duplicates usually need human review rather than blind merging.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="section anchor" id="analytics">
+          <div class="section-title"><div class="bar"></div><h2>12. Analytics</h2></div>
+          <p>Analytics is the strategic lens on the pipeline. It emphasizes movement, history, and reasons behind the current state instead of the day-to-day register.</p>
+          <div class="grid-2">
+            <div class="mini-panel">
+              <h3>How to use it</h3>
+              <ul>
+                <li>Switch time ranges before drawing conclusions.</li>
+                <li>Look for trend changes, stage imbalance, and loss themes.</li>
+                <li>Use it to validate whether the operational pipeline is healthy.</li>
+              </ul>
+            </div>
+            <div class="mini-panel">
+              <h3>What it answers</h3>
+              <ul>
+                <li>What changed over time?</li>
+                <li>Which segments are rising or falling?</li>
+                <li>Where did opportunities get lost?</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="section anchor" id="bd">
+          <div class="section-title"><div class="bar"></div><h2>13. BD Engagements</h2></div>
+          <p>BD Engagements is the working log for meetings, calls, and relationship actions. It helps the team remember who spoke to whom, when, and what happens next.</p>
+          <table>
+            <thead><tr><th>Recorded data</th><th>Why it exists</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Reference, date, client, type</strong></td><td>Anchors the engagement to a real opportunity or client.</td></tr>
+              <tr><td><strong>Status, location, discussion points</strong></td><td>Captures the substance of the interaction.</td></tr>
+              <tr><td><strong>Lead, report, next steps</strong></td><td>Keeps follow-through visible.</td></tr>
+              <tr><td><strong>Contact details</strong></td><td>Makes later outreach easier.</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="section anchor" id="followups">
+          <div class="section-title"><div class="bar"></div><h2>14. Follow-Ups</h2></div>
+          <p>The Follow-Ups page is a note board for tender-specific actions. It is the page to use when a handoff, reminder, or update needs a durable breadcrumb.</p>
+          <div class="grid-2">
+            <div class="mini-panel">
+              <h3>Main flow</h3>
+              <ul>
+                <li>Create a note.</li>
+                <li>Attach it to the correct tender.</li>
+                <li>Edit or delete when the record changes.</li>
+              </ul>
+            </div>
+            <div class="mini-panel">
+              <h3>Search behavior</h3>
+              <ul>
+                <li>Search by tender ref, tender name, client, note body, or updated-by user.</li>
+                <li>Use the result list to jump directly into the relevant record.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="section anchor" id="master">
+          <div class="section-title"><div class="bar"></div><h2>15. Master Panel</h2></div>
+          <p>The Master Panel is the administrative control surface. Only Master/Admin users should see it in the sidebar or act on its controls.</p>
+          <div class="grid-2">
+            <div class="callout">
+              <h3>What it does</h3>
+              <p class="tiny">It centralizes user administration, permissions, data sync, telecast, export templates, diagnostics, audit functions, and backup exports.</p>
+            </div>
+            <div class="callout">
+              <h3>How to use it</h3>
+              <p class="tiny">Open the relevant section first, confirm the environment or token state, then make the smallest change needed. Most controls here are stateful and permission-gated. Backup jobs should run outside the app on a scheduler.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section anchor" id="master-tabs">
+          <div class="section-title"><div class="bar"></div><h2>16. Master Sections</h2></div>
+          <table>
+            <thead><tr><th>Section</th><th>Purpose</th><th>Who should use it</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Overview</strong></td><td>System snapshot and operational summary.</td><td>Master/Admin for quick health checks.</td></tr>
+              <tr><td><strong>Users</strong></td><td>Authorized users, approvals, role changes, and temp access.</td><td>Master/Admin only.</td></tr>
+              <tr><td><strong>Permissions</strong></td><td>Page and action visibility matrices.</td><td>Master/Admin when updating policy.</td></tr>
+              <tr><td><strong>Data Sync</strong></td><td>SharePoint / Graph sync configuration and refresh state.</td><td>Master/Admin for integration maintenance.</td></tr>
+              <tr><td><strong>Telecast</strong></td><td>Notification and broadcast configuration.</td><td>Master/Admin for outbound alerts and template upkeep.</td></tr>
+              <tr><td><strong>Columns</strong></td><td>Export template and column layout configuration.</td><td>Master/Admin when changing workbook shape.</td></tr>
+              <tr><td><strong>Backups</strong></td><td>Nightly MongoDB dump plus monthly master users CSV export.</td><td>Operations or Master/Admin via host scheduler.</td></tr>
+              <tr><td><strong>Diagnostics</strong></td><td>Authentication and system tracing.</td><td>Master/Admin or support operators.</td></tr>
+              <tr><td><strong>Audit</strong></td><td>Audit trail and verification report.</td><td>Master/Admin and support review.</td></tr>
+            </tbody>
+          </table>
+
+          <div class="grid-2" style="margin-top: 14px;">
+            <figure class="shot">
+              <div class="shot-header"><div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div><span class="tag green">Overview</span></div>
+              <div class="shot-frame"><img src="screenshots/opportunitydash/16-master-overview.png" alt="Master overview screenshot" onerror="this.closest('.shot').classList.add('missing')"><div class="shot-fallback">Master overview screenshot unavailable.</div></div>
+              <figcaption class="figure-caption"><span><strong>Use it for:</strong> a quick system state check.</span><span class="tiny">File: 16-master-overview.png</span></figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="shot-header"><div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div><span class="tag blue">Users</span></div>
+              <div class="shot-frame"><img src="screenshots/opportunitydash/17-master-users.png" alt="Master users screenshot" onerror="this.closest('.shot').classList.add('missing')"><div class="shot-fallback">Master users screenshot unavailable.</div></div>
+              <figcaption class="figure-caption"><span><strong>Use it for:</strong> approval, role, and temp access management.</span><span class="tiny">File: 17-master-users.png</span></figcaption>
+            </figure>
+          </div>
+
+          <div class="grid-2" style="margin-top: 14px;">
+            <figure class="shot">
+              <div class="shot-header"><div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div><span class="tag amber">Permissions</span></div>
+              <div class="shot-frame"><img src="screenshots/opportunitydash/18-master-permissions.png" alt="Master permissions screenshot" onerror="this.closest('.shot').classList.add('missing')"><div class="shot-fallback">Master permissions screenshot unavailable.</div></div>
+              <figcaption class="figure-caption"><span><strong>Use it for:</strong> page and action access changes.</span><span class="tiny">File: 18-master-permissions.png</span></figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="shot-header"><div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div><span class="tag cyan">Data sync</span></div>
+              <div class="shot-frame"><img src="screenshots/opportunitydash/19-master-data-sync.png" alt="Master data sync screenshot" onerror="this.closest('.shot').classList.add('missing')"><div class="shot-fallback">Master data sync screenshot unavailable.</div></div>
+              <figcaption class="figure-caption"><span><strong>Use it for:</strong> Graph / SharePoint sync maintenance.</span><span class="tiny">File: 19-master-data-sync.png</span></figcaption>
+            </figure>
+          </div>
+
+          <div class="grid-2" style="margin-top: 14px;">
+            <figure class="shot">
+              <div class="shot-header"><div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div><span class="tag pink">Telecast</span></div>
+              <div class="shot-frame"><img src="screenshots/opportunitydash/20-master-telecast.png" alt="Master telecast screenshot" onerror="this.closest('.shot').classList.add('missing')"><div class="shot-fallback">Master telecast screenshot unavailable.</div></div>
+              <figcaption class="figure-caption"><span><strong>Use it for:</strong> alert and notification setup.</span><span class="tiny">File: 20-master-telecast.png</span></figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="shot-header"><div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div><span class="tag amber">Columns</span></div>
+              <div class="shot-frame"><img src="screenshots/opportunitydash/21-master-columns.png" alt="Master columns screenshot" onerror="this.closest('.shot').classList.add('missing')"><div class="shot-fallback">Master columns screenshot unavailable.</div></div>
+              <figcaption class="figure-caption"><span><strong>Use it for:</strong> template and export layout editing.</span><span class="tiny">File: 21-master-columns.png</span></figcaption>
+            </figure>
+          </div>
+
+          <div class="grid-2" style="margin-top: 14px;">
+            <figure class="shot">
+              <div class="shot-header"><div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div><span class="tag blue">Diagnostics</span></div>
+              <div class="shot-frame"><img src="screenshots/opportunitydash/22-master-diagnostics.png" alt="Master diagnostics screenshot" onerror="this.closest('.shot').classList.add('missing')"><div class="shot-fallback">Master diagnostics screenshot unavailable.</div></div>
+              <figcaption class="figure-caption"><span><strong>Use it for:</strong> auth tracing and debug context.</span><span class="tiny">File: 22-master-diagnostics.png</span></figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="shot-header"><div class="dots"><span class="dot pink"></span><span class="dot blue"></span><span class="dot cyan"></span></div><span class="tag green">Audit</span></div>
+              <div class="shot-frame"><img src="screenshots/opportunitydash/23-master-audit.png" alt="Master audit screenshot" onerror="this.closest('.shot').classList.add('missing')"><div class="shot-fallback">Master audit screenshot unavailable.</div></div>
+              <figcaption class="figure-caption"><span><strong>Use it for:</strong> evidence, verification, and audit checks.</span><span class="tiny">File: 23-master-audit.png</span></figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="section anchor" id="routes">
+          <div class="section-title"><div class="bar"></div><h2>17. Route Map</h2></div>
+          <table>
+            <thead><tr><th>Path</th><th>Screen</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><code>/</code></td><td>Dashboard</td><td>Landing page for approved users.</td></tr>
+              <tr><td><code>/login</code></td><td>Login</td><td>Authentication entry.</td></tr>
+              <tr><td><code>/pending</code></td><td>Pending approval</td><td>Waiting state after sign-in.</td></tr>
+              <tr><td><code>/opportunities</code></td><td>Opportunities</td><td>Main register.</td></tr>
+              <tr><td><code>/bid-decision</code></td><td>Bid Decision</td><td>Decision wizard.</td></tr>
+              <tr><td><code>/potential-opportunities</code></td><td>Potential Opportunities</td><td>Lead triage.</td></tr>
+              <tr><td><code>/pq-activities</code></td><td>Pre-Qualification</td><td>PQ tracking.</td></tr>
+              <tr><td><code>/vendors</code></td><td>Partners</td><td>Vendor directory.</td></tr>
+              <tr><td><code>/clients</code></td><td>Clients</td><td>Client directory.</td></tr>
+              <tr><td><code>/analytics</code></td><td>Analytics</td><td>Trend analysis.</td></tr>
+              <tr><td><code>/bd-engagements</code></td><td>BD Engagements</td><td>Meeting log.</td></tr>
+              <tr><td><code>/follow-ups</code></td><td>Follow-Ups</td><td>Follow-up note log.</td></tr>
+              <tr><td><code>/master/*</code></td><td>Master Panel</td><td>Admin routes.</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="section anchor" id="ops">
+          <div class="section-title"><div class="bar"></div><h2>18. Ops Console Notes</h2></div>
+          <div class="grid-2">
+            <div class="mini-panel">
+              <h3>What to expect</h3>
+              <ul>
+                <li>Deployment and service maintenance commands.</li>
+                <li>Certificate renewal or hosting checks.</li>
+                <li>Data sync and health verification helpers.</li>
+              </ul>
+            </div>
+            <div class="mini-panel">
+              <h3>Operator rule</h3>
+              <ul>
+                <li>Use the console for maintenance, not routine page editing.</li>
+                <li>Document any change that affects auth, sync, or live data availability.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="section anchor" id="assets">
+          <div class="section-title"><div class="bar"></div><h2>19. Screenshot Asset Workflow</h2></div>
+          <div class="grid-2">
+            <div class="spec">
+              <h3>Storage</h3>
+              <p class="tiny">Captures live in <code>docs/screenshots/opportunitydash</code> and are referenced by relative path from this HTML file, so the manual stays portable when opened locally.</p>
+            </div>
+            <div class="spec">
+              <h3>Consistency</h3>
+              <p class="tiny">Use the same viewport and dark theme for each capture, and keep naming aligned with the numbered manifest so the atlas stays ordered.</p>
+            </div>
+          </div>
+          <p class="tiny" style="margin-top: 10px;">If a screenshot is regenerated, keep the filename stable so the HTML keeps working without edits. Missing images fall back to the placeholder block above.</p>
+        </section>
+
+        <div class="footer">OpportunityDash manual, built for the Avenir dashboard suite.</div>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

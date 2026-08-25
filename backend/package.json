@@ -7,7 +7,9 @@
     "dev": "node --watch server.js",
     "seed:dev-users": "node scripts/seedDevPasswordUsers.js",
     "status:backfill:awarded:dry-run": "node scripts/backfillAwardedStatus2024_2025.js",
-    "status:backfill:awarded:apply": "node scripts/backfillAwardedStatus2024_2025.js --apply"
+    "status:backfill:awarded:apply": "node scripts/backfillAwardedStatus2024_2025.js --apply",
+    "backup:dump": "node scripts/backupMongoDump.js",
+    "backup:master-users-csv": "node scripts/exportMasterUsersCsv.js"
   },
   "dependencies": {
     "compression": "^1.8.1",

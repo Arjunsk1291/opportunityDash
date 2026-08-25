@@ -126,6 +126,11 @@ Optional debug flags:
 - `NOTIFICATION_DEBUG=true|false`
 - `GRAPH_TOKEN_DEBUG=true|false`
 
+Backup exports:
+
+- `BACKUP_DIR` (default `backups`, relative to `backend/`)
+- `BACKUP_COMPRESS` (`true` by default; passes `--gzip` to `mongodump`)
+
 ## PQ & Registration Activities (Import Format)
 
 The page **PQ & Registration Activities** supports importing an `.xlsx` file with a header row (case/whitespace/punctuation tolerant) containing:
@@ -188,6 +193,30 @@ Verification commands:
 docker compose ps
 docker compose logs -f backend frontend mongo
 ```
+
+## Backups
+
+The backend includes two helper scripts for database protection:
+
+- `npm run backup:dump` creates a compressed `mongodump` backup under `backend/backups/mongodump/<timestamp>/`
+- `npm run backup:master-users-csv` exports the `AuthorizedUser` collection to `backend/backups/master-users/master-users-YYYY-MM-DD.csv`
+
+Recommended schedule:
+
+- Daily at night: `mongodump`
+- Monthly on the 1st: master users CSV
+
+Example cron entries from the `backend/` directory:
+
+```cron
+15 2 * * * cd /path/to/opportunityDash/backend && npm run backup:dump >> /var/log/opportunitydash-backup.log 2>&1
+30 2 1 * * cd /path/to/opportunityDash/backend && npm run backup:master-users-csv >> /var/log/opportunitydash-backup.log 2>&1
+```
+
+Notes:
+
+- `mongodump` must be installed on the host or container running the job.
+- CSV exports are for auditability and manual review; they are not a substitute for the daily MongoDB backup.
 
 ## API Routing and Reverse Proxy
 
