@@ -66,13 +66,22 @@ export default function Login() {
 
   const getErrorMessage = (error: unknown): string => {
     const message = error instanceof Error ? error.message : String(error);
+    const code = error instanceof Error ? String((error as Error & { code?: string }).code || '') : '';
+    const details = error instanceof Error ? ((error as Error & { details?: Record<string, unknown> }).details || {}) : {};
+    const status = String(details?.status || '').toLowerCase();
+    const role = String(details?.role || '').toLowerCase();
 
     if (message.includes('Invalid email format')) return 'Please enter a valid email address.';
     if (message.includes('locked')) return 'Account locked after too many failed attempts. Wait 15 minutes or ask your admin to unlock it.';
-    if (message.includes('pending')) return 'Account is pending admin approval. Contact your administrator.';
-    if (message.includes('rejected')) return 'Account access has been rejected. Contact your administrator.';
-    if (message.includes('not approved')) return 'Account is not approved for login. Contact your administrator.';
-    if (message.includes('not configured') || message.includes('not set')) return 'No password has been configured for this account. Ask your admin to set one.';
+    if (code === 'status_pending' || message.includes('pending')) return 'Account is pending admin approval. Contact your administrator.';
+    if (code === 'status_rejected' || message.includes('rejected')) return 'Account access has been rejected. Contact your administrator.';
+    if (code === 'status_not_approved' || message.includes('not approved')) return 'Account is not approved for login. Contact your administrator.';
+    if (code === 'password_not_configured' || message.includes('not configured') || message.includes('not set')) return `No password has been configured for this ${role || 'account'}. Ask your admin to set one.`;
+    if (code === 'user_not_found') return 'This user is not in the approved users list.';
+    if (code === 'invalid_password' || code === 'password_mismatch') return 'Wrong password.';
+    if (code === 'temp_access_inactive') return 'Temporary access ID is inactive.';
+    if (code === 'temp_access_expired') return 'Temporary access has expired.';
+    if (code === 'temp_access_not_yet_valid') return 'Temporary access is not yet valid.';
     if (message.includes('expired')) return 'Temporary access has expired. Contact your administrator.';
     if (message.includes('offline') || message.includes('unavailable')) return 'Login service is temporarily unavailable.';
     if (message.includes('429') || message.includes('Too many requests')) return 'Too many login attempts. Please try again later.';

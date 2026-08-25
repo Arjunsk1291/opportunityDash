@@ -266,12 +266,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const response = await fetch(API_URL + '/auth/login-password', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-auth-diagnose': '1',
+      },
       body: JSON.stringify({ email: normalizedEmail, password }),
     });
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data?.error || 'Password login failed');
+      const error = new Error(data?.error || 'Password login failed') as Error & { code?: string; details?: Record<string, unknown> };
+      error.code = typeof data?.code === 'string' ? data.code : undefined;
+      error.details = data?.details && typeof data.details === 'object' ? data.details : undefined;
+      throw error;
     }
     const nextUser: User = {
       email: data.user.email,
