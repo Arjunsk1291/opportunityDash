@@ -590,7 +590,7 @@ if (DISABLE_MONGODB) {
   console.info(`[startup.mongo] mode=connected env=${IS_PROD ? 'production' : 'development'} db=${mongoTarget.dbName} host=${mongoTarget.host} configured=${Boolean(process.env.MONGODB_URI)}`);
 
   // Fail queries immediately when disconnected instead of buffering them.
-  // Without this, a dropped Atlas connection causes every request to queue up
+  // Without this, a dropped Mongo connection causes every request to queue up
   // silently and nginx returns 504 before Mongoose ever gives up.
   mongoose.set('bufferCommands', false);
 
@@ -612,7 +612,7 @@ mongoose.connect(MONGODB_URI, {
   serverSelectionTimeoutMS: IS_PROD ? 5000 : 15000,
   // Socket-level timeout — abort hung queries after 15s in prod
   socketTimeoutMS: IS_PROD ? 15000 : 30000,
-  // TCP-level keepalive prevents silent connection drops through firewalls / Atlas idle timeout
+  // TCP-level keepalive prevents silent connection drops through firewalls / idle timeout
   family: 4,
   heartbeatFrequencyMS: 10000,
   maxPoolSize: 5,

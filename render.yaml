@@ -7,8 +7,7 @@ services:
     startCommand: node backend/server.js
     envVars:
       # MONGODB_URI must be set as a secret in the Render dashboard (Environment tab).
-      # Do NOT add the connection string here — it contains database credentials.
-      # Format: mongodb+srv://<user>:<password>@<host>/<db>
+      # Keep Render pointed at the production database you intend to use.
       - key: MONGODB_URI
         sync: false
       - key: PORT
