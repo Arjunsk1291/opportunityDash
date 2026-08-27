@@ -289,7 +289,7 @@ export default function Login() {
       {/* Form Panel (Right) */}
       <div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-12 lg:p-24 relative">
         <div className="lg:hidden absolute top-8 left-8">
-           <img src={logo} alt="Avenir" className="h-8 w-auto grayscale brightness-0 dark:invert" />
+           <img src={activeBrand.logo} alt={activeBrand.label} className="h-8 w-auto grayscale brightness-0 dark:invert" />
         </div>
 
         <div className="w-full max-w-[420px]">
