@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useCallback, ReactNode, use
 import { Opportunity } from '@/data/opportunityData';
 import { isSubmissionWithinDays } from '@/lib/submissionDate';
 import { useAuth } from '@/contexts/AuthContext';
+import { useBrand } from '@/contexts/BrandContext';
 import { useLocation } from 'react-router-dom';
 import { EAGER_OPPORTUNITY_ROUTES } from '@/contexts/dataContextConfig';
 
@@ -74,6 +75,7 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const { token, isLoading: isAuthLoading } = useAuth();
+  const { brandKey } = useBrand();
   const location = useLocation();
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -95,6 +97,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const streamAbortRef = useRef<AbortController | null>(null);
   const streamBufferRef = useRef('');
   const streamActiveRef = useRef(false);
+  const brandScopedCacheKey = `${OPPORTUNITIES_CACHE_KEY}:${brandKey}`;
 
   useEffect(() => {
     opportunitiesRef.current = opportunities;
@@ -107,6 +110,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     routeViewRef.current = getOpportunityViewForRoute(location.pathname);
   }, [location.pathname]);
+
+  useEffect(() => {
+    setOpportunities([]);
+    setIsLoading(true);
+    setError(null);
+    setLastSyncTime(null);
+    hasLoadedOnceRef.current = false;
+    cacheHydratedRef.current = false;
+    currentViewRef.current = 'lite';
+    lastSuccessfulRefreshAtRef.current = 0;
+    streamBufferRef.current = '';
+    streamActiveRef.current = false;
+  }, [brandKey]);
 
   const buildVisibleOpportunity = useCallback((opp: OpportunityApiRecord): Opportunity | null => {
     const refNo = String(opp?.opportunityRefNo || '').trim();
@@ -154,11 +170,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         view,
         rows,
       };
-      window.sessionStorage.setItem(OPPORTUNITIES_CACHE_KEY, JSON.stringify(payload));
+      window.sessionStorage.setItem(brandScopedCacheKey, JSON.stringify(payload));
     } catch {
       // ignore
     }
-  }, []);
+  }, [brandScopedCacheKey]);
 
   const upsertOpportunities = useCallback((rows: Partial<Opportunity>[]) => {
     if (!rows.length) return;
@@ -196,7 +212,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const routeView = routeViewRef.current;
     const currentLastSyncTime = lastSyncTimeRef.current;
     const canUseIncremental = Boolean(currentLastSyncTime) && !forceRefresh && (isBackground || streamActiveRef.current);
-    const cacheKey = OPPORTUNITIES_CACHE_KEY;
+    const cacheKey = brandScopedCacheKey;
 
     if (!cacheHydratedRef.current && !isBackground) {
       cacheHydratedRef.current = true;
@@ -511,7 +527,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         streamRetryTimerRef.current = null;
       }
     };
-  }, [isAuthLoading, token, refreshData, upsertOpportunities]);
+  }, [brandKey, isAuthLoading, token, refreshData, upsertOpportunities]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {

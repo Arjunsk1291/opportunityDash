@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ClientContactInput, ClientInput, ClientProfile } from '@/types/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useBrand } from '@/contexts/BrandContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const CLIENTS_CACHE_KEY = 'avenir_clients_v1';
@@ -26,7 +27,7 @@ const contactKey = (contact: ClientContactInput): string => {
 
 const readClientsCache = (): ClientProfile[] | null => {
   try {
-    const raw = sessionStorage.getItem(CLIENTS_CACHE_KEY);
+    const raw = sessionStorage.getItem(`${CLIENTS_CACHE_KEY}:${window.localStorage.getItem('opportunityDash.activeBrand') || 'avenir_intl'}`);
     if (!raw) return null;
     const { data, ts } = JSON.parse(raw) as { data: ClientProfile[]; ts: number };
     if (Date.now() - ts < 5 * 60 * 1000 && Array.isArray(data)) return data;
@@ -35,11 +36,13 @@ const readClientsCache = (): ClientProfile[] | null => {
 };
 
 const writeClientsCache = (data: ClientProfile[]) => {
-  try { sessionStorage.setItem(CLIENTS_CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch {}
+  const brandKey = window.localStorage.getItem('opportunityDash.activeBrand') || 'avenir_intl';
+  try { sessionStorage.setItem(`${CLIENTS_CACHE_KEY}:${brandKey}`, JSON.stringify({ data, ts: Date.now() })); } catch {}
 };
 
 export const useClientStore = () => {
   const { token, canPerformAction } = useAuth();
+  const { brandKey } = useBrand();
   const [clients, setClients] = useState<ClientProfile[]>(() => readClientsCache() ?? []);
   const [isLoading, setIsLoading] = useState(() => readClientsCache() === null);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +80,12 @@ export const useClientStore = () => {
       setIsLoading(false);
     }
   }, [token]);
+
+  useEffect(() => {
+    setClients(readClientsCache() ?? []);
+    setIsLoading(readClientsCache() === null);
+    setError(null);
+  }, [brandKey]);
 
   useEffect(() => {
     fetchClients();
