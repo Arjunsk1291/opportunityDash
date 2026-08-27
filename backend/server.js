@@ -47,6 +47,7 @@ import { buildOpportunitiesWorkbookForSpreadsheet } from './services/spreadsheet
 import SystemConfig from './models/SystemConfig.js';
 import { encryptSecret } from './services/cryptoService.js';
 import { z } from 'zod';
+import { runWithBrandContext, normalizeBrandKey } from './brandContext.js';
 import XLSX from 'xlsx';
 import multer from 'multer';
 import fs from 'fs';
@@ -230,6 +231,11 @@ app.use(cors((req, callback) => {
 }));
 
 app.use(compression());
+
+app.use((req, _res, next) => {
+  const brandKey = normalizeBrandKey(req.header('x-brand-key'));
+  runWithBrandContext(brandKey, () => next());
+});
 
 // Security headers (ISO/IEC 27001 compliance) using Helmet
 app.use(helmet({
@@ -1556,7 +1562,7 @@ const buildAwardValueReportEmailHtml = ({ missing = [], dateStr = '' }) => {
     <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
       <div style="max-width:800px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
         <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
-          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Reports</div>
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Dashboard Reports</div>
           <h1 style="margin:0;font-size:24px;line-height:1.2;">&#128200; Award Value Report — ${escapeHtml(dateStr)}</h1>
           <p style="margin:10px 0 0;font-size:14px;opacity:0.92;">Awarded tenders with missing or zero value requiring attention.</p>
         </div>
@@ -1674,7 +1680,7 @@ const buildSheetUploadNotificationEmailHtml = ({ filename = '', createdCount = 0
     <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
       <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
         <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
-          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Opportunities</div>
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Opportunity Updates</div>
           <h1 style="margin:0;font-size:24px;line-height:1.2;">&#128228; New Opportunity Sheet Uploaded</h1>
           <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">A new opportunity sheet was uploaded and committed to the dashboard. The original file is attached to this email.</p>
         </div>
@@ -1693,7 +1699,7 @@ const buildSheetUploadNotificationEmailHtml = ({ filename = '', createdCount = 0
             </table>
           </div>
           <div style="margin-top:28px;text-align:center;">
-            <a href="${DASHBOARD_URL}" style="display:inline-block;padding:12px 28px;background:${colors.headerBg};color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;letter-spacing:0.04em;">Open Avenir Dashboard &rarr;</a>
+            <a href="${DASHBOARD_URL}" style="display:inline-block;padding:12px 28px;background:${colors.headerBg};color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600;letter-spacing:0.04em;">Open Dashboard &rarr;</a>
           </div>
         </div>
       </div>
@@ -1718,7 +1724,7 @@ const buildApprovalAlertEmailHtml = ({ values, renderedBody = '', styleKey = 'av
     <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
       <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
         <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
-          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Approval Telecast</div>
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Approval Telecast</div>
           <h1 style="margin:0;font-size:24px;line-height:1.2;">✅ Tender Manager Approval Alert</h1>
           <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">A tender has been approved by the Tender Manager and is ready for SVP review.</p>
         </div>
@@ -1763,7 +1769,7 @@ const buildBulkApprovalAlertEmailHtml = ({ group = '', opportunities = [], summa
     <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
       <div style="max-width:780px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
         <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
-          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Approval Telecast</div>
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Approval Telecast</div>
           <h1 style="margin:0;font-size:24px;line-height:1.2;">✅ Tender Manager Bulk Approval</h1>
           <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">${summaryText || `Tenders approved for ${escapeHtml(group || 'Group')}`}</p>
         </div>
@@ -2008,7 +2014,7 @@ const sendBulkApprovalAlerts = async ({ opportunities = [], approvedBy = '', fil
         <div style="margin:0;padding:24px;background:${style.colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
           <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid ${style.colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
             <div style="padding:24px 28px;background-color:${style.colors.headerBg};background:${style.colors.headerGradient};color:#ffffff;">
-              <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Approval Telecast</div>
+              <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Approval Telecast</div>
               <h1 style="margin:0;font-size:24px;line-height:1.2;">✅ Tender Manager Bulk Approval</h1>
             </div>
             <div style="padding:24px 28px;font-size:15px;line-height:1.7;color:#334155;">${escapeHtml(summary)}</div>
@@ -3758,7 +3764,7 @@ const buildTempCredentialEmailHtml = ({ code, displayName = '', expiresAt, style
     <div style="margin:0;padding:24px;background:${colors.pageBg};font-family:Arial,sans-serif;color:#0f172a;">
       <div style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid ${colors.cardBorder};border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,42,0.08);">
         <div style="padding:24px 28px;background-color:${colors.headerBg};background:${colors.headerGradient};color:#ffffff;">
-          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Avenir Access</div>
+          <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.78;margin-bottom:8px;">Access</div>
           <h1 style="margin:0;font-size:22px;line-height:1.2;">Temporary Password</h1>
           <p style="margin:10px 0 0;font-size:14px;line-height:1.6;opacity:0.92;">Use this code to sign in directly, or as your reset code if you need to change it later. It expires in 24 hours.</p>
         </div>

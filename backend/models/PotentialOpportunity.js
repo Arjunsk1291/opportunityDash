@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
+import { applyBrandPlugin } from '../brandContext.js';
 
 const potentialOpportunitySchema = new mongoose.Schema(
   {
@@ -12,6 +14,6 @@ const potentialOpportunitySchema = new mongoose.Schema(
 );
 
 potentialOpportunitySchema.index({ opportunityRefNo: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } });
+applyBrandPlugin(potentialOpportunitySchema, { includeUniqueIndex: false });
 
-export default mongoose.model('PotentialOpportunity', potentialOpportunitySchema);
-
+export default brandModel('PotentialOpportunity', potentialOpportunitySchema, brandCollection('potential_opportunities'));

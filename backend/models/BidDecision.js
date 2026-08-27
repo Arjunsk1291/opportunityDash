@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const bidDecisionCriterionSchema = new mongoose.Schema(
   {
@@ -45,4 +46,4 @@ const bidDecisionSchema = new mongoose.Schema(
 
 bidDecisionSchema.index({ opportunityRefNo: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } });
 
-export default mongoose.model('BidDecision', bidDecisionSchema);
+export default brandModel('BidDecision', bidDecisionSchema, brandCollection('bid_decisions'));

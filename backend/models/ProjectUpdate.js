@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const projectUpdateSchema = new mongoose.Schema(
   {
@@ -39,4 +40,4 @@ const projectUpdateSchema = new mongoose.Schema(
 
 projectUpdateSchema.index({ tenderRefNo: 1, createdAt: -1 });
 
-export default mongoose.model('ProjectUpdate', projectUpdateSchema);
+export default brandModel('ProjectUpdate', projectUpdateSchema, brandCollection('project_updates'));

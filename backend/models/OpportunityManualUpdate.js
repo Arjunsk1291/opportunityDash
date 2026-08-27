@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
+import { applyBrandPlugin } from '../brandContext.js';
 
 const opportunityManualUpdateSchema = new mongoose.Schema(
   {
@@ -20,4 +22,6 @@ const opportunityManualUpdateSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model('OpportunityManualUpdate', opportunityManualUpdateSchema);
+applyBrandPlugin(opportunityManualUpdateSchema, { includeUniqueIndex: false });
+
+export default brandModel('OpportunityManualUpdate', opportunityManualUpdateSchema, brandCollection('opportunity_manual_updates'));

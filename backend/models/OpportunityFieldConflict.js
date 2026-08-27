@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const opportunityFieldConflictSchema = new mongoose.Schema(
   {
@@ -19,5 +20,4 @@ const opportunityFieldConflictSchema = new mongoose.Schema(
 
 opportunityFieldConflictSchema.index({ refKey: 1, fieldKey: 1, status: 1 }, { unique: true, partialFilterExpression: { status: 'pending' } });
 
-export default mongoose.model('OpportunityFieldConflict', opportunityFieldConflictSchema);
-
+export default brandModel('OpportunityFieldConflict', opportunityFieldConflictSchema, brandCollection('opportunity_field_conflicts'));

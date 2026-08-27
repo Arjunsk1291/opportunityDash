@@ -4327,7 +4327,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
                         className={`rounded-xl border text-left transition-all overflow-hidden ${approvalTemplateStyle === style.key ? 'border-primary ring-2 ring-primary/20 shadow-sm' : 'border-border hover:border-primary/40'}`}
                       >
                         <div className="h-20 px-4 py-3 text-white" style={{ background: style.colors.headerGradient }}>
-                          <p className="text-[11px] uppercase tracking-[0.2em] opacity-80">Avenir Approval Telecast</p>
+                          <p className="text-[11px] uppercase tracking-[0.2em] opacity-80">Approval Telecast</p>
                           <p className="mt-2 text-base font-semibold">{style.label}</p>
                         </div>
                         <div className="p-4 space-y-2" style={{ backgroundColor: style.colors.pageBg }}>
@@ -4354,7 +4354,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
                   <p className="text-sm font-medium">Live Preview</p>
                   <div className="rounded-2xl border overflow-hidden" style={{ borderColor: selectedApprovalTemplateStyle.colors.cardBorder, backgroundColor: selectedApprovalTemplateStyle.colors.pageBg }}>
                     <div className="px-5 py-4 text-white" style={{ background: selectedApprovalTemplateStyle.colors.headerGradient }}>
-                      <p className="text-[11px] uppercase tracking-[0.18em] opacity-80">Avenir Approval Telecast</p>
+                      <p className="text-[11px] uppercase tracking-[0.18em] opacity-80">Approval Telecast</p>
                       <p className="mt-2 text-lg font-semibold">✅ {approvalPreviewSubject}</p>
                     </div>
                     <div className="p-5 space-y-4">

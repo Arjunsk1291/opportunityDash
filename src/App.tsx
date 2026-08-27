@@ -4,6 +4,7 @@ import { Layout } from "@/components/Layout";
 import { DataProvider } from "@/contexts/DataContext";
 import { CurrencyProvider } from "@/contexts/CurrencyContext";
 import { ApprovalProvider } from "@/contexts/ApprovalContext";
+import { BrandProvider } from "@/contexts/BrandContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { PageLoader } from "@/components/PageLoader";
 import Login from "./pages/Login";
@@ -227,16 +228,18 @@ const App = () => (
         <StyledEngineProvider injectFirst>
           <MuiThemeProviderWrapper>
             <SessionAuthProvider>
-              <CurrencyProvider>
-                <DataProvider>
-                  <ApprovalProvider>
-                    <TooltipProvider>
-                      <Toaster />
-                      <AppRoutes />
-                    </TooltipProvider>
-                  </ApprovalProvider>
-                </DataProvider>
-              </CurrencyProvider>
+              <BrandProvider>
+                <CurrencyProvider>
+                  <DataProvider>
+                    <ApprovalProvider>
+                      <TooltipProvider>
+                        <Toaster />
+                        <AppRoutes />
+                      </TooltipProvider>
+                    </ApprovalProvider>
+                  </DataProvider>
+                </CurrencyProvider>
+              </BrandProvider>
             </SessionAuthProvider>
           </MuiThemeProviderWrapper>
         </StyledEngineProvider>

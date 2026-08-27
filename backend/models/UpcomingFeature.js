@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
+import { applyBrandPlugin } from '../brandContext.js';
 
 const upcomingFeatureSchema = new mongoose.Schema(
   {
@@ -14,5 +16,6 @@ const upcomingFeatureSchema = new mongoose.Schema(
 );
 
 upcomingFeatureSchema.index({ sortOrder: 1, createdAt: 1 });
+applyBrandPlugin(upcomingFeatureSchema, { includeUniqueIndex: false });
 
-export default mongoose.model('UpcomingFeature', upcomingFeatureSchema);
+export default brandModel('UpcomingFeature', upcomingFeatureSchema, brandCollection('upcoming_features'));

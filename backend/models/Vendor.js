@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
+import { applyBrandPlugin } from '../brandContext.js';
 
 const vendorSchema = new mongoose.Schema(
   {
@@ -28,4 +30,6 @@ const vendorSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model('Vendor', vendorSchema);
+applyBrandPlugin(vendorSchema, { includeUniqueIndex: false });
+
+export default brandModel('Vendor', vendorSchema, brandCollection('vendors'));

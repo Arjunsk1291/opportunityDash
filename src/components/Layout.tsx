@@ -6,15 +6,16 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { BarChart3, Search, User, LogOut, Shield } from 'lucide-react';
+import { BarChart3, Search, User, LogOut, Shield, ChevronsUpDown, Check } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ReportIssueButton } from '@/components/ReportIssueButton';
-import logo from '@/assets/Avenir_Logo.avif';
+import { useBrand } from '@/contexts/BrandContext';
 import { UniversalSearchDialog } from '@/components/UniversalSearch/UniversalSearchDialog';
 import { ScrollJourney } from '@/components/ScrollJourney';
 import { AmbientBackground } from '@/components/AmbientBackground';
+import { DropdownMenuLabel } from '@/components/ui/dropdown-menu';
 
 interface LayoutProps {
   children: ReactNode;
@@ -22,6 +23,7 @@ interface LayoutProps {
 
 export function Layout({ children }: LayoutProps) {
   const { user, isAdmin, logout, token } = useAuth();
+  const { activeBrand, brands, setBrandKey } = useBrand();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchOpen, setSearchOpen] = useState(false);
@@ -59,11 +61,24 @@ export function Layout({ children }: LayoutProps) {
               </div>
             </div>
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-              <img
-                src={logo}
-                alt="Avenir Engineering"
-                className="hidden md:block h-7 w-auto"
-              />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="hidden md:flex items-center gap-2 px-2">
+                    <img src={activeBrand.logo} alt={activeBrand.label} className="h-7 w-auto" />
+                    <ChevronsUpDown className="h-4 w-4 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-72">
+                  <DropdownMenuLabel>Switch brand</DropdownMenuLabel>
+                  {brands.map((brand) => (
+                    <DropdownMenuItem key={brand.key} onClick={() => setBrandKey(brand.key)} className="flex items-center gap-3">
+                      <img src={brand.logo} alt={brand.label} className="h-8 w-auto" />
+                      <span className="flex-1 text-left">{brand.label}</span>
+                      {brand.key === activeBrand.key && <Check className="h-4 w-4" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

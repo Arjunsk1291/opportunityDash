@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const leadEmailMappingSchema = new mongoose.Schema(
   {
@@ -11,4 +12,4 @@ const leadEmailMappingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model('LeadEmailMapping', leadEmailMappingSchema);
+export default brandModel('LeadEmailMapping', leadEmailMappingSchema, brandCollection('lead_email_mappings'));

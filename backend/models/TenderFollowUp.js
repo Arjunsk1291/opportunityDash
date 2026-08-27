@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
+import { applyBrandPlugin } from '../brandContext.js';
 
 // Follow-up notes attached to a tender (opportunity), keyed by opportunityRefNo.
 // Intentionally an isolated collection (like BDEngagement) so it never touches the
@@ -20,5 +22,6 @@ const tenderFollowUpSchema = new mongoose.Schema(
 
 tenderFollowUpSchema.index({ opportunityRefNo: 1, createdAt: -1 });
 tenderFollowUpSchema.index({ createdAt: -1 });
+applyBrandPlugin(tenderFollowUpSchema, { includeUniqueIndex: false });
 
-export default mongoose.model('TenderFollowUp', tenderFollowUpSchema);
+export default brandModel('TenderFollowUp', tenderFollowUpSchema, brandCollection('tender_follow_ups'));

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const authorizedUserSchema = new mongoose.Schema({
   email: {
@@ -88,4 +89,4 @@ authorizedUserSchema.pre('save', function enforceSvpGroup(next) {
   return next();
 });
 
-export default mongoose.model('AuthorizedUser', authorizedUserSchema);
+export default brandModel('AuthorizedUser', authorizedUserSchema, brandCollection('authorized_users'));

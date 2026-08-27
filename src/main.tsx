@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 import { diag } from "@/lib/diagnostics";
+import "@/lib/brandFetch";
 
 // Defensive shim: some deployments/bundles may reference a global `downloadTemplate()`.
 // Provide a safe no-op so the app doesn't crash with a ReferenceError.

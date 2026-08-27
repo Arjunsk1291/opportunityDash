@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const opportunityProbationSchema = new mongoose.Schema(
   {
@@ -17,5 +18,4 @@ const opportunityProbationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model('OpportunityProbation', opportunityProbationSchema);
-
+export default brandModel('OpportunityProbation', opportunityProbationSchema, brandCollection('opportunity_probations'));

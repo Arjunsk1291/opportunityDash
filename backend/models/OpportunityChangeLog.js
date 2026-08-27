@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const opportunityChangeLogSchema = new mongoose.Schema(
   {
@@ -28,5 +29,4 @@ const opportunityChangeLogSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model('OpportunityChangeLog', opportunityChangeLogSchema);
-
+export default brandModel('OpportunityChangeLog', opportunityChangeLogSchema, brandCollection('opportunity_change_logs'));

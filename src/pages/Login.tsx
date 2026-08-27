@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
-import logo from '@/assets/Avenir_Logo.avif';
+import { useBrand } from '@/contexts/BrandContext';
 
 type AuthMode = 'password-login' | 'reset-request' | 'reset-confirm' | 'success';
 
@@ -30,6 +30,7 @@ const MAX_ATTEMPTS = 5;
 
 export default function Login() {
   const { isAuthenticated, isLoading: authLoading, loginWithPassword } = useAuth();
+  const { activeBrand } = useBrand();
   const navigate = useNavigate();
 
   const [authMode, setAuthMode] = useState<AuthMode>('password-login');
@@ -270,7 +271,7 @@ export default function Login() {
         >
           <div className="flex justify-center mb-10">
              <div className="p-6 rounded-[2.5rem] bg-white/5 border border-white/10 backdrop-blur-xl shadow-2xl">
-               <img src={logo} alt="Avenir" className="h-16 w-auto" />
+               <img src={activeBrand.logo} alt={activeBrand.label} className="h-16 w-auto" />
              </div>
           </div>
 
@@ -596,7 +597,7 @@ export default function Login() {
 
           <footer className="mt-20 text-center">
              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/50">
-               © {new Date().getFullYear()} Avenir Engineering · All Rights Reserved
+               © {new Date().getFullYear()} {activeBrand.label} · All Rights Reserved
              </p>
           </footer>
         </div>

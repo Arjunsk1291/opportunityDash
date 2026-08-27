@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
+import { applyBrandPlugin } from '../brandContext.js';
 
 const contactSchema = new mongoose.Schema(
   {
@@ -25,4 +27,6 @@ const clientSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model('Client', clientSchema);
+applyBrandPlugin(clientSchema, { includeUniqueIndex: false });
+
+export default brandModel('Client', clientSchema, brandCollection('clients'));

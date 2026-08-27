@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const loginLogSchema = new mongoose.Schema({
   email: {
@@ -18,4 +19,4 @@ const loginLogSchema = new mongoose.Schema({
   ipAddress: String,
 });
 
-export default mongoose.model('LoginLog', loginLogSchema);
+export default brandModel('LoginLog', loginLogSchema, brandCollection('login_logs'));

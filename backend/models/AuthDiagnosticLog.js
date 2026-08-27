@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
+import { applyBrandPlugin } from '../brandContext.js';
 
 const authDiagnosticLogSchema = new mongoose.Schema(
   {
@@ -17,5 +19,6 @@ const authDiagnosticLogSchema = new mongoose.Schema(
 );
 
 authDiagnosticLogSchema.index({ createdAt: -1 });
+applyBrandPlugin(authDiagnosticLogSchema, { includeUniqueIndex: false });
 
-export default mongoose.model('AuthDiagnosticLog', authDiagnosticLogSchema);
+export default brandModel('AuthDiagnosticLog', authDiagnosticLogSchema, brandCollection('auth_diagnostic_logs'));

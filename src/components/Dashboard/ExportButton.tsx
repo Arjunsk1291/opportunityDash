@@ -19,6 +19,7 @@ import { DEFAULT_EXPORT_TEMPLATE, ExportTemplateConfig } from '@/lib/exportTempl
 import { toast } from 'sonner';
 import { OPPORTUNITY_COLUMNS } from '@/lib/opportunities/columns';
 import { ROW_GDS, ROW_GES, STATUS_LOST, STATUS_WON, TENDER_FLAG_LOST } from '@/lib/opportunities/colors';
+import { useBrand } from '@/contexts/BrandContext';
 
 
 interface ExportButtonProps {
@@ -217,6 +218,7 @@ const getDefaultLogoDataUrl = async () => {
 };
 
 export function ExportButton({ data, filename = 'opportunities' }: ExportButtonProps) {
+  const { activeBrand } = useBrand();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [includeConvertedEoiDuplicates, setIncludeConvertedEoiDuplicates] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -349,7 +351,7 @@ export function ExportButton({ data, filename = 'opportunities' }: ExportButtonP
 
       let logoDataUrl = '';
       if (exportTemplate.showLogo) {
-        logoDataUrl = exportTemplate.logoDataUrl || await getDefaultLogoDataUrl();
+        logoDataUrl = exportTemplate.logoDataUrl || activeBrand.logo || await getDefaultLogoDataUrl();
         if (logoDataUrl) {
           const imageId = workbook.addImage({
             base64: logoDataUrl,

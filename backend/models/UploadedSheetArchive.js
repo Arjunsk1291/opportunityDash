@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const uploadedSheetArchiveSchema = new mongoose.Schema({
   filename: { type: String, required: true, trim: true },
@@ -19,4 +20,4 @@ const uploadedSheetArchiveSchema = new mongoose.Schema({
 // Storage hygiene only — sheets are meant to be sent right after upload, not kept forever.
 uploadedSheetArchiveSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 90 });
 
-export default mongoose.model('UploadedSheetArchive', uploadedSheetArchiveSchema);
+export default brandModel('UploadedSheetArchive', uploadedSheetArchiveSchema, brandCollection('uploaded_sheet_archives'));

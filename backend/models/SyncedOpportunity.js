@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
+import { applyBrandPlugin } from '../brandContext.js';
 
 const syncedOpportunitySchema = new mongoose.Schema(
   {
@@ -79,5 +81,6 @@ syncedOpportunitySchema.index({ deadlineAlerted: 1 });
 syncedOpportunitySchema.index({ leadEmail: 1 });
 syncedOpportunitySchema.index({ leadNotifAlerted: 1 });
 syncedOpportunitySchema.index({ awardEventNotified: 1 });
+applyBrandPlugin(syncedOpportunitySchema, { includeUniqueIndex: false });
 
-export default mongoose.model('SyncedOpportunity', syncedOpportunitySchema);
+export default brandModel('SyncedOpportunity', syncedOpportunitySchema, brandCollection('synced_opportunities'));

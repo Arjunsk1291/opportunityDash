@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import logo from "@/assets/Avenir_Logo.avif";
+import { useBrand } from "@/contexts/BrandContext";
 
 type BrandCornerLogoProps = {
   className?: string;
@@ -7,6 +7,7 @@ type BrandCornerLogoProps = {
 };
 
 export function BrandCornerLogo({ className, sizeClassName = "h-7 sm:h-8" }: BrandCornerLogoProps) {
+  const { activeBrand } = useBrand();
   return (
     <div
       className={cn(
@@ -15,7 +16,7 @@ export function BrandCornerLogo({ className, sizeClassName = "h-7 sm:h-8" }: Bra
       )}
       aria-hidden="true"
     >
-      <img src={logo} alt="Avenir Engineering" className={cn("w-auto", sizeClassName)} />
+      <img src={activeBrand.logo} alt={activeBrand.label} className={cn("w-auto", sizeClassName)} />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel, getActiveBrandKey } from '../brandContext.js';
 
 export const PQ_TENANTS = [
   'avenir_abudhabi',
@@ -50,7 +51,7 @@ export const getPqModel = (tenant) => {
     lauren: 'LAUREN_PQ',
   };
 
-  const collectionName = collectionMap[normalized] || 'pq_activities_others';
+  const collectionName = brandCollection(collectionMap[normalized] || 'pq_activities_others');
   const modelName = `PqActivity_${collectionName}`;
 
   if (models[modelName]) return models[modelName];
@@ -60,10 +61,8 @@ export const getPqModel = (tenant) => {
   schema.index({ tenant: 1, lastUpdateDate: -1, updatedAt: -1, company: 1 });
   schema.index({ tenant: 1, company: 'text', registeredEmail: 'text' });
 
-  models[modelName] = mongoose.model(modelName, schema, collectionName);
+  models[modelName] = brandModel(modelName, schema, collectionName);
   return models[modelName];
 };
 
-// Keep default export for backward compatibility if needed,
-// but it's better to use getPqModel(tenant)
-export default mongoose.model('PqActivity', pqActivitySchema, 'pq_activities');
+export default brandModel('PqActivity', pqActivitySchema, brandCollection(`pq_activities__${getActiveBrandKey()}`));

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const approvalSchema = new mongoose.Schema(
   {
@@ -19,4 +20,4 @@ const approvalSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model('Approval', approvalSchema);
+export default brandModel('Approval', approvalSchema, brandCollection('approvals'));

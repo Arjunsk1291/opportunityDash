@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const tempAccessSchema = new mongoose.Schema(
   {
@@ -19,4 +20,4 @@ const tempAccessSchema = new mongoose.Schema(
 tempAccessSchema.index({ accessId: 1 });
 tempAccessSchema.index({ isActive: 1, validUntil: 1 });
 
-export default mongoose.model('TempAccess', tempAccessSchema);
+export default brandModel('TempAccess', tempAccessSchema, brandCollection('temp_accesses'));

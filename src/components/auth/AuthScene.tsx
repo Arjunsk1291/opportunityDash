@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import logo from '@/assets/Avenir_Logo.avif';
+import { useBrand } from '@/contexts/BrandContext';
 
 type AuthSceneProps = {
   title: string;
@@ -11,6 +11,7 @@ type AuthSceneProps = {
 };
 
 export function AuthScene({ title, children, footer, cardClassName }: AuthSceneProps) {
+  const { activeBrand } = useBrand();
   return (
     <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(180deg,hsl(222,47%,11%),hsl(224,71%,11%))] text-white">
       <AuthBackdrop />
@@ -31,7 +32,7 @@ export function AuthScene({ title, children, footer, cardClassName }: AuthSceneP
               <div className="h-[1.5px] w-full bg-gradient-to-r from-blue-700 via-blue-800 to-blue-700" />
               <div className="px-8 py-10 sm:px-10 sm:py-12">
                 <div className="mb-10 flex justify-center">
-                  <img src={logo} alt="Avenir Engineering" className="h-12 w-auto sm:h-14" />
+                  <img src={activeBrand.logo} alt={activeBrand.label} className="h-12 w-auto sm:h-14" />
                 </div>
                 <div className="mb-8 text-center">
                   <h2 className="text-3xl font-semibold tracking-tight text-slate-900">{title}</h2>
@@ -40,7 +41,7 @@ export function AuthScene({ title, children, footer, cardClassName }: AuthSceneP
               </div>
             </div>
             <div className="mt-6 text-center text-xs tracking-wide text-white/40">
-              {footer || `© ${new Date().getFullYear()} Avenir Engineering`}
+              {footer || `© ${new Date().getFullYear()} ${activeBrand.label}`}
             </div>
           </div>
         </div>

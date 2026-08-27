@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const systemConfigSchema = new mongoose.Schema(
   {
@@ -91,7 +92,7 @@ const systemConfigSchema = new mongoose.Schema(
     postBidAllowedEmails: { type: [String], default: [] },
     exportTemplateSheetName: { type: String, default: 'Opportunities' },
     exportTemplateTitle: { type: String, default: 'Opportunity Export' },
-    exportTemplateIntroText: { type: String, default: 'Generated from the Avenir dashboard export.' },
+    exportTemplateIntroText: { type: String, default: 'Generated from the dashboard export.' },
     exportTemplateShowLogo: { type: Boolean, default: true },
     exportTemplateLogoDataUrl: { type: String, default: '' },
     exportTemplateLogoRow: { type: Number, default: 1 },
@@ -150,4 +151,4 @@ const systemConfigSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model('SystemConfig', systemConfigSchema);
+export default brandModel('SystemConfig', systemConfigSchema, brandCollection('system_configs'));

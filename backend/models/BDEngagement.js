@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
+import { applyBrandPlugin } from '../brandContext.js';
 
 const bdEngagementSchema = new mongoose.Schema(
   {
@@ -24,6 +26,6 @@ const bdEngagementSchema = new mongoose.Schema(
 
 bdEngagementSchema.index({ ref: 1, date: 1, clientName: 1 });
 bdEngagementSchema.index({ createdAt: -1 });
+applyBrandPlugin(bdEngagementSchema, { includeUniqueIndex: false });
 
-export default mongoose.model('BDEngagement', bdEngagementSchema);
-
+export default brandModel('BDEngagement', bdEngagementSchema, brandCollection('bd_engagements'));

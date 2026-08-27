@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { brandCollection, brandModel } from '../brandContext.js';
 
 const graphSyncConfigSchema = new mongoose.Schema(
   {
@@ -21,4 +22,4 @@ const graphSyncConfigSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model('GraphSyncConfig', graphSyncConfigSchema);
+export default brandModel('GraphSyncConfig', graphSyncConfigSchema, brandCollection('graph_sync_configs'));
