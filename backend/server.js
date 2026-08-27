@@ -89,11 +89,15 @@ const clampLog = (value, max = 800) => {
 
 let DIAG_REQ_SEQ = 0;
 const PORT = process.env.PORT || 3001;
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  process.env.MONGO_URI ||
-  process.env.LOCAL_MONGODB_URI ||
-  'mongodb://localhost:27017/opportunity-dashboard';
+const LOCAL_MONGO_URI = 'mongodb://admin:123@127.0.0.1:27017/opportunity-dashboard?authSource=admin';
+const MONGODB_URI_CANDIDATES = [
+  process.env.MONGODB_URI,
+  process.env.MONGO_URI,
+  process.env.LOCAL_MONGODB_URI,
+  LOCAL_MONGO_URI,
+  'mongodb://localhost:27017/opportunity-dashboard',
+].map((value) => String(value || '').trim()).filter(Boolean);
+let MONGODB_URI = MONGODB_URI_CANDIDATES[0];
 
 const DEFAULT_TELECAST_SENDER = 'tender-notify@avenirenergy.me';
 const getTelecastSender = () => String(process.env.TELECAST_SENDER || DEFAULT_TELECAST_SENDER).trim();
@@ -157,6 +161,20 @@ const ensurePinnedAuthorizedUsers = async () => {
     console.info(`[startup.user-pin] email=${email} role=${pinned.role} status=${pinned.status} upserted=${result.upsertedCount || 0} modified=${result.modifiedCount || 0}`);
   }
 };
+const probeCoreDashboardCounts = async () => {
+  try {
+    const [oppCount, userCount] = await Promise.all([
+      mongoose.connection.db.collection('syncedopportunities').countDocuments(),
+      mongoose.connection.db.collection('authorizedusers').countDocuments(),
+    ]);
+    return { oppCount, userCount };
+  } catch (error) {
+    return { error: error?.message || String(error) };
+  }
+};
+const shouldRetryWithLocalMongo = (probe) => (
+  probe && !probe.error && Number(probe.oppCount || 0) === 0 && Number(probe.userCount || 0) === 0
+);
 const normalizeLoginEmail = (value) => String(value || '').trim().toLowerCase();
 const isConfiguredAdminUsername = (value) => {
   const normalized = normalizeLoginEmail(value);
@@ -614,7 +632,8 @@ mongoose.connection.on('error', (err) => {
   console.error('[mongo.error]', err.message);
 });
 
-mongoose.connect(MONGODB_URI, {
+const connectMongo = async (uri) => {
+  await mongoose.connect(uri, {
   monitorCommands: DIAG_LOGS,
   autoIndex: !IS_PROD,
   autoCreate: !IS_PROD,
@@ -627,16 +646,26 @@ mongoose.connect(MONGODB_URI, {
   heartbeatFrequencyMS: 10000,
   maxPoolSize: 5,
   minPoolSize: 1,
-})
-  .then(() => {
-    return ensurePinnedAuthorizedUsers()
-      .catch((err) => {
-        console.error('[startup.user-pin.error]', err?.message || String(err));
-      })
-      .finally(() => {
-        console.info(`[startup.mongo.connected] host=${mongoose.connection.host || '(unknown)'} db=${mongoose.connection.name || '(unknown)'} readyState=${mongoose.connection.readyState}`);
-      });
+  });
+};
+
+connectMongo(MONGODB_URI)
+  .then(async () => {
+    const probe = await probeCoreDashboardCounts();
+    if (shouldRetryWithLocalMongo(probe) && MONGODB_URI !== LOCAL_MONGO_URI) {
+      console.warn(`[startup.mongo.fallback] primary db looks empty; retrying local Mongo. probe=${JSON.stringify(probe)}`);
+      await mongoose.disconnect().catch(() => {});
+      MONGODB_URI = LOCAL_MONGO_URI;
+      await connectMongo(MONGODB_URI);
+    }
   })
+  .then(() => ensurePinnedAuthorizedUsers()
+    .catch((err) => {
+      console.error('[startup.user-pin.error]', err?.message || String(err));
+    })
+    .finally(() => {
+      console.info(`[startup.mongo.connected] host=${mongoose.connection.host || '(unknown)'} db=${mongoose.connection.name || '(unknown)'} readyState=${mongoose.connection.readyState}`);
+    }))
   .then(() => {
     if (DIAG_LOGS) {
       try {
@@ -7490,9 +7519,9 @@ app.post('/api/potential-opportunities/import', verifyToken, async (req, res) =>
     const updatedBy = String(req.user?.email || req.user?.name || '').trim();
     const ops = [];
     const normalizeRef = (value) => String(value || '').trim();
-    rows.forEach((input) => {
+    for (const input of rows) {
       const opportunityRefNo = normalizeRef(input?.opportunityRefNo || input?.refNo || input?.tenderNo);
-      if (!opportunityRefNo) return;
+      if (!opportunityRefNo) continue;
       const extras = input?.extras && typeof input.extras === 'object' ? input.extras : {};
       const current = await PotentialOpportunity.findOne({ opportunityRefNo }).lean();
       const mergedExtras = {
@@ -7510,7 +7539,7 @@ app.post('/api/potential-opportunities/import', verifyToken, async (req, res) =>
           collation: { locale: 'en', strength: 2 },
         },
       });
-    });
+    }
 
     if (!ops.length) return res.json({ success: true, upserted: 0, modified: 0, touched: 0 });
     const result = await PotentialOpportunity.bulkWrite(ops, { ordered: false });
