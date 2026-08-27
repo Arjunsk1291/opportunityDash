@@ -89,7 +89,11 @@ const clampLog = (value, max = 800) => {
 
 let DIAG_REQ_SEQ = 0;
 const PORT = process.env.PORT || 3001;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/opportunity-dashboard';
+const MONGODB_URI =
+  process.env.MONGODB_URI ||
+  process.env.MONGO_URI ||
+  process.env.LOCAL_MONGODB_URI ||
+  'mongodb://localhost:27017/opportunity-dashboard';
 
 const DEFAULT_TELECAST_SENDER = 'tender-notify@avenirenergy.me';
 const getTelecastSender = () => String(process.env.TELECAST_SENDER || DEFAULT_TELECAST_SENDER).trim();
@@ -7490,11 +7494,16 @@ app.post('/api/potential-opportunities/import', verifyToken, async (req, res) =>
       const opportunityRefNo = normalizeRef(input?.opportunityRefNo || input?.refNo || input?.tenderNo);
       if (!opportunityRefNo) return;
       const extras = input?.extras && typeof input.extras === 'object' ? input.extras : {};
+      const current = await PotentialOpportunity.findOne({ opportunityRefNo }).lean();
+      const mergedExtras = {
+        ...(current?.extras && typeof current.extras === 'object' ? current.extras : {}),
+        ...extras,
+      };
       ops.push({
         updateOne: {
           filter: { opportunityRefNo },
           update: {
-            $set: { opportunityRefNo, isPotential: true, extras, updatedBy },
+            $set: { opportunityRefNo, isPotential: true, extras: mergedExtras, updatedBy },
             $setOnInsert: { createdAt: new Date() },
           },
           upsert: true,
@@ -7903,6 +7912,20 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
 
       const primary = sorted[0]?.input || {};
       const rest = sorted.slice(1);
+      const existing = await SyncedOpportunity.findOne({ opportunityRefNo }).lean();
+      const mergeValue = (incoming, current) => {
+        const next = String(incoming ?? '').trim();
+        if (next !== '') return next;
+        return current ?? '';
+      };
+      const mergeNumber = (incoming, current) => {
+        const raw = String(incoming ?? '').trim();
+        if (raw !== '') {
+          const parsed = Number(raw.replace(/,/g, ''));
+          if (!Number.isNaN(parsed)) return parsed;
+        }
+        return current ?? undefined;
+      };
       const updateHistory = (!isNumericDateEncodedRefNo(opportunityRefNo) && rest.length > 0)
         ? rest.map(({ input, idx }) => ({
           rowIndex: idx,
@@ -7927,39 +7950,35 @@ app.post('/api/opportunities/sheet-upload/commit', verifyToken, async (req, res)
 
       const payload = {
         opportunityRefNo,
-        adnocRftNo: String(primary?.adnocRftNo || '').trim(),
-        tenderName: String(primary?.tenderName || '').trim(),
-        clientName: String(primary?.clientName || '').trim(),
-        groupClassification: String(primary?.groupClassification || '').trim(),
-        internalLead: String(primary?.internalLead || '').trim(),
-        opportunityClassification: String(primary?.opportunityClassification || '').trim(),
-        dateTenderReceived: String(primary?.dateTenderReceived || '').trim(),
-        tenderPlannedSubmissionDate: String(primary?.tenderPlannedSubmissionDate || '').trim(),
-        tenderSubmittedDate: String(primary?.tenderSubmittedDate || '').trim(),
-        avenirStatus: String(primary?.avenirStatus || '').trim(),
-        tenderResult: String(primary?.tenderResult || '').trim(),
-        canonicalStage: String(primary?.canonicalStage || '').trim(),
-        remarksReason: String(primary?.remarksReason || '').trim(),
-        comments: String(primary?.comments || '').trim(),
-        tenderStatusRemark: String(primary?.tenderStatusRemark || '').trim(),
-        rawSheetYear: String(primary?.rawSheetYear || primary?.year || '').trim(),
-        rawAvenirStatus: String(primary?.rawAvenirStatus || '').trim(),
-        rawTenderResult: String(primary?.rawTenderResult || '').trim(),
+        adnocRftNo: mergeValue(primary?.adnocRftNo, existing?.adnocRftNo),
+        tenderName: mergeValue(primary?.tenderName, existing?.tenderName),
+        clientName: mergeValue(primary?.clientName, existing?.clientName),
+        groupClassification: mergeValue(primary?.groupClassification, existing?.groupClassification),
+        internalLead: mergeValue(primary?.internalLead, existing?.internalLead),
+        opportunityClassification: mergeValue(primary?.opportunityClassification, existing?.opportunityClassification),
+        dateTenderReceived: mergeValue(primary?.dateTenderReceived, existing?.dateTenderReceived),
+        tenderPlannedSubmissionDate: mergeValue(primary?.tenderPlannedSubmissionDate, existing?.tenderPlannedSubmissionDate),
+        tenderSubmittedDate: mergeValue(primary?.tenderSubmittedDate, existing?.tenderSubmittedDate),
+        avenirStatus: mergeValue(primary?.avenirStatus, existing?.avenirStatus),
+        tenderResult: mergeValue(primary?.tenderResult, existing?.tenderResult),
+        canonicalStage: mergeValue(primary?.canonicalStage, existing?.canonicalStage),
+        remarksReason: mergeValue(primary?.remarksReason, existing?.remarksReason),
+        comments: mergeValue(primary?.comments, existing?.comments),
+        tenderStatusRemark: mergeValue(primary?.tenderStatusRemark, existing?.tenderStatusRemark),
+        rawSheetYear: mergeValue(primary?.rawSheetYear || primary?.year, existing?.rawSheetYear),
+        rawAvenirStatus: mergeValue(primary?.rawAvenirStatus, existing?.rawAvenirStatus),
+        rawTenderResult: mergeValue(primary?.rawTenderResult, existing?.rawTenderResult),
         dateAudit: primary?.dateAudit || null,
         updateHistory,
         syncedAt: now,
       };
 
-      const valueNumber = primary?.opportunityValue;
-      if (valueNumber !== undefined && valueNumber !== null && String(valueNumber).trim() !== '') {
-        const parsed = Number(String(valueNumber).replace(/,/g, ''));
-        if (!Number.isNaN(parsed)) payload.opportunityValue = parsed;
-      }
+      payload.opportunityValue = mergeNumber(primary?.opportunityValue, existing?.opportunityValue);
 
       ops.push({
         updateOne: {
           filter: { opportunityRefNo },
-          update: { $set: payload },
+          update: existing ? { $set: payload } : { $set: payload },
           upsert: true,
         },
       });
