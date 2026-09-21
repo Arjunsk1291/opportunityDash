@@ -517,6 +517,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
   const [telecastBulkUpdating, setTelecastBulkUpdating] = useState(false);
   const [showConvertedEoiRowsDefault, setShowConvertedEoiRowsDefault] = useState(false);
   const [eoiDuplicateConfigSaving, setEoiDuplicateConfigSaving] = useState(false);
+  const [configSaving, setConfigSaving] = useState(false);
   const [availableClients, setAvailableClients] = useState<string[]>([]);
   const [newAuthorizedUser, setNewAuthorizedUser] = useState<{
     email: string;
