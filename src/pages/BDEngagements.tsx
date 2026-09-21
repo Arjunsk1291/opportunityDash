@@ -410,9 +410,9 @@ const BDEngagements = () => {
       const sample = {
         'Ref.': 'BD-2026-001',
         Date: new Date().toISOString().slice(0, 10),
-        'Client Name': 'Client A',
+        'Client Name': 'TEMPLATE SAMPLE - Client A',
         'Meeting Type': MEETING_TYPES[0],
-        'Discussion Points': 'Discussed scope and next steps.',
+        'Discussion Points': 'TEMPLATE SAMPLE - delete this row before upload.',
         'Meeting location': 'Abu Dhabi',
         'Report Y/N': 'Y',
         'Lead Y/N': 'N',
@@ -1033,6 +1033,10 @@ const BDEngagements = () => {
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
+            <Button type="button" variant="outline" className="border-slate-600 bg-slate-900/50 text-slate-100 hover:bg-slate-800" onClick={downloadBulkTemplate}>
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              Template
+            </Button>
             <Button type="button" className="bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={openCreateDialog}>
               <Plus className="mr-2 h-4 w-4" />
               Add Engagement
@@ -1780,9 +1784,6 @@ const BDEngagements = () => {
               <span className="font-semibold text-foreground">ref,date,clientName,meetingType,discussionPoints,meetingLocation,reportYn,leadYn,statusQn,focalPerson,designation,email,mobileNumber,leadDescription,nextSteps,lastContact</span>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={downloadBulkTemplate}>
-                Download Excel Template
-              </Button>
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium">
                 <Upload className="h-4 w-4" />
                 Upload Filled Template

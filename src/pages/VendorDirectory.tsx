@@ -560,6 +560,10 @@ export default function VendorDirectory() {
             <p className="text-sm text-muted-foreground">Searchable partnership, tech, and agreement intelligence for delivery teams.</p>
           </div>
           <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+            <Button variant="outline" className="gap-2" onClick={() => void downloadVendorTemplate()}>
+              <FileSpreadsheet className="h-4 w-4" />
+              Template
+            </Button>
             <Button variant="outline" className="gap-2" onClick={() => setImportOpen(true)} disabled={!canImportVendors}>
               <Upload className="h-4 w-4" />
               Import
@@ -923,17 +927,6 @@ export default function VendorDirectory() {
             <DialogDescription>Upload a workbook using the provided template. Comma-separated fields are split automatically and duplicate company names are skipped.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-border bg-muted/20 p-4">
-              <div>
-                <div className="font-medium">Template</div>
-                <div className="text-sm text-muted-foreground">Download the import template with the expected headers.</div>
-              </div>
-              <Button variant="outline" className="gap-2" onClick={() => void downloadVendorTemplate()}>
-                <FileSpreadsheet className="h-4 w-4" />
-                Download Template
-              </Button>
-            </div>
-
             <div className="space-y-2">
               <Label>Excel File</Label>
               <Input

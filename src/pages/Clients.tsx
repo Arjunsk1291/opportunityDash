@@ -487,8 +487,8 @@ const Clients = () => {
   const handleDownloadTemplate = () => {
     const headers = ['Company Name', 'City', 'Country', 'Domain', 'First Name', 'Last Name', 'Email', 'Phone'];
     const example = [
-      ['Acme Corp', 'Dubai', 'UAE', 'acme.com', 'Sara', 'Ali', 'sara@acme.com', '+971 50 000 0000'],
-      ['Acme Corp', 'Dubai', 'UAE', 'acme.com', 'Omar', 'Hassan', 'omar@acme.com', '+971 55 000 0000'],
+      ['TEMPLATE SAMPLE - Acme Corp', 'Dubai', 'UAE', 'acme.com', 'Sara', 'Ali', 'sara@example.com', '+971 50 000 0000'],
+      ['TEMPLATE SAMPLE - Acme Corp', 'Dubai', 'UAE', 'acme.com', 'Omar', 'Hassan', 'omar@example.com', '+971 55 000 0000'],
     ];
     const csv = [headers.join(','), ...example.map((row) => row.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -683,6 +683,9 @@ const Clients = () => {
           <p className="text-muted-foreground">Vendor-style directory of client profiles and contacts.</p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
+          <Button variant="outline" size="sm" className="gap-2" onClick={handleDownloadTemplate}>
+            <FileDown className="h-4 w-4" /> Template
+          </Button>
           <Button variant="outline" size="sm" className="gap-2" onClick={handleExportClientsCsv} disabled={filteredClients.length === 0}>
             <FileDown className="h-4 w-4" /> Export CSV
           </Button>
@@ -703,9 +706,6 @@ const Clients = () => {
               </DialogHeader>
               <div className="space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" onClick={handleDownloadTemplate} className="w-fit">
-                    Download CSV Template
-                  </Button>
                   <Button
                     variant="outline"
                     className="w-fit"

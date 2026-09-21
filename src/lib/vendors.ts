@@ -222,6 +222,8 @@ export const downloadVendorTemplate = async () => {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Vendor Import Template');
   sheet.addRow([...VENDOR_IMPORT_HEADERS]);
+  sheet.addRow(['TEMPLATE SAMPLE - Gulf Engineering LLC', 'Engineering', 'Signed', 'Pending', '51-200', 'Aisha Rahman', 'aisha@example.com', 'Energy, Oil & Gas', 'Engineering Design', 'AutoCAD, Primavera', '', 'Refinery upgrade', 'ISO 9001', '', 'Referral']);
+  sheet.addRow(['TEMPLATE SAMPLE - Desert Digital FZCO', 'Digital', 'Pending', 'Signed', '11-50', 'Omar Khan', 'omar@example.com', 'Technology', 'Data Analytics', 'Power BI, Python', '', 'Dashboard rollout', 'ISO 27001', '', 'Conference']);
   void downloadWorkbook(workbook, 'vendor-directory-template.xlsx');
 };
 

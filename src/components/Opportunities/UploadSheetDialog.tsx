@@ -3,9 +3,9 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Upload } from 'lucide-react';
+import { Download, Upload } from 'lucide-react';
 import { Opportunity } from '@/data/opportunityData';
-import { getFirstWorksheet, loadWorkbookFromArrayBuffer } from '@/lib/excelWorkbook';
+import { downloadWorkbook, getFirstWorksheet, loadWorkbookFromArrayBuffer } from '@/lib/excelWorkbook';
 import { useAsyncAction } from '@/hooks/useAsyncAction';
 import { fetchBidDecisionRecords } from '@/lib/bidDecision';
 import { fetchPotentialOpportunityRows, getExtrasTenderName } from '@/lib/potentialOpportunities';
@@ -289,6 +289,21 @@ export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities,
     },
   });
 
+  const downloadTemplate = async () => {
+    const { default: ExcelJS } = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Opportunities');
+    worksheet.addRow([
+      'Year', 'Tender No', 'Tender Name', 'Tender Type', 'Client', 'GDS/GES',
+      'Date Tender Recd', 'Tender Due Date', 'Tender Submitted Date', 'Tender Result',
+      'Tender Status', 'Assigned Person', 'Tender Value', 'Avenir Status',
+      'ADNOC RFT No', 'Remarks/Reason',
+    ]);
+    worksheet.addRow([2026, 'TEMPLATE-SAMPLE-001', 'Template sample tender', 'RFP', 'Sample Client LLC', 'GDS', '2026-09-01', '2026-09-30', '', '', 'Open', 'Sample Owner', 100000, 'Open', '', 'Delete this sample row before upload']);
+    worksheet.addRow([2026, 'TEMPLATE-SAMPLE-002', 'Second template sample', 'RFQ', 'Example Energy Ltd', 'GES', '2026-09-02', '2026-10-02', '', '', 'Open', 'Sample Owner', 250000, 'Open', '', 'Delete this sample row before upload']);
+    await downloadWorkbook(workbook, 'opportunities-upload-template.xlsx');
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) void executeUpload(file);
@@ -305,6 +320,10 @@ export function UploadSheetDialog({ token, opportunities, onUpsertOpportunities,
         onChange={handleFileChange}
         disabled={isUploading || isCommitting}
       />
+      <Button type="button" variant="outline" onClick={() => void downloadTemplate()} disabled={isUploading || isCommitting}>
+        <Download className="mr-2 h-4 w-4" />
+        Template
+      </Button>
       <Button
         type="button"
         variant="outline"

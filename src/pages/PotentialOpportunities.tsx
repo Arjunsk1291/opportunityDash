@@ -281,6 +281,17 @@ export default function PotentialOpportunities() {
     return s;
   };
 
+
+  const downloadImportTemplate = async () => {
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Potential Opportunities');
+    worksheet.addRow(['Opportunity Ref No', 'Tender Name', 'Client', 'Vertical', 'SOW Link', 'Overview']);
+    worksheet.addRow(['TEMPLATE-SAMPLE-001', 'Template sample tender', 'Sample Client LLC', 'GDS', 'https://example.com/sow', 'Delete this sample row before import']);
+    worksheet.addRow(['TEMPLATE-SAMPLE-002', 'Second template sample', 'Example Energy Ltd', 'GES', '', 'Delete this sample row before import']);
+    await downloadWorkbook(workbook as unknown as Parameters<typeof downloadWorkbook>[0], 'potential-opportunities-template.xlsx');
+  };
+
   const handleExportCsv = () => {
     const header = ['Ref No', 'Tender Name', 'Client', 'Vertical', 'SOW Link', 'Overview'];
     const lines = filteredRows.map(r => {
@@ -459,6 +470,9 @@ export default function PotentialOpportunities() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2 shrink-0">
+            <Button variant="outline" onClick={() => void downloadImportTemplate()} className="rounded-xl">
+              <FileDown className="mr-2 h-4 w-4" /> Template
+            </Button>
             <Button variant="outline" onClick={() => load('refresh')} loading={loading} className="rounded-xl">Refresh</Button>
             <Button variant="outline" onClick={handleExportCsv} disabled={filteredRows.length === 0} className="rounded-xl">
               <FileDown className="mr-2 h-4 w-4" /> Export CSV

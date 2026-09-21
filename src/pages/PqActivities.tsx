@@ -468,6 +468,9 @@ export default function PqActivities() {
         'Link(Portal)',
         'Image Link',
         'Enquiries',
+        'Renewal Date',
+        'Last Update',
+        'Notes',
       ];
       const sample = {
         'S.No': 1,
@@ -480,7 +483,10 @@ export default function PqActivities() {
         'Password(Portal)': 'password',
         'Link(Portal)': 'https://portal.example.com',
         'Image Link': 'https://example.com/logo.png',
-        Enquiries: 'Notes / enquiries for this company',
+        Enquiries: 'TEMPLATE SAMPLE - delete this row before import',
+        'Renewal Date': '2027-09-30',
+        'Last Update': '2026-09-21',
+        Notes: 'TEMPLATE SAMPLE - delete this row before import',
       };
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('PQ Activities');
