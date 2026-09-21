@@ -10,7 +10,9 @@
     "start": "node backend/server.js",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:security-upload": "node scripts/security-upload-regression.mjs"
+    "test:security-upload": "node scripts/security-upload-regression.mjs",
+    "test:api-smoke": "node scripts/api-smoke.mjs",
+    "test:deploy-rollback": "bash scripts/deploy-rollback-regression.sh"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
