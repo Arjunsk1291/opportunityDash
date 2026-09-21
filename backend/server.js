@@ -89,15 +89,12 @@ const clampLog = (value, max = 800) => {
 
 let DIAG_REQ_SEQ = 0;
 const PORT = process.env.PORT || 3001;
-const LOCAL_MONGO_URI = 'mongodb://admin:123@127.0.0.1:27017/opportunity-dashboard?authSource=admin';
-const MONGODB_URI_CANDIDATES = [
-  process.env.MONGODB_URI,
-  process.env.MONGO_URI,
-  process.env.LOCAL_MONGODB_URI,
-  LOCAL_MONGO_URI,
-  'mongodb://localhost:27017/opportunity-dashboard',
-].map((value) => String(value || '').trim()).filter(Boolean);
-let MONGODB_URI = MONGODB_URI_CANDIDATES[0];
+const MONGODB_URI = String(
+  process.env.MONGODB_URI ||
+  process.env.MONGO_URI ||
+  process.env.LOCAL_MONGODB_URI ||
+  'mongodb://localhost:27017/opportunity-dashboard'
+).trim();
 
 const DEFAULT_TELECAST_SENDER = 'tender-notify@avenirenergy.me';
 const getTelecastSender = () => String(process.env.TELECAST_SENDER || DEFAULT_TELECAST_SENDER).trim();
@@ -161,20 +158,6 @@ const ensurePinnedAuthorizedUsers = async () => {
     console.info(`[startup.user-pin] email=${email} role=${pinned.role} status=${pinned.status} upserted=${result.upsertedCount || 0} modified=${result.modifiedCount || 0}`);
   }
 };
-const probeCoreDashboardCounts = async () => {
-  try {
-    const [oppCount, userCount] = await Promise.all([
-      mongoose.connection.db.collection('syncedopportunities').countDocuments(),
-      mongoose.connection.db.collection('authorizedusers').countDocuments(),
-    ]);
-    return { oppCount, userCount };
-  } catch (error) {
-    return { error: error?.message || String(error) };
-  }
-};
-const shouldRetryWithLocalMongo = (probe) => (
-  probe && !probe.error && Number(probe.oppCount || 0) === 0 && Number(probe.userCount || 0) === 0
-);
 const normalizeLoginEmail = (value) => String(value || '').trim().toLowerCase();
 const isConfiguredAdminUsername = (value) => {
   const normalized = normalizeLoginEmail(value);
@@ -253,6 +236,11 @@ app.use(cors((req, callback) => {
 }));
 
 app.use(compression());
+
+app.use((req, res, next) => {
+  res.vary('x-brand-key');
+  next();
+});
 
 app.use((req, _res, next) => {
   const brandKey = normalizeBrandKey(req.header('x-brand-key'));
@@ -650,15 +638,6 @@ const connectMongo = async (uri) => {
 };
 
 connectMongo(MONGODB_URI)
-  .then(async () => {
-    const probe = await probeCoreDashboardCounts();
-    if (shouldRetryWithLocalMongo(probe) && MONGODB_URI !== LOCAL_MONGO_URI) {
-      console.warn(`[startup.mongo.fallback] primary db looks empty; retrying local Mongo. probe=${JSON.stringify(probe)}`);
-      await mongoose.disconnect().catch(() => {});
-      MONGODB_URI = LOCAL_MONGO_URI;
-      await connectMongo(MONGODB_URI);
-    }
-  })
   .then(() => ensurePinnedAuthorizedUsers()
     .catch((err) => {
       console.error('[startup.user-pin.error]', err?.message || String(err));
@@ -8738,11 +8717,12 @@ app.post('/api/vendors', verifyToken, async (req, res) => {
 
     const existing = await Vendor.findOne({ companyKey: payload.companyKey });
     if (!existing) {
-      const created = await Vendor.create(payload);
+      const created = await Vendor.create({ ...payload, entityKey: getActiveBrandKey() });
       return res.json(mapIdField(created.toObject()));
     }
 
     Object.assign(existing, payload);
+    existing.entityKey = getActiveBrandKey();
     await existing.save();
     return res.json(mapIdField(existing.toObject()));
   } catch (error) {
@@ -8762,6 +8742,7 @@ app.put('/api/vendors/:id', verifyToken, async (req, res) => {
     if (duplicate) return res.status(409).json({ error: 'Another vendor already uses that company name' });
 
     Object.assign(existing, payload);
+    existing.entityKey = getActiveBrandKey();
     await existing.save();
     return res.json(mapIdField(existing.toObject()));
   } catch (error) {
@@ -8781,10 +8762,11 @@ app.post('/api/vendors/import', verifyToken, async (req, res) => {
       if (!payload.companyName) continue;
       const existing = await Vendor.findOne({ companyKey: payload.companyKey });
       if (!existing) {
-        await Vendor.create(payload);
+        await Vendor.create({ ...payload, entityKey: getActiveBrandKey() });
         createdCount += 1;
       } else {
         Object.assign(existing, payload);
+        existing.entityKey = getActiveBrandKey();
         await existing.save();
         updatedCount += 1;
       }
@@ -8830,6 +8812,7 @@ app.post('/api/clients', verifyToken, async (req, res) => {
           country: String(payload.country || payload.location?.country || '').trim(),
         },
         contacts: mergeContacts([], incomingContacts),
+        entityKey: getActiveBrandKey(),
       });
       return res.json(mapIdField(created.toObject()));
     }
@@ -8842,6 +8825,7 @@ app.post('/api/clients', verifyToken, async (req, res) => {
       country: String(payload.country || existing.location?.country || '').trim(),
     };
     existing.contacts = mergeContacts(existing.contacts, incomingContacts);
+    existing.entityKey = getActiveBrandKey();
     await existing.save();
 
     return res.json(mapIdField(existing.toObject()));
@@ -8886,6 +8870,7 @@ app.post('/api/clients/import', verifyToken, async (req, res) => {
           country: String(input?.country || existing.location?.country || '').trim(),
         };
         existing.contacts = mergeContacts(existing.contacts, incomingContacts);
+        existing.entityKey = getActiveBrandKey();
         await existing.save();
         updatedCount += 1;
       }

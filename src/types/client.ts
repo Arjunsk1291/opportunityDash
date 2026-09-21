@@ -18,6 +18,7 @@ export interface ClientProfile {
   domain: string;
   location: ClientLocation;
   contacts: ClientContact[];
+  entityKey?: 'avenir_intl' | 'avenir_oilfield';
   createdAt: string;
   updatedAt: string;
 }

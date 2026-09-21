@@ -57,6 +57,8 @@ const highlightText = (text: string, query: string) => {
   );
 };
 
+const entityLabel = (key?: 'avenir_intl' | 'avenir_oilfield') => key === 'avenir_oilfield' ? 'Avenir Oilfield' : 'Avenir International';
+
 const buildSearchBlob = (client: ClientProfile) => {
   const contactBlob = client.contacts
     .map((contact) => [contact.firstName, contact.lastName, contact.email, contact.phone].join(' '))
@@ -1094,6 +1096,7 @@ const Clients = () => {
                   <CardTitle className="text-lg font-bold text-foreground group-hover:text-primary">
                     {highlightText(client.companyName, search)}
                   </CardTitle>
+                  <Badge variant="outline" className="w-fit text-[11px] font-normal">{entityLabel(client.entityKey)}</Badge>
                   {search.trim() && matchCount > 0 && (
                     <Badge variant="secondary">{matchCount} matches</Badge>
                   )}

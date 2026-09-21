@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import type { VendorData } from '@/lib/vendors';
+import { useBrand } from '@/contexts/BrandContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export const useVendorStore = () => {
   const { token, canPerformAction } = useAuth();
+  const { brandKey } = useBrand();
   const [vendors, setVendors] = useState<VendorData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -13,6 +15,7 @@ export const useVendorStore = () => {
   const writeHeaders = () => ({
     'Content-Type': 'application/json',
     ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      'x-brand-key': brandKey,
   });
 
   const fetchVendors = useCallback(async () => {
@@ -38,7 +41,7 @@ export const useVendorStore = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [token]);
+  }, [token, brandKey]);
 
   useEffect(() => {
     fetchVendors();

@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { brandCollection, brandModel } from '../brandContext.js';
+import { brandCollection, brandModel, getActiveBrandKey } from '../brandContext.js';
 import { applyBrandPlugin } from '../brandContext.js';
 
 const vendorSchema = new mongoose.Schema(
@@ -26,6 +26,7 @@ const vendorSchema = new mongoose.Schema(
     agreementDocuments: { type: [String], default: [] },
     contactPerson: { type: String, default: '' },
     emails: { type: [String], default: [] },
+    entityKey: { type: String, enum: ['avenir_intl', 'avenir_oilfield'], default: () => getActiveBrandKey(), index: true },
   },
   { timestamps: true }
 );

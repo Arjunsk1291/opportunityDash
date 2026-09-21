@@ -218,32 +218,6 @@ Notes:
 - `mongodump` must be installed on the host or container running the job.
 - CSV exports are for auditability and manual review; they are not a substitute for the daily MongoDB backup.
 
-## Brand Migration
-
-If you are upgrading from the pre-brand-split database layout, use the migration helper to copy the legacy Avenir Intl data into the new brand-scoped collections.
-
-Dry run:
-
-```sh
-cd backend
-npm run migrate:legacy-avenir-intl:dry-run
-```
-
-Apply:
-
-```sh
-cd backend
-npm run migrate:legacy-avenir-intl
-```
-
-This copies:
-
-- `syncedopportunities` -> `synced_opportunities__avenir_intl`
-- `clients` -> `clients__avenir_intl`
-- `vendors` -> `vendors__avenir_intl`
-
-The legacy collections remain in place as a backup.
-
 ## API Routing and Reverse Proxy
 
 In container mode:

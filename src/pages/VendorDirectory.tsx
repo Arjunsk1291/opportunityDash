@@ -98,6 +98,8 @@ type EnrichedVendor = {
   matchCount: number;
 };
 
+const entityLabel = (key?: 'avenir_intl' | 'avenir_oilfield') => key === 'avenir_oilfield' ? 'Avenir Oilfield' : 'Avenir International';
+
 const emptyFormState: VendorFormState = {
   companyName: '',
   primaryIndustries: '',
@@ -672,6 +674,7 @@ export default function VendorDirectory() {
                           </div>
                           <div className="min-w-0">
                             <h3 className="truncate text-lg font-semibold">{highlightText(vendor.companyName, searchTerms)}</h3>
+                            <Badge variant="outline" className="mt-1 w-fit text-[11px] font-normal">{entityLabel(vendor.entityKey)}</Badge>
                             <p className="text-sm text-muted-foreground">{highlightText(vendor.focusArea || 'General capability', searchTerms)}</p>
                           </div>
                         </div>

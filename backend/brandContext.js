@@ -55,6 +55,27 @@ export function applyBrandPlugin(schema, options = {}) {
 }
 
 export function brandModel(modelName, schema, collectionName) {
-  const scopedModelName = `${modelName}__${getActiveBrandKey()}`;
-  return mongoose.models[scopedModelName] || mongoose.model(scopedModelName, schema, collectionName);
+  const baseCollectionName = String(collectionName).replace(/__(avenir_intl|avenir_oilfield)$/, '');
+
+  const resolveModel = () => {
+    const brandKey = getActiveBrandKey();
+    const scopedModelName = `${modelName}__${brandKey}`;
+    const scopedCollectionName = `${baseCollectionName}__${brandKey}`;
+    return mongoose.models[scopedModelName]
+      || mongoose.model(scopedModelName, schema, scopedCollectionName);
+  };
+
+  return new Proxy(function BrandScopedModel(...args) {
+    return new (resolveModel())(...args);
+  }, {
+    get(_target, property) {
+      const model = resolveModel();
+      const value = model[property];
+      return typeof value === 'function' ? value.bind(model) : value;
+    },
+    construct(_target, args) {
+      const Model = resolveModel();
+      return new Model(...args);
+    },
+  });
 }

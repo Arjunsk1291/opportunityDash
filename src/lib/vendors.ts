@@ -22,6 +22,7 @@ export type VendorData = {
   agreementDocuments: string[];
   contactPerson: string;
   emails: string[];
+  entityKey?: 'avenir_intl' | 'avenir_oilfield';
 };
 
 export type VendorImportPreview = {

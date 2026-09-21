@@ -25,9 +25,9 @@ const contactKey = (contact: ClientContactInput): string => {
   return `${email}|${phone}|${first}|${last}`;
 };
 
-const readClientsCache = (): ClientProfile[] | null => {
+const readClientsCache = (brandKey: 'avenir_intl' | 'avenir_oilfield'): ClientProfile[] | null => {
   try {
-    const raw = sessionStorage.getItem(`${CLIENTS_CACHE_KEY}:${window.localStorage.getItem('opportunityDash.activeBrand') || 'avenir_intl'}`);
+    const raw = sessionStorage.getItem(`${CLIENTS_CACHE_KEY}:${brandKey}`);
     if (!raw) return null;
     const { data, ts } = JSON.parse(raw) as { data: ClientProfile[]; ts: number };
     if (Date.now() - ts < 5 * 60 * 1000 && Array.isArray(data)) return data;
@@ -35,21 +35,21 @@ const readClientsCache = (): ClientProfile[] | null => {
   return null;
 };
 
-const writeClientsCache = (data: ClientProfile[]) => {
-  const brandKey = window.localStorage.getItem('opportunityDash.activeBrand') || 'avenir_intl';
+const writeClientsCache = (data: ClientProfile[], brandKey: 'avenir_intl' | 'avenir_oilfield') => {
   try { sessionStorage.setItem(`${CLIENTS_CACHE_KEY}:${brandKey}`, JSON.stringify({ data, ts: Date.now() })); } catch {}
 };
 
 export const useClientStore = () => {
   const { token, canPerformAction } = useAuth();
   const { brandKey } = useBrand();
-  const [clients, setClients] = useState<ClientProfile[]>(() => readClientsCache() ?? []);
-  const [isLoading, setIsLoading] = useState(() => readClientsCache() === null);
+  const [clients, setClients] = useState<ClientProfile[]>(() => readClientsCache(brandKey) ?? []);
+  const [isLoading, setIsLoading] = useState(() => readClientsCache(brandKey) === null);
   const [error, setError] = useState<string | null>(null);
 
   const writeHeaders = () => ({
     'Content-Type': 'application/json',
     ...(token ? { Authorization: 'Bearer ' + token } : {}),
+    'x-brand-key': brandKey,
   });
 
   const fetchClients = useCallback(async () => {
@@ -69,7 +69,7 @@ export const useClientStore = () => {
       const data = await response.json();
       const arr = Array.isArray(data) ? data : [];
       setClients(arr);
-      writeClientsCache(arr);
+      writeClientsCache(arr, brandKey);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       if (!message.includes('503')) {
@@ -79,11 +79,11 @@ export const useClientStore = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [token]);
+  }, [token, brandKey]);
 
   useEffect(() => {
-    setClients(readClientsCache() ?? []);
-    setIsLoading(readClientsCache() === null);
+    setClients(readClientsCache(brandKey) ?? []);
+    setIsLoading(readClientsCache(brandKey) === null);
     setError(null);
   }, [brandKey]);
 
