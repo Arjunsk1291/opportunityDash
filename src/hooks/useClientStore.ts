@@ -46,11 +46,11 @@ export const useClientStore = () => {
   const [isLoading, setIsLoading] = useState(() => readClientsCache(brandKey) === null);
   const [error, setError] = useState<string | null>(null);
 
-  const writeHeaders = () => ({
+  const writeHeaders = useCallback(() => ({
     'Content-Type': 'application/json',
     ...(token ? { Authorization: 'Bearer ' + token } : {}),
     'x-brand-key': brandKey,
-  });
+  }), [token, brandKey]);
 
   const fetchClients = useCallback(async () => {
     if (!token) {
@@ -79,7 +79,7 @@ export const useClientStore = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [token, brandKey]);
+  }, [token, brandKey, writeHeaders]);
 
   useEffect(() => {
     setClients(readClientsCache(brandKey) ?? []);

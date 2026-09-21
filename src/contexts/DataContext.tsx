@@ -397,7 +397,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     mergeOpportunityRows,
     normalizeOpportunityRows,
     persistOpportunityCache,
-    buildVisibleOpportunity,
+    brandScopedCacheKey,
   ]);
 
   useEffect(() => {

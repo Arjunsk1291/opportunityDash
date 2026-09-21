@@ -78,11 +78,11 @@ const SharePointSyncPanel = ({ onSyncComplete }: SharePointSyncPanelProps) => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleConfigChange = (updates: Partial<SharePointConfig>) => {
+  const handleConfigChange = useCallback((updates: Partial<SharePointConfig>) => {
     const newConfig = { ...config, ...updates };
     setConfig(newConfig);
     saveSharePointConfig(updates);
-  };
+  }, [config]);
 
   const handleTestConnection = async () => {
     setIsTesting(true);
@@ -241,7 +241,7 @@ const SharePointSyncPanel = ({ onSyncComplete }: SharePointSyncPanelProps) => {
     } finally {
       setIsSyncing(false);
     }
-  }, [config.syncMethod, onSyncComplete]);
+  }, [config.syncMethod, onSyncComplete, handleConfigChange]);
 
   const handleExportLogs = () => {
     const csv = exportSyncLogsToCSV();

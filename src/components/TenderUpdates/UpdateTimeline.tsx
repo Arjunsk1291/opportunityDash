@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { ProjectUpdate, ProjectUpdateType } from '@/lib/tenderUpdates';
@@ -128,11 +128,11 @@ export function UpdateTimeline({ updates }: UpdateTimelineProps) {
   const transformRef = useRef({ x: 40, y: 40, scale: 1 });
   const [transform, setTransformState] = useState(transformRef.current);
 
-  const setTransform = (next: typeof transform | ((current: typeof transform) => typeof transform)) => {
+  const setTransform = useCallback((next: typeof transform | ((current: typeof transform) => typeof transform)) => {
     const resolved = typeof next === 'function' ? next(transformRef.current) : next;
     transformRef.current = resolved;
     setTransformState(resolved);
-  };
+  }, []);
 
   const { roots, positions, canvasW, canvasH } = useMemo(() => {
     const forest = buildForest(updates);
@@ -141,7 +141,7 @@ export function UpdateTimeline({ updates }: UpdateTimelineProps) {
     return { roots: forest, positions: nextPositions, canvasW: canvas.width, canvasH: canvas.height };
   }, [updates]);
 
-  const fitToScreen = () => {
+  const fitToScreen = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
     const bounds = container.getBoundingClientRect();
@@ -151,11 +151,11 @@ export function UpdateTimeline({ updates }: UpdateTimelineProps) {
     const x = (bounds.width - canvasW * scale) / 2;
     const y = (bounds.height - canvasH * scale) / 2;
     setTransform({ x, y, scale });
-  };
+  }, [canvasW, canvasH, setTransform]);
 
   useEffect(() => {
     fitToScreen();
-  }, [canvasW, canvasH]);
+  }, [fitToScreen]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -181,7 +181,7 @@ export function UpdateTimeline({ updates }: UpdateTimelineProps) {
 
     container.addEventListener('wheel', handleWheel, { passive: false });
     return () => container.removeEventListener('wheel', handleWheel);
-  }, []);
+  }, [setTransform]);
 
   const handleMouseDown: React.MouseEventHandler<HTMLDivElement> = (event) => {
     const startX = event.clientX;

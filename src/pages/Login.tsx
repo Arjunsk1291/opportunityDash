@@ -65,7 +65,7 @@ export default function Login() {
     return false;
   }, [formState.attemptCount, formState.lastAttemptTime]);
 
-  const getErrorMessage = (error: unknown): string => {
+  const getErrorMessage = useCallback((error: unknown): string => {
     const message = error instanceof Error ? error.message : String(error);
     const code = error instanceof Error ? String((error as Error & { code?: string }).code || '') : '';
     const details = error instanceof Error ? ((error as Error & { details?: Record<string, unknown> }).details || {}) : {};
@@ -88,7 +88,7 @@ export default function Login() {
     if (message.includes('429') || message.includes('Too many requests')) return 'Too many login attempts. Please try again later.';
     if (message.includes('Invalid credentials') || message.includes('403')) return 'Invalid email or password.';
     return `Authentication failed: ${message}`;
-  };
+  }, []);
 
   const handlePasswordLogin = useCallback(async () => {
     if (isRateLimited()) {
@@ -141,7 +141,7 @@ export default function Login() {
         password: '', // Clear password on error for security
       }));
     }
-  }, [formState.email, formState.lastAttemptTime, formState.password, loginWithPassword, navigate, isRateLimited]);
+  }, [formState.email, formState.lastAttemptTime, formState.password, loginWithPassword, navigate, isRateLimited, getErrorMessage]);
 
   const handleResetRequest = useCallback(async () => {
     if (formState.loading) return;

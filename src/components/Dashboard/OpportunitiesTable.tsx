@@ -250,14 +250,12 @@ export function OpportunitiesTable({
 
   useEffect(() => {
     measureHorizontalOverflow();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.length, columnPreset, showAllColumns, maxHeight, responsiveMode]);
 
   useEffect(() => {
     const handleResize = () => measureHorizontalOverflow();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -635,6 +633,8 @@ export function OpportunitiesTable({
       const cmp = String(aVal || '').localeCompare(String(bVal || ''), undefined, { numeric: true, sensitivity: 'base' });
       return cmp * order;
     });
+  // getBaseRefNo and isEoiRow are pure helpers over module-local constants.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredData, showConvertedEoiRows, isSheetPreset, sheetSortHeader, sheetSortOrder]);
 
   useEffect(() => {

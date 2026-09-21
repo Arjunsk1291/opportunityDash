@@ -233,10 +233,10 @@ export const JspreadsheetGrid = forwardRef<JspreadsheetGridHandle, JspreadsheetG
 
       instanceRef.current = divRef.current; // el.jspreadsheet = instance
 
+      const gridElement = divRef.current;
       return () => {
-        if (divRef.current) jspreadsheet.destroy(divRef.current, true);
+        if (gridElement) jspreadsheet.destroy(gridElement, true);
       };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Reload data when opportunities change

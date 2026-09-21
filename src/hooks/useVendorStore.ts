@@ -12,11 +12,11 @@ export const useVendorStore = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const writeHeaders = () => ({
+  const writeHeaders = useCallback(() => ({
     'Content-Type': 'application/json',
     ...(token ? { Authorization: 'Bearer ' + token } : {}),
       'x-brand-key': brandKey,
-  });
+  }), [token, brandKey]);
 
   const fetchVendors = useCallback(async () => {
     if (!token) {
@@ -41,7 +41,7 @@ export const useVendorStore = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [token, brandKey]);
+  }, [token, writeHeaders]);
 
   useEffect(() => {
     fetchVendors();
