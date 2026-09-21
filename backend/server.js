@@ -4681,6 +4681,7 @@ const sanitizeActionEmailAccess = (input = {}) => {
   return normalized;
 };
 
+const SYSTEM_CONFIG_CACHE_TTL_MS = Number(process.env.CONFIG_CACHE_TTL_MS || 30_000);
 const systemConfigCache = {
   value: null,
   expiresAt: 0,
@@ -4769,7 +4770,7 @@ const getSystemConfig = async (options = {}) => {
     if (!config) config = await SystemConfig.create({});
     systemConfigCache.value = config;
     systemConfigCache.ts = Date.now();
-    systemConfigCache.expiresAt = Date.now() + CONFIG_CACHE_TTL_MS;
+    systemConfigCache.expiresAt = Date.now() + SYSTEM_CONFIG_CACHE_TTL_MS;
     return config;
   })().finally(() => {
     systemConfigCache.inFlight = null;
