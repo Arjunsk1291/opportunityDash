@@ -49,11 +49,17 @@ export function BrandProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem(STORAGE_KEY, brandKey);
   }, [brandKey]);
 
+  const setBrandKey = (nextBrandKey: BrandKey) => {
+    if (nextBrandKey === brandKey) return;
+    window.localStorage.setItem(STORAGE_KEY, nextBrandKey);
+    window.location.reload();
+  };
+
   const value = useMemo(() => ({
     activeBrand: BRANDS[brandKey],
     brandKey,
     brands: Object.values(BRANDS),
-    setBrandKey: setBrandKeyState,
+    setBrandKey,
   }), [brandKey]);
 
   return <BrandContext.Provider value={value}>{children}</BrandContext.Provider>;

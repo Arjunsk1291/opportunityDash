@@ -15,7 +15,8 @@
     "test:deploy-rollback": "bash scripts/deploy-rollback-regression.sh",
     "test:lazy-boundaries": "node scripts/lazy-boundary-regression.mjs",
     "test:graph-mail-integrity": "node scripts/graph-mail-integrity.mjs",
-    "test:template-roundtrip": "node scripts/template-roundtrip-regression.mjs"
+    "test:template-roundtrip": "node scripts/template-roundtrip-regression.mjs",
+    "test:brand-refresh": "node scripts/brand-force-refresh-regression.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
