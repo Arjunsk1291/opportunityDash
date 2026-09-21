@@ -89,7 +89,7 @@ export const diag = {
     const w = window as any;
     if (typeof w.diagFinish === 'function') return;
     w.diagFinish = () => {
-      // eslint-disable-next-line no-console
+
       console.log('[diag] DIAG_FINISH', {
         ts: new Date().toISOString(),
         path: state.navPath,

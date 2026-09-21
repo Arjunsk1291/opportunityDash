@@ -31,12 +31,18 @@ const readClientsCache = (brandKey: 'avenir_intl' | 'avenir_oilfield'): ClientPr
     if (!raw) return null;
     const { data, ts } = JSON.parse(raw) as { data: ClientProfile[]; ts: number };
     if (Date.now() - ts < 5 * 60 * 1000 && Array.isArray(data)) return data;
-  } catch {}
+  } catch {
+    return null;
+  }
   return null;
 };
 
 const writeClientsCache = (data: ClientProfile[], brandKey: 'avenir_intl' | 'avenir_oilfield') => {
-  try { sessionStorage.setItem(`${CLIENTS_CACHE_KEY}:${brandKey}`, JSON.stringify({ data, ts: Date.now() })); } catch {}
+  try {
+    sessionStorage.setItem(`${CLIENTS_CACHE_KEY}:${brandKey}`, JSON.stringify({ data, ts: Date.now() }));
+  } catch {
+    // Caching is optional when storage is unavailable.
+  }
 };
 
 export const useClientStore = () => {

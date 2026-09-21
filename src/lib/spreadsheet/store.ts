@@ -669,7 +669,7 @@ export const useSpreadsheet = create<SpreadsheetState>((set, get) => ({
       for (let c = c1; c <= c2; c++) {
         if (sheet.hiddenCols[c]) continue;
         const raw = String(cellOrEmpty(sheet, r, c).value ?? "");
-        cols.push(raw.includes(",") ? `"${raw.replace(/\"/g, '""')}"` : raw);
+        cols.push(raw.includes(",") ? `"${raw.replace(/"/g, '""')}"` : raw);
       }
       lines.push(cols.join(","));
     }

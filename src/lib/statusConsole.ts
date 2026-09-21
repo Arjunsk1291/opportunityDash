@@ -22,19 +22,19 @@ export const statusConsole = {
 
   info(message: string, meta?: unknown) {
     if (!shouldLog()) return;
-    // eslint-disable-next-line no-console
+
     console.log(format('info', message, meta));
   },
 
   success(message: string, meta?: unknown) {
     if (!shouldLog()) return;
-    // eslint-disable-next-line no-console
+
     console.log(format('success', message, meta));
   },
 
   error(message: string, meta?: unknown) {
     if (!shouldLog()) return;
-    // eslint-disable-next-line no-console
+
     console.log(format('error', message, meta));
   },
 };

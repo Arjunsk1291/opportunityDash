@@ -95,7 +95,9 @@ export const dismissMatch = (recordId: string) => {
     const dismissed = readDismissedMatches();
     dismissed.add(String(recordId));
     localStorage.setItem(DISMISSED_KEY, JSON.stringify(Array.from(dismissed)));
-  } catch {}
+  } catch {
+    // Dismissal persistence is best-effort when storage is unavailable.
+  }
 };
 
 // Name-only similarity bar when we have a corroborating client/end-user signal.
