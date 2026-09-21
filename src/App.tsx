@@ -40,7 +40,6 @@ const Upcoming = lazy(() => import("./pages/Upcoming"));
 // login screen / auth check, so the first navigation feels instant.
 const prefetchCoreRoutes = () => {
   void import("./pages/Dashboard");
-  void import("./pages/Opportunities");
 };
 if (typeof window !== "undefined") {
   const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;

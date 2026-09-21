@@ -19,9 +19,6 @@ export default defineConfig(({ mode }) => ({
       output: {
         manualChunks: {
           // Heavy libraries that are only needed on specific pages
-          'vendor-exceljs': ['exceljs'],
-          'vendor-jspreadsheet': ['jspreadsheet-ce', 'jsuites'],
-          'vendor-charts': ['recharts'],
           'vendor-mui': ['@mui/material'],
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
         },

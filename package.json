@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "test:security-upload": "node scripts/security-upload-regression.mjs",
     "test:api-smoke": "node scripts/api-smoke.mjs",
-    "test:deploy-rollback": "bash scripts/deploy-rollback-regression.sh"
+    "test:deploy-rollback": "bash scripts/deploy-rollback-regression.sh",
+    "test:lazy-boundaries": "node scripts/lazy-boundary-regression.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

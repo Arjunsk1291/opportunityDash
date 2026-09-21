@@ -13,7 +13,6 @@ import { motion } from 'framer-motion';
 import { ReportIssueButton } from '@/components/ReportIssueButton';
 import { useBrand } from '@/contexts/BrandContext';
 import { UniversalSearchDialog } from '@/components/UniversalSearch/UniversalSearchDialog';
-import { ScrollJourney } from '@/components/ScrollJourney';
 import { AmbientBackground } from '@/components/AmbientBackground';
 import { DropdownMenuLabel } from '@/components/ui/dropdown-menu';
 
@@ -48,7 +47,6 @@ export function Layout({ children }: LayoutProps) {
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
         <AmbientBackground />
-        <ScrollJourney />
         <AppSidebar />
         <SidebarInset className="flex-1">
           {/* Header */}
