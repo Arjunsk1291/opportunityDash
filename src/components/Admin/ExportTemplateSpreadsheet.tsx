@@ -130,7 +130,6 @@ export function ExportTemplateSpreadsheet({
       allowDeleteRow: false,
       allowDeleteColumn: false,
       allowComments: true,
-      mergeCells,
       defaultColWidth: 96,
       defaultRowHeight: 28,
       tableOverflow: true,
@@ -138,6 +137,12 @@ export function ExportTemplateSpreadsheet({
       tableHeight: '560px',
       editable: canEdit,
     });
+
+    if (instanceRef.current && mergeCells && typeof instanceRef.current.setMerge === 'function') {
+      Object.entries(mergeCells).forEach(([cell, span]) => {
+        try { instanceRef.current.setMerge(cell, span[0], span[1]); } catch { /* Ignore invalid legacy merges. */ }
+      });
+    }
 
     return () => {
       if (instanceRef.current?.destroy) {
