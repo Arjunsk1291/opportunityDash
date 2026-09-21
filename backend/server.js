@@ -27,22 +27,9 @@ import PotentialOpportunity from './models/PotentialOpportunity.js';
 import BidDecision from './models/BidDecision.js';
 import UpcomingFeature from './models/UpcomingFeature.js';
 import UploadedSheetArchive from './models/UploadedSheetArchive.js';
-import { syncTendersFromGraph, transformTendersToOpportunities } from './services/dataSyncService.js';
-import GraphSyncConfig from './models/GraphSyncConfig.js';
 import BDEngagement from './models/BDEngagement.js';
 import TenderFollowUp from './models/TenderFollowUp.js';
-import {
-  resolveShareLink,
-  getWorksheets,
-  getWorksheetRangeValues,
-  protectRefreshToken,
-  unprotectRefreshToken,
-  buildDelegatedConsentUrl,
-  getAccessTokenWithConfig,
-  getMailAccessToken,
-  startDeviceCodeFlow,
-  exchangeDeviceCodeForToken,
-} from './services/graphExcelService.js';
+import { getMailAccessToken } from './services/graphExcelService.js';
 import { buildOpportunitiesWorkbookForSpreadsheet } from './services/spreadsheetWorkbookService.js';
 import SystemConfig from './models/SystemConfig.js';
 import { encryptSecret } from './services/cryptoService.js';
@@ -895,40 +882,6 @@ const toApiError = (error, fallbackCode = 'SERVER_ERROR') => {
     details: error?.details || null,
     troubleshooting: [...new Set(troubleshooting)].filter(Boolean),
   };
-};
-
-const CONFIG_CACHE_TTL_MS = Number(process.env.CONFIG_CACHE_TTL_MS || 30_000);
-const graphConfigCache = {
-  value: null,
-  expiresAt: 0,
-  inFlight: null,
-};
-
-const getGraphConfig = async (options = {}) => {
-  const force = Boolean(options.force);
-  const now = Date.now();
-  if (!force && graphConfigCache.value && graphConfigCache.expiresAt > now) {
-    return graphConfigCache.value;
-  }
-  if (!force && graphConfigCache.inFlight) {
-    return graphConfigCache.inFlight;
-  }
-  graphConfigCache.inFlight = (async () => {
-    let config = await GraphSyncConfig.findOne();
-    if (!config) config = await GraphSyncConfig.create({});
-    graphConfigCache.value = config;
-    graphConfigCache.expiresAt = Date.now() + CONFIG_CACHE_TTL_MS;
-    return config;
-  })().finally(() => {
-    graphConfigCache.inFlight = null;
-  });
-  return graphConfigCache.inFlight;
-};
-
-const invalidateGraphConfigCache = () => {
-  graphConfigCache.value = null;
-  graphConfigCache.expiresAt = 0;
-  graphConfigCache.inFlight = null;
 };
 
 const REQUIRED_NEW_ROW_COLUMNS = ['YEAR', 'TENDER NO', 'TENDER NAME', 'CLIENT', 'GDS/GES', 'TENDER TYPE', 'DATE TENDER RECD'];
@@ -2447,269 +2400,6 @@ const sendTelecastForRows = async ({ systemConfig, rowsToSend = [] }) => {
   };
 };
 
-const runSyncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
-  const config = await getGraphConfig();
-  if (!config.driveId || !config.fileId || !config.worksheetName) {
-    throw new Error('Graph config is incomplete. Please configure Share Link / Drive / File / Worksheet in admin panel.');
-  }
-
-  let tenders;
-  let statusWarnings = [];
-  try {
-    const syncPayload = await syncTendersFromGraph(config);
-    if (Array.isArray(syncPayload)) {
-      tenders = syncPayload;
-    } else {
-      tenders = Array.isArray(syncPayload?.tenders) ? syncPayload.tenders : [];
-      statusWarnings = Array.isArray(syncPayload?.statusWarnings) ? syncPayload.statusWarnings : [];
-    }
-  } catch (error) {
-    error.details = {
-      ...(error.details || {}),
-      driveId: config.driveId || '',
-      fileId: config.fileId || '',
-      worksheetName: config.worksheetName || '',
-      dataRange: config.dataRange || '',
-      syncIntervalMinutes: config.syncIntervalMinutes || 10,
-    };
-    throw error;
-  }
-  const opportunities = await transformTendersToOpportunities(tenders);
-
-  const systemConfig = await getSystemConfig();
-  const existingTelecastState = await getExistingTelecastStateFromSyncedOpportunities();
-  const previousKeys = new Set(systemConfig.notificationRowSignatures || []);
-  const eligibleSignatures = opportunities
-    .filter(hasRequiredRowValues)
-    .map(buildNotificationKey)
-    .filter(Boolean);
-
-  const uniqueCurrentSignatures = [...new Set(eligibleSignatures)];
-  const newRowSignatures = uniqueCurrentSignatures.filter((signature) => !previousKeys.has(signature));
-  const signatureToOpportunity = new Map(
-    opportunities
-      .filter(hasRequiredRowValues) // stable key prevents "old row edited" from being treated as new
-      .map((item) => [buildNotificationKey(item), item])
-      .filter(([sig]) => Boolean(sig))
-  );
-  const newRows = newRowSignatures.map((sig) => signatureToOpportunity.get(sig)).filter(Boolean);
-  const newRowsPreview = newRows.slice(0, 50).map((row) => ({
-    signature: buildRowSignature(row),
-    tenderNo: row?.opportunityRefNo || '',
-    tenderName: row?.tenderName || '',
-    client: row?.clientName || '',
-    group: getGroupFromOpportunity(row),
-    type: row?.opportunityClassification || '',
-    dateTenderReceived: row?.dateTenderReceived || '',
-    value: row?.opportunityValue ?? null,
-  }));
-  const now = new Date();
-  const alertedKeySet = new Set([
-    ...(systemConfig.telecastAlertedKeys || []),
-    ...Array.from(existingTelecastState.alertedKeySet),
-  ]);
-  const alertedRefSet = new Set([
-    ...(systemConfig.telecastAlertedRefNos || []).map((ref) => normalizeRefNo(ref)).filter(Boolean),
-    ...Array.from(existingTelecastState.refSet),
-  ]);
-  let seededAlertBaseline = false;
-
-  if (!systemConfig.telecastAlertSeededAt) {
-    uniqueCurrentSignatures.forEach((key) => alertedKeySet.add(key));
-    opportunities.forEach((opportunity) => {
-      const ref = getTenderRefNo(opportunity);
-      if (ref) alertedRefSet.add(ref);
-    });
-    systemConfig.telecastAlertSeededAt = now;
-    systemConfig.telecastAlertSeededCount = uniqueCurrentSignatures.length;
-    seededAlertBaseline = true;
-  }
-
-  systemConfig.notificationRowSignatures = uniqueCurrentSignatures;
-  systemConfig.notificationLastCheckedAt = now;
-  systemConfig.notificationLastNewRowsCount = newRowSignatures.length;
-  systemConfig.notificationLastNewRows = newRowSignatures.slice(0, 50);
-  systemConfig.notificationLastNewRowsPreview = newRowsPreview;
-  systemConfig.telecastKeywordHelp = TELECAST_TEMPLATE_KEYWORDS;
-  systemConfig.updatedBy = source;
-
-  const telecastCandidates = newRows;
-  const recentRows = telecastCandidates.filter((row) => isTenderRecentForTelecast(row, now));
-  const staleCount = telecastCandidates.length - recentRows.length;
-  const telecastEligiblePreview = recentRows.slice(0, 50).map((row) => ({
-    signature: buildRowSignature(row),
-    tenderNo: row?.opportunityRefNo || '',
-    tenderName: row?.tenderName || '',
-    client: row?.clientName || '',
-    group: getGroupFromOpportunity(row),
-    type: row?.opportunityClassification || '',
-    dateTenderReceived: row?.dateTenderReceived || '',
-    value: row?.opportunityValue ?? null,
-  }));
-  systemConfig.telecastLastEligibleRowsPreview = telecastEligiblePreview;
-  const rowsToSend = recentRows.filter((row) => {
-    const key = buildNotificationKey(row);
-    if (!key) return false;
-    const previousState = existingTelecastState.keyState.get(key);
-    return !previousState?.telecastAlerted;
-  });
-  const alreadyAlertedCount = recentRows.length - rowsToSend.length;
-
-  let telecastDispatch = {
-    sent: 0,
-    skipped: seededAlertBaseline ? 'baseline_seeded_existing_rows' : 'not_attempted',
-    staleCount,
-    alreadyAlertedCount,
-    eligibleCount: 0,
-    skippedNoRecipients: 0,
-    dispatchedKeys: [],
-    dispatchedRefNos: [],
-  };
-  try {
-    if (!seededAlertBaseline) {
-      telecastDispatch = await sendTelecastForRows({ systemConfig, rowsToSend });
-      telecastDispatch.staleCount = staleCount;
-      telecastDispatch.alreadyAlertedCount = alreadyAlertedCount;
-      telecastDispatch.dispatchedKeys.forEach((key) => alertedKeySet.add(key));
-      telecastDispatch.dispatchedRefNos.forEach((ref) => alertedRefSet.add(ref));
-    }
-  } catch (telecastError) {
-    console.error('[telecast.dispatch.error]', telecastError?.message || telecastError);
-    telecastDispatch = { ...telecastDispatch, sent: 0, skipped: 'error' };
-  }
-
-  const existingOpportunityMeta = await SyncedOpportunity.find(
-    {},
-    {
-      opportunityRefNo: 1,
-      leadEmail: 1,
-      leadEmailSource: 1,
-      leadEmailAssignedAt: 1,
-      leadEmailAssignedBy: 1,
-      deadlineAlerted: 1,
-      deadlineAlertedAt: 1,
-      deadlineAlertedDateKey: 1,
-    }
-  ).lean();
-  const metaByRef = new Map(
-    existingOpportunityMeta
-      .map((row) => [normalizeRefNo(row?.opportunityRefNo || ''), row])
-      .filter(([ref]) => Boolean(ref))
-  );
-
-  const opportunitiesForInsert = opportunities.map((opportunity) => {
-    const key = buildNotificationKey(opportunity);
-    const ref = getTenderRefNo(opportunity);
-    const metaSnapshot = ref ? metaByRef.get(normalizeRefNo(ref)) : null;
-    const previousState = key ? existingTelecastState.keyState.get(key) : null;
-    const isDispatchedNow = Boolean(key && telecastDispatch.dispatchedKeys.includes(key));
-    const isAlerted = seededAlertBaseline || isDispatchedNow || Boolean(previousState?.telecastAlerted) || Boolean(key && alertedKeySet.has(key));
-    const historicalAlertedAt = key ? existingTelecastState.keyAlertedAt.get(key) : null;
-    const telecastAlertedAt = isAlerted ? (historicalAlertedAt || now) : null;
-    let telecastAlertSource = '';
-
-    if (isAlerted) {
-      if (isDispatchedNow) telecastAlertSource = 'telecast_dispatch';
-      else if (seededAlertBaseline) telecastAlertSource = 'baseline_seed';
-      else telecastAlertSource = previousState?.telecastAlertSource || 'history_preserved';
-    }
-
-    return {
-      ...opportunity,
-      leadEmail: metaSnapshot?.leadEmail || opportunity?.leadEmail || '',
-      leadEmailSource: metaSnapshot?.leadEmailSource || opportunity?.leadEmailSource || '',
-      leadEmailAssignedAt: metaSnapshot?.leadEmailAssignedAt || opportunity?.leadEmailAssignedAt || null,
-      leadEmailAssignedBy: metaSnapshot?.leadEmailAssignedBy || opportunity?.leadEmailAssignedBy || '',
-      deadlineAlerted: metaSnapshot?.deadlineAlerted || opportunity?.deadlineAlerted || false,
-      deadlineAlertedAt: metaSnapshot?.deadlineAlertedAt || opportunity?.deadlineAlertedAt || null,
-      deadlineAlertedDateKey: metaSnapshot?.deadlineAlertedDateKey || opportunity?.deadlineAlertedDateKey || '',
-      telecastAlerted: isAlerted,
-      telecastAlertedAt,
-      telecastAlertedKey: key || '',
-      telecastAlertedRefNo: ref || '',
-      telecastAlertSource,
-    };
-  });
-
-  await SyncedOpportunity.deleteMany({});
-  const inserted = await SyncedOpportunity.insertMany(opportunitiesForInsert);
-  const clientSyncResult = await syncClientsFromOpportunities(opportunities);
-
-  config.lastSyncAt = now;
-  await config.save();
-
-  const nextSystemConfig = {
-    ...((typeof systemConfig.toObject === 'function' ? systemConfig.toObject() : systemConfig) || {}),
-    telecastAlertedKeys: Array.from(alertedKeySet).slice(-MAX_ALERTED_TRACKED_KEYS),
-    telecastAlertedRefNos: Array.from(alertedRefSet).slice(-MAX_ALERTED_TRACKED_REFS),
-  };
-  pushWeeklyTelecastStats(nextSystemConfig, newRows);
-  await persistSystemConfigFields(systemConfig, {
-    telecastAlertedKeys: nextSystemConfig.telecastAlertedKeys,
-    telecastAlertedRefNos: nextSystemConfig.telecastAlertedRefNos,
-    telecastWeeklyStats: nextSystemConfig.telecastWeeklyStats,
-  }, source, 'telecast_sync_refresh');
-  publishOpportunityEvent({
-    type: 'full-reload',
-    source,
-    snapshotAt: now.toISOString(),
-    insertedCount: inserted.length,
-  });
-
-  console.log(JSON.stringify({
-    source,
-    checkedAt: now.toISOString(),
-    eligibleRows: uniqueCurrentSignatures.length,
-    newRows: newRowSignatures.length,
-    seededAlertBaseline,
-    alertedKeyCount: systemConfig.telecastAlertedKeys.length,
-    alertedRefCount: systemConfig.telecastAlertedRefNos.length,
-    telecastEligibleRows: telecastDispatch.eligibleCount,
-    telecastStaleRows: telecastDispatch.staleCount,
-    telecastAlreadyAlertedRows: telecastDispatch.alreadyAlertedCount,
-    telecastNoRecipientsRows: telecastDispatch.skippedNoRecipients,
-    telecastSent: telecastDispatch.sent,
-    telecastSkipped: telecastDispatch.skipped,
-    clientsSeeded: clientSyncResult?.created || 0,
-    clientsUpdated: clientSyncResult?.updated || 0,
-  }));
-
-  return {
-    insertedCount: inserted.length,
-    newRowsCount: newRowSignatures.length,
-    newRowSignatures: newRowSignatures.slice(0, 50),
-    eligibleRows: uniqueCurrentSignatures.length,
-    seededAlertBaseline,
-    alertedKeysTracked: systemConfig.telecastAlertedKeys.length,
-    alertedRefNosTracked: systemConfig.telecastAlertedRefNos.length,
-    telecastEligibleRows: telecastDispatch.eligibleCount,
-    telecastStaleRows: telecastDispatch.staleCount,
-    telecastAlreadyAlertedRows: telecastDispatch.alreadyAlertedCount,
-    telecastNoRecipientsRows: telecastDispatch.skippedNoRecipients,
-    telecastSent: telecastDispatch.sent,
-    telecastSkipped: telecastDispatch.skipped,
-    clientsSeeded: clientSyncResult?.created || 0,
-    clientsUpdated: clientSyncResult?.updated || 0,
-    newRowsPreview,
-    statusWarnings,
-  };
-};
-
-let syncInFlightPromise = null;
-
-const syncFromConfiguredGraph = async ({ source = 'manual_sync' } = {}) => {
-  if (syncInFlightPromise) {
-    return syncInFlightPromise;
-  }
-
-  syncInFlightPromise = runSyncFromConfiguredGraph({ source })
-    .finally(() => {
-      syncInFlightPromise = null;
-    });
-
-  return syncInFlightPromise;
-};
-
 const scheduleGraphAutoSync = async () => {};
 
 let dailyNotificationTimer = null;
@@ -2967,7 +2657,6 @@ app.get('/api/audit/run', verifyToken, async (req, res) => {
       ['Approval', Approval],
       ['LoginLog', LoginLog],
       ['AuthDiagnosticLog', AuthDiagnosticLog],
-      ['GraphSyncConfig', GraphSyncConfig],
     ];
 
     const collections = {};
@@ -4837,226 +4526,6 @@ app.get('/api/approval-logs', verifyToken, async (req, res) => {
   }
 });
 
-app.get('/api/graph/config', verifyToken, async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can view graph config' });
-    }
-
-    const config = await getGraphConfig();
-    res.json(mapIdField(config.toObject()));
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.put('/api/graph/config', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'graph_config_write')) return;
-
-    const config = await getGraphConfig();
-    const { shareLink, driveId, fileId, worksheetName, dataRange, headerRowOffset, syncIntervalMinutes, fieldMapping } = req.body || {};
-
-    if (shareLink !== undefined) config.shareLink = String(shareLink || '');
-    if (driveId !== undefined) config.driveId = String(driveId || '');
-    if (fileId !== undefined) config.fileId = String(fileId || '');
-    if (worksheetName !== undefined) config.worksheetName = String(worksheetName || '');
-    if (dataRange !== undefined) config.dataRange = String(dataRange || '');
-    if (headerRowOffset !== undefined) config.headerRowOffset = Math.max(0, Number(headerRowOffset) || 0);
-    if (syncIntervalMinutes !== undefined) config.syncIntervalMinutes = Number(syncIntervalMinutes) || 10;
-    if (fieldMapping !== undefined && typeof fieldMapping === 'object') config.fieldMapping = fieldMapping;
-
-    config.updatedBy = req.user.email;
-    await config.save();
-    await scheduleGraphAutoSync();
-
-    res.json({ success: true, config: mapIdField(config.toObject()) });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/graph/resolve-share-link', verifyToken, async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can resolve links' });
-    }
-
-    const { shareLink } = req.body || {};
-    if (!shareLink) {
-      return res.status(400).json({ error: 'shareLink is required' });
-    }
-
-    const config = await getGraphConfig();
-    const resolved = await resolveShareLink(shareLink, config);
-
-    config.shareLink = shareLink;
-    config.driveId = resolved.driveId;
-    config.fileId = resolved.fileId;
-    config.lastResolvedAt = new Date();
-    config.updatedBy = req.user.email;
-    await config.save();
-
-    res.json({ success: true, ...resolved, config: mapIdField(config.toObject()) });
-  } catch (error) {
-    error.details = {
-      ...(error.details || {}),
-      troubleshooting: [
-        ...((error.details && Array.isArray(error.details.troubleshooting)) ? error.details.troubleshooting : []),
-        'Microsoft blocks resolution for personal OneDrives. Please paste Drive ID and File ID manually from the Python diagnostic tool.',
-      ],
-    };
-    res.status(500).json(toApiError(error, 'GRAPH_RESOLVE_FAILED'));
-  }
-});
-
-app.post('/api/graph/worksheets', verifyToken, async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can list worksheets' });
-    }
-
-    const { driveId, fileId } = req.body || {};
-    if (!driveId || !fileId) {
-      return res.status(400).json({ error: 'driveId and fileId are required' });
-    }
-
-    const config = await getGraphConfig();
-    const sheets = await getWorksheets({ driveId, fileId, config });
-    res.json({ success: true, sheets });
-  } catch (error) {
-    res.status(500).json(toApiError(error, 'GRAPH_WORKSHEETS_FAILED'));
-  }
-});
-
-app.post('/api/graph/preview-rows', verifyToken, async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can preview worksheet rows' });
-    }
-
-    const { driveId, fileId, worksheetName, dataRange } = req.body || {};
-    if (!driveId || !fileId || !worksheetName) {
-      return res.status(400).json({ error: 'driveId, fileId and worksheetName are required' });
-    }
-
-    const config = await getGraphConfig();
-    const rows = await getWorksheetRangeValues({
-      driveId,
-      fileId,
-      worksheetName,
-      rangeAddress: dataRange || 'B4:Z60',
-      config,
-    });
-
-    res.json({
-      success: true,
-      rowCount: rows.length,
-      previewRows: rows.slice(0, 20),
-    });
-  } catch (error) {
-    res.status(500).json(toApiError(error, 'GRAPH_PREVIEW_FAILED'));
-  }
-});
-
-app.get('/api/graph/auth/consent-url', verifyToken, async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can view consent URL' });
-    }
-
-    const loginHint = req.query?.loginHint ? String(req.query.loginHint) : '';
-    const consentUrl = buildDelegatedConsentUrl({ loginHint });
-    res.json({ success: true, consentUrl });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/graph/auth/status', verifyToken, async (req, res) => {
-  try {
-    if (!['Master', 'Admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only Master/Admin can view auth status' });
-    }
-
-    const config = await getGraphConfig();
-    res.json({
-      success: true,
-      authMode: config.graphAuthMode || 'application',
-      accountUsername: config.graphAccountUsername || '',
-      hasRefreshToken: !!config.graphRefreshTokenEnc,
-      tokenUpdatedAt: config.graphTokenUpdatedAt || null,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/graph/auth/bootstrap', verifyToken, async (req, res) => {
-  const username = req.body?.username || '';
-  try {
-    if (!await requireActionPermission(req, res, 'graph_auth_write')) return;
-
-    const { password } = req.body || {};
-    if (!username || !password) {
-      return res.status(400).json({ error: 'username and password are required' });
-    }
-
-    const tokenResult = await bootstrapDelegatedToken({ username, password });
-    if (!tokenResult.refreshToken) {
-      return res.status(500).json({ error: 'No refresh token returned. Check Azure app delegated permissions and token settings.' });
-    }
-
-    const config = await getGraphConfig();
-    config.graphAuthMode = 'delegated';
-    config.graphAccountUsername = String(username).toLowerCase();
-    config.graphRefreshTokenEnc = protectRefreshToken(tokenResult.refreshToken);
-    config.graphTokenUpdatedAt = new Date();
-    config.updatedBy = req.user.email;
-    await config.save();
-
-    res.json({ success: true, message: 'Bootstrap complete. Delegated token cached securely.', scope: tokenResult.scope, mode: 'delegated' });
-  } catch (error) {
-    const msg = String(error.message || error);
-    if (msg.includes('AADSTS50076') || msg.toLowerCase().includes('mfa')) {
-      return res.status(400).json({ error: 'MFA_REQUIRED', message: 'MFA is enabled. Use a non-MFA service account for bootstrap.' });
-    }
-    if (msg.includes('AADSTS50126')) {
-      return res.status(400).json({ error: 'INVALID_CREDENTIALS', message: 'Invalid username or password.' });
-    }
-    if (msg.includes('AADSTS50034')) {
-      return res.status(400).json({ error: 'USER_NOT_FOUND', message: 'User not found in this tenant.' });
-    }
-    if (msg.includes('AADSTS65001')) {
-      const consentUrl = buildDelegatedConsentUrl({ loginHint: username });
-      return res.status(400).json({
-        error: 'CONSENT_REQUIRED',
-        message: 'This account has not granted consent to the app yet. Open consent URL and accept once, then retry bootstrap.',
-        consentUrl,
-      });
-    }
-    res.status(500).json({ error: msg });
-  }
-});
-
-app.post('/api/graph/auth/clear', verifyToken, async (req, res) => {
-  try {
-    if (!await requireActionPermission(req, res, 'graph_auth_write')) return;
-
-    const config = await getGraphConfig();
-    config.graphAuthMode = 'application';
-    config.graphAccountUsername = '';
-    config.graphRefreshTokenEnc = '';
-    config.graphTokenUpdatedAt = null;
-    config.updatedBy = req.user.email;
-    await config.save();
-
-    res.json({ success: true, message: 'Delegated token cleared. Falling back to application auth.' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 const PAGE_KEYS = [
   'dashboard',
   'opportunities',
@@ -5080,7 +4549,6 @@ const ROLE_KEYS = ['Master', 'Admin', 'ProposalHead', 'SVP', 'Basic', 'BDTeam', 
 const ACTION_KEYS = [
   'opportunities_view',
   'opportunities_write',
-  'opportunities_sync',
   'opportunities_sheet_upload',
   'manual_opportunity_updates_write',
   'bd_engagements_write',
@@ -5098,8 +4566,6 @@ const ACTION_KEYS = [
   'clients_seed',
   'users_manage',
   'navigation_permissions_write',
-  'graph_config_write',
-  'graph_auth_write',
   'telecast_config_write',
   'telecast_auth_write',
   'export_template_write',
@@ -5129,7 +4595,6 @@ const DEFAULT_PAGE_ROLE_ACCESS = {
 const DEFAULT_ACTION_ROLE_ACCESS = {
   opportunities_view: ['Master', 'Admin', 'ProposalHead', 'SVP', 'BDTeam', 'Basic'],
   opportunities_write: ['Master', 'Admin', 'ProposalHead', 'SVP'],
-  opportunities_sync: ['Master', 'Admin'],
   opportunities_sheet_upload: ['Master', 'Admin'],
   manual_opportunity_updates_write: ['Master', 'Admin'],
   bd_engagements_write: ['Master', 'Admin', 'BDTeam'],
@@ -5147,8 +4612,6 @@ const DEFAULT_ACTION_ROLE_ACCESS = {
   clients_seed: ['Master', 'Admin'],
   users_manage: ['Master'],
   navigation_permissions_write: ['Master'],
-  graph_config_write: ['Master'],
-  graph_auth_write: ['Master'],
   telecast_config_write: ['Master'],
   telecast_auth_write: ['Master'],
   export_template_write: ['Master'],
@@ -5502,28 +4965,6 @@ const buildActionPermissionsPayload = async (config) => {
   return { config, permissions, emailPermissions };
 };
 
-const buildGraphConfigPayload = (config) => ({
-  success: true,
-  shareLink: config.shareLink || '',
-  driveId: config.driveId || '',
-  fileId: config.fileId || '',
-  worksheetName: config.worksheetName || '',
-  dataRange: config.dataRange || '',
-  headerRowOffset: Number(config.headerRowOffset || 0),
-  syncIntervalMinutes: config.syncIntervalMinutes || 10,
-  fieldMapping: config.fieldMapping || {},
-  lastResolvedAt: config.lastResolvedAt || null,
-  lastSyncAt: config.lastSyncAt || null,
-});
-
-const buildGraphAuthStatusPayload = (config) => ({
-  success: true,
-  authMode: config.graphAuthMode || 'application',
-  accountUsername: config.graphAccountUsername || '',
-  hasRefreshToken: Boolean(config.graphRefreshTokenEnc),
-  tokenUpdatedAt: config.graphTokenUpdatedAt || null,
-});
-
 const buildTelecastConfigPayload = (config) => {
   const groupRecipients = {
     GES: normalizeEmailList(config?.telecastGroupRecipients?.GES || []),
@@ -5768,7 +5209,7 @@ const requirePagePermission = async (req, res, pageKey) => {
 };
 
 const PAGE_EDIT_ACTION_MAP = {
-  opportunities: ['opportunities_write', 'opportunities_sync', 'opportunities_sheet_upload', 'manual_opportunity_updates_write'],
+  opportunities: ['opportunities_write', 'opportunities_sheet_upload', 'manual_opportunity_updates_write'],
   bid_decision: ['bid_decision_manage'],
   pq_activities: ['pq_activities_manage'],
   vendor_directory: ['vendors_write', 'vendors_import'],
@@ -5778,12 +5219,11 @@ const PAGE_EDIT_ACTION_MAP = {
   tender_updates: ['opportunities_write'],
   dashboard: [],
   analytics: [],
-  master: ['users_manage', 'navigation_permissions_write', 'graph_config_write', 'graph_auth_write',
+  master: ['users_manage', 'navigation_permissions_write',
     'telecast_config_write', 'telecast_auth_write', 'export_template_write',
     'notification_alert_flags_write', 'lead_email_manage', 'logs_cleanup'],
   master_general: ['users_manage'],
   master_users: ['users_manage'],
-  master_data_sync: ['graph_config_write', 'graph_auth_write'],
   master_telecast: ['telecast_config_write', 'telecast_auth_write'],
   master_update: ['export_template_write'],
   master_export: ['export_template_write'],
@@ -6141,19 +5581,15 @@ app.get('/api/admin/bootstrap', verifyToken, async (req, res) => {
       return res.status(403).json({ error: 'Only Master/Admin can load admin bootstrap data' });
     }
 
-    const [systemConfig, graphConfig, users, collectionStats] = await Promise.all([
+    const [systemConfig, users, collectionStats] = await Promise.all([
       getSystemConfig(),
-      getGraphConfig(),
       AuthorizedUser.find().sort({ createdAt: -1 }).lean(),
       buildCollectionStats(),
     ]);
 
-    const [pagePermissionsResult, actionPermissionsResult, worksheetsResult, notificationStatusResult] = await Promise.allSettled([
+    const [pagePermissionsResult, actionPermissionsResult, notificationStatusResult] = await Promise.allSettled([
       buildPagePermissionsPayload(systemConfig),
       buildActionPermissionsPayload(systemConfig),
-      (graphConfig.driveId && graphConfig.fileId)
-        ? getWorksheets({ driveId: graphConfig.driveId, fileId: graphConfig.fileId, config: graphConfig })
-        : Promise.resolve([]),
       buildNotificationStatusPayload(systemConfig),
     ]);
 
@@ -6167,9 +5603,6 @@ app.get('/api/admin/bootstrap', verifyToken, async (req, res) => {
       },
       users: users.map(mapIdField),
       collectionStats,
-      graphConfig: buildGraphConfigPayload(graphConfig),
-      graphAuthStatus: buildGraphAuthStatusPayload(graphConfig),
-      consentUrl: buildDelegatedConsentUrl({}),
       postBidConfig: {
         success: true,
         allowedEmails: Array.isArray(systemConfig.postBidAllowedEmails) ? systemConfig.postBidAllowedEmails : [],
@@ -6197,14 +5630,12 @@ app.get('/api/admin/bootstrap', verifyToken, async (req, res) => {
             emailPermissions: actionPermissionsResult.value.emailPermissions,
           }
         : null,
-      worksheets: worksheetsResult.status === 'fulfilled' ? worksheetsResult.value : [],
       notificationStatus: notificationStatusResult.status === 'fulfilled' ? notificationStatusResult.value : null,
     };
 
     const errors = [
       ['navigationPermissions', pagePermissionsResult],
       ['actionPermissions', actionPermissionsResult],
-      ['worksheets', worksheetsResult],
       ['notificationStatus', notificationStatusResult],
     ].flatMap(([key, result]) => (result.status === 'fulfilled'
       ? []
@@ -7240,24 +6671,6 @@ app.post('/api/issue-reports', verifyToken, async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message || 'Failed to send issue report' });
   }
-});
-
-app.post('/api/opportunities/sync-graph', verifyToken, async (req, res) => {
-  // Graph sync removed: MongoDB is now updated only via Opportunities page uploads/manual entry.
-  res.status(410).json({ error: 'Graph sync has been disabled. Use Opportunities upload as the source of truth.' });
-});
-
-app.post('/api/opportunities/sync-graph/auto', verifyToken, async (req, res) => {
-  res.status(410).json({ error: 'Graph sync has been disabled. Use Opportunities upload as the source of truth.' });
-});
-
-// Backward-compatible aliases
-app.post('/api/opportunities/sync-sheets', verifyToken, async (req, res) => {
-  res.status(410).json({ error: 'Graph sync has been disabled. Use Opportunities upload as the source of truth.' });
-});
-
-app.post('/api/opportunities/sync-sheets/auto', verifyToken, async (req, res) => {
-  res.status(410).json({ error: 'Graph sync has been disabled. Use Opportunities upload as the source of truth.' });
 });
 
 app.get('/api/opportunities', verifyToken, async (req, res) => {

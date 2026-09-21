@@ -171,7 +171,7 @@ export function OverviewPanel({ token, isMaster, user }: OverviewPanelProps) {
                 'Approve and reject tenders',
                 'Revert approvals to pending',
                 'Manage authorized users',
-                'Sync data from Graph Excel',
+                'Manage opportunity sheet uploads',
                 'Configure export templates',
                 'Manage system permissions',
               ].map((priv) => (

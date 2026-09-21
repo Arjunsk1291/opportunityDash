@@ -93,26 +93,6 @@ interface CollectionStats {
   statusDistribution: Record<string, number>;
 }
 
-interface GraphConfig {
-  id?: string;
-  shareLink: string;
-  driveId: string;
-  fileId: string;
-  worksheetName: string;
-  dataRange: string;
-  headerRowOffset: number;
-  syncIntervalMinutes: number;
-  fieldMapping?: Record<string, string | string[]>;
-  lastResolvedAt?: string;
-  lastSyncAt?: string;
-}
-
-interface GraphAuthStatus {
-  authMode: 'application' | 'delegated';
-  accountUsername: string;
-  hasRefreshToken: boolean;
-  tokenUpdatedAt?: string | null;
-}
 
 interface TelecastAuthStatus {
   authMode: 'application' | 'delegated';
@@ -273,9 +253,6 @@ interface AdminBootstrapResponse {
   };
   users?: AuthorizedUser[];
   collectionStats?: CollectionStats;
-  graphConfig?: Partial<GraphConfig>;
-  graphAuthStatus?: GraphAuthStatus;
-  consentUrl?: string;
   postBidConfig?: {
     success?: boolean;
     allowedEmails?: string[];
@@ -317,7 +294,6 @@ interface AdminBootstrapResponse {
     permissions?: Record<ActionKey, UserRole[]>;
     emailPermissions?: Record<ActionKey, string[]>;
   } | null;
-  worksheets?: Array<{ id: string; name: string }>;
   notificationStatus?: NotificationSyncStatus | null;
   errors?: Array<{ key: string; message: string }>;
 }
@@ -439,25 +415,6 @@ export default function Admin({ initialTab }: AdminProps = {}) {
   const [syncLoading, setSyncLoading] = useState(false);
   const { status: trackedStatus, run: runTrackedAction } = useTrackedAction();
   const [collectionStats, setCollectionStats] = useState<CollectionStats | null>(null);
-  const [graphConfig, setGraphConfig] = useState<GraphConfig>({
-    shareLink: '',
-    driveId: '',
-    fileId: '',
-    worksheetName: '',
-    dataRange: '',
-    headerRowOffset: 0,
-    syncIntervalMinutes: 10,
-    fieldMapping: {},
-  });
-  const [worksheets, setWorksheets] = useState<Array<{ id: string; name: string }>>([]);
-  const [mappingText, setMappingText] = useState('{}');
-  const [configSaving, setConfigSaving] = useState(false);
-  const [previewRows, setPreviewRows] = useState<string[][]>([]);
-  const [graphAuthStatus, setGraphAuthStatus] = useState<GraphAuthStatus>({
-    authMode: 'application',
-    accountUsername: '',
-    hasRefreshToken: false,
-  });
   const [telecastAuthStatus, setTelecastAuthStatus] = useState<TelecastAuthStatus>({
     authMode: 'application',
     accountUsername: '',
@@ -481,7 +438,6 @@ export default function Admin({ initialTab }: AdminProps = {}) {
   });
   const [bootstrapUsername, setBootstrapUsername] = useState(DEFAULT_SERVICE_ACCOUNT);
   const [bootstrapPassword, setBootstrapPassword] = useState(DEFAULT_SERVICE_ACCOUNT);
-  const [consentUrl, setConsentUrl] = useState('');
   const [telecastRecipientEmail, setTelecastRecipientEmail] = useState('');
   const [telecastUsername, setTelecastUsername] = useState(DEFAULT_SERVICE_ACCOUNT);
   const [telecastPassword, setTelecastPassword] = useState('');
@@ -715,14 +671,11 @@ export default function Admin({ initialTab }: AdminProps = {}) {
         loadBackendHealth();
         loadUsers();
         loadCollectionStats();
-        loadGraphConfig();
-        loadGraphAuthStatus();
         loadTelecastConfig();
         loadEoiDuplicateConfig();
         loadReportingConfig();
         loadExportTemplateConfig();
         loadNotificationStatus();
-        fetchConsentUrl();
       }
       if (!cancelled && diag.enabled) {
         fetch(API_URL + '/version', { headers: token ? { Authorization: 'Bearer ' + token } : undefined })
@@ -922,36 +875,6 @@ export default function Admin({ initialTab }: AdminProps = {}) {
       }
       if (bootstrap.collectionStats) {
         setCollectionStats(bootstrap.collectionStats);
-      }
-      if (bootstrap.graphConfig) {
-        const next: GraphConfig = {
-          shareLink: String(bootstrap.graphConfig.shareLink || ''),
-          driveId: String(bootstrap.graphConfig.driveId || ''),
-          fileId: String(bootstrap.graphConfig.fileId || ''),
-          worksheetName: String(bootstrap.graphConfig.worksheetName || ''),
-          dataRange: String(bootstrap.graphConfig.dataRange || ''),
-          headerRowOffset: Number(bootstrap.graphConfig.headerRowOffset || 0),
-          syncIntervalMinutes: Number(bootstrap.graphConfig.syncIntervalMinutes || 10),
-          fieldMapping: (bootstrap.graphConfig.fieldMapping || {}) as Record<string, string | string[]>,
-          lastResolvedAt: bootstrap.graphConfig.lastResolvedAt,
-          lastSyncAt: bootstrap.graphConfig.lastSyncAt,
-        };
-        setGraphConfig(next);
-        setMappingText(JSON.stringify(next.fieldMapping || {}, null, 2));
-      }
-      if (Array.isArray(bootstrap.worksheets)) {
-        setWorksheets(bootstrap.worksheets);
-      }
-      if (bootstrap.graphAuthStatus) {
-        setGraphAuthStatus({
-          authMode: bootstrap.graphAuthStatus.authMode || 'application',
-          accountUsername: bootstrap.graphAuthStatus.accountUsername || '',
-          hasRefreshToken: Boolean(bootstrap.graphAuthStatus.hasRefreshToken),
-          tokenUpdatedAt: bootstrap.graphAuthStatus.tokenUpdatedAt || null,
-        });
-      }
-      if (bootstrap.consentUrl !== undefined) {
-        setConsentUrl(bootstrap.consentUrl || '');
       }
       if (bootstrap.telecastConfig) {
         setTelecastTemplateSubject(bootstrap.telecastConfig.templateSubject || 'New Tender Row: {{TENDER_NO}} - {{TENDER_NAME}}');
@@ -1514,9 +1437,6 @@ export default function Admin({ initialTab }: AdminProps = {}) {
     }
   };
 
-  const syncFromGraphExcel = async () => {
-    toast.error('Graph sync has been disabled. Use Opportunities upload as the source of truth.');
-  };
 
   const seedClientsFromOpportunities = async () => {
     if (!token) return;
@@ -1574,27 +1494,6 @@ export default function Admin({ initialTab }: AdminProps = {}) {
     }
   };
 
-  const loadGraphAuthStatus = async () => {
-    if (!token) return;
-    try {
-      const response = await fetch(API_URL + '/graph/auth/status', {
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!response.ok) return;
-      const data = await response.json();
-      setGraphAuthStatus({
-        authMode: data.authMode || 'application',
-        accountUsername: data.accountUsername || '',
-        hasRefreshToken: !!data.hasRefreshToken,
-        tokenUpdatedAt: data.tokenUpdatedAt || null,
-      });
-    } catch (error) {
-      // Keep console quiet; surface toasts/messages instead.
-    }
-  };
 
   const loadTelecastAuthStatus = async () => {
     if (!token) return;
@@ -1844,278 +1743,6 @@ export default function Admin({ initialTab }: AdminProps = {}) {
     }
   };
 
-  const fetchConsentUrl = async (loginHint?: string) => {
-    if (!token) return;
-    try {
-      const query = loginHint ? `?loginHint=${encodeURIComponent(loginHint)}` : '';
-      const response = await fetch(API_URL + '/graph/auth/consent-url' + query, {
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to fetch consent URL');
-      setConsentUrl(data.consentUrl || '');
-      return data.consentUrl || '';
-    } catch (error) {
-      return '';
-    }
-  };
-
-  const bootstrapGraphAuth = async () => {
-    if (!token || !bootstrapUsername || !bootstrapPassword) {
-      toast.error('Username and password are required');
-      return;
-    }
-
-    setConfigSaving(true);
-    try {
-      const response = await fetch(API_URL + '/graph/auth/bootstrap', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username: bootstrapUsername, password: bootstrapPassword }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        if (data.error === 'MFA_REQUIRED') throw new Error('MFA is enabled on this account. Use a non-MFA service account.');
-        if (data.error === 'INVALID_CREDENTIALS') throw new Error('Invalid username or password.');
-        if (data.error === 'USER_NOT_FOUND') throw new Error('User not found in this tenant.');
-        if (data.error === 'CONSENT_REQUIRED') {
-          setConsentUrl(data.consentUrl || '');
-          throw new Error('Consent required for this account. Open the consent URL, accept once, then retry Connect Excel.');
-        }
-        throw new Error(data.message || data.error || 'Failed to bootstrap graph auth');
-      }
-
-      setBootstrapPassword('');
-      toast.success('Connected! Delegated Graph token stored securely.');
-      await loadGraphAuthStatus();
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setConfigSaving(false);
-    }
-  };
-
-  const clearGraphAuth = async () => {
-    if (!token) return;
-    setConfigSaving(true);
-    try {
-      const response = await fetch(API_URL + '/graph/auth/clear', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to clear graph auth');
-
-      toast.success('Cleared delegated token. Using application auth now.');
-      await loadGraphAuthStatus();
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setConfigSaving(false);
-    }
-  };
-
-  const loadGraphConfig = async () => {
-    if (!token) return;
-    try {
-      const response = await fetch(API_URL + '/graph/config', {
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!response.ok) return;
-      const data = await response.json();
-      const next: GraphConfig = {
-        shareLink: data.shareLink || '',
-        driveId: data.driveId || '',
-        fileId: data.fileId || '',
-        worksheetName: data.worksheetName || '',
-        dataRange: data.dataRange || '',
-        headerRowOffset: Number(data.headerRowOffset || 0),
-        syncIntervalMinutes: data.syncIntervalMinutes || 10,
-        fieldMapping: data.fieldMapping || {},
-        lastResolvedAt: data.lastResolvedAt,
-        lastSyncAt: data.lastSyncAt,
-      };
-      setGraphConfig(next);
-      setMappingText(JSON.stringify(next.fieldMapping || {}, null, 2));
-      if (next.driveId && next.fileId) {
-        await loadWorksheets(next.driveId, next.fileId);
-      }
-    } catch (error) {
-      // Keep console quiet; surface toasts/messages instead.
-    }
-  };
-
-  const loadWorksheets = async (driveId: string, fileId: string) => {
-    if (!token || !driveId || !fileId) return;
-    try {
-      const response = await fetch(API_URL + '/graph/worksheets', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ driveId, fileId }),
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setWorksheets(data.sheets || []);
-      }
-    } catch (error) {
-      // Keep console quiet; surface toasts/messages instead.
-    }
-  };
-
-
-  const loadSheetsFromIds = async () => {
-    if (!graphConfig.driveId || !graphConfig.fileId) {
-      toast.error('Drive ID and File ID are required');
-      return;
-    }
-    try {
-      await runTrackedAction('Load Worksheets', async (setProgress) => {
-        setProgress(35, 'Requesting worksheet list');
-        await loadWorksheets(graphConfig.driveId, graphConfig.fileId);
-        setProgress(90, 'Worksheet list loaded');
-      });
-    } catch {
-      // loadWorksheets already logs failure details.
-    }
-  };
-
-  const resolveShareLink = async () => {
-    if (!token || !graphConfig.shareLink) return;
-    setConfigSaving(true);
-    try {
-      await runTrackedAction('Resolve Share Link', async (setProgress) => {
-        setProgress(25, 'Resolving shared link');
-        const response = await fetch(API_URL + '/graph/resolve-share-link', {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Bearer ' + token,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ shareLink: graphConfig.shareLink }),
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(parseApiErrorPayload(data, 'Failed to resolve share link'));
-        }
-
-        setProgress(72, 'Updating IDs and loading worksheets');
-        setGraphConfig((prev) => ({
-          ...prev,
-          driveId: data.driveId || prev.driveId,
-          fileId: data.fileId || prev.fileId,
-        }));
-        await loadWorksheets(data.driveId, data.fileId);
-        toast.success('Share link resolved successfully');
-      });
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setConfigSaving(false);
-    }
-  };
-
-  const previewHeaderRows = async () => {
-    if (!token || !graphConfig.driveId || !graphConfig.fileId || !graphConfig.worksheetName) {
-      toast.error('Drive ID, File ID and Worksheet are required for preview');
-      return;
-    }
-
-    setConfigSaving(true);
-    try {
-      await runTrackedAction('Preview Rows', async (setProgress) => {
-        setProgress(25, 'Requesting preview rows');
-        const response = await fetch(API_URL + '/graph/preview-rows', {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Bearer ' + token,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            driveId: graphConfig.driveId,
-            fileId: graphConfig.fileId,
-            worksheetName: graphConfig.worksheetName,
-            dataRange: graphConfig.dataRange || 'B4:Z60',
-          }),
-        });
-
-        setProgress(70, 'Parsing preview payload');
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(parseApiErrorPayload(data, 'Failed to preview rows'));
-        }
-
-        setProgress(90, 'Rendering preview rows');
-        setPreviewRows(data.previewRows || []);
-        toast.success('Preview loaded. Choose the header row below.');
-      });
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setConfigSaving(false);
-    }
-  };
-
-  const saveGraphConfig = async () => {
-    if (!token) return;
-    setConfigSaving(true);
-    try {
-      await runTrackedAction('Save Graph Config', async (setProgress) => {
-        setProgress(20, 'Validating mapping JSON');
-        let mapping: Record<string, unknown> = {};
-        try {
-          mapping = JSON.parse(mappingText || '{}');
-        } catch {
-          throw new Error('Field mapping must be valid JSON');
-        }
-
-        const payload = {
-          ...graphConfig,
-          fieldMapping: mapping,
-        };
-
-        setProgress(45, 'Saving configuration');
-        const response = await fetch(API_URL + '/graph/config', {
-          method: 'PUT',
-          headers: {
-            'Authorization': 'Bearer ' + token,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        });
-
-        setProgress(78, 'Reading save response');
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to save graph config');
-        }
-
-        setProgress(92, 'Applying latest config locally');
-        setGraphConfig((prev) => ({ ...prev, ...(data.config || {}) }));
-        toast.success('Graph configuration saved');
-      });
-    } catch (error) {
-      toast.error((error as Error).message);
-    } finally {
-      setConfigSaving(false);
-    }
-  };
 
   const approveUser = async (email: string) => {
     if (!token) return;
@@ -3084,7 +2711,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-green-600 mt-1">✓</span>
-                  <span>Sync data from Graph Excel</span>
+                  <span>Manage opportunity sheet uploads</span>
                 </div>
 	              </CardContent>
 	            </Card>
@@ -3560,8 +3187,8 @@ export default function Admin({ initialTab }: AdminProps = {}) {
                   <div className="text-xs text-muted-foreground space-y-1">
                     <p>Importer rules:</p>
                     <p>1. Blank workbook cells do nothing.</p>
-                    <p>2. Workbook values fill MongoDB only when the synced field is blank.</p>
-                    <p>3. If a later Graph sync brings a different non-empty value, the synced value wins and becomes the new baseline.</p>
+                    <p>2. Uploaded workbook values fill MongoDB only when the stored field is blank.</p>
+                    <p>3. If a later sheet upload brings a different non-empty value, the uploaded value wins and becomes the new baseline.</p>
                   </div>
                 </div>
               </CardContent>
@@ -3594,7 +3221,7 @@ export default function Admin({ initialTab }: AdminProps = {}) {
                 <Alert>
                   <Database className="h-4 w-4" />
                   <AlertDescription>
-                    Use this page for controlled backfills only. It does not replace the normal Graph sync and does not modify your existing date parsing logic in the sync service.
+                    Use this page for controlled backfills only. It does not replace normal sheet uploads and does not modify the existing date parsing logic.
                   </AlertDescription>
                 </Alert>
               </CardContent>
